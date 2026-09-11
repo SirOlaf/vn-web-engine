@@ -63,7 +63,7 @@ Game input follows the native player:
 - hold for 500 ms or press with two fingers to right-click; and
 - use the Game options panel for browser-level controls and save transfer.
 
-Native atlas text provides the closest visual match. DOM text uses browser fonts while retaining the game's line breaks, making supported text selectable and accessible. See [text rendering](docs/text.md) for the exact boundary between the two modes.
+Native atlas text provides the closest visual match. DOM text uses browser fonts while retaining the game's line breaks, making supported text selectable and accessible.
 
 ## Files, saves, and privacy
 
@@ -71,7 +71,7 @@ Game archives are read in bounded ranges and are not uploaded. The bundled serve
 
 Save data, configuration, registry values, and achievements are stored in browser-local IndexedDB, isolated by game and profile. The Game options panel supports the original `SAVEDATA.DAT`, `CONFIG.DAT`, and `PADCONFIG.DAT` formats. Import is available before play begins; existing files can also be exported as backups.
 
-Browser storage belongs to the current browser origin and profile. Clearing site data removes it, so export important saves periodically. More detail is available in the [platform](docs/platform.md) and [save system](docs/save-system.md) documentation.
+Browser storage belongs to the current browser origin and profile. Clearing site data removes it, so export important saves periodically.
 
 To test from another device on your local network, run:
 
