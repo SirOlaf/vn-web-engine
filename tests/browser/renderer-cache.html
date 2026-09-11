@@ -1,0 +1,94 @@
+<!doctype html><meta charset="utf-8" /><title>Renderer cache equivalence</title>
+<p id="status">Running…</p>
+<canvas hidden></canvas>
+<script type="module">
+  import {CanvasDrawTarget} from './performance-exact.js';
+  const status = document.querySelector('#status');
+  try {
+    const target = new CanvasDrawTarget(document.querySelector('canvas'), 8, 8),
+      vertices = new Float32Array(54),
+      uv = new Float32Array(12);
+    for (const [i, [x, y]] of [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [0, 1],
+      [1, 0],
+      [1, 1],
+    ].entries()) {
+      vertices.set([x * 8 + 0.25, y * 8 + 0.125, 0, 0.7, 0.8, 0.9, 0.6, x, y], i * 9);
+      uv.set([x * 0.75 + 0.125, y * 0.5 + 0.25], i * 2);
+    }
+    const images = Array.from({length: 4}, (_, id) => ({
+      width: 2,
+      height: 2,
+      pixels: Uint8Array.from({length: 16}, (_, i) => (i * 31 + id * 61) % 256),
+    }));
+    const fragment =
+      'vec4 shade(vec4 c,vec4 tint){return vec4(c.r,texture(additionalAtlas0,additionalUV0).r,texture(additionalAtlas1,additionalUV1).g,c.a)*tint;}';
+    const layouts = [
+      [true, 2],
+      [false, 0],
+      [false, 2],
+      [true, 0],
+      [true, 1],
+      [false, 1],
+    ];
+    const command = (mask, extras) => ({
+      kind: 'triangles',
+      texture: 0,
+      vertices,
+      normalizedUV: true,
+      fragment,
+      parameters: new Float32Array(32),
+      additionalTextures: Array.from({length: extras}, (_, i) => ({
+        texture: 1 + i,
+        uv,
+        filter: i ? 'linear' : 'nearest',
+      })),
+      ...(mask
+        ? {mask: {texture: 3, uv, scale: 1.25, bias: 0.125, channel: 'red', invert: true}}
+        : {}),
+    });
+    const draw = () => {
+      for (const [mask, extras] of layouts)
+        target.draw({sprites: [], commands: [command(mask, extras)]}, (id) => images[id]);
+    };
+    draw();
+    // Equal byte strides with different mask/extra bindings must have distinct VAOs.
+    // After warming each layout, neither reflection nor pointer rebuilding is needed.
+    const gl = target.gl,
+      saved = new Map();
+    for (const name of [
+      'getParameter',
+      'getUniformLocation',
+      'getAttribLocation',
+      'vertexAttribPointer',
+    ]) {
+      saved.set(name, gl[name]);
+      gl[name] = () => {
+        throw Error(`Repeated cached setup: ${name}`);
+      };
+    }
+    try {
+      draw();
+      layouts.reverse();
+      draw();
+      images[0].pixels[0] ^= 255;
+      target.invalidate(images[0]);
+      draw();
+      images[1] = {...images[1], pixels: images[1].pixels.slice().reverse()};
+      draw();
+    } finally {
+      for (const [name, method] of saved) gl[name] = method;
+    }
+    target.dispose();
+    draw();
+    target.dispose();
+    status.textContent =
+      'PASS: 36 exact baseline layout transitions, including equal strides with different bindings, invalidation, replacement and reinitialization; no repeated capability/location queries or attribute-pointer setup after warmup.';
+  } catch (e) {
+    status.textContent = `FAIL: ${e.stack}`;
+    throw e;
+  }
+</script>

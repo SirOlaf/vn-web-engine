@@ -1,0 +1,46 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {runtime, literal} from './sc3-fixtures.mjs';
+import {advancePlayTime} from '../dist/engines/mages/games/chaos-head-noah/sc3/play-time.js';
+import {NoahState} from '../dist/engines/mages/games/chaos-head-noah/sc3/noah-state.js';
+
+test('play time counts complete scheduling passes, not budget resumptions', async () => {
+  const vm = runtime([0xfe, ...literal(0), 0xfe, ...literal(0), 0, 0]);
+  await vm.boot();
+  assert.equal(vm.runFrame(1), 'budget');
+  assert.equal(vm.state.get(0x17abda4), 1);
+  assert.equal(vm.runFrame(1), 'budget');
+  assert.equal(vm.state.get(0x17abda4), 1);
+  assert.equal(vm.runFrame(), 'complete');
+  for (let i = 1; i < 59; i++) vm.runFrame();
+  assert.equal(vm.state.variable(0x1f44 / 4), 0);
+  vm.runFrame();
+  assert.equal(vm.state.variable(0x1f44 / 4), 1);
+  assert.equal(vm.state.variable(0x4340 / 4), 1);
+  assert.equal(vm.state.variable(0x222c / 4), 1);
+  vm.state.put(0x81007c, 1);
+  for (let i = 0; i < 120; i++) vm.runFrame();
+  assert.equal(vm.state.variable(0x1f44 / 4), 1);
+  vm.state.put(0x81007c, 0);
+  for (let i = 0; i < 60; i++) vm.runFrame();
+  assert.equal(vm.state.variable(0x1f44 / 4), 2);
+});
+test('native play-time caps, unsigned wrap and a pending paused tick are preserved', () => {
+  const s = new NoahState(() => 0);
+  s.put(0x81007c, 1);
+  s.put(0x17abda4, 60);
+  s.setVariable(0x4340 / 4, 3599999);
+  s.setVariable(0x1f44 / 4, 359999999);
+  s.setVariable(0x222c / 4, 0x7fffffff);
+  advancePlayTime(s);
+  assert.equal(s.variable(0x4340 / 4), 3599999);
+  assert.equal(s.variable(0x1f44 / 4), 359999999);
+  assert.equal(s.variable(0x222c / 4), -2147483648);
+  assert.equal(s.get(0x17abda4), 0);
+  s.put(0x17abda4, 60);
+  s.setVariable(0x4340 / 4, -1);
+  s.setVariable(0x1f44 / 4, -1);
+  advancePlayTime(s);
+  assert.equal(s.variable(0x4340 / 4), 0);
+  assert.equal(s.variable(0x1f44 / 4), 0);
+});

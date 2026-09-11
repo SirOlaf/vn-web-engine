@@ -1,0 +1,55 @@
+<!doctype html><meta charset="utf-8" /><title>Compositor reference checks</title>
+<style>
+  body {
+    background: #202126;
+    color: #eee;
+    font: 18px system-ui;
+  }
+  canvas {
+    width: 480px;
+    image-rendering: pixelated;
+    border: 1px solid #aaa;
+  }
+</style>
+<h1>Off-screen compositor checks</h1>
+<p id="status">Running…</p>
+<canvas></canvas>
+<script type="module">
+  import {Surface, SurfaceTargets} from './graphics/surface.js';
+  import {SurfacePresenter} from './graphics/surface-presenter.js';
+  const status = document.querySelector('#status');
+  try {
+    const targets = new SurfaceTargets(),
+      a = targets.create(180, 1920, 1080),
+      b = targets.create(181, 1920, 1080);
+    a.clear([255, 0, 0, 128]);
+    b.clear([0, 0, 255, 255]);
+    b.blit(a);
+    const preview = new Surface(16, 9);
+    preview.blit(b, {destination: {x: 0, y: 0, width: 16, height: 9}});
+    const canvas = document.querySelector('canvas'),
+      presenter = new SurfacePresenter(canvas);
+    presenter.present(preview);
+    const pixel = () => Array.from(canvas.getContext('2d').getImageData(0, 0, 1, 1).data);
+    const expect = (value, want) => {
+      if (String(value) !== String(want)) throw Error(`${value} != ${want}`);
+    };
+    expect(pixel(), [128, 0, 127, 255]);
+    preview.clear([255, 0, 0, 128]);
+    presenter.present(preview);
+    expect(pixel(), [255, 0, 0, 128]);
+    preview.clear();
+    presenter.present(preview);
+    expect(pixel(), [0, 0, 0, 0]);
+    preview.blit(b, {destination: {x: 0, y: 0, width: 16, height: 9}});
+    presenter.present(preview);
+    expect([canvas.width, canvas.height], [16, 9]);
+    targets.dispose();
+    preview.dispose();
+    status.textContent =
+      'PASS: two 1920×1080 off-screen targets; source-over pixels; transparent presentation; clear and resize (4 checks).';
+  } catch (error) {
+    status.textContent = `FAIL: ${error.stack}`;
+    throw error;
+  }
+</script>

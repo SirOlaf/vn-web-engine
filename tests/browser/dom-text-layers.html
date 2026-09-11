@@ -1,0 +1,98 @@
+<!doctype html><meta charset="utf-8" /><title>DOM text interaction layers</title>
+<link rel="stylesheet" href="../game.css" />
+<style>
+  #stage {
+    position: relative;
+    width: 960px;
+    height: 540px;
+    background: #ddd;
+  }
+  .game-glyph-slots {
+    transform: scale(0.5);
+  }
+</style>
+<p id="status">Running…</p>
+<div id="stage"></div>
+<script type="module">
+  import {DomGlyphSlots} from './text/dom-glyph-slots.js';
+  const layer = new DomGlyphSlots(document.querySelector('#stage'));
+  const slot = (id, y) => ({
+    id,
+    glyphs: [...id].map((text, i) => ({
+      id: i,
+      text,
+      line: 0,
+      x: 40 + i * 30,
+      y,
+      width: 30,
+      height: 40,
+      color: 0,
+      alpha: 255,
+    })),
+  });
+  const story = slot('Story text', 600),
+    menu = slot('Pause menu', 100),
+    dialog = slot('Confirmation', 250);
+  const assert = (ok, message) => {
+    if (!ok) throw Error(message);
+  };
+  const span = (id) => layer.element.querySelector(`[data-text-id="${id}"] [data-game-text]`);
+  const select = (text) => {
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  };
+  try {
+    layer.show(story, 0);
+    const text = span(story.id),
+      node = text.firstChild;
+    text.focus();
+    select(text);
+    assert(getSelection().toString() === story.id, 'Story must initially be selectable');
+    layer.show({...story, interactive: false}, 0);
+    layer.show(menu, 2);
+    assert(!getSelection().toString(), 'Opening menu must clear covered selection');
+    assert(document.activeElement !== text, 'Opening menu must release covered focus');
+    assert(
+      text.parentElement.inert && text.tabIndex === -1,
+      'Covered text must be inert and untabbable',
+    );
+    assert(
+      getComputedStyle(text).pointerEvents === 'none' &&
+        getComputedStyle(text).userSelect === 'none',
+      'Covered text must reject pointer and selection',
+    );
+    text.focus();
+    assert(document.activeElement !== text, 'Covered text must reject focus');
+    const m = span(menu.id);
+    m.focus();
+    select(m);
+    assert(
+      document.activeElement === m && getSelection().toString() === menu.id,
+      'Top menu must accept focus and selection',
+    );
+    layer.show({...menu, interactive: false}, 2);
+    layer.show(dialog, 4);
+    assert(
+      !getSelection().toString() && m.parentElement.inert,
+      'Nested dialog must deactivate menu',
+    );
+    layer.retain(new Set([story.id]));
+    layer.show(story, 0);
+    text.focus();
+    select(text);
+    assert(
+      text.firstChild === node &&
+        !text.parentElement.inert &&
+        document.activeElement === text &&
+        getSelection().toString() === story.id,
+      'Closing overlays must restore interaction and retain Text node',
+    );
+    document.querySelector('#status').textContent =
+      'PASS: menu and nested dialog isolate interaction; selection and focus clear; closing restores the original text node.';
+  } catch (error) {
+    document.querySelector('#status').textContent = `FAIL: ${error.message}`;
+    throw error;
+  }
+</script>

@@ -1,0 +1,60 @@
+<!doctype html><meta charset="utf-8" /><title>Canvas draw-list checks</title>
+<style>
+  body {
+    background: #171b24;
+    color: white;
+    font: 18px system-ui;
+  }
+  canvas {
+    width: 320px;
+    image-rendering: pixelated;
+  }
+</style>
+<h1>Canvas draw-list checks</h1>
+<p id="status">Running…</p>
+<canvas></canvas>
+<script type="module">
+  import {CanvasDrawTarget} from './graphics/draw-list.js';
+  const status = document.querySelector('#status');
+  try {
+    const canvas = document.querySelector('canvas'),
+      target = new CanvasDrawTarget(canvas, 4, 4),
+      source = {width: 2, height: 1, pixels: new Uint8Array([255, 128, 64, 128, 0, 255, 0, 255])};
+    const sprite = (changes = {}) => ({
+      texture: 0,
+      source: {x: 0, y: 0, width: 1, height: 1},
+      destination: {x: 0, y: 0, width: 4, height: 4},
+      color: 0xffffff,
+      alpha: 255,
+      filter: 'nearest',
+      ...changes,
+    });
+    const pixel = () => [...canvas.getContext('2d').getImageData(1, 1, 1, 1).data];
+    let checks = 0;
+    const expect = (actual, wanted) => {
+      if (actual.some((v, i) => Math.abs(v - wanted[i]) > 1)) throw Error(`${actual} != ${wanted}`);
+      checks++;
+    };
+    target.draw({sprites: [sprite()]}, () => source);
+    expect(pixel(), [128, 64, 32, 255]);
+    target.draw({sprites: [sprite({color: 0x80ff00})]}, () => source);
+    expect(pixel(), [64, 64, 0, 255]);
+    target.draw({sprites: [sprite({alpha: 128})]}, () => source);
+    expect(pixel(), [64, 32, 16, 255]);
+    target.draw({sprites: [sprite({source: {x: 1, y: 0, width: 1, height: 1}})]}, () => source);
+    expect(pixel(), [0, 255, 0, 255]);
+    source.pixels.set([0, 0, 255, 255], 4);
+    target.invalidate(source);
+    target.draw({sprites: [sprite({source: {x: 1, y: 0, width: 1, height: 1}})]}, () => source);
+    expect(pixel(), [0, 0, 255, 255]);
+    target.draw({sprites: []}, () => source);
+    expect(pixel(), [0, 0, 0, 255]);
+    target.draw({sprites: [sprite({alpha: 0})]}, () => source);
+    expect(pixel(), [0, 0, 0, 255]);
+    target.dispose();
+    status.textContent = `PASS: ${checks} Canvas checks (RGB modulation, alpha, source crop, texture invalidation and clearing).`;
+  } catch (error) {
+    status.textContent = `FAIL: ${error.stack}`;
+    throw error;
+  }
+</script>

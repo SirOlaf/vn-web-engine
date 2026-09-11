@@ -1,0 +1,63 @@
+<!doctype html><meta charset="utf-8" /><title>Real game frame numeric check</title>
+<p id="status">Running…</p>
+<canvas hidden></canvas>
+<script type="module">
+  import {CanvasDrawTarget} from './graphics/draw-list.js';
+  const status = document.querySelector('#status');
+  try {
+    const frame = await (await fetch('./renderer-live/frame.json')).json(),
+      textures = new Map();
+    await Promise.all(
+      frame.textures.map(async (t) =>
+        textures.set(t.id, {
+          width: t.width,
+          height: t.height,
+          pixels: new Uint8Array(await (await fetch(`./renderer-live/${t.id}.rgba`)).arrayBuffer()),
+        }),
+      ),
+    );
+    const commands = frame.commands.map((d) =>
+      d.kind === 'triangles'
+        ? {
+            ...d,
+            vertices: new Float32Array(d.vertices),
+            transform: d.transform ? new Float32Array(d.transform) : undefined,
+            parameters: d.parameters ? new Float32Array(d.parameters) : undefined,
+            additionalTextures: d.additionalTextures?.map((t) => ({
+              ...t,
+              uv: new Float32Array(t.uv),
+            })),
+            mask: d.mask ? {...d.mask, uv: new Float32Array(d.mask.uv)} : undefined,
+          }
+        : d,
+    );
+    let capture;
+    const canvas = document.querySelector('canvas'),
+      target = new CanvasDrawTarget(canvas, 1920, 1080);
+    target.draw(
+      {
+        sprites: [],
+        commands: [...commands, {kind: 'capture', texture: 10000, width: 1920, height: 1080}],
+      },
+      (id) => textures.get(id),
+      (id, image) => {
+        if (id === 10000) capture = image;
+      },
+    );
+    const count = (pixels) => {
+        let n = 0;
+        for (let i = 0; i < pixels.length; i += 4)
+          if (pixels[i] || pixels[i + 1] || pixels[i + 2]) n++;
+        return n;
+      },
+      rendered = count(capture.pixels),
+      presented = count(canvas.getContext('2d').getImageData(0, 0, 1920, 1080).data);
+    if (rendered < 1000 || presented < 1000)
+      throw Error(`Blank real game frame: framebuffer=${rendered}, canvas=${presented}`);
+    status.textContent = `PASS: ${commands.length} real game commands; ${rendered} nonblack framebuffer pixels; ${presented} nonblack presented canvas pixels.`;
+    target.dispose();
+  } catch (e) {
+    status.textContent = `FAIL: ${e.stack}`;
+    throw e;
+  }
+</script>

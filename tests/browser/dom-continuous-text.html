@@ -1,0 +1,93 @@
+<!doctype html><meta charset="utf-8" /><title>Continuous DOM text regression</title>
+<link rel="stylesheet" href="../game.css" />
+<style>
+  #stage {
+    position: relative;
+    width: 960px;
+    height: 540px;
+    background: #ddd;
+  }
+  .game-glyph-slots {
+    transform: scale(0.5);
+  }
+</style>
+<p id="status">Running…</p>
+<div id="stage"></div>
+<script type="module">
+  import {DomGlyphSlots} from './text/dom-glyph-slots.js';
+  const layer = new DomGlyphSlots(document.querySelector('#stage'));
+  const lines = ['ab', 'cdef', '', 'gh ij'],
+    size = 40,
+    lineHeight = 64;
+  const glyphs = lines.flatMap((line, row) =>
+    [...line].map((text, col) => ({
+      id: col,
+      text,
+      line: row,
+      x: 40 + col * size,
+      y: 40 + row * lineHeight,
+      width: size,
+      height: size,
+      color: 0,
+      alpha: 255,
+    })),
+  );
+  const slot = {id: 'body', glyphs},
+    assert = (ok, message) => {
+      if (!ok) throw Error(message);
+    };
+  try {
+    layer.show(slot, 0, 'monospace');
+    const span = layer.element.querySelector('[data-game-text]'),
+      node = span.firstChild;
+    assert(
+      span.childNodes.length === 1 && node.nodeType === Node.TEXT_NODE,
+      'Expected exactly one Text node',
+    );
+    assert(node.data === 'abcdefgh ij', 'Inserted a visual line separator into source text');
+    const rect = (index) => {
+      const r = document.createRange();
+      r.setStart(node, index);
+      r.setEnd(node, index + 1);
+      return r.getBoundingClientRect();
+    };
+    let index = 0;
+    const top = rect(0).top;
+    for (const [row, line] of lines.entries())
+      for (const ch of line) {
+        assert(
+          Math.abs(rect(index).top - top - row * lineHeight * 0.5) < 1,
+          `Wrong visual line for character ${index}: ${rect(index).top - top}`,
+        );
+        index++;
+      }
+    const range = document.createRange();
+    range.setStart(node, 1);
+    range.setEnd(node, 4);
+    assert(range.toString() === 'bcd', 'Dictionary range cannot scan across wrap');
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    assert(getSelection().toString() === 'bcd', 'Selection inserts a wrap separator');
+    assert(range.getClientRects().length === 2, 'Cross-line range did not span two visual rows');
+    // A partly revealed suffix must not move previously revealed characters.
+    getSelection().removeAllRanges();
+    glyphs[0].alpha = 255;
+    for (const g of glyphs.slice(1)) g.alpha = 0;
+    layer.show(slot, 0, 'monospace');
+    assert(
+      span.firstChild === node && node.data === 'a',
+      'Reveal replaced the node or exposed suffix',
+    );
+    for (const g of glyphs) g.alpha = 255;
+    layer.show(slot, 0, 'monospace');
+    assert(
+      span.firstChild === node && node.data === 'abcdefgh ij',
+      'Reveal did not restore continuous text',
+    );
+    document.querySelector('#status').textContent =
+      'PASS: continuous source and selection, dictionary Range across visual rows, short lines, blank rows, spaces, and stable reveal.';
+  } catch (error) {
+    document.querySelector('#status').textContent = `FAIL: ${error.message}`;
+    throw error;
+  }
+</script>

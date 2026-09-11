@@ -1,0 +1,173 @@
+<!doctype html><meta charset="utf-8" /><title>Browser input contract</title>
+<div id="surface" style="width: 640px; height: 480px">
+  <span data-game-text>Selectable game text</span>
+</div>
+<pre id="result">Running…</pre>
+<script type="module">
+  import {BrowserInput} from '../../dist/input/browser-input.js';
+  const surface = document.querySelector('#surface'),
+    result = document.querySelector('#result'),
+    input = new BrowserInput(surface, 1280, 720);
+  let checks = 0;
+  function check(value, message) {
+    if (!value) throw Error(message);
+    checks++;
+  }
+  function key(type, code, target = surface) {
+    target.dispatchEvent(new KeyboardEvent(type, {code, bubbles: true, cancelable: true}));
+  }
+  try {
+    key('keydown', 'Enter');
+    key('keydown', 'Enter');
+    let f = input.sample();
+    check(f.keys.has('Enter') && f.pressed.size === 1, 'held and edge');
+    check(input.sample().pressed.size === 0, 'consume edge');
+    key('keyup', 'Enter');
+    check(input.sample().keys.size === 0, 'release');
+    key('keydown', 'Space', surface.querySelector('span'));
+    check(input.sample().keys.size === 0, 'selectable text exclusion');
+    const r = surface.getBoundingClientRect();
+    surface.dispatchEvent(
+      new PointerEvent('pointermove', {clientX: r.left + 320, clientY: r.top + 240}),
+    );
+    f = input.sample();
+    check(f.x === 640 && f.y === 360 && f.inside, 'letterboxed coordinates');
+    surface.dispatchEvent(
+      new PointerEvent('pointermove', {clientX: r.left + 320, clientY: r.top + 59.8}),
+    );
+    check(!input.sample().inside, 'fractional letterbox margin');
+    surface.dispatchEvent(new WheelEvent('wheel', {deltaY: 10, cancelable: true}));
+    check(input.sample().wheel === -120, 'wheel direction');
+    check(input.sample().wheel === 0, 'consume wheel');
+    key('keydown', 'ArrowUp');
+    surface.dispatchEvent(new Event('blur'));
+    f = input.sample();
+    check(f.keys.size === 0 && f.pressed.size === 0 && !f.inside, 'focus loss');
+    surface.style.width = '0px';
+    surface.dispatchEvent(new PointerEvent('pointermove', {clientX: 0, clientY: 0}));
+    check(!input.sample().inside, 'hidden surface');
+    surface.style.width = '640px';
+    // Synthetic PointerEvents cannot obtain real browser capture. Stub only the
+    // capture API; event routing, coordinates, focus and sampling remain real DOM.
+    let captured;
+    surface.setPointerCapture = (id) => {
+      captured = id;
+    };
+    function touch(type, id = 1, dx = 320, dy = 240, primary = true, target = surface) {
+      const rect = surface.getBoundingClientRect();
+      const e = new PointerEvent(type, {
+        pointerType: 'touch',
+        pointerId: id,
+        isPrimary: primary,
+        button: 0,
+        clientX: rect.left + dx,
+        clientY: rect.top + dy,
+        bubbles: true,
+        cancelable: true,
+      });
+      target.dispatchEvent(e);
+      return e;
+    }
+    touch('pointerdown');
+    check(captured === 1, 'touch capture requested');
+    touch('pointerup');
+    touch('lostpointercapture');
+    touch('pointerleave');
+    let frames = Array.from({length: 4}, () => input.sample());
+    check(
+      frames.map((f) => f.buttons).join() === '0,1,0,0',
+      'tap transitions survive between ticks',
+    );
+    check(
+      frames.every((f) => f.inside && f.x === 640 && f.y === 360),
+      'touch cursor persists after lift',
+    );
+    input.clear();
+    touch('pointerdown', 2, 320, 20);
+    check(!input.sample().inside, 'letterbox touch ignored');
+    touch('pointerdown', 3, 320, 240, true, surface.querySelector('span'));
+    check(!input.sample().inside, 'selectable text touch excluded');
+    touch('pointerdown', 4);
+    input.sample();
+    touch('pointermove', 4, 340);
+    frames = Array.from({length: 2}, () => input.sample());
+    check(
+      frames[0].buttons === 1 &&
+        frames[0].x === 640 &&
+        frames[1].buttons === 1 &&
+        frames[1].x === 680,
+      'touch drag preserves native anchor and scales movement',
+    );
+    touch('pointerdown', 5, 500, 240, false);
+    touch('pointermove', 5, 550, 240, false);
+    touch('pointerup', 5, 550, 240, false);
+    touch('lostpointercapture', 5, 550, 240, false);
+    f = input.sample();
+    check(f.x === 680 && f.buttons === 1, 'secondary finger cannot change an established drag');
+    touch('lostpointercapture', 4);
+    f = input.sample();
+    check(!f.buttons && !f.pressedButtons && !f.inside, 'unexpected capture loss clears drag');
+    touch('pointerdown', 6);
+    touch('pointermove', 6, 350);
+    surface.dispatchEvent(new Event('blur'));
+    f = input.sample();
+    check(!f.buttons && !f.pressedButtons && !f.inside, 'blur clears queued touch input');
+    touch('pointerdown', 7);
+    input.sample();
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    frames = Array.from({length: 3}, () => input.sample());
+    check(frames.map((f) => f.buttons).join() === '2,0,0', 'long press emits one right click');
+    touch('pointerup', 7);
+    check(input.sample().buttons === 0, 'long press lift does not emit left click');
+    input.clear();
+    touch('pointerdown', 10);
+    input.sample();
+    touch('pointerdown', 11, 500, 240, false);
+    check(captured === 11, 'second finger capture requested');
+    frames = Array.from({length: 3}, () => input.sample());
+    check(
+      frames.map((f) => f.buttons).join() === '2,0,0' && frames.every((f) => f.x === 640),
+      'two-finger press emits right click at primary cursor',
+    );
+    touch('pointerup', 10);
+    touch('lostpointercapture', 10);
+    touch('pointermove', 11, 520, 240, false);
+    touch('pointerup', 11, 520, 240, false);
+    touch('lostpointercapture', 11, 520, 240, false);
+    check(input.sample().buttons === 0, 'either lift order consumes the two-finger gesture');
+    touch('pointerdown', 12);
+    input.sample();
+    touch('pointerdown', 13, 500, 240, false);
+    touch('pointercancel', 13, 500, 240, false);
+    f = input.sample();
+    check(
+      !f.buttons && !f.pressedButtons && !f.inside,
+      'secondary cancellation drops queued right click',
+    );
+    input.clear();
+    const rect = surface.getBoundingClientRect();
+    surface.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        pointerType: 'mouse',
+        pointerId: 8,
+        button: 2,
+        clientX: rect.left + 320,
+        clientY: rect.top + 240,
+        cancelable: true,
+      }),
+    );
+    f = input.sample();
+    check(f.buttons === 2 && f.pressedButtons === 2, 'desktop right button preserved');
+    surface.dispatchEvent(
+      new PointerEvent('pointerup', {pointerType: 'mouse', pointerId: 8, button: 2}),
+    );
+    check(input.sample().buttons === 0, 'desktop release preserved');
+    input.dispose();
+    key('keydown', 'Enter');
+    check(input.sample().keys.size === 0, 'dispose listeners');
+    result.textContent = `PASS: ${checks} browser input checks`;
+  } catch (error) {
+    result.textContent = 'FAIL: ' + error.stack;
+    input.dispose();
+  }
+</script>

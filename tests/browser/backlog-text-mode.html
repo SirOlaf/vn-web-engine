@@ -1,0 +1,251 @@
+<!doctype html><meta charset="utf-8" /><title>History text mode regression</title>
+<link rel="stylesheet" href="../game.css" />
+<style>
+  [hidden] {
+    display: none !important;
+  }
+</style>
+<p id="status">Running…</p>
+<script type="module">
+  import {CanvasDrawTarget} from './graphics/draw-list.js';
+  import {BrowserDomText} from './engines/mages/games/chaos-head-noah/sc3/browser-dom-text.js';
+  import {NoahState} from './engines/mages/games/chaos-head-noah/sc3/noah-state.js';
+  import {drawBacklogText} from './engines/mages/games/chaos-head-noah/sc3/backlog-draw.js';
+  import {BacklogText} from './engines/mages/games/chaos-head-noah/sc3/backlog-text.js';
+  import {recordMessageHistory} from './engines/mages/games/chaos-head-noah/sc3/opcodes/message-wait.js';
+  import {initializeBacklog} from './engines/mages/games/chaos-head-noah/sc3/opcodes/backlog.js';
+  import {
+    collectTextFrame,
+    historyLayouts,
+  } from './engines/mages/games/chaos-head-noah/sc3/dom-text-data.js';
+  // Synthetic channels deliberately differ. An all-white sample cannot detect
+  // a missing resource swizzle in the native alpha-only history shader.
+  const assert = (value, message) => {
+    if (!value) throw Error(message);
+  };
+  const parent = document.createElement('div'),
+    canvas = document.createElement('canvas');
+  parent.append(canvas);
+  document.body.append(parent);
+  const native = new CanvasDrawTarget(canvas, 1920, 1080),
+    dom = new BrowserDomText(parent, canvas);
+  try {
+    const s = new NoahState(() => 0);
+    s.put(0x810074, 1);
+    s.put(0x810080, 32);
+    s.put(0x66d8e0, 2);
+    for (let i = 0; i < 2; i++) {
+      s.put(0x6cf810 + i * 2, i + 1, 2);
+      s.bytes(0x69ead0 + i * 4, 4).set([32, 32, 32, 32]);
+      s.put(0x79a2f0 + i * 4, i * 32, 2);
+      s.put(0x7266c0 + i, i ? 2 : 0, 1);
+      historyLayouts(s).set(i, {role: 'body', line: 0});
+    }
+    const textures = new Map();
+    for (const [id, width, height] of [
+      [91, 144, 48],
+      [154, 2048, 1080],
+    ]) {
+      const at = 0x1d1b200 + id * 0x1b0;
+      s.put(at + 0x32, 1, 1);
+      s.put(at + 0x76, width, 2);
+      s.put(at + 0x78, height, 2);
+      const pixels = new Uint8Array(width * height * 4);
+      for (let p = 0; p < pixels.length; p += 4)
+        pixels.set(
+          id === 91 ? [17, 33, 65, ((p / 4) % width) % 48 < 24 ? 0 : 255] : [255, 19, 37, 0],
+          p,
+        );
+      textures.set(id, {width, height, pixels});
+    }
+    const commands = [
+      {
+        kind: 'solid',
+        destination: {x: 0, y: 0, width: 1920, height: 1080},
+        color: 0x404040,
+        alpha: 255,
+      },
+      ...drawBacklogText(s, 255).commands,
+    ];
+    const frame = {
+      pass: 0,
+      message: 0,
+      revealed: true,
+      draw: {sprites: [], commands, regions: []},
+      textures,
+      text: collectTextFrame(commands),
+    };
+    const check = (label) => {
+      const context = canvas.getContext('2d');
+      for (const [x, rgb] of [
+        [160, [64, 64, 64]],
+        [184, [255, 255, 255]],
+        [208, [64, 64, 64]],
+        [232, [255, 112, 128]],
+      ]) {
+        const actual = context.getImageData(x, 150, 1, 1).data;
+        assert(
+          rgb.every((n, i) => Math.abs(n - actual[i]) <= 2),
+          `${label}: history pixel ${x} expected ${rgb}, got ${[...actual]}`,
+        );
+      }
+    };
+    const draw = () => native.draw(frame.draw, (id) => textures.get(id));
+    draw();
+    check('native before DOM');
+    dom.show(frame, new Map());
+    await new Promise((resolve, reject) => {
+      const started = performance.now();
+      const poll = () => {
+        if (dom.text.element.querySelector('[data-game-text]')) resolve();
+        else if (performance.now() - started > 10000) reject(Error('Atlas font did not load'));
+        else setTimeout(poll, 20);
+      };
+      poll();
+    });
+    const node = dom.text.element.querySelector('[data-game-text]').firstChild;
+    assert(
+      node.nodeType === Node.TEXT_NODE && node.data === '01',
+      'History must remain a single Unicode Text node',
+    );
+    for (let i = 0; i < 3; i++) {
+      draw();
+      check('native under DOM');
+      dom.hide();
+      check('switch to native');
+      await new Promise((r) => requestAnimationFrame(r));
+      draw();
+      check('next native frame');
+      dom.show(frame, new Map());
+      assert(
+        dom.text.element.querySelector('[data-game-text]').firstChild === node,
+        'Switch replaced the history Text node',
+      );
+    }
+    // Record actual encoded messages through the native history opcode while DOM
+    // presentation is active; inspect both rings rather than inferring from pixels.
+    const recording = new NoahState(() => 0);
+    recording.initialize();
+    [0, 10, 10, 0, 1, 100, 0, 0, 24, 24, 600, 600, 0, 0, 32, 32, 16, 16, 8, 4, 0, 0, 0, 0].forEach(
+      (n, i) => recording.put(0x7fbf00 + i * 2, n, 2),
+    );
+    for (const [id, image] of textures) {
+      const at = 0x1d1b200 + id * 0x1b0;
+      recording.put(at + 0x32, 1, 1);
+      recording.put(at + 0x76, image.width, 2);
+      recording.put(at + 0x78, image.height, 2);
+    }
+    const stored = new Map([
+      [100, [128, 1, 255]],
+      [200, [128, 2, 255]],
+      [300, [128, 1, 128, 2, 255]],
+    ]);
+    const backlog = new BacklogText(recording, {
+      byte: (address) => {
+        for (const [base, bytes] of stored)
+          if (address >= base && address < base + bytes.length) return bytes[address - base];
+        throw Error('Missing synthetic message');
+      },
+      message: () => 0,
+      expression: () => {
+        throw Error('Unexpected expression');
+      },
+    });
+    const opaque = {...textures.get(91), pixels: textures.get(91).pixels.slice()};
+    for (let p = 3; p < opaque.pixels.length; p += 4) opaque.pixels[p] = 255;
+    const recordTextures = new Map(textures);
+    recordTextures.set(91, opaque);
+    const recordFrame = () => {
+      initializeBacklog(recording);
+      const commands = [frame.draw.commands[0], ...drawBacklogText(recording, 255).commands];
+      return {
+        ...frame,
+        draw: {sprites: [], commands, regions: []},
+        textures: recordTextures,
+        text: collectTextFrame(commands, recording),
+      };
+    };
+    const showRecorded = async () => {
+      const f = recordFrame(),
+        before = recording.bytes(0x531000, 0x344000).slice();
+      native.draw(f.draw, (id) => recordTextures.get(id));
+      dom.show(f, new Map());
+      await new Promise((resolve, reject) => {
+        const started = performance.now();
+        const poll = () => {
+          const nodes = [...dom.text.element.querySelectorAll('[data-text-id]')].filter(
+            (n) => !n.hidden,
+          );
+          if (nodes.length === f.text.slots.length) resolve();
+          else if (performance.now() - started > 10000)
+            reject(Error('Recorded history font did not load'));
+          else setTimeout(poll, 20);
+        };
+        poll();
+      });
+      const after = recording.bytes(0x531000, 0x344000);
+      assert(
+        before.every((n, i) => n === after[i]),
+        'DOM presentation modified native history state',
+      );
+      return f;
+    };
+    recording.put(0x179e680, 100, 8);
+    recordMessageHistory({state: recording, backlog}, 0);
+    await showRecorded();
+    // Drain a continuation plus the current message using the same native path.
+    recording.put(0x179e6d0, 1);
+    recording.put(0x179e700, 200, 8);
+    recording.put(0x179e680, 300, 8);
+    recordMessageHistory({state: recording, backlog}, 0);
+    const recordedFrame = await showRecorded();
+    assert(recording.get(0x810074) === 3, 'DOM mode lost history entries');
+    for (const [entry, expected] of [
+      [0, [1]],
+      [1, [2]],
+      [2, [1, 2]],
+    ]) {
+      const start = recording.get(0x7cb040 + entry * 4);
+      assert(
+        recording.get(0x66d8e0 + entry * 4) === expected.length,
+        'History token count changed',
+      );
+      expected.forEach((id, i) =>
+        assert(
+          recording.view(0x6cf810 + (start + i) * 2, 2).getUint16(0, true) === id,
+          'Stored history glyph changed',
+        ),
+      );
+    }
+    const texts = [...dom.text.element.querySelectorAll('[data-game-text]')].map(
+      (n) => n.textContent,
+    );
+    assert(
+      JSON.stringify(texts) === JSON.stringify(['0', '1', '01']),
+      'A recorded DOM entry is empty',
+    );
+    dom.hide();
+    native.draw(recordedFrame.draw, (id) => recordTextures.get(id));
+    historyLayouts(recording).clear();
+    const fallback = recordFrame();
+    assert(
+      fallback.text.omit.size === 0 &&
+        fallback.draw.commands.length === recordedFrame.draw.commands.length,
+      'Missing DOM metadata suppressed native history',
+    );
+    dom.show(fallback, new Map());
+    assert(
+      [...dom.text.element.querySelectorAll('[data-text-id]')].every((n) => n.hidden),
+      'Native fallback left stale DOM entries',
+    );
+    document.querySelector('#status').textContent =
+      'PASS: history channels, three mode switches, recording under DOM, continuation and native fallback';
+  } catch (error) {
+    document.querySelector('#status').textContent = `FAIL: ${error.message}`;
+    throw error;
+  } finally {
+    dom.dispose();
+    native.dispose();
+    parent.remove();
+  }
+</script>

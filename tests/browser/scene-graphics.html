@@ -1,0 +1,111 @@
+<!doctype html><meta charset="utf-8" /><title>Scene graphics verification</title>
+<style>
+  body {
+    margin: 16px;
+    background: #161616;
+    color: #eee;
+    font: 16px system-ui;
+  }
+  canvas {
+    width: 100%;
+    max-width: 1280px;
+    display: block;
+    margin-top: 16px;
+  }
+  button,
+  select {
+    font: inherit;
+    margin-right: 8px;
+  }
+  pre {
+    white-space: pre-wrap;
+  }
+</style>
+<h1>First scene graphics</h1>
+<p id="status">Loading captured native-path scene frames…</p>
+<select id="frame" aria-label="Captured scene frame"></select
+><button id="play">Animate captured frames</button
+><canvas id="scene" aria-label="First scene"></canvas>
+<pre id="checks"></pre>
+<script type="module">
+  import {CanvasDrawTarget} from '/dist/graphics/draw-list.js';
+  const status = document.querySelector('#status'),
+    canvas = document.querySelector('#scene'),
+    select = document.querySelector('#frame'),
+    target = new CanvasDrawTarget(canvas, 1920, 1080);
+  try {
+    const data = await (await fetch('/dist/scene-qa/frames.json')).json(),
+      textures = new Map();
+    await Promise.all(
+      data.textures.map(async (t) =>
+        textures.set(t.id, {
+          ...t,
+          pixels: new Uint8Array(await (await fetch(`/dist/scene-qa/${t.id}.rgba`)).arrayBuffer()),
+        }),
+      ),
+    );
+    for (const frame of data.frames)
+      for (const d of frame.commands)
+        if (d.kind === 'triangles') {
+          d.vertices = new Float32Array(d.vertices);
+          if (d.transform) d.transform = new Float32Array(d.transform);
+        }
+    data.frames.forEach((f, i) => select.add(new Option(`Pass ${f.pass}`, i)));
+    select.value = String(data.frames.length - 1);
+    const draw = () => {
+      const frame = data.frames[Number(select.value)];
+      target.draw(
+        {sprites: frame.commands.filter((d) => !d.kind), commands: frame.commands},
+        (id) => textures.get(id),
+      );
+      status.textContent = `${frame.label} · pass ${frame.pass} · ${frame.commands.filter((d) => d.kind === 'triangles').reduce((n, d) => n + d.vertices.length / 27, 0)} rain triangles`;
+    };
+    select.onchange = draw;
+    draw();
+    let timer;
+    document.querySelector('#play').onclick = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = undefined;
+        return;
+      }
+      timer = setInterval(() => {
+        select.value = String((Number(select.value) + 1) % data.frames.length);
+        draw();
+      }, 250);
+    };
+    // Generic backend probes: interpolated vertex alpha, tint, draw order and additive blend.
+    const probe = document.createElement('canvas'),
+      renderer = new CanvasDrawTarget(probe, 8, 8),
+      white = {width: 1, height: 1, pixels: new Uint8Array([255, 255, 255, 255])};
+    const vertices = new Float32Array([
+      0, 0, 1, 1, 0, 0, 0, 0, 0, 8, 0, 1, 1, 0, 0, 1, 0, 0, 0, 8, 1, 1, 0, 0, 0, 0, 0,
+    ]);
+    const mesh = {kind: 'triangles', texture: 1, vertices},
+      solid = {
+        kind: 'solid',
+        destination: {x: 0, y: 0, width: 8, height: 8},
+        color: 0x0000ff,
+        alpha: 255,
+      };
+    renderer.draw({sprites: [], commands: [solid, mesh]}, () => white);
+    const pixels = probe.getContext('2d').getImageData(0, 0, 8, 8).data,
+      p = (x, y) => [...pixels.slice((y * 8 + x) * 4, (y * 8 + x) * 4 + 4)],
+      left = p(0, 0),
+      right = p(6, 0);
+    if (!(left[0] < right[0] && left[2] > right[2] && left[1] === 0 && right[1] === 0))
+      throw new Error(`Triangle interpolation failure: ${left},${right}`);
+    renderer.draw({sprites: [], commands: [solid, {...mesh, blend: 'add'}]}, () => white);
+    const additive = probe.getContext('2d').getImageData(6, 0, 1, 1).data;
+    if (additive[0] < 180 || additive[2] !== 255)
+      throw new Error(`Additive triangle failure: ${additive}`);
+    renderer.draw({sprites: [], commands: [mesh, solid]}, () => white);
+    const covered = probe.getContext('2d').getImageData(0, 0, 1, 1).data;
+    if (covered[0] !== 0 || covered[2] !== 255) throw new Error('Triangle draw order failure');
+    document.querySelector('#checks').textContent =
+      `PASS: interpolated alpha/tint, additive blend, painter order.\n${data.frames.length} real-script frame captures rendered using the browser Canvas/WebGL backend.`;
+    renderer.dispose();
+  } catch (error) {
+    status.textContent = `FAIL: ${error.stack ?? error}`;
+  }
+</script>

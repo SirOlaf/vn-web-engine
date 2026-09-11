@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8" /><title>NOAH native paths and achievements</title>
+<pre id="result">Running…</pre>
+<script type="module">
+  import {openBrowserPlatform} from '../../dist/platform/services.js';
+  import {readFile} from '../../dist/platform/filesystem.js';
+  import {NOAH_PATHS, NOAH_WINDOWS} from '../../dist/engines/mages/games/chaos-head-noah/paths.js';
+  import {StoredAchievements} from '../../dist/platform/achievements.js';
+  const game = 'noah-path-contract',
+    profile = crypto.randomUUID(),
+    output = document.querySelector('#result');
+  let platform;
+  const equal = (a, b) => {
+    if (JSON.stringify(a) !== JSON.stringify(b))
+      throw Error(`${JSON.stringify(a)} != ${JSON.stringify(b)}`);
+  };
+  try {
+    platform = await openBrowserPlatform(game, profile, undefined, NOAH_WINDOWS);
+    await platform.windowsFiles.commit([
+      {kind: 'write', path: NOAH_PATHS.config, data: Uint8Array.of(108, 0, 255)},
+      {kind: 'write', path: 'C:\\Elsewhere\\CONFIG.DAT', data: Uint8Array.of(2)},
+    ]);
+    const a = new StoredAchievements(platform.hostState, 'chaos-head-noah'),
+      b = new StoredAchievements(platform.hostState, 'another-game');
+    a.unlock(31);
+    b.unlock(1);
+    await Promise.all([a.settle(), b.settle()]);
+    platform.close();
+    platform = await openBrowserPlatform(game, profile, undefined, NOAH_WINDOWS);
+    equal(
+      [...(await readFile(platform.windowsFiles, NOAH_PATHS.directory + '\\\\config.dat'))],
+      [108, 0, 255],
+    );
+    equal([...(await readFile(platform.windowsFiles, 'C:/Elsewhere/config.dat'))], [2]);
+    const restored = new StoredAchievements(platform.hostState, 'chaos-head-noah');
+    await restored.load();
+    equal(restored.identifier(31), 'chaos-head-noah:31');
+    equal(restored.has(31), true);
+    equal(restored.has(1), false);
+    output.textContent =
+      'PASS: native Windows paths, distinct directories, database reopen, stable game achievement IDs and cross-game isolation';
+  } catch (error) {
+    output.textContent = 'FAIL: ' + error.stack;
+  } finally {
+    platform?.close();
+    indexedDB.deleteDatabase(`vn-runtime:${JSON.stringify([game, profile])}`);
+  }
+</script>

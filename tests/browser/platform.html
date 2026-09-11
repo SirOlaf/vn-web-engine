@@ -1,0 +1,109 @@
+<!doctype html><meta charset="utf-8" /><title>Platform storage tests</title>
+<h1>Platform storage tests</h1>
+<button id="run">Run storage tests</button><button id="reload">Write reload fixture</button
+><button id="check">Check reload fixture</button>
+<pre id="result" role="status">Ready</pre>
+<script type="module">
+  import {IndexedDbStore} from '../../dist/platform/store.js';
+  import {StoredFileSystem, readFile} from '../../dist/platform/filesystem.js';
+  import {StoredRegistry, registryDword} from '../../dist/platform/registry.js';
+  import {storageContract, equal, rejects} from '../platform-contract.mjs';
+  const output = document.querySelector('#result');
+  function bind(id, fn) {
+    document.querySelector(id).onclick = async () => {
+      output.textContent = 'Running';
+      try {
+        await fn();
+        output.textContent = 'PASS';
+      } catch (e) {
+        output.textContent = e.stack || String(e);
+      }
+    };
+  }
+  function remove(ns) {
+    return new Promise((resolve, reject) => {
+      const r = indexedDB.deleteDatabase(`vn-runtime:${JSON.stringify(ns)}`);
+      r.onsuccess = resolve;
+      r.onerror = () => reject(r.error);
+      r.onblocked = () => reject(new Error('cleanup blocked'));
+    });
+  }
+  bind('#run', async () => {
+    const ns = ['platform-contract', crypto.randomUUID()];
+    const store = await IndexedDbStore.open(ns);
+    let other;
+    try {
+      await storageContract(store);
+      other = await IndexedDbStore.open(ns);
+      await store.update((r) => {
+        r.set('shared', Uint8Array.of(0));
+      });
+      await Promise.all(
+        Array.from({length: 20}, (_, i) =>
+          (i % 2 ? store : other).update((r) => {
+            r.set('shared', Uint8Array.of(r.get('shared')[0] + 1));
+          }),
+        ),
+      );
+      equal(
+        [...(await other.snapshot()).get('shared')],
+        [20],
+        'independent connections serialize updates',
+      );
+      await rejects(
+        () =>
+          store.update((r) => {
+            r.set('shared', Uint8Array.of(99));
+            throw new Error('abort browser transaction');
+          }),
+        /abort browser/,
+      );
+      equal([...(await other.snapshot()).get('shared')], [20]);
+      store.close();
+      await rejects(() => store.snapshot(), /closed/);
+      const reopened = await IndexedDbStore.open(ns);
+      try {
+        equal([...(await reopened.snapshot()).get('shared')], [20]);
+      } finally {
+        reopened.close();
+      }
+      const isolatedNs = [...ns, 'other-profile'],
+        isolated = await IndexedDbStore.open(isolatedNs);
+      try {
+        equal((await isolated.snapshot()).size, 0);
+      } finally {
+        isolated.close();
+        await remove(isolatedNs);
+      }
+    } finally {
+      store.close();
+      other?.close();
+      await remove(ns);
+    }
+  });
+  const ns = ['platform-browser-reload', 'test-only'],
+    key = {hive: 'HKCU', view: '32', path: 'Software\\Reload'};
+  bind('#reload', async () => {
+    const store = await IndexedDbStore.open(ns);
+    try {
+      await new StoredFileSystem(store).commit([
+        {kind: 'write', path: '/save', data: Uint8Array.of(0, 255, 4)},
+      ]);
+      const reg = new StoredRegistry(store);
+      await reg.createKey(key);
+      await reg.setValue(key, 'setting', registryDword(23));
+    } finally {
+      store.close();
+    }
+  });
+  bind('#check', async () => {
+    const store = await IndexedDbStore.open(ns);
+    try {
+      equal([...(await readFile(new StoredFileSystem(store), '/save'))], [0, 255, 4]);
+      equal([...(await new StoredRegistry(store).getValue(key, 'SETTING')).data], [23, 0, 0, 0]);
+    } finally {
+      store.close();
+      await remove(ns);
+    }
+  });
+</script>

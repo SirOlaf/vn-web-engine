@@ -1,0 +1,133 @@
+<!doctype html><meta charset="utf-8" /><title>DOM text effects</title>
+<link rel="stylesheet" href="../game.css" />
+<style>
+  body {
+    padding: 24px;
+  }
+  #stage {
+    position: relative;
+    height: 470px;
+    background: #86949d;
+    margin-top: 20px;
+  }
+  .game-glyph-slots {
+    transform: scale(0.8);
+  }
+  button {
+    margin-right: 12px;
+  }
+</style>
+<p>
+  DOM effects: system font on the left, generated color atlas font on the right. Rows: plain, black
+  shadow, black outline, gray outline on dark ink.
+</p>
+<button id="toggle">Toggle effects</button><button id="select">Select outlined text</button
+><button id="fade">Fade foreground independently</button>
+<p id="status">Loading…</p>
+<div id="stage"></div>
+<script type="module">
+  import {DomGlyphSlots} from './text/dom-glyph-slots.js';
+  import {buildAtlasFont} from './text/atlas-font.js';
+  const phrase = 'DOM text edges',
+    size = 48;
+  const glyphs = [...new Set(phrase)].map((ch) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.font = '40px serif';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'white';
+    ctx.fillText(ch, 0, 0);
+    return {
+      codePoint: ch.codePointAt(0),
+      width: 1,
+      height: 1,
+      advance: 0.65,
+      pixels: new Uint8Array(ctx.getImageData(0, 0, size, size).data),
+      pixelWidth: size,
+      pixelHeight: size,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: size,
+      sourceHeight: size,
+    };
+  });
+  const face = new FontFace('EffectFixture', buildAtlasFont(glyphs));
+  await face.load();
+  document.fonts.add(face);
+  const layer = new DomGlyphSlots(document.querySelector('#stage')),
+    slots = [],
+    nodes = new Map(),
+    status = document.querySelector('#status');
+  const styles = [
+    [],
+    [{x: 1.5, y: 1.5, color: 0, alpha: 255}],
+    [
+      {x: -1.5, y: -1.5, color: 0, alpha: 255},
+      {x: 1.5, y: 1.5, color: 0, alpha: 255},
+    ],
+    [
+      {x: -1.5, y: -1.5, color: 0xaaaaaa, alpha: 255},
+      {x: 1.5, y: 1.5, color: 0xaaaaaa, alpha: 255},
+    ],
+  ];
+  for (let col = 0; col < 2; col++)
+    for (let row = 0; row < 4; row++)
+      slots.push({
+        id: `${col}-${row}`,
+        glyphs: [...phrase].map((text, i) => ({
+          id: i,
+          text,
+          line: 0,
+          x: 32 + col * 640 + i * 32,
+          y: 36 + row * 125,
+          width: 32,
+          height: size,
+          color: row === 3 ? 0x182030 : 0xffffff,
+          alpha: 255,
+          shadows: styles[row],
+        })),
+      });
+  let enabled = true;
+  function draw() {
+    for (const slot of slots) {
+      const row = Number(slot.id[2]);
+      layer.show(
+        {...slot, glyphs: slot.glyphs.map((g) => ({...g, shadows: enabled ? styles[row] : []}))},
+        0,
+        slot.id[0] === '1' ? 'EffectFixture' : undefined,
+      );
+    }
+    for (const box of layer.element.querySelectorAll('[data-text-id]')) {
+      const span = box.querySelector('[data-game-text]'),
+        previous = nodes.get(box.dataset.textId);
+      if (previous && previous !== span.firstChild) throw Error('Text node replaced');
+      nodes.set(box.dataset.textId, span.firstChild);
+      const offsets = [...box.querySelectorAll('feOffset')],
+        expected = enabled ? styles[Number(box.dataset.textId[2])].length : 0;
+      // A disabled system-font filter can remain cached but must not be applied.
+      if (span.style.filter && offsets.length !== expected)
+        throw Error('Wrong number of effect passes');
+      if (offsets.some((e) => e.getAttribute('in') !== 'SourceAlpha'))
+        throw Error('Shadows cascade instead of using DOM glyphs');
+    }
+    status.textContent =
+      'PASS: independent DOM effects, correct pass counts, stable text nodes. Visual comparison is manual.';
+  }
+  document.querySelector('#toggle').onclick = () => {
+    enabled = !enabled;
+    draw();
+  };
+  document.querySelector('#fade').onclick = () => {
+    for (const slot of slots) for (const g of slot.glyphs) g.alpha = g.alpha === 255 ? 64 : 255;
+    draw();
+  };
+  document.querySelector('#select').onclick = () => {
+    const range = document.createRange();
+    range.selectNodeContents(nodes.get('1-2'));
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  };
+  window.addEventListener('error', (e) => (status.textContent = `FAIL: ${e.message}`));
+  draw();
+</script>

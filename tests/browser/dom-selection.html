@@ -1,0 +1,149 @@
+<!doctype html><meta charset="utf-8" /><title>DOM selection regression</title>
+<link rel="stylesheet" href="../game.css" />
+<style>
+  body {
+    padding: 24px;
+  }
+  #stage {
+    position: relative;
+    width: 960px;
+    height: 260px;
+    background: #ddd;
+    margin-top: 20px;
+  }
+  button {
+    margin-right: 8px;
+  }
+  .game-glyph-slots {
+    transform: scale(0.5);
+  }
+</style>
+<p>
+  Select across both lines, then change the game tint. The blue highlight must remain visible,
+  including with black glyphs.
+</p>
+<button id="select">Select both lines</button><button id="tint">Animate tint to black</button
+><button id="clear">Clear selection</button><button id="resize">Resize</button>
+<p id="status">Loading font…</p>
+<div id="stage"></div>
+<script type="module">
+  import {buildAtlasFont} from './text/atlas-font.js';
+  import {DomGlyphSlots} from './text/dom-glyph-slots.js';
+  const lines = ['Selected text stays visible', 'Even when the tint turns black'],
+    size = 48;
+  const glyphs = [...new Set(lines.join(''))].map((ch) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.font = '36px monospace';
+    ctx.fillStyle = 'white';
+    ctx.textBaseline = 'top';
+    ctx.fillText(ch, 0, 0);
+    return {
+      codePoint: ch.codePointAt(0),
+      width: 1,
+      height: 1,
+      advance: 1,
+      pixels: new Uint8Array(ctx.getImageData(0, 0, size, size).data),
+      pixelWidth: size,
+      pixelHeight: size,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: size,
+      sourceHeight: size,
+    };
+  });
+  const face = new FontFace('SelectionFixture', buildAtlasFont(glyphs));
+  await face.load();
+  document.fonts.add(face);
+  const layer = new DomGlyphSlots(document.querySelector('#stage'));
+  const slot = {
+    id: 'body',
+    glyphs: lines.flatMap((line, row) =>
+      [...line].map((text, col) => ({
+        id: col,
+        text,
+        line: row,
+        x: 40 + col * size,
+        y: 40 + row * 72,
+        width: size,
+        height: size,
+        color: 0xffffff,
+        alpha: 255,
+      })),
+    ),
+  };
+  layer.show(slot, 0, 'SelectionFixture');
+  const span = layer.element.querySelector('[data-game-text]'),
+    node = span.firstChild,
+    status = document.querySelector('#status');
+  const tick = () =>
+    new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const settled = async (p) => {
+    for (let i = 0; i < 60 && !p(); i++) await tick();
+  };
+  const assert = (ok, message) => {
+    if (!ok) throw Error(message);
+  };
+  async function check() {
+    await settled(() => layer.element.querySelectorAll('.game-text-selection').length >= 2);
+    await tick();
+    assert(span.firstChild === node, 'Text node was replaced');
+    const highlights = [...layer.element.querySelectorAll('.game-text-selection')];
+    assert(highlights.length >= 2, 'Missing multiline selection rectangles');
+    assert(
+      highlights.every(
+        (h) => h.parentElement === span.parentElement && getComputedStyle(h).filter === 'none',
+      ),
+      'Selection is filtered',
+    );
+    assert(getSelection().toString() === lines.join(''), 'Selected Unicode text changed');
+    const range = getSelection().getRangeAt(0),
+      rects = [...range.getClientRects()].filter((r) => r.width > 0);
+    assert(
+      rects.every((r, i) => {
+        const h = highlights[i].getBoundingClientRect();
+        return (
+          Math.abs(r.x - h.x) < 1 && Math.abs(r.y - h.y) < 1 && Math.abs(r.width - h.width) < 1
+        );
+      }),
+      'Highlight geometry drifted',
+    );
+    status.textContent =
+      'PASS: multiline selection, unfiltered highlight, stable text and fitted geometry.';
+  }
+  document.querySelector('#select').onclick = async () => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    await check();
+  };
+  document.querySelector('#tint').onclick = async () => {
+    for (let value = 255; value >= 0; value -= 17) {
+      for (const g of slot.glyphs) g.color = value * 0x010101;
+      layer.show(slot, 0, 'SelectionFixture');
+      await tick();
+    }
+    await check();
+  };
+  document.querySelector('#clear').onclick = async () => {
+    getSelection().removeAllRanges();
+    await settled(() => !layer.element.querySelector('.game-text-selection'));
+    assert(!layer.element.querySelector('.game-text-selection'), 'Stale highlight');
+    status.textContent = 'PASS: cleared selection removes all highlights.';
+  };
+  let small = false;
+  document.querySelector('#resize').onclick = async () => {
+    small = !small;
+    layer.element.style.transform = `scale(${small ? 0.35 : 0.5})`;
+    await check();
+  };
+  window.addEventListener('error', (event) => {
+    status.textContent = `FAIL: ${event.message}`;
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    status.textContent = `FAIL: ${event.reason}`;
+  });
+  status.textContent = 'Ready. Select both lines to run checks.';
+</script>

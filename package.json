@@ -1,0 +1,33 @@
+{
+  "name": "noah-web-engine",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "verify": "npm run build && node tools/verify.mjs",
+    "start": "node tools/serve.mjs",
+    "differential": "npm run build && node tools/differential.mjs",
+    "verify:audio": "npm run build && node tools/verify-audio.mjs",
+    "verify:movies": "npm run build && node tools/verify-movies.mjs",
+    "sample:movies": "npm run build && node tools/sample-movies.mjs",
+    "verify:movie-audio": "npm run build && node tools/verify-movie-audio.mjs",
+    "verify:characters": "npm run build && node tools/verify-characters.mjs",
+    "verify:vm": "npm run build && node tools/verify-vm.mjs",
+    "verify:initialization": "npm run build && node tools/verify-initialization.mjs",
+    "verify:title-audio": "npm run build && node tools/verify-title-audio.mjs",
+    "verify:menu": "npm run build && node tools/verify-menu.mjs",
+    "verify:extras": "npm run build && node tools/verify-extras.mjs",
+    "compare:tips-draw": "npm run build && NOAH_COMPARE_TIPS=1 node tools/verify-extras.mjs",
+    "prepare:mask-benchmark": "npm run build && NOAH_MASK_BENCH=1 node tools/verify-extras.mjs",
+    "verify:config": "npm run build && node tools/verify-config.mjs",
+    "verify:scene": "npm run build && NOAH_TRACE_STORY=1 node tools/verify-menu.mjs",
+    "sweep:opcodes": "npm run build && node tools/sweep-opcodes.mjs"
+  },
+  "devDependencies": {
+    "prettier": "3.9.6",
+    "typescript": "7.0.2"
+  }
+}

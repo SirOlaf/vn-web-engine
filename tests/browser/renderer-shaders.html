@@ -1,0 +1,403 @@
+<!doctype html><meta charset="utf-8" /><title>Native shader numeric checks</title>
+<pre id="status">Running</pre>
+<canvas></canvas>
+<script type="module">
+  import {
+    nativeVideoShaders,
+    nativeVideoProfiles,
+  } from './engines/mages/games/chaos-head-noah/sc3/native-video-shaders.js';
+  import {CanvasDrawTarget} from './graphics/draw-list.js';
+  import {nativeBlend} from './engines/mages/games/chaos-head-noah/sc3/render-state.js';
+  import {nativePixelShaders} from './engines/mages/games/chaos-head-noah/sc3/native-pixel-shaders.js';
+  const status = document.querySelector('#status'),
+    f = Math.fround,
+    bits = new DataView(new ArrayBuffer(4)),
+    u = (v) => {
+      bits.setFloat32(0, v, true);
+      return bits.getUint32(0, true);
+    },
+    fl = (v) => {
+      bits.setUint32(0, v, true);
+      return bits.getFloat32(0, true);
+    };
+  try {
+    const evidence = await (await fetch('./renderer-shader-evidence.json')).json(),
+      target = new CanvasDrawTarget(document.querySelector('canvas'), 1, 1);
+    let checks = 0;
+    const cpu = (shader, colors, tint, parameters, spatial, stop) => {
+      const registers = new Map(),
+        input = new Map();
+      for (const i of shader.inputs) {
+        const v = input.get(i.register) ?? [0, 0, 0, 0],
+          values =
+            i.name === 'COLOR'
+              ? tint
+              : i.name === 'TEXCOORD' && spatial
+                ? [f((spatial.x + 0.5) / 8), f((spatial.y + 0.5) / 8)]
+                : [0, 0, 0, 0];
+        let at = 0;
+        for (let k = 0; k < 4; k++) if ((i.mask >> k) & 1) v[k] = u(values[at++]);
+        input.set(i.register, v);
+      }
+      let output,
+        active = true;
+      const stack = [];
+      const read = (o) => {
+        let a =
+          o.type === 4
+            ? o.immediate
+            : o.type === 0
+              ? registers.get(o.index[0])
+              : o.type === 1
+                ? input.get(o.index[0])
+                : o.type === 8
+                  ? parameters.slice(o.index[1] * 4, o.index[1] * 4 + 4).map(u)
+                  : undefined;
+        if (!a) throw Error('uninitialized operand ' + JSON.stringify(o));
+        a = a.length === 1 ? Array(4).fill(a[0]) : a.slice();
+        if (o.type !== 4 && o.components === 2) {
+          a =
+            o.selection === 1
+              ? a.map((_, i) => a[(o.swizzle >>> (i * 2)) & 3])
+              : o.selection === 2
+                ? Array(4).fill(a[o.swizzle & 3])
+                : a;
+        }
+        if (o.modifier)
+          a = a.map((v) =>
+            u((o.modifier & 1 ? -1 : 1) * (o.modifier & 2 ? Math.abs(fl(v)) : fl(v))),
+          );
+        return a;
+      };
+      const write = (dest, value, token) => {
+        if (dest.type === 13) return;
+        if (token & 0x2000)
+          value = value.map((v) => u(Number.isNaN(fl(v)) ? 0 : Math.max(0, Math.min(1, fl(v)))));
+        const old =
+          dest.type === 2
+            ? (output ?? Array(4).fill(0))
+            : (registers.get(dest.index[0]) ?? Array(4).fill(0));
+        for (let i = 0; i < 4; i++) if ((dest.mask >> i) & 1) old[i] = value[i];
+        if (dest.type === 2) output = old;
+        else registers.set(dest.index[0], old);
+      };
+      for (let pc = 0; pc < shader.instructions.length; pc++) {
+        const ins = shader.instructions[pc],
+          op = ins.opcode,
+          args = ins.args;
+        if (pc === stop) return read(args[1]).map(fl);
+        if (op === 18) {
+          const parent = stack.at(-1);
+          active = parent.active && !parent.condition;
+          continue;
+        }
+        if (op === 21) {
+          active = stack.pop().active;
+          continue;
+        }
+        if (op === 31) {
+          const condition = active && (read(args[0])[0] !== 0) === !!(ins.token & 0x40000);
+          stack.push({active, condition});
+          active = active && condition;
+          continue;
+        }
+        if (!active) continue;
+        if (op === 13) {
+          if ((read(args[0])[0] !== 0) === !!(ins.token & 0x40000)) return null;
+          continue;
+        }
+        if (op === 62) return output?.map(fl);
+        if (op >= 88) continue;
+        if (op === 77) {
+          const a = read(args[2]);
+          write(
+            args[0],
+            a.map((v) => u(Math.sin(fl(v)))),
+            ins.token,
+          );
+          write(
+            args[1],
+            a.map((v) => u(Math.cos(fl(v)))),
+            ins.token,
+          );
+          continue;
+        }
+        const dest = args[0];
+        let value;
+        if (op === 69)
+          value = (
+            spatial
+              ? spatial.sample(args[2].index[0], read(args[1]).map(fl))
+              : colors[args[2].index[0]]
+          ).map(u);
+        else {
+          const a = read(args[1]),
+            b = args[2] ? read(args[2]) : undefined;
+          value = a.map((v, i) => {
+            const x = fl(v),
+              y = b ? fl(b[i]) : 0;
+            switch (op) {
+              case 11:
+              case 12: {
+                if (!spatial) return u(0);
+                const axis = op === 11 ? 'x' : 'y',
+                  low = spatial[axis] & ~1,
+                  peer = (n) =>
+                    cpu(shader, colors, tint, parameters, {...spatial, [axis]: n}, pc)[i];
+                return u(peer(low + 1) - peer(low));
+              }
+              case 54:
+                return v;
+              case 43:
+                return u(v | 0);
+              case 75:
+                return u(Math.sqrt(x));
+              case 0:
+                return u(x + y);
+              case 56:
+                return u(x * y);
+              case 14:
+                return u(x / y);
+              case 51:
+                return u(Number.isNaN(x) ? y : Number.isNaN(y) ? x : Math.min(x, y));
+              case 52:
+                return u(Number.isNaN(x) ? y : Number.isNaN(y) ? x : Math.max(x, y));
+              case 24:
+                return x === y ? 0xffffffff : 0;
+              case 29:
+                return x >= y ? 0xffffffff : 0;
+              case 49:
+                return x < y ? 0xffffffff : 0;
+              default:
+                throw Error('opcode ' + op);
+            }
+          });
+        }
+        write(dest, value, ins.token);
+      }
+      throw Error('missing return');
+    };
+    for (let shader = 0; shader < evidence.length; shader++)
+      for (let variant = 0; variant < 6; variant++) {
+        const bytes = [
+            [37 + variant * 31, 213 - variant * 29, 17 + variant * 43, 55 + variant * 39],
+            [229 - variant * 23, 31 + variant * 41, 187 - variant * 17, 243 - variant * 29],
+            [71 + variant * 29, 113 + variant * 13, 211 - variant * 37, 127 + variant * 17],
+            [21, 113, 237, 157],
+          ],
+          images = bytes.map((p) => ({width: 1, height: 1, pixels: new Uint8Array(p)})),
+          colors = bytes.map((p) => p.map((v) => f(v / 255))),
+          tint = [f(113 / 255), f(193 / 255), f(227 / 255), f((47 + variant * 41) / 255)],
+          parameters = new Float32Array([
+            1.7, 0.3, 1, 0, 0, 0, 0, 0, 0.2, 0.3, 0.4, 0.5, 0, 0, 0, 0,
+          ]),
+          vertices = new Float32Array(54);
+        for (const [i, [x, y]] of [
+          [0, 0],
+          [1, 0],
+          [0, 1],
+          [0, 1],
+          [1, 0],
+          [1, 1],
+        ].entries())
+          vertices.set([x, y, 0, ...tint, 0, 0], i * 9);
+        const output = cpu(evidence[shader], colors, tint, [...parameters]),
+          expected = output
+            ? output.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+            : [13, 29, 51, 71];
+        if (expected.some(Number.isNaN))
+          throw Error(`undefined fixture shader ${shader}/${variant}`);
+        let actual;
+        target.draw(
+          {
+            sprites: [],
+            commands: [
+              {
+                kind: 'solid',
+                destination: {x: 0, y: 0, width: 1, height: 1},
+                color: 0x0d1d33,
+                alpha: 71,
+                blendState: nativeBlend(0x201),
+              },
+              {
+                kind: 'triangles',
+                texture: 0,
+                vertices,
+                fragment: nativePixelShaders[shader],
+                discardTransparent: false,
+                parameters,
+                blendState: nativeBlend(0x201),
+                additionalTextures: [1, 2, 3].map((texture) => ({
+                  texture,
+                  uv: new Float32Array(12),
+                })),
+              },
+              {kind: 'capture', texture: 9, width: 1, height: 1},
+            ],
+          },
+          (id) => images[id],
+          (_, image) => (actual = [...image.pixels]),
+        );
+        if (actual.some((v, i) => Math.abs(v - expected[i]) > 1))
+          throw Error(`shader ${shader}/${variant}: GPU ${actual} SM4 ${expected}`);
+        checks++;
+      }
+    target.dispose();
+    const spatialTarget = new CanvasDrawTarget(document.createElement('canvas'), 8, 8),
+      images = Array.from({length: 4}, (_, i) => {
+        const pixels = new Uint8Array(16 * 16 * 4);
+        for (let y = 0; y < 16; y++)
+          for (let x = 0; x < 16; x++)
+            pixels.set(
+              [31 + x * 9 + i * 5, 27 + y * 11 + i * 3, 17 + x * 5 + y * 7, 57 + x * 5 + y * 6],
+              (y * 16 + x) * 4,
+            );
+        return {width: 16, height: 16, pixels};
+      }),
+      sample = (id, uv) => {
+        const image = images[id],
+          x = uv[0] * 16 - 0.5,
+          y = uv[1] * 16 - 0.5,
+          ix = Math.floor(x),
+          iy = Math.floor(y),
+          fx = x - ix,
+          fy = y - iy;
+        return Array.from({length: 4}, (_, k) => {
+          const get = (x, y) =>
+            image.pixels[
+              (Math.max(0, Math.min(15, y)) * 16 + Math.max(0, Math.min(15, x))) * 4 + k
+            ] / 255;
+          return f(
+            (get(ix, iy) * (1 - fx) + get(ix + 1, iy) * fx) * (1 - fy) +
+              (get(ix, iy + 1) * (1 - fx) + get(ix + 1, iy + 1) * fx) * fy,
+          );
+        });
+      };
+    for (const shader of [55, 56, 57, 58, 60]) {
+      const tint = [0.5, 0.75, 1, 0.75],
+        parameters = new Float32Array([
+          0.37, 0.11, 0.53, 0.19, 0.23, 0.41, 0.17, 0.31, 0.2, 0.3, 0.4, 0.5, 0.29, 0.43, 0.61,
+          0.71,
+        ]),
+        vertices = new Float32Array(54),
+        uv = new Float32Array(12);
+      for (const [i, [x, y]] of [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [0, 1],
+        [1, 0],
+        [1, 1],
+      ].entries()) {
+        vertices.set([x * 8, y * 8, 0, ...tint, x, y], i * 9);
+        uv.set([x, y], i * 2);
+      }
+      let actual;
+      spatialTarget.draw(
+        {
+          sprites: [],
+          commands: [
+            {
+              kind: 'solid',
+              destination: {x: 0, y: 0, width: 8, height: 8},
+              color: 0x0d1d33,
+              alpha: 71,
+              blendState: nativeBlend(0x201),
+            },
+            {
+              kind: 'triangles',
+              texture: 0,
+              vertices,
+              normalizedUV: true,
+              fragment: nativePixelShaders[shader],
+              discardTransparent: false,
+              parameters,
+              blendState: nativeBlend(0x201),
+              additionalTextures: [1, 2, 3].map((texture) => ({texture, uv})),
+            },
+            {kind: 'capture', texture: 9, width: 8, height: 8},
+          ],
+        },
+        (id) => images[id],
+        (_, image) => (actual = image.pixels),
+      );
+      for (let y = 0; y < 8; y++)
+        for (let x = 0; x < 8; x++) {
+          const output = cpu(evidence[shader], [], tint, [...parameters], {x, y, sample}),
+            expected = output
+              ? output.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+              : [13, 29, 51, 71],
+            pixel = [...actual.subarray((y * 8 + x) * 4, (y * 8 + x + 1) * 4)];
+          if (pixel.some((v, i) => Math.abs(v - expected[i]) > 1))
+            throw Error(`spatial shader ${shader}/${x}/${y}: GPU ${pixel} SM4 ${expected}`);
+          checks++;
+        }
+    }
+    const videoEvidence = await (await fetch('./renderer-video-shader-evidence.json')).json();
+    for (let shader = 0; shader < 5; shader++)
+      for (let profile = 0; profile < 4; profile++) {
+        const parameters = new Float32Array(nativeVideoProfiles[profile]),
+          tint = [0.75, 0.625, 1, 0.875],
+          vertices = new Float32Array(54),
+          uv = new Float32Array(12);
+        for (const [i, [x, y]] of [
+          [0, 0],
+          [1, 0],
+          [0, 1],
+          [0, 1],
+          [1, 0],
+          [1, 1],
+        ].entries()) {
+          vertices.set([x * 8, y * 8, 0, ...tint, x, y], i * 9);
+          uv.set([x, y], i * 2);
+        }
+        let actual;
+        spatialTarget.draw(
+          {
+            sprites: [],
+            commands: [
+              {
+                kind: 'solid',
+                destination: {x: 0, y: 0, width: 8, height: 8},
+                color: 0x0d1d33,
+                alpha: 71,
+                blendState: nativeBlend(0x201),
+              },
+              {
+                kind: 'triangles',
+                texture: 0,
+                vertices,
+                normalizedUV: true,
+                fragment: nativeVideoShaders[shader],
+                discardTransparent: false,
+                parameters,
+                blendState: nativeBlend(0x201),
+                additionalTextures: [1, 2, 3].map((texture) => ({texture, uv})),
+              },
+              {kind: 'capture', texture: 9, width: 8, height: 8},
+            ],
+          },
+          (id) => images[id],
+          (_, image) => (actual = image.pixels),
+        );
+        for (let y = 0; y < 8; y++)
+          for (let x = 0; x < 8; x++) {
+            const output = cpu(videoEvidence[shader], [], tint, [...parameters], {x, y, sample}),
+              expected = output
+                ? output.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255))
+                : [13, 29, 51, 71],
+              pixel = [...actual.subarray((y * 8 + x) * 4, (y * 8 + x + 1) * 4)];
+            if (pixel.some((v, i) => Math.abs(v - expected[i]) > 1))
+              throw Error(
+                `video shader ${shader}/${profile}/${x}/${y}: GPU ${pixel} SM4 ${expected}`,
+              );
+            checks++;
+          }
+      }
+    spatialTarget.dispose();
+    status.textContent = `PASS: ${checks} original SM4 numeric cases across ${evidence.length} game and 5 embedded video shaders, including spatial derivatives, distortion and all four YUV profiles.`;
+  } catch (e) {
+    status.textContent = `FAIL: ${e.stack}`;
+    throw e;
+  }
+</script>

@@ -1,0 +1,45 @@
+import type {OpcodeExecution} from './types.js';
+import {KEY_MASKS} from '../noah-reset-data.js';
+// 140054f30 alternate layout: preserve every unassigned word, including old bindings.
+const alternate = [
+  [0x872dc0, 4, 0x10000],
+  [0x872dc4, 4, 0x20000],
+  [0x872dc8, 4, 0x40000],
+  [0x872dcc, 4, 0x80000],
+  [0x872dd0, 4, 0xffff],
+  [0x872dd4, 4, 0x1000],
+  [0x872dd8, 4, 0x2000],
+  [0x872ddc, 4, 0x400],
+  [0x872de0, 4, 0x200],
+  [0x872de4, 4, 0x800],
+  [0x872de8, 8, 0x10],
+  [0x872df0, 4, 0x8000],
+  [0x872df4, 4, 0x80],
+  [0x872df8, 4, 0x3010],
+  [0x872dfc, 4, 0x1000],
+  [0x872e00, 4, 0x2000],
+  [0x872e04, 4, 0x4000],
+  [0x872e08, 4, 0x8000],
+  [0x872e0c, 4, 0x200],
+  [0x872e10, 4, 0x800],
+  [0x872e14, 4, 0x100],
+  [0x872e1c, 4, 0xf1000],
+  [0x872e20, 4, 0x200],
+  [0x872e24, 4, 0x100],
+  [0x872e28, 4, 0x1000],
+  [0x872e2c, 4, 0x2000],
+  [0x872e30, 4, 0x100001],
+  [0x872e34, 4, 0x200002],
+  [0x872e38, 4, 0x400004],
+  [0x872e3c, 4, 0x800008],
+  [0x872e40, 4, 0x1000000],
+  [0x872e44, 4, 0x2000000],
+  [0x872e48, 4, 0x4000000],
+  [0x872e4c, 4, 0x8000000],
+] as const;
+export function applyInputSettings(h: OpcodeExecution): void {
+  h.skip(2);
+  const mode = h.state.get(0x17adcac);
+  const writes = mode === 0 ? KEY_MASKS : mode === 1 ? alternate : [];
+  for (const [address, width, value] of writes) h.state.put(address, value, width);
+}

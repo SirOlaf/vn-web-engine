@@ -1,0 +1,358 @@
+<!doctype html><meta charset="utf-8" /><title>Renderer numeric checks</title>
+<p id="status">Running…</p>
+<canvas hidden></canvas>
+<script type="module">
+  import {CanvasDrawTarget} from './graphics/draw-list.js';
+  import {nativeBlend} from './engines/mages/games/chaos-head-noah/sc3/render-state.js';
+  import {backgroundShaders} from './engines/mages/games/chaos-head-noah/sc3/background-shaders.js';
+  import {NoahState} from './engines/mages/games/chaos-head-noah/sc3/noah-state.js';
+  import {
+    submitNativeRectangle,
+    compileNativeRectangles,
+  } from './engines/mages/games/chaos-head-noah/sc3/rectangle-submit.js';
+  import {drawDirectMovie} from './engines/mages/games/chaos-head-noah/sc3/movie-draw.js';
+  import {NoahTextures} from './engines/mages/games/chaos-head-noah/sc3/textures.js';
+  import {allocateFrame} from './video/frame.js';
+  const status = document.querySelector('#status');
+  try {
+    const target = new CanvasDrawTarget(document.querySelector('canvas'), 4, 4),
+      source = {width: 1, height: 1, pixels: new Uint8Array([197, 91, 43, 159])},
+      mask = {width: 1, height: 1, pixels: new Uint8Array([97, 0, 0, 191])};
+    let checks = 0,
+      captured;
+    const sprite = (extra = {}) => ({
+      texture: 0,
+      source: {x: 0, y: 0, width: 1, height: 1},
+      destination: {x: 0, y: 0, width: 4, height: 4},
+      color: 0xffffff,
+      alpha: 255,
+      filter: 'nearest',
+      ...extra,
+    });
+    const capture = {kind: 'capture', texture: 7, width: 4, height: 4},
+      run = (commands) => {
+        target.draw(
+          {sprites: [], commands: [...commands, capture]},
+          (id) => (id === 0 ? source : mask),
+          (_, image) => (captured = image),
+        );
+        return [...captured.pixels.subarray(20, 24)];
+      };
+    const expect = (actual, expected, label) => {
+      if (actual.some((v, i) => Math.abs(v - expected[i]) > 1))
+        throw Error(`${label}: ${actual} != ${expected}`);
+      checks++;
+    };
+    const copy = nativeBlend(0x201),
+      background = {
+        kind: 'solid',
+        destination: {x: 0, y: 0, width: 4, height: 4},
+        color: 0x3d7fbb,
+        alpha: 83,
+        blendState: copy,
+      },
+      d = [61, 127, 187, 83].map((v) => v / 255),
+      s = [197, 91, 43, 159].map((v) => v / 255);
+    const factor = (name, channel) =>
+      ({
+        zero: 0,
+        one: 1,
+        'source-color': s[channel],
+        'inverse-source-color': 1 - s[channel],
+        'source-alpha': s[3],
+        'inverse-source-alpha': 1 - s[3],
+        'destination-color': d[channel],
+        'inverse-destination-color': 1 - d[channel],
+        'destination-alpha': d[3],
+        'inverse-destination-alpha': 1 - d[3],
+      })[name];
+    const blend = (state, i) => {
+      const a = s[i] * factor(state.source, i),
+        b = d[i] * factor(state.destination, i);
+      return Math.round(
+        255 *
+          Math.max(
+            0,
+            Math.min(
+              1,
+              {
+                add: () => a + b,
+                subtract: () => a - b,
+                'reverse-subtract': () => b - a,
+                min: () => Math.min(s[i], d[i]),
+                max: () => Math.max(s[i], d[i]),
+              }[state.operation](),
+            ),
+          ),
+      );
+    };
+    for (let color = 0; color < 9; color++)
+      for (let alpha = 0; alpha < 8; alpha++) {
+        const state = nativeBlend(color + (alpha << 8));
+        expect(
+          run([background, sprite({blendState: state})]),
+          [0, 1, 2, 3].map((i) => blend(i === 3 ? state.alpha : state.color, i)),
+          `blend ${color}/${alpha}`,
+        );
+      }
+    const tint = [0.25, 0.5, 0.75],
+      gray = s[1] * 0.59 + s[0] * 0.3 + s[2] * 0.11;
+    for (const mode of [22, 25, 26, 27]) {
+      const color = 0x4080c0,
+        t = [64, 128, 192].map((v) => v / 255),
+        rgb =
+          mode === 22
+            ? s.slice(0, 3).map((v, i) => 1 - v * t[i])
+            : mode === 25
+              ? t.map((v) => gray * v)
+              : mode === 27
+                ? t.map((v) => (1 - gray) * v)
+                : t.map((v) => (gray < 0.5 ? 2 * gray * v : 1 - 2 * (1 - gray) * (1 - v)));
+      expect(
+        run([sprite({color, fragment: backgroundShaders[mode], blendState: copy})]),
+        [...rgb, s[3]].map((v) => Math.round(v * 255)),
+        `shader ${mode}`,
+      );
+    }
+    for (const channel of ['alpha', 'red'])
+      for (const invert of [false, true])
+        for (const alphaOnly of [false, true]) {
+          const a = channel === 'red' ? 97 / 255 : 191 / 255,
+            m = invert ? 1 - a : a;
+          expect(
+            run([
+              sprite({
+                blendState: copy,
+                mask: {
+                  texture: 1,
+                  source: {x: 0, y: 0, width: 1, height: 1},
+                  scale: 1.2,
+                  bias: 0.1,
+                  channel,
+                  invert,
+                  alphaOnly,
+                },
+              }),
+            ]),
+            [
+              ...(alphaOnly ? [255, 255, 255] : [197, 91, 43]),
+              Math.round(159 * Math.max(0, Math.min(1, m * 1.2 - 0.1))),
+            ],
+            `mask ${channel}/${invert}/${alphaOnly}`,
+          );
+        }
+    expect(
+      run([
+        sprite({blendState: copy}),
+        capture,
+        background,
+        sprite({texture: 7, source: {x: 0, y: 0, width: 4, height: 4}, blendState: copy}),
+      ]),
+      [197, 91, 43, 159],
+      'capture and replay',
+    );
+    const state = new NoahState(() => 0);
+    for (let id = 0; id < 2; id++)
+      for (const offset of [0x68, 0x6a, 0x72, 0x74, 0x76, 0x78])
+        state.put(0x1d1b200 + id * 0x1b0 + offset, 1, 2);
+    expect(
+      run([submitNativeRectangle(state, sprite({blendState: copy}), 4, 4)]),
+      [197, 91, 43, 159],
+      'native rectangle vertices',
+    );
+    expect(
+      run([
+        submitNativeRectangle(
+          state,
+          sprite({
+            blendState: copy,
+            mask: {
+              texture: 1,
+              source: {x: 0, y: 0, width: 1, height: 1},
+              scale: 1,
+              bias: 0,
+              channel: 'red',
+            },
+          }),
+          4,
+          4,
+        ),
+      ]),
+      [197, 91, 43, Math.round((159 * 97) / 255)],
+      'native independent mask vertices',
+    );
+    const retained = {width: 4, height: 4, pixels: new Uint8Array(64)};
+    for (let y = 0; y < 4; y++)
+      for (let x = 0; x < 4; x++) retained.pixels.set([y * 60, x * 60, 31, 211], (y * 4 + x) * 4);
+    const writes = new Map();
+    target.draw(
+      {
+        sprites: [],
+        commands: [
+          background,
+          {kind: 'target', texture: 8, width: 4, height: 4},
+          {
+            kind: 'solid',
+            destination: {x: 0, y: 0, width: 1, height: 1},
+            color: 0xff0000,
+            alpha: 123,
+            blendState: copy,
+          },
+          {kind: 'target', texture: null, width: 4, height: 4},
+          sprite({texture: 8, source: {x: 0, y: 0, width: 4, height: 4}, blendState: copy}),
+          capture,
+        ],
+      },
+      (id) => (id === 8 ? retained : source),
+      (id, image) => writes.set(id, image),
+    );
+    expect([...writes.get(8).pixels.subarray(0, 4)], [255, 0, 0, 123], 'target write');
+    expect(
+      [...writes.get(8).pixels.subarray(48, 52)],
+      [180, 0, 31, 211],
+      'target preserves orientation',
+    );
+    expect(
+      [...writes.get(7).pixels.subarray(48, 52)],
+      [180, 0, 31, 211],
+      'target publication sampled on main',
+    );
+    target.draw(
+      {
+        sprites: [],
+        commands: [
+          {kind: 'target', texture: 8, width: 4, height: 4},
+          {kind: 'target', texture: null, width: 4, height: 4},
+          background,
+          {kind: 'capture', texture: 8, width: 4, height: 4},
+          {kind: 'target', texture: 8, width: 4, height: 4},
+          {kind: 'target', texture: null, width: 4, height: 4},
+          sprite({texture: 8, source: {x: 0, y: 0, width: 4, height: 4}, blendState: copy}),
+          capture,
+        ],
+      },
+      (id) => (id === 8 ? retained : source),
+      (id, image) => writes.set(id, image),
+    );
+    expect(
+      [...writes.get(7).pixels.subarray(48, 52)],
+      [61, 127, 187, 83],
+      'capture replaces cached target before rebinding',
+    );
+    const replacement = {width: 4, height: 4, pixels: new Uint8Array(64)};
+    for (let i = 0; i < 64; i += 4) replacement.pixels.set([23, 47, 89, 137], i);
+    expect(
+      run([
+        sprite({blendState: copy}),
+        {kind: 'texture', texture: 0, image: replacement},
+        sprite({source: {x: 0, y: 0, width: 4, height: 4}, blendState: copy}),
+      ]),
+      [23, 47, 89, 137],
+      'ordered allocation replacement',
+    );
+    target.draw(
+      {
+        sprites: [],
+        commands: [
+          {kind: 'target', texture: 8, width: 4, height: 4},
+          background,
+          {kind: 'texture', texture: 8, image: replacement},
+          {kind: 'target', texture: null, width: 4, height: 4},
+          sprite({texture: 8, source: {x: 0, y: 0, width: 4, height: 4}, blendState: copy}),
+          capture,
+        ],
+      },
+      (id) => (id === 8 ? retained : source),
+      (id, image) => writes.set(id, image),
+    );
+    expect(
+      [...writes.get(7).pixels.subarray(20, 24)],
+      [23, 47, 89, 137],
+      'replace active target allocation',
+    );
+    const outside = submitNativeRectangle(state, sprite({blendState: copy}), 4, 4);
+    for (let i = 2; i < outside.vertices.length; i += 9) outside.vertices[i] = 17;
+    expect(run([outside]), [197, 91, 43, 159], 'native depth clipping disabled');
+    expect(run([{...outside, depthClip: true}]), [0, 0, 0, 255], 'explicit depth clipping enabled');
+    for (const dual of [false, true])
+      for (const alpha of [false, true]) {
+        const ms = new NoahState(() => 0),
+          textures = new NoahTextures(ms),
+          frame = allocateFrame(12, 12),
+          a = 0x1d2e1c0,
+          b = 0x1d8be20;
+        frame.y.fill(235);
+        frame.cb.fill(128);
+        frame.cr.fill(128);
+        if (dual) for (let y = 6; y < 12; y++) frame.y.fill(126, y * 16, y * 16 + 12);
+        if (alpha) frame.alpha = new Uint8Array(frame.y.length).fill(126);
+        textures.createRgba(180, 12, 12);
+        ms.put(a + 0x32, 1, 1);
+        ms.put(a + 0x48, 1);
+        ms.put(a + 0x74, dual ? 6 : 12, 2);
+        ms.put(b + 8, 1, 1);
+        ms.put(a + 0x34, alpha ? 1 : 0, 1);
+        ms.put(a + 0x35, dual ? 1 : 0, 1);
+        ms.view(b + 0xcf0, 8).setBigUint64(0, 0x141d2e1c0n, true);
+        const movie = drawDirectMovie({state: ms, textures, movies: {frame: () => frame}}, 0, 255),
+          commands = compileNativeRectangles(ms, [movie], textures.resources);
+        commands[0].blendState = copy;
+        target.draw(
+          {sprites: [], commands: [...commands, capture]},
+          (id) => textures.resources.get(id)?.image,
+          (_, image) => (captured = image),
+        );
+        expect(
+          [...captured.pixels.subarray(20, 24)],
+          [255, 255, 255, dual || alpha ? 128 : 255],
+          `integrated movie planes ${dual}/${alpha}`,
+        );
+      }
+    const split = {width: 2, height: 1, pixels: Uint8Array.of(0, 0, 0, 255, 255, 0, 0, 255)},
+      sampled = submitNativeRectangle(state, sprite({blendState: copy}), 4, 4);
+    for (let i = 0; i < sampled.vertices.length / 9; i++) {
+      sampled.vertices[i * 9 + 7] = 0.375;
+      sampled.vertices[i * 9 + 8] = 0.5;
+    }
+    sampled.filter = 'nearest';
+    sampled.fragment =
+      'vec4 shade(vec4 c,vec4 tint){return vec4(c.r,texture(additionalAtlas0,additionalUV0).r,0.,1.);}';
+    const uv = new Float32Array((sampled.vertices.length / 9) * 2);
+    for (let i = 0; i < uv.length; i += 2) uv.set([0.375, 0.5], i);
+    sampled.additionalTextures = [{texture: 0, uv, filter: 'linear'}];
+    target.draw(
+      {sprites: [], commands: [sampled, capture]},
+      () => split,
+      (_, image) => (captured = image),
+    );
+    expect(
+      [...captured.pixels.subarray(20, 24)],
+      [0, 64, 0, 255],
+      'same image independent samplers',
+    );
+    sampled.additionalTextures = Array.from({length: 5}, () => ({
+      texture: 0,
+      uv,
+      filter: 'linear',
+    }));
+    sampled.fragment =
+      'vec4 shade(vec4 c,vec4 tint){return vec4(texture(additionalAtlas4,additionalUV4).r,0.,0.,1.);}';
+    target.draw(
+      {sprites: [], commands: [sampled, capture]},
+      () => split,
+      (_, image) => (captured = image),
+    );
+    expect(
+      [...captured.pixels.subarray(20, 24)],
+      [64, 0, 0, 255],
+      'expanded physical texture bindings',
+    );
+    target.dispose();
+    expect(run([sprite({blendState: copy})]), [197, 91, 43, 159], 'reinitialize');
+    target.dispose();
+    status.textContent = `PASS: ${checks} numeric blend, shader, mask, framebuffer-copy and resource-lifecycle checks.`;
+  } catch (e) {
+    status.textContent = `FAIL: ${e.stack}`;
+    throw e;
+  }
+</script>

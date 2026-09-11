@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>NOAH · Asset laboratory</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <span class="eyebrow">CHAOS;HEAD NOAH / WEB ENGINE</span>
+      <h1>Asset laboratory</h1>
+      <p>
+        Explore the original game archives. Images, characters, audio and movies load directly in
+        your browser.
+      </p>
+    </header>
+    <div class="toolbar">
+      <button id="connect">Open installed game</button
+      ><label class="file"
+        >Choose game folder<input id="files" type="file" webkitdirectory directory /></label
+      ><button id="storage">User data</button><button id="vm-boot">Diagnostic player</button
+      ><a href="index.html">Game page</a
+      ><span id="status" role="status">Select an installed game or game folder.</span>
+    </div>
+    <main>
+      <aside>
+        <label>Archive<select id="archives" aria-label="Archive"></select></label
+        ><label>Filter by ID or name<input id="filter" placeholder="e.g. 10" /></label>
+        <p id="count"></p>
+        <div id="entries"></div>
+      </aside>
+      <section id="viewer">
+        <div class="empty">
+          <span>01 / ASSETS</span>
+          <h2>Start with the source.</h2>
+          <p>
+            PNG and WebP previews · character composition · HCA audio · USM movie playback ·
+            decompressed scripts
+          </p>
+          <p>This is an asset inspector. Game execution is still under development.</p>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="dist/app.js"></script>
+  </body>
+</html>

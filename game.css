@@ -1,0 +1,248 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  background: #090b0e;
+  color: #ebedf0;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+select {
+  font: inherit;
+  color: inherit;
+  background: #20252d;
+  border: 1px solid #39414c;
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 10px 12px;
+}
+button {
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: #2b333e;
+  border-color: #91bcb9;
+}
+button:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid #a6d7d1;
+  outline-offset: 4px;
+}
+button:disabled,
+select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+[hidden] {
+  display: none !important;
+}
+#game {
+  height: 100dvh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #000;
+}
+#welcome {
+  padding: 32px;
+  max-width: 440px;
+  margin-right: 300px;
+}
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  color: #8dbab5;
+}
+h1 {
+  font-size: clamp(32px, 5vw, 56px);
+  line-height: 1.1;
+  letter-spacing: -0.05em;
+  font-weight: 500;
+  margin: 20px 0;
+}
+p {
+  font-size: 14px;
+  line-height: 1.55;
+  color: #a9b0bb;
+}
+#welcome p {
+  font-size: 16px;
+}
+#play {
+  background: #b4dcd6;
+  color: #102723;
+  border: 0;
+  min-width: 120px;
+  margin-top: 16px;
+}
+.live-player {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.live-player canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100% !important;
+  height: 100%;
+  max-width: none !important;
+  object-fit: contain;
+  outline: none;
+}
+.live-player > [role='status'] {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  max-width: calc(100% - 40px);
+  padding: 12px 16px;
+  background: #171c24;
+  border: 1px solid #39414c;
+  border-radius: 8px;
+}
+#sidebar {
+  position: fixed;
+  z-index: 2;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  width: 272px;
+  border: 1px solid #39414c;
+  border-radius: 14px;
+  background: #141920f5;
+  box-shadow: 0 12px 44px #0006;
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  font-size: 14px;
+}
+#sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  text-align: left;
+  padding: 14px 16px;
+}
+#sidebar-body {
+  padding: 0 16px 18px;
+}
+#sidebar-body section {
+  padding: 16px 0;
+  border-top: 1px solid #303741;
+}
+h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+section > button,
+section > select {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+section > label {
+  display: block;
+  color: #a9b0bb;
+}
+section p {
+  margin: 10px 0 0;
+}
+a {
+  color: #b4dcd6;
+  text-underline-offset: 4px;
+}
+.file-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.file-actions button {
+  flex: 1;
+}
+#status {
+  overflow-wrap: anywhere;
+  margin: 0 0 16px;
+}
+#sidebar.collapsed {
+  width: auto;
+}
+#sidebar.collapsed #sidebar-toggle span {
+  display: none;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 650px) {
+  #welcome {
+    margin: 0;
+    align-self: end;
+    padding-bottom: 40px;
+  }
+  #sidebar {
+    width: 252px;
+  }
+  body:has(#sidebar:not(.collapsed)) #welcome {
+    visibility: hidden;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  button {
+    transition:
+      background 0.15s,
+      border-color 0.15s;
+  }
+}
+
+/* The canvas fills the definite player box without contributing its intrinsic
+   1920×1080 size to grid track sizing. object-fit preserves native proportions. */
+
+.touch-help {
+  display: none;
+}
+@media (pointer: coarse) {
+  .touch-help {
+    display: block;
+  }
+}
+
+/* Range rectangles are painted outside the atlas tint filter. */
+.game-glyph-slots [data-game-text]::selection {
+  background-color: transparent;
+  color: inherit;
+  text-shadow: none;
+}
+.game-text-selection {
+  background: #59bfff66;
+  box-shadow: inset 0 0 0 2px #a6e0ff;
+}
+
+/* Empty geometry keeps native visual rows out of the continuous Text node. */
+.game-glyph-slots [data-game-text]::before {
+  content: '';
+  float: right;
+  width: 100%;
+  height: var(--text-wrap-height);
+  shape-outside: var(--text-wrap-shape);
+  pointer-events: none;
+  user-select: none;
+}

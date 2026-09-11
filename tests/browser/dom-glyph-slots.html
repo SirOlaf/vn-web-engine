@@ -1,0 +1,156 @@
+<!doctype html><meta charset="utf-8" /><meta
+  name="viewport"
+  content="width=device-width,initial-scale=1"
+/><title>DOM glyph slots · synthetic fixture</title>
+<link rel="stylesheet" href="../game.css" />
+<style>
+  body {
+    background: #171922;
+    color: #eee;
+    font: 16px system-ui;
+    margin: 24px;
+  }
+  button {
+    padding: 12px;
+    margin: 8px;
+  }
+  .live-player {
+    position: relative;
+    width: 100%;
+    height: 65vh;
+    background: black;
+  }
+  .live-player > canvas {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  [hidden] {
+    display: none !important;
+  }
+</style>
+<p>
+  Asset-free manual fixture using generated synthetic atlas marks (not game glyph artwork): select
+  consecutive Japanese text across the native line break, try your dictionary, resize, and check the
+  panel/fade overlap. The text node must survive reveal updates.
+</p>
+<button id="reveal">Reveal / conceal suffix</button
+><button id="native">Hide / show DOM presentation</button>
+<p id="status"></p>
+<section class="live-player"><canvas width="1920" height="1080"></canvas></section>
+<script type="module">
+  import {BrowserDomText} from './engines/mages/games/chaos-head-noah/sc3/browser-dom-text.js';
+  import {
+    collectTextFrame,
+    tagGlyph,
+  } from './engines/mages/games/chaos-head-noah/sc3/dom-text-data.js';
+  import {decodeNoahGlyph} from './engines/mages/games/chaos-head-noah/sc3/glyph-unicode.js';
+  import {nativeBlend} from './engines/mages/games/chaos-head-noah/sc3/render-state.js';
+  const parent = document.querySelector('section'),
+    canvas = parent.querySelector('canvas'),
+    dom = new BrowserDomText(parent, canvas),
+    codes = new Map();
+  for (let id = 0; id < 8000; id++) {
+    const ch = decodeNoahGlyph(id);
+    if (ch && !codes.has(ch)) codes.set(ch, id);
+  }
+  const pixels = new Uint8Array(48 * 48 * 4);
+  for (let y = 0; y < 48; y++)
+    for (let x = 0; x < 48; x++) {
+      const p = (y * 48 + x) * 4;
+      pixels[p] = pixels[p + 1] = pixels[p + 2] = 255;
+      pixels[p + 3] = x === y || x === 47 - y || x === 4 || y === 4 ? 255 : x === y + 1 ? 96 : 0;
+    }
+  const textures = new Map([[91, {width: 48, height: 48, pixels}]]);
+  let revealed = false,
+    hidden = false,
+    retained;
+  function update() {
+    const commands = [
+      {
+        kind: 'solid',
+        destination: {x: 0, y: 0, width: 1920, height: 1080},
+        color: 0x172030,
+        alpha: 255,
+        blendState: nativeBlend(0),
+      },
+    ];
+    function run(slot, lines, x, y, size = 48) {
+      let index = 0;
+      for (const [line, text] of lines.entries())
+        for (const [column, ch] of [...text].entries()) {
+          const draw = {
+            texture: 91,
+            source: {x: 0, y: 0, width: 48, height: 48},
+            destination: {x: x + column * size, y: y + line * 72, width: size, height: size},
+            color: 0xffffff,
+            alpha: slot === 'body' && index > 5 && !revealed ? 0 : 255,
+            blendState: nativeBlend(0),
+          };
+          tagGlyph(
+            draw,
+            slot,
+            index++,
+            codes.get(ch),
+            {role: 'body', line},
+            draw.destination,
+            draw.color,
+            draw.alpha,
+          );
+          commands.push(draw);
+        }
+    }
+    run('body', ['日本語の連続した文章です。', '行を変えても文章は続きます。'], 180, 240);
+    commands.push({
+      kind: 'solid',
+      destination: {x: 700, y: 150, width: 500, height: 500},
+      color: 0,
+      alpha: 128,
+      blendState: nativeBlend(0),
+    });
+    run('label', ['名前'], 240, 150, 30);
+    run('ruby', ['にほんご'], 180, 205, 18);
+    const frame = {
+      pass: 0,
+      message: 0,
+      revealed: true,
+      draw: {sprites: [], commands, regions: []},
+      textures,
+      text: collectTextFrame(commands),
+    };
+    dom.show(frame, new Map());
+    if (hidden) dom.hide();
+    const span = dom.text.element.querySelector('[data-text-id="body/body"] [data-game-text]');
+    if (!span) {
+      document.querySelector('#status').textContent =
+        'Native text while the runtime atlas font loads…';
+      return;
+    }
+    if (span.childNodes.length !== 1 || span.firstChild.nodeType !== Node.TEXT_NODE)
+      throw Error('Slot split into multiple nodes');
+    if (retained && retained !== span.firstChild) throw Error('Reveal replaced the Text node');
+    retained = span.firstChild;
+    document.querySelector('#status').textContent =
+      `One stable Text node; ${dom.text.buffers.size} buffered slots. Visual/dictionary checks are manual.`;
+  }
+  new MutationObserver(() => {
+    const span = dom.text.element.querySelector('[data-text-id="body/body"] [data-game-text]');
+    if (span) {
+      if (span.childNodes.length !== 1) throw Error('Slot split');
+      if (retained && retained !== span.firstChild) throw Error('Node replaced');
+      retained = span.firstChild;
+      document.querySelector('#status').textContent =
+        'Runtime atlas font ready; one stable Text node. Visual/dictionary checks are manual.';
+    }
+  }).observe(dom.text.element, {subtree: true, childList: true, characterData: true});
+  document.querySelector('#reveal').onclick = () => {
+    revealed = !revealed;
+    update();
+  };
+  document.querySelector('#native').onclick = () => {
+    hidden = !hidden;
+    update();
+  };
+  update();
+</script>
