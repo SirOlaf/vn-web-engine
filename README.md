@@ -96,6 +96,12 @@ Like the game page, the laboratory reads local files without uploading them.
 
 Its **Diagnostic player** embeds a development player in the laboratory viewer and exposes restart, fast-forward, status, and instruction-trace controls. Those debugging controls are not shown on the normal game page.
 
+The [Aokana asset laboratory](aokana-assets.html) opens ARC20 archives from `targetgame/aokana` through the same local server, or from a selected game folder. Run `npm run build` and `npm start`, then open `/aokana-assets.html`.
+
+It preserves duplicate archive entries and provides searchable, paginated browsing; BSE, DSC, SDC and legacy CompressedBG decoding; image RGB/alpha inspection and PNG export; BF_Movie frame seeking and playback with both alpha codecs; browser playback of Ogg Vorbis and MP4; font previews; and script, module, time-event, and binary inspection. Stored and decoded assets can be exported locally. Scripts are inspected, not executed. Browser media codec support determines Ogg/MP4 playback availability.
+
+The native format implementations live in `src/formats/buriko`; asset routing and explorer presentation live in `src/engines/buriko`. No runtime dependencies or game assets are included. Run `node tools/verify-aokana.mjs` after building to decode the local corpus numerically, including every BF_Movie frame, without rendering or extracting assets.
+
 ## Architecture
 
 The central design rule is simple: **only universally shared behavior belongs in a shared behavioral abstraction**. Engine-, game-, and platform-specific behavior stays on its native path, even when a broader abstraction would appear more convenient.
@@ -103,7 +109,7 @@ The central design rule is simple: **only universally shared behavior belongs in
 ```text
 src/
 ├── core/          Checked binary primitives and streaming byte sources
-├── formats/       CRI, MPEG-1, PNG, and PE resource readers
+├── formats/       BURIKO, CRI, MPEG-1, PNG, and PE resource readers
 ├── audio/         PCM, HCA worker transport, and Web Audio playback
 ├── video/         Decoding workers, YUV frames, and WebGL presentation
 ├── graphics/      Surfaces, masks, meshes, blending, and draw submission

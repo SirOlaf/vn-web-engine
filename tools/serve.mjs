@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url)),
   data = fileURLToPath(new URL('../../Data/', import.meta.url));
+const aokana = path.join(root, 'targetgame', 'aokana');
 const installation = fileURLToPath(new URL('../../', import.meta.url));
 const host = process.env.HOST ?? '127.0.0.1',
   port = Number(process.env.PORT ?? 8000);
@@ -22,6 +23,22 @@ createServer(async (req, res) => {
       return;
     }
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    if (pathname === '/api/aokana/archives') {
+      const files = [];
+      for (const name of (await readdir(aokana))
+        .filter((n) => /\.arc$/i.test(n) || n === 'BGI.gdb')
+        .sort()) {
+        files.push({
+          name,
+          size: (await stat(path.join(aokana, name))).size,
+          url: `/aokana-data/${encodeURIComponent(name)}`,
+        });
+      }
+      res
+        .writeHead(200, {'Content-Type': 'application/json'})
+        .end(req.method === 'HEAD' ? undefined : JSON.stringify(files));
+      return;
+    }
     if (pathname === '/api/executable') {
       const info = await stat(path.join(installation, 'Game.exe'));
       res
@@ -48,7 +65,14 @@ createServer(async (req, res) => {
     }
     let base = root,
       relative = pathname === '/' ? 'index.html' : pathname.slice(1);
-    if (pathname.startsWith('/data/')) {
+    if (pathname.startsWith('/aokana-data/')) {
+      base = aokana;
+      relative = pathname.slice('/aokana-data/'.length);
+      if (!/^[\w-]+\.arc$/i.test(relative) && relative !== 'BGI.gdb') {
+        res.writeHead(404).end();
+        return;
+      }
+    } else if (pathname.startsWith('/data/')) {
       base = data;
       relative = pathname.slice(6);
       if (!/^[\w-]+\.cpk$/.test(relative)) {
@@ -60,7 +84,9 @@ createServer(async (req, res) => {
       relative = 'Game.exe';
     } else if (!(
       relative === 'index.html' ||
-      ['style.css', 'game.css', 'assets.html'].includes(relative) ||
+      ['style.css', 'game.css', 'assets.html', 'aokana-assets.html', 'aokana-assets.css'].includes(
+        relative,
+      ) ||
       relative.startsWith('dist/')
     )) {
       res.writeHead(404).end();
