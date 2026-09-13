@@ -3,7 +3,7 @@ import type {ByteSource} from '../../core/source.js';
 import {Bits, signature, unsignedVarint, view} from './binary.js';
 
 import {movieIdct} from './movie-idct.js';
-const zigzag = [
+export const movieZigzag = [
   0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20,
   13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52,
   45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
@@ -14,7 +14,7 @@ interface Tree {
 }
 // 0x140103150 scans from branch+1 after selecting the first active node.
 // On its second selection it can deliberately skip node 1 when node 0 is active.
-function frequencyTree(weights: readonly number[]): Tree {
+export function movieFrequencyTree(weights: readonly number[]): Tree {
   const frequencies = [...weights],
     active = weights.map((w) => w !== 0),
     children = weights.map(() => [] as number[]);
@@ -36,7 +36,7 @@ function frequencyTree(weights: readonly number[]): Tree {
     if (active.filter(Boolean).length === 1) return {root, children};
   }
 }
-function symbol(bits: Bits, tree: Tree, leaves: number): number {
+export function movieSymbol(bits: Bits, tree: Tree, leaves: number): number {
   let node = tree.root;
   while (node >= leaves) {
     const next = tree.children[node]![bits.read(1)];
@@ -45,12 +45,13 @@ function symbol(bits: Bits, tree: Tree, leaves: number): number {
   }
   return node;
 }
-function signedBits(bits: Bits, count: number): number {
+export function movieSignedBits(bits: Bits, count: number): number {
   const value = bits.read(count);
   return count && value < 2 ** (count - 1) ? value - (2 ** count - 1) : value;
 }
 const f = Math.fround;
 const clamp = (v: number) => Math.max(0, Math.min(255, Math.trunc(v)));
+const zigzag = movieZigzag, frequencyTree = movieFrequencyTree, symbol = movieSymbol, signedBits = movieSignedBits;
 /** Native 0x1401091b0 / 0x140105f30, BF_Movie 0x10001, including both alpha codecs. */
 export class BfMovie {
   private readonly pixels: Uint8Array;

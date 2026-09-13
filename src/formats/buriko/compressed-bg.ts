@@ -35,20 +35,29 @@ export function frequencyTree(weights: readonly number[]): {root: number; childr
 }
 /** Legacy CompressedBG version 1; all 8,159 CBG assets in this installation select this path. */
 export function decodeCompressedBgV1(bytes: Uint8Array): BurikoImage {
+  return decodeLegacy(bytes, true);
+}
+
+/** 0x1400bfa50 accepts every non-v2 legacy version and scalar byte-channel depth. */
+export function decodeCompressedBgLegacy(bytes: Uint8Array): BurikoImage {
+  return decodeLegacy(bytes, false);
+}
+
+function decodeLegacy(bytes: Uint8Array, strictVersionOne: boolean): BurikoImage {
   checkRange(bytes.length, 0, 48);
-  if (!signature(bytes, 'CompressedBG___\0') || view(bytes).getUint16(46, true) !== 1)
+  if (!signature(bytes, 'CompressedBG___\0') || (strictVersionOne && view(bytes).getUint16(46, true) !== 1))
     throw new Error('Not legacy CompressedBG version 1');
   const data = view(bytes),
     width = data.getUint16(16, true),
     height = data.getUint16(18, true),
     depth = data.getUint16(20, true);
-  if (!width || !height || ![8, 24, 32].includes(depth))
+  if (strictVersionOne && (!width || !height || ![8, 24, 32].includes(depth)))
     throw new Error('Invalid legacy CompressedBG geometry');
-  const channels = depth / 8,
+  const channels = depth >>> 3,
     size = width * height * channels,
     intermediateSize = data.getUint32(32, true),
     tableSize = data.getUint32(40, true);
-  if (size > 0x10000000 || intermediateSize > 0x10000000)
+  if (strictVersionOne && (size > 0x10000000 || intermediateSize > 0x10000000))
     throw new Error('CompressedBG exceeds inspector memory limit');
   checkRange(bytes.length, 48, tableSize);
   const table = bytes.slice(48, 48 + tableSize),
@@ -65,7 +74,7 @@ export function decodeCompressedBgV1(bytes: Uint8Array): BurikoImage {
     throw new Error('CompressedBG table checksum mismatch');
   const cursor = {position: 0},
     weights = Array.from({length: 256}, () => unsignedVarint(table, cursor));
-  if (cursor.position !== table.length) throw new Error('Trailing CompressedBG table data');
+  if (strictVersionOne && cursor.position !== table.length) throw new Error('Trailing CompressedBG table data');
   const tree = frequencyTree(weights),
     bits = new Bits(bytes.subarray(48 + tableSize)),
     intermediate = new Uint8Array(intermediateSize);
