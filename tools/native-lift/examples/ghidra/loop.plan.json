@@ -1,0 +1,10 @@
+{
+  "schema": "ghidra-cfg-import/v1",
+  "exportSha256": "47446e99eea46584f84d905f4dd4c81929e9d6440ec801ef4276d512e8e46bf5",
+  "sourceKind": "synthetic",
+  "reviewReference": "tools/ghidra-bridge/fixtures/README.md and tests/tooling-ghidra-cfg-import.test.mjs",
+  "assumptions": [
+    "Only the invented countdown function is represented; no game acceptance or saved-state proof."
+  ],
+  "callArguments": {}
+}

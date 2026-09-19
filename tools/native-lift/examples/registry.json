@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "exact": [],
+  "patterns": [
+    {
+      "id": "synthetic-add-v1",
+      "shapeSha256": "8fd94215930ada94b5000b57c1349923b31d43d13169d89bc31d8cd6d591bad9",
+      "approvedTargets": [
+        {
+          "binary": {
+            "programPath": "/synthetic.exe",
+            "executableSha256": "40de354739b2879773a69e457b394a7a3ff8152820c7f0be6ce9a852326cd8a0",
+            "languageId": "x86:LE:64:default",
+            "imageBase": "0x140000000"
+          },
+          "entryAddress": "0x140001000",
+          "bodySha256": "e394a280db67cae62f34141214ba6967af4047a2a9eab6ba6db3df2061725ee5",
+          "irSha256": "98b2cc6411549007e235d53d8310aa73a9ae5e6cc2a0e8957eb7f12fb237513a"
+        }
+      ],
+      "route": {
+        "kind": "hand",
+        "implementation": {
+          "id": "synthetic-add-v1",
+          "sourcePath": "tools/native-lift/examples/hand-add.mjs",
+          "sourceSha256": "b724b2a4c2908d85b46e630532a69224a106a5caa643bf1ab179b5e70a085af3",
+          "exportName": "add"
+        },
+        "reviewReference": "tests/tooling-native-lift.test.mjs"
+      }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "kind": "reviewed-integer-leaf",
+  "symbol": "synthetic_add_u64",
+  "binary": {
+    "programPath": "/synthetic.exe",
+    "executableSha256": "40de354739b2879773a69e457b394a7a3ff8152820c7f0be6ce9a852326cd8a0",
+    "languageId": "x86:LE:64:default",
+    "imageBase": "0x140000000"
+  },
+  "entryAddress": "0x140001000",
+  "bodyRanges": [
+    {
+      "start": "0x140001000",
+      "end": "0x14000100f"
+    }
+  ],
+  "bodySha256": "e394a280db67cae62f34141214ba6967af4047a2a9eab6ba6db3df2061725ee5",
+  "provenance": {
+    "sourceKind": "synthetic",
+    "sourceSha256": "17b9a00f6223e171fb4cff80eb2f77e288f6af3ba7f6795d7dd927b40657882a",
+    "exporter": "hand-authored synthetic fixture/v1",
+    "reviewReference": "tests/tooling-native-lift.test.mjs",
+    "assumptions": [
+      "Pure integer leaf: no memory, calls, exceptions, flags, FP, SIMD or ABI recovery",
+      "Synthetic addresses and hashes provide no native evidence"
+    ]
+  },
+  "inputs": [
+    {
+      "id": "left",
+      "bits": 64
+    },
+    {
+      "id": "right",
+      "bits": 64
+    }
+  ],
+  "operations": [
+    {
+      "id": "sum",
+      "bits": 64,
+      "opcode": "INT_ADD",
+      "inputs": [
+        {
+          "ref": "left"
+        },
+        {
+          "ref": "right"
+        }
+      ],
+      "source": {
+        "address": "0x140001000",
+        "sequence": 0
+      }
+    }
+  ],
+  "result": {
+    "ref": "sum"
+  }
+}

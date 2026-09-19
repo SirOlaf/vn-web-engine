@@ -1,0 +1,27 @@
+{
+  "schema": "native-address-ledger/v1",
+  "note": "Incomplete expectation template. Exact metadata was read through MCP on 2026-09-19, but script export is disabled. Null hashes must be replaced only after fresh full-body inspection/export. This file cannot verify.",
+  "identity": {
+    "programPath": "/aokana.exe",
+    "executableSha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+    "languageId": "x86:LE:64:default",
+    "imageBase": "0x140000000"
+  },
+  "functions": [
+    {
+      "address": "0x1400de050",
+      "entryAddress": "0x1400de050",
+      "name": "AokanaNative90_01_SetPresentationEnabled",
+      "bodyRanges": [
+        {
+          "start": "0x1400de050",
+          "end": "0x1400de066",
+          "byteLength": 23,
+          "bytesSha256": null
+        }
+      ],
+      "bodyByteLength": 23,
+      "bodySha256": null
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema": "native-address-ledger/v1",
+  "note": "Synthetic worked example only; never native evidence. Invented bytes 01 02 03 04 and 05 06 are hashed, not executed.",
+  "identity": {
+    "programPath": "/synthetic-ledger.bin",
+    "executableSha256": "b29cc8b64c6074eee19706783d0626a42d29af1a3c9726fce8a8d86d589cbf96",
+    "languageId": "x86:LE:64:default",
+    "imageBase": "0xffff000000000000"
+  },
+  "functions": [
+    {
+      "address": "0xffff000000001000",
+      "entryAddress": "0xffff000000001000",
+      "name": "Synthetic::TwoRangeFunction",
+      "bodyRanges": [
+        {
+          "start": "0xffff000000001000",
+          "end": "0xffff000000001003",
+          "byteLength": 4,
+          "bytesSha256": "9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a"
+        },
+        {
+          "start": "0xffff000000001020",
+          "end": "0xffff000000001021",
+          "byteLength": 2,
+          "bytesSha256": "c42522128b49193de8cd45d8f7589cd7e085e65f138640d57d4482e5f7189623"
+        }
+      ],
+      "bodyByteLength": 6,
+      "bodySha256": "7192385c3c0605de55bb9476ce1d90748190ecb32a8eed7f5207b30cf6a1fe89"
+    }
+  ]
+}

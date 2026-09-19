@@ -130,6 +130,8 @@ The runtime has no production npm dependencies. TypeScript and Prettier are deve
 
 ## Development
 
+Native reconstruction has a separate [tooling workflow](docs/tooling/README.md) for exact-address evidence, callback ownership, partial aggregation audits, reviewed validation boundaries, and experimental TypeScript lifting. For Aokana reconstruction, use its explicitly reviewed test boundaries instead of a broad suite.
+
 Run the formatter and unit/integration suite before submitting changes:
 
 ```sh

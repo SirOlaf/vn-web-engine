@@ -4,3 +4,5 @@ __pycache__/
 .DS_Store
 targetgame/
 docs/investigations
+docs/tooling/boundaries/
+docs/tooling/evidence/

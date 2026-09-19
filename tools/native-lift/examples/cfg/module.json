@@ -1,0 +1,483 @@
+{
+  "schemaVersion": 2,
+  "kind": "reviewed-cfg-module",
+  "entryImplementation": "run",
+  "functions": [
+    {
+      "implementation": "run",
+      "provenance": {
+        "binary": {
+          "programPath": "/synthetic-cfg.exe",
+          "executableSha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+          "languageId": "x86:LE:64:default",
+          "imageBase": "0x140000000"
+        },
+        "entryAddress": "0x140001000",
+        "bodyRanges": [
+          {
+            "start": "0x140001000",
+            "end": "0x1400010ff"
+          }
+        ],
+        "bodySha256": "e4aac847f3733a67243752d76dc875bb3bb6b7b5ce980291573596349eecff42",
+        "sourceKind": "synthetic",
+        "sourceSha256": "0178090331841fba6f5802d29648ddbd6ff9074d9e7ac3514d9575b9d0e99dc6",
+        "exporter": "synthetic-fixtures/v2",
+        "reviewReference": "tests/tooling-native-cfg.test.mjs",
+        "assumptions": [
+          "No native execution or equivalence claim",
+          "Direct parameter and reference contracts are explicit in the local database"
+        ]
+      },
+      "variant": null,
+      "parameterValues": {
+        "context": "context",
+        "value": "input",
+        "chooseAlternate": "choice",
+        "opaqueValue": "opaque"
+      },
+      "entryBlock": "entry",
+      "blocks": [
+        {
+          "id": "entry",
+          "phis": [],
+          "operations": [
+            {
+              "id": "seed",
+              "opcode": "CALL",
+              "target": {
+                "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+                "rva": "0x1100"
+              },
+              "arguments": {
+                "context": {
+                  "ref": "context"
+                },
+                "value": {
+                  "ref": "input"
+                }
+              },
+              "source": {
+                "address": "0x140001000",
+                "sequence": 0
+              }
+            }
+          ],
+          "terminator": {
+            "opcode": "BRANCH",
+            "condition": {
+              "ref": "choice"
+            },
+            "trueTarget": "alternatePath",
+            "falseTarget": "basePath",
+            "source": {
+              "address": "0x140001000",
+              "sequence": 1
+            }
+          }
+        },
+        {
+          "id": "basePath",
+          "phis": [],
+          "operations": [],
+          "terminator": {
+            "opcode": "JUMP",
+            "target": "join",
+            "source": {
+              "address": "0x140001000",
+              "sequence": 2
+            }
+          }
+        },
+        {
+          "id": "alternatePath",
+          "phis": [],
+          "operations": [
+            {
+              "id": "adjusted",
+              "type": "i32",
+              "opcode": "INT_ADD",
+              "inputs": [
+                {
+                  "ref": "seed"
+                },
+                {
+                  "constant": "0x1",
+                  "type": "i32"
+                }
+              ],
+              "source": {
+                "address": "0x140001000",
+                "sequence": 3
+              }
+            }
+          ],
+          "terminator": {
+            "opcode": "JUMP",
+            "target": "join",
+            "source": {
+              "address": "0x140001000",
+              "sequence": 4
+            }
+          }
+        },
+        {
+          "id": "join",
+          "phis": [
+            {
+              "id": "chosen",
+              "type": "i32",
+              "incoming": {
+                "basePath": {
+                  "ref": "seed"
+                },
+                "alternatePath": {
+                  "ref": "adjusted"
+                }
+              },
+              "source": {
+                "address": "0x140001000",
+                "sequence": 5
+              }
+            }
+          ],
+          "operations": [
+            {
+              "opcode": "PUSH_VARIANT",
+              "scopeId": "outerMath",
+              "family": "math",
+              "selectorValue": 1,
+              "reviewReference": "synthetic scoped variant contract",
+              "source": {
+                "address": "0x140001000",
+                "sequence": 6
+              }
+            },
+            {
+              "id": "outer",
+              "opcode": "VARIANT_CALL",
+              "family": "math",
+              "operation": "call",
+              "arguments": {
+                "value": {
+                  "ref": "chosen"
+                }
+              },
+              "source": {
+                "address": "0x140001000",
+                "sequence": 7
+              }
+            },
+            {
+              "opcode": "PUSH_VARIANT",
+              "scopeId": "innerMath",
+              "family": "math",
+              "selectorValue": 0,
+              "reviewReference": "synthetic scoped variant contract",
+              "source": {
+                "address": "0x140001000",
+                "sequence": 8
+              }
+            },
+            {
+              "id": "inner",
+              "opcode": "VARIANT_CALL",
+              "family": "math",
+              "operation": "call",
+              "arguments": {
+                "value": {
+                  "ref": "chosen"
+                }
+              },
+              "source": {
+                "address": "0x140001000",
+                "sequence": 9
+              }
+            },
+            {
+              "opcode": "POP_VARIANT",
+              "scopeId": "innerMath",
+              "source": {
+                "address": "0x140001000",
+                "sequence": 10
+              }
+            },
+            {
+              "id": "restored",
+              "opcode": "VARIANT_CALL",
+              "family": "math",
+              "operation": "call",
+              "arguments": {
+                "value": {
+                  "ref": "chosen"
+                }
+              },
+              "source": {
+                "address": "0x140001000",
+                "sequence": 11
+              }
+            },
+            {
+              "opcode": "PUSH_VARIANT",
+              "scopeId": "textShape",
+              "family": "shape",
+              "selectorValue": 0,
+              "reviewReference": "synthetic scoped variant contract",
+              "source": {
+                "address": "0x140001000",
+                "sequence": 12
+              }
+            },
+            {
+              "id": "length",
+              "opcode": "VARIANT_CALL",
+              "family": "shape",
+              "operation": "measure",
+              "arguments": {
+                "value": {
+                  "ref": "opaque"
+                }
+              },
+              "source": {
+                "address": "0x140001000",
+                "sequence": 13
+              }
+            },
+            {
+              "opcode": "POP_VARIANT",
+              "scopeId": "textShape",
+              "source": {
+                "address": "0x140001000",
+                "sequence": 14
+              }
+            },
+            {
+              "opcode": "POP_VARIANT",
+              "scopeId": "outerMath",
+              "source": {
+                "address": "0x140001000",
+                "sequence": 15
+              }
+            },
+            {
+              "id": "signedLength",
+              "type": "i32",
+              "opcode": "CAST",
+              "inputs": [
+                {
+                  "ref": "length"
+                }
+              ],
+              "source": {
+                "address": "0x140001000",
+                "sequence": 16
+              }
+            },
+            {
+              "id": "part",
+              "type": "i32",
+              "opcode": "INT_ADD",
+              "inputs": [
+                {
+                  "ref": "outer"
+                },
+                {
+                  "ref": "inner"
+                }
+              ],
+              "source": {
+                "address": "0x140001000",
+                "sequence": 17
+              }
+            },
+            {
+              "id": "part2",
+              "type": "i32",
+              "opcode": "INT_ADD",
+              "inputs": [
+                {
+                  "ref": "part"
+                },
+                {
+                  "ref": "restored"
+                }
+              ],
+              "source": {
+                "address": "0x140001000",
+                "sequence": 18
+              }
+            },
+            {
+              "id": "result",
+              "type": "i32",
+              "opcode": "INT_ADD",
+              "inputs": [
+                {
+                  "ref": "part2"
+                },
+                {
+                  "ref": "signedLength"
+                }
+              ],
+              "source": {
+                "address": "0x140001000",
+                "sequence": 19
+              }
+            }
+          ],
+          "terminator": {
+            "opcode": "RETURN",
+            "value": {
+              "ref": "result"
+            },
+            "source": {
+              "address": "0x140001000",
+              "sequence": 20
+            }
+          }
+        }
+      ]
+    },
+    {
+      "implementation": "base",
+      "provenance": {
+        "binary": {
+          "programPath": "/synthetic-cfg.exe",
+          "executableSha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+          "languageId": "x86:LE:64:default",
+          "imageBase": "0x140000000"
+        },
+        "entryAddress": "0x140002000",
+        "bodyRanges": [
+          {
+            "start": "0x140002000",
+            "end": "0x1400020ff"
+          }
+        ],
+        "bodySha256": "fba572d290ce81e2b7f9a423a0278761c9e1a0a9542d6150e98f37dabca3210c",
+        "sourceKind": "synthetic",
+        "sourceSha256": "b59c3a00c2b4f919c3625ae456d8d9bb0037816df7ec0ed7757279a830fd14be",
+        "exporter": "synthetic-fixtures/v2",
+        "reviewReference": "tests/tooling-native-cfg.test.mjs",
+        "assumptions": [
+          "No native execution or equivalence claim",
+          "Direct parameter and reference contracts are explicit in the local database"
+        ]
+      },
+      "variant": null,
+      "parameterValues": {
+        "value": "input"
+      },
+      "entryBlock": "entry",
+      "blocks": [
+        {
+          "id": "entry",
+          "phis": [],
+          "operations": [
+            {
+              "id": "result",
+              "type": "i32",
+              "opcode": "INT_ADD",
+              "inputs": [
+                {
+                  "ref": "input"
+                },
+                {
+                  "constant": "0x1",
+                  "type": "i32"
+                }
+              ],
+              "source": {
+                "address": "0x140002000",
+                "sequence": 0
+              }
+            }
+          ],
+          "terminator": {
+            "opcode": "RETURN",
+            "value": {
+              "ref": "result"
+            },
+            "source": {
+              "address": "0x140002000",
+              "sequence": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "implementation": "alternate",
+      "provenance": {
+        "binary": {
+          "programPath": "/synthetic-cfg.exe",
+          "executableSha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+          "languageId": "x86:LE:64:default",
+          "imageBase": "0x140000000"
+        },
+        "entryAddress": "0x140002000",
+        "bodyRanges": [
+          {
+            "start": "0x140002000",
+            "end": "0x1400020ff"
+          }
+        ],
+        "bodySha256": "bf0a050b81c8d8a9fb3cdb9948320589a3385f9887f7ac97ed7ed1ffc33bba02",
+        "sourceKind": "synthetic",
+        "sourceSha256": "53fa140a277bbcb953f84bfccb62c44076e46b2cf8625ded837f88cde27ca531",
+        "exporter": "synthetic-fixtures/v2",
+        "reviewReference": "tests/tooling-native-cfg.test.mjs",
+        "assumptions": [
+          "No native execution or equivalence claim",
+          "Direct parameter and reference contracts are explicit in the local database"
+        ]
+      },
+      "variant": {
+        "kind": "decoded-body",
+        "family": "math",
+        "selectorValue": 1,
+        "reviewReference": "synthetic separately decoded second body"
+      },
+      "parameterValues": {
+        "value": "input"
+      },
+      "entryBlock": "entry",
+      "blocks": [
+        {
+          "id": "entry",
+          "phis": [],
+          "operations": [
+            {
+              "id": "result",
+              "type": "i32",
+              "opcode": "INT_ADD",
+              "inputs": [
+                {
+                  "ref": "input"
+                },
+                {
+                  "constant": "0xa",
+                  "type": "i32"
+                }
+              ],
+              "source": {
+                "address": "0x140002000",
+                "sequence": 0
+              }
+            }
+          ],
+          "terminator": {
+            "opcode": "RETURN",
+            "value": {
+              "ref": "result"
+            },
+            "source": {
+              "address": "0x140002000",
+              "sequence": 1
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
