@@ -4,9 +4,22 @@ import {pointerView, type AokanaBpPointer} from '../bp/memory.js';
 import {AokanaSurfaces} from './surfaces.js';
 import {allocateAokanaBitmap, type AokanaBitmap} from './bitmap.js';
 import {terminatedNativeBytes} from './program-files.js';
+import {AokanaCustomGlyphs} from './custom-text-glyphs.js';
+import type {AokanaFontRecord} from './fonts.js';
+import {
+  buildAokanaHorizontalTextLayout,
+  type AokanaHorizontalTextLayoutOptions,
+  type AokanaHorizontalTextLayoutResult,
+} from './text-layout-horizontal.js';
 
 export interface AokanaTextFrameError {
   value: number;
+}
+
+export interface AokanaTextLinkRegion {
+  readonly text: Uint8Array;
+  readonly x: number;
+  readonly y: number;
 }
 
 const emptyBitmap = (): AokanaBitmap => ({
@@ -24,6 +37,8 @@ export class AokanaTextLayoutState {
   /** 1d2760 is the persistent registry; each layout call owns a separate annotation context. */
   readonly annotations: AokanaRubyAnnotations;
   readonly text: AokanaNativeText;
+  /** 27ca70 is the one shared numeric glyph map used by registration and both layout directions. */
+  readonly customGlyphs: AokanaCustomGlyphs;
   field1C9100 = 25;
   field1D1E48 = 0;
   field1C90EC = 40;
@@ -53,6 +68,26 @@ export class AokanaTextLayoutState {
   field1D1DBC = 0;
   field1D1D94 = 0;
 
+  /** 1c9060 is the fixed Q16 side-bearing scale used by horizontal proportional layout. */
+  proportionalSideBearing = 0x2aaa;
+  /** 1c90e4 and 1d27a8 are shared, but each builder resets the latter from its input color. */
+  linkColor = 0xffffffff;
+  currentInlineColor = 0;
+  /** 1d1dc0 and 1d1e20..2c provide the optional font selected while a link is open. */
+  readonly alternateFontName = new Uint8Array(256);
+  alternateFontSize = 0;
+  alternateFontWidth = 0;
+  alternateFontBold = 0;
+  alternateFontItalic = 0;
+  /** 1d1e50/1d1e60 retain at most sixteen encoded link positions from the latest build. */
+  readonly linkRegions: AokanaTextLinkRegion[] = [];
+  /** 1D1E58 is the bitmap-text caller's shared horizontal cursor pair. */
+  readonly surfaceCursor = {x: 0, y: 0};
+  /** 077bb0 publishes an opaque ID for the latest per-line extent vector when policy 80000009 is on. */
+  readonly lineHeightLayouts = new Map<number, readonly number[]>();
+  private nextLineHeightLayoutId = 0;
+  missingGlyphHandler: ((character: number) => void) | null = null;
+
   /** 1d1d78/1d1da8 belong to animated window overlay zero, separately from custom glyphs. */
   overlayFrames: AokanaBitmap[] | null = null;
   overlayFrameCount = 0;
@@ -64,6 +99,7 @@ export class AokanaTextLayoutState {
   constructor(readonly surfaces: AokanaSurfaces) {
     this.text = surfaces.fonts.text;
     this.annotations = new AokanaRubyAnnotations(this.text);
+    this.customGlyphs = new AokanaCustomGlyphs(surfaces);
   }
 
   /** B46f0 controls the same persistent registry used by 078e40 and text procedures. */
@@ -145,6 +181,37 @@ export class AokanaTextLayoutState {
     return Math.max(4, size);
   }
 
+  resetLinkRegions(): void {
+    this.linkRegions.length = 0;
+  }
+
+  addLinkRegion(text: string, x: number, y: number): boolean {
+    if (this.linkRegions.length >= 16) return false;
+    const encoded = this.text.encodeWide(text, 1),
+      end = encoded.indexOf(0),
+      length = Math.min(end < 0 ? encoded.length : end, 95);
+    this.linkRegions.push({text: encoded.slice(0, length), x: x | 0, y: y | 0});
+    return true;
+  }
+
+  publishLineHeightLayout(values: readonly number[]): number {
+    this.nextLineHeightLayoutId = (this.nextLineHeightLayoutId + 1) | 0;
+    const id = this.nextLineHeightLayoutId;
+    this.lineHeightLayouts.set(
+      id,
+      values.map((value) => value >>> 0),
+    );
+    while (this.lineHeightLayouts.size > 16)
+      this.lineHeightLayouts.delete(this.lineHeightLayouts.keys().next().value!);
+    return id;
+  }
+
+  async buildHorizontalText(
+    options: AokanaHorizontalTextLayoutOptions,
+  ): Promise<AokanaHorizontalTextLayoutResult> {
+    return buildAokanaHorizontalTextLayout(this, options);
+  }
+
   /** 0789b0 retains raw DWORD selectors and the one self-assignment branch. */
   setPolicy(selector: number, value: number): number {
     value >>>= 0;
@@ -190,6 +257,26 @@ export class AokanaTextLayoutState {
         return 0x80000007;
     }
     return 0;
+  }
+
+  /** 0723d0 reads the shared fitting flag while selecting ordinary or registered glyph data. */
+  drawGlyphOutline(
+    destination: AokanaBitmap,
+    character: number,
+    font: AokanaFontRecord,
+    radiusX: number,
+    radiusY: number,
+    color: number,
+  ): void {
+    this.customGlyphs.outline(
+      destination,
+      character,
+      font,
+      radiusX,
+      radiusY,
+      color,
+      this.field1D1D94,
+    );
   }
 
   /** 072210 keeps already-cloned frames if a later surface or composite reports the native failure. */

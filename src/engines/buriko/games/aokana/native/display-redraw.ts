@@ -1,9 +1,15 @@
-/** Native request globals 1e6c44/1c9130. Requesting redraw never presents a frame. */
+import type {AokanaNativeLocks} from './exclusion-locks.js';
+
+/** Native request and procedure-redraw globals. Requesting redraw never presents a frame. */
 export class AokanaDisplayRedraw {
   private locks: AokanaNativeLocks | null = null;
   pending = 0;
   /** The initialized DWORD in this executable is one. */
   mode = 1;
+  /** 1c90ac starts at one; procedure completion consults it before requesting a redraw. */
+  automaticEnabled = 1;
+  /** 1d1d58 starts at zero; nonzero selects a full rather than damage redraw. */
+  automaticMode = 0;
 
   bindLocks(locks: AokanaNativeLocks): void {
     if (this.locks !== null && this.locks !== locks)
@@ -20,5 +26,10 @@ export class AokanaDisplayRedraw {
     } else this.mode |= mode;
     this.locks?.leaveEngine(1);
   }
+
+  /** 06fee0 publishes the enable DWORD before the redraw-mode DWORD. */
+  configureAutomatic(enabled: number, mode: number): void {
+    this.automaticEnabled = enabled >>> 0;
+    this.automaticMode = mode >>> 0;
+  }
 }
-import type {AokanaNativeLocks} from './exclusion-locks.js';

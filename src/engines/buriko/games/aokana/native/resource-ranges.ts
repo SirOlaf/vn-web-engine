@@ -12,6 +12,24 @@ interface RawRead {
 export class AokanaResourceRanges {
   constructor(readonly resources: AokanaProgramResources) {}
 
+  private async fileAvailable(path: Uint8Array): Promise<boolean> {
+    const files = this.resources.files;
+    if (!files.isAvailable(path)) return false;
+    return (await files.open(path)).source !== null;
+  }
+
+  private async looseAvailable(root: Uint8Array, name: Uint8Array): Promise<boolean> {
+    const terminated = terminatedNativeBytes(name);
+    if (terminated[0] === 92 || terminated[1] === 58) return this.fileAvailable(terminated);
+    if (await this.fileAvailable(this.resources.loosePath(root, terminated))) return true;
+    if (this.resources.configuration.searchDirectoriesEnabled !== 0)
+      for (const directory of this.resources.configuration.searchDirectories)
+        if (await this.fileAvailable(this.resources.loosePath(
+          this.resources.loosePath(root, directory), terminated, true)))
+          return true;
+    return false;
+  }
+
   private async file(
     path: Uint8Array, destination: AokanaBpPointer | null, offset: number, length: number,
   ): Promise<RawRead> {
@@ -58,6 +76,26 @@ export class AokanaResourceRanges {
     const read = await this.resources.archives.read(path, name, offset, length);
     if (read.bytes !== null) destination.bytes.set(read.bytes, destination.offset);
     return read.result;
+  }
+
+  /** BD950 follows loose-file policy first, then tests archive record existence, not size. */
+  async isAvailable(archive: Uint8Array | null, name: Uint8Array): Promise<boolean> {
+    const configuration = this.resources.configuration;
+    if (await this.looseAvailable(configuration.primaryRoot, name)) return true;
+    if (archive === null) {
+      const terminated = terminatedNativeBytes(name);
+      if (terminated[0] === 92 || terminated[1] === 58) return false;
+      return this.looseAvailable(configuration.secondaryRoot, terminated);
+    }
+    if (await this.resources.archives.contains(
+      this.resources.archivePath(configuration.primaryRoot, archive), name))
+      return true;
+    return (
+      this.resources.files.media.isAvailable(configuration.secondaryMediaPath) &&
+      (await this.resources.archives.contains(
+        this.resources.archivePath(configuration.secondaryRoot, archive), name,
+      ))
+    );
   }
 
   /** BD400 queries the stored size; BD6B0's decoded-size service remains separate. */

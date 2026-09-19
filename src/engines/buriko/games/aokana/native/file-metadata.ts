@@ -267,6 +267,72 @@ export class AokanaMountedFileMetadata implements FileSystem {
       }
     }
   }
+  /** DeleteFileW over the selected mounted filesystem and this same metadata owner. */
+  async deleteFile(path: string): Promise<void> {
+    path = this.canonical(path);
+    this.assertWritable(path);
+    const record = await this.metadata(path);
+    if (record.kind === 'directory') throw new FileError('IS_DIRECTORY', path);
+    await this.commit([{kind: 'delete', path}]);
+  }
+  /** MoveFileW's same-volume replacement transfers the source file and its metadata. */
+  async replaceFile(sourcePath: string, destinationPath: string): Promise<void> {
+    sourcePath = this.canonical(sourcePath);
+    destinationPath = this.canonical(destinationPath);
+    if (sourcePath === destinationPath) throw new FileError('INVALID_PATH', sourcePath);
+    this.assertWritable(sourcePath);
+    this.assertWritable(destinationPath);
+    const sourceVolume = this.volume(sourcePath),
+      destinationVolume = this.volume(destinationPath);
+    if (
+      sourceVolume === null ||
+      destinationVolume === null ||
+      sourceVolume.identity !== destinationVolume.identity
+    )
+      throw new FileError('CROSS_MOUNT', sourcePath);
+
+    const source = await this.metadata(sourcePath);
+    if (source.kind === 'directory') throw new FileError('IS_DIRECTORY', sourcePath);
+    if (source.attributes !== null && (source.attributes & 1) !== 0)
+      throw new FileError('READ_ONLY', sourcePath);
+    const destinationDirectory = await this.metadata(parent(destinationPath));
+    if (destinationDirectory.kind !== 'directory')
+      throw new FileError('NOT_DIRECTORY', destinationDirectory.path);
+
+    let destination: AokanaFileMetadataRecord | null = null;
+    try {
+      destination = await this.metadata(destinationPath);
+    } catch (error) {
+      if (!unavailable(error)) throw error;
+    }
+    if (destination?.kind === 'directory') throw new FileError('IS_DIRECTORY', destinationPath);
+    if (
+      destination !== null &&
+      destination.attributes !== null &&
+      (destination.attributes & 1) !== 0
+    )
+      throw new FileError('READ_ONLY', destinationPath);
+
+    const opened = await this.backing.open(sourcePath),
+      bytes = new Uint8Array(await opened.read(0, opened.size)),
+      changes: FileChange[] = [];
+    if (destination !== null) changes.push({kind: 'delete', path: destinationPath});
+    changes.push(
+      {kind: 'write', path: destinationPath, data: bytes},
+      {kind: 'delete', path: sourcePath},
+    );
+    await this.backing.commit(changes);
+
+    this.records.delete(sourcePath);
+    this.records.set(destinationPath, {...source, path: destinationPath});
+    const now = BigInt.asUintN(64, this.profile.currentFileTime()),
+      parents = new Set([parent(sourcePath), parent(destinationPath)]);
+    for (const directoryPath of parents) {
+      const directory = await this.metadata(directoryPath);
+      directory.writeTime = now;
+      this.records.set(directoryPath, directory);
+    }
+  }
   /** Concrete empty directories have no backing byte record; the same owner exposes them to stat/list. */
   async createDirectory(path: string): Promise<void> {
     path = this.canonical(path);

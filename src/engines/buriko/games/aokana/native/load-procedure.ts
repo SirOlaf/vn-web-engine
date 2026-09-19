@@ -4,6 +4,12 @@ import {AokanaResourceLoadingState, type AokanaResourceBuffer, type AokanaResour
 import {terminatedNativeBytes} from './program-files.js';
 import type {AokanaBpOpcodeContext} from './types.js';
 
+export interface AokanaLoadProcedureOptions {
+  readonly cacheEligible?: boolean;
+  readonly deferCacheLookup?: boolean;
+  readonly silentFailures?: boolean;
+}
+
 /** CProcLoad 07B030/07AEA0; bitmap subclasses provide the native pure virtual completion. */
 export abstract class AokanaLoadProcedure extends AokanaProcedure {
   readonly output: AokanaResourceBuffer = {bytes: null};
@@ -11,21 +17,30 @@ export abstract class AokanaLoadProcedure extends AokanaProcedure {
   readonly archive: Uint8Array;
   readonly name: Uint8Array;
   failure: number | null = null;
-  protected readonly cacheSelected: boolean;
-  protected readonly cacheMiss: boolean;
+  protected cacheSelected = false;
+  protected cacheMiss = false;
+  private readonly silentFailures: boolean;
 
   protected constructor(
     readonly context: AokanaBpOpcodeContext, procedures: AokanaProcedureState, clock: AokanaNativeClock,
     readonly loading: AokanaResourceLoadingState, archive: Uint8Array | null, name: Uint8Array,
+    options: AokanaLoadProcedureOptions = {},
   ) {
     super(context.thread, procedures, clock);
     loading.enterProcedure();
     this.archive = this.copyName(archive ?? Uint8Array.of(0));
     this.name = this.copyName(name);
-    this.cacheSelected = loading.cache.enabled;
-    const cached = this.cacheSelected ? loading.cache.read(this.archiveName, this.name) : null;
+    this.silentFailures = options.silentFailures === true;
+    if (options.deferCacheLookup !== true) this.selectCache(options.cacheEligible ?? true);
+  }
+
+  /** 07ACD0 consults the optional whole-resource cache only for an eligible constructor. */
+  protected selectCache(eligible: boolean): boolean {
+    this.cacheSelected = eligible && this.loading.cache.enabled;
+    const cached = this.cacheSelected ? this.loading.cache.read(this.archiveName, this.name) : null;
     this.cacheMiss = this.cacheSelected && cached === null;
     if (cached !== null) { this.output.bytes = cached; this.result.value = cached.length; }
+    return cached !== null;
   }
 
   private copyName(bytes: Uint8Array): Uint8Array {
@@ -46,7 +61,10 @@ export abstract class AokanaLoadProcedure extends AokanaProcedure {
     const step = this.advance();
     if (step === 0) {
       if (this.result.value === 0) return 0;
-      if (this.result.value >>> 0 === 0xffffffff) { this.failure = 3; return -1; }
+      if (this.result.value >>> 0 === 0xffffffff) {
+        this.failure = 3;
+        return this.silentFailures ? 1 : -1;
+      }
       if (this.cacheSelected && this.cacheMiss) {
         if (this.output.bytes === null) throw new Error('Aokana load procedure has no successful resource bytes');
         this.loading.cache.insert(this.archiveName, this.name, this.output.bytes.subarray(0, this.result.value >>> 0));
@@ -55,7 +73,7 @@ export abstract class AokanaLoadProcedure extends AokanaProcedure {
     }
     if (step === 1) return 0;
     this.failure = step;
-    return -1;
+    return this.silentFailures ? 1 : -1;
   }
 
   override dispose(): void {

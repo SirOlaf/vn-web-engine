@@ -8,6 +8,11 @@ export interface AokanaBitmapStripPlan {
 
 export type AokanaBitmapOperationPoint = readonly [number, number];
 
+export interface AokanaBitmapMeshOperationStrip<Record> {
+  readonly records: readonly Record[];
+  readonly firstRow: number;
+}
+
 /** 052ba0 advances one wrapping Q16 accumulator and stores its signed integer part. */
 export function aokanaBitmapOperationScalars(
   initial: number,
@@ -92,6 +97,35 @@ export function aokanaBitmapOperationStrips(
   return jobs;
 }
 
+/** 052BD0 intersects mesh records with each real mode-four destination strip. */
+export function aokanaBitmapMeshOperationStrips<Record>(
+  records: readonly Record[],
+  firstRow: number,
+  jobs: readonly AokanaBitmap[][],
+): AokanaBitmapMeshOperationStrip<Record>[] {
+  const result: AokanaBitmapMeshOperationStrip<Record>[] = [];
+  let record = 0,
+    remaining = records.length | 0,
+    row = firstRow | 0;
+  for (const job of jobs) {
+    const bitmap = job[0];
+    if (bitmap === undefined)
+      throw new Error('Aokana mesh operation strip has no destination descriptor');
+    const height = bitmap.height | 0,
+      blank = height <= row ? height : row,
+      available = (height - blank) | 0,
+      count = available <= remaining ? available : remaining;
+    result.push({
+      records: count < 1 ? [] : records.slice(record, record + count),
+      firstRow: row,
+    });
+    if (count >= 1) record += count;
+    remaining = (remaining - count) | 0;
+    row = (row - blank) | 0;
+  }
+  return result;
+}
+
 /** The common 054390 preparation and 052b00 claim use one attached processing object. */
 function runBitmapOperation<Auxiliary>(
   processing: AokanaDistributedProcessing | null,
@@ -99,14 +133,17 @@ function runBitmapOperation<Auxiliary>(
   reference: AokanaBitmap,
   axis: 0 | 1,
   callback: (bitmaps: readonly AokanaBitmap[], auxiliary: Auxiliary | null) => void,
-  prepareAuxiliary: (plan: AokanaBitmapStripPlan) => Auxiliary[] | null,
+  prepareAuxiliary: (
+    plan: AokanaBitmapStripPlan,
+    jobs: readonly AokanaBitmap[][],
+  ) => Auxiliary[] | null,
 ): boolean {
   const clipped = {...reference};
   for (const bitmap of bitmaps) cropAokanaBitmap(clipped, aokanaBitmapRectangle(bitmap));
   const plan = aokanaBitmapStripPlan(processing, clipped, axis);
   if (plan === null || processing === null) return false;
   const jobs = aokanaBitmapOperationStrips(bitmaps, plan, axis);
-  const auxiliary = prepareAuxiliary(plan);
+  const auxiliary = prepareAuxiliary(plan, jobs);
   let cursor = 0;
   processing.setCallback(() => {
     // 052b00 claims the actual next strip under the attached pool's shared lock.
@@ -136,6 +173,29 @@ export function runAokanaBitmapOperation(
 ): boolean {
   return runBitmapOperation(processing, bitmaps, reference, axis, callback, (plan) =>
     point === null ? null : aokanaBitmapOperationPoints(point, plan),
+  );
+}
+
+/** 054390 mode four partitions only the destination and carries 052BD0 mesh metadata. */
+export function runAokanaBitmapMeshOperation<Record>(
+  processing: AokanaDistributedProcessing | null,
+  destination: AokanaBitmap,
+  records: readonly Record[],
+  firstRow: number,
+  callback: (destination: AokanaBitmap, strip: AokanaBitmapMeshOperationStrip<Record>) => void,
+): boolean {
+  return runBitmapOperation<AokanaBitmapMeshOperationStrip<Record>>(
+    processing,
+    [destination],
+    destination,
+    0,
+    (bitmaps, strip) => {
+      const output = bitmaps[0];
+      if (output === undefined || strip === null)
+        throw new Error('Aokana mesh worker is missing its native mode-four metadata');
+      callback(output, strip);
+    },
+    (_plan, jobs) => aokanaBitmapMeshOperationStrips(records, firstRow, jobs),
   );
 }
 

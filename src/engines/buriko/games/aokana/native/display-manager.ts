@@ -1,4 +1,9 @@
-import {AokanaBackdrop, AokanaNormalBackdrop} from './display-backdrop.js';
+import {
+  AokanaBackdrop,
+  AokanaNormalBackdrop,
+  AokanaRippleBackdrop,
+  type AokanaRippleBackdropStatus,
+} from './display-backdrop.js';
 import {AokanaDisplayObject, AokanaDisplayObjectEnvironment} from './display-object.js';
 import {AokanaDisplayRedraw} from './display-redraw.js';
 import {AokanaNativeDisplayState} from './display-state.js';
@@ -10,6 +15,14 @@ import type {AokanaDisplayDamageResult} from './display-renderer.js';
 import {AokanaObjectManager} from './object-manager.js';
 import {AokanaNativeLocks, createAokanaDisplayLocks} from './exclusion-locks.js';
 import {AokanaDisplayTexture} from './display-texture.js';
+import {clearAokanaBitmap, copyAokanaBitmapRows} from './bitmap-copy.js';
+import {
+  AokanaDisplaySprite,
+  type AokanaSpriteAffineBlendConfiguration,
+  type AokanaSpriteAffineConfiguration,
+  type AokanaSpriteConfigurationStatus,
+  type AokanaSpriteMeshConfiguration,
+} from './display-sprite.js';
 
 /** The ten native pools; their category selectors are independent of CDspObj +1c. */
 export const AOKANA_DISPLAY_POOLS = Object.freeze({
@@ -56,7 +69,7 @@ export class AokanaDisplayManager extends AokanaObjectManager {
       {slots: Array(definition.capacity).fill(null), count: 0, creationCount: 0},
     ]),
   ) as Record<AokanaDisplayFamily, Pool>;
-  readonly backdrop: AokanaBackdrop;
+  backdrop: AokanaBackdrop;
   private disposed = false;
   private texture: AokanaDisplayTexture | null = null;
   private textureLocked = 0;
@@ -71,8 +84,13 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     readonly redraw = new AokanaDisplayRedraw(),
     readonly locks: AokanaNativeLocks = createAokanaDisplayLocks(surfaces.allocator),
   ) {
-    super(environment.compositor, surfaces.allocator, environment.damage,
-      () => environment.displayContext, new AokanaDisplayEffectorRegistry());
+    super(
+      environment.compositor,
+      surfaces.allocator,
+      environment.damage,
+      () => environment.displayContext,
+      new AokanaDisplayEffectorRegistry(),
+    );
     redraw.bindLocks(locks);
     this.backdrop = new AokanaNormalBackdrop(environment, surfaces);
     this.setBackdropRenderType(this.backdrop.backdropType);
@@ -150,6 +168,41 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     this.objectRenderer.drawFull();
     this.unlockDisplay();
     return 1;
+  }
+  /** 080080 allocates at display geometry, then copies the mapped texture or clears on lock failure. */
+  captureDisplayBitmap(surface: number): 0 | 1 {
+    this.check();
+    const source = this.displayContext().bitmap,
+      result = this.surfaces.allocate(surface, source.width, source.height, source.format);
+    if (result === 0) return 0;
+    const destination = this.surfaces.snapshot(surface);
+    if (destination === null)
+      throw new Error('Aokana display capture has no allocated surface descriptor');
+    if (this.lockDisplay() === 0) clearAokanaBitmap(destination);
+    else {
+      copyAokanaBitmapRows(destination, this.displayContext().bitmap);
+      this.unlockDisplay();
+    }
+    return result;
+  }
+  /** 07ffe0 allocates at display geometry and draws through the actual shared object renderer. */
+  renderDisplayBitmap(surface: number, maximumLayer: number): 0 | 1 {
+    this.check();
+    const descriptor = this.displayContext().bitmap,
+      result = this.surfaces.allocate(
+        surface,
+        descriptor.width,
+        descriptor.height,
+        descriptor.format,
+      );
+    if (result === 0) return 0;
+    const destination = this.surfaces.snapshot(surface);
+    if (destination === null)
+      throw new Error('Aokana display render has no allocated surface descriptor');
+    if (this.objectRenderer === null)
+      throw new Error('Aokana object renderer has not been attached');
+    this.objectRenderer.drawToBitmap(destination, maximumLayer);
+    return result;
   }
   /** 0801b0; the three family-specific hooks belong to their actual concrete classes. */
   configureDescriptor(width: number, height: number, format: number, pixelBudget: number): 1 {
@@ -286,6 +339,275 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     if (family === 'sprite') this.leaveSpriteLock();
     return handle;
   }
+  /** 085E50 constructs the concrete size-4D8 sprite before slot/list publication. */
+  createSprite(): number {
+    return this.createSimple(
+      'sprite',
+      (creationOrder) =>
+        new AokanaDisplaySprite(
+          this.environment,
+          this.surfaces,
+          creationOrder,
+          1,
+          this.referencePoint,
+        ),
+    );
+  }
+  /** 085110 converts the script extent to inclusive edges before calling sprite 063140. */
+  notifySpriteSourceRegionChanged(
+    handle: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): 0 | 10 | 0xffffffff {
+    const object = this.find('sprite', handle);
+    if (object === null) return 0xffffffff;
+    if (!(object instanceof AokanaDisplaySprite))
+      throw new Error('Aokana sprite pool contains a different native display class');
+    x |= 0;
+    y |= 0;
+    width |= 0;
+    height |= 0;
+    return object.notifySourceRegionChanged({
+      left: x,
+      top: y,
+      right: (x + width - 1) | 0,
+      bottom: (y + height - 1) | 0,
+    }) !== 0
+      ? 0
+      : 10;
+  }
+  private findSprite(handle: number): AokanaDisplaySprite | null {
+    const object = this.find('sprite', handle);
+    if (object === null) return null;
+    if (!(object instanceof AokanaDisplaySprite))
+      throw new Error('Aokana sprite pool contains a different native display class');
+    return object;
+  }
+  private initializeSprite(
+    handle: number,
+    initialize: (sprite: AokanaDisplaySprite) => AokanaSpriteConfigurationStatus,
+    mapFailure: (result: Exclude<AokanaSpriteConfigurationStatus, 0>) => number,
+  ): number {
+    const sprite = this.findSprite(handle);
+    if (sprite === null) return 0xffffffff;
+    if (sprite.inputActive() !== 0) sprite.invalidate();
+    const result = initialize(sprite);
+    if (result !== 0) return mapFailure(result);
+    if (sprite.inputActive() !== 0) sprite.invalidate();
+    this.lists.resort(sprite);
+    return 0;
+  }
+  /** 085C60 maps only the simple source failure before its success-time resort. */
+  initializeSimpleSprite(
+    handle: number,
+    x: number,
+    y: number,
+    sourceSurface: number,
+    blendMode: number,
+    blendValue: number,
+    layer: number,
+  ): 0 | 1 | 0xffffffff {
+    return this.initializeSprite(
+      handle,
+      (sprite) => sprite.initializeSimple(x, y, sourceSurface, blendMode, blendValue, layer),
+      (result) => {
+        if (result === 0x80000001) return 1;
+        throw new Error('Aokana simple sprite returned an unknown native configuration status');
+      },
+    ) as 0 | 1 | 0xffffffff;
+  }
+  /** 085380 reuses the pre-change visibility for both invalidations and never resorts. */
+  replaceSpriteSource(handle: number, sourceSurface: number): 0 | 1 | 0xffffffff {
+    const sprite = this.findSprite(handle);
+    if (sprite === null) return 0xffffffff;
+    const active = sprite.inputActive() !== 0;
+    if (active) sprite.invalidate();
+    const result = sprite.replaceSource(sourceSurface);
+    if (result !== 0) {
+      if (result === 0x80000001) return 1;
+      throw new Error('Aokana sprite source replacement returned an unknown native status');
+    }
+    if (active) sprite.invalidate();
+    return 0;
+  }
+  /** 085B40 retains native's status-nine mismatch mapping. */
+  initializeBlendSprite(
+    handle: number,
+    x: number,
+    y: number,
+    sourceSurface: number,
+    secondarySurface: number,
+    mixValue: number,
+    blendValue: number,
+    layer: number,
+    blendSelector: number,
+  ): 0 | 1 | 9 | 0xffffffff {
+    return this.initializeSprite(
+      handle,
+      (sprite) =>
+        sprite.initializeBlend(
+          x,
+          y,
+          sourceSurface,
+          secondarySurface,
+          mixValue,
+          blendValue,
+          layer,
+          blendSelector,
+        ),
+      (result) => {
+        if (result === 0x80000001 || result === 0x80000002) return 1;
+        if (result === 0x80000003) return 9;
+        throw new Error('Aokana blend sprite returned an unknown native configuration status');
+      },
+    ) as 0 | 1 | 9 | 0xffffffff;
+  }
+  /** 085A00 maps an unusably small affine result to eight. */
+  initializeAffineSprite(
+    handle: number,
+    x: number,
+    y: number,
+    configuration: AokanaSpriteAffineConfiguration,
+    blendMode: number,
+    blendValue: number,
+    layer: number,
+  ): 0 | 1 | 8 | 0xffffffff {
+    return this.initializeSprite(
+      handle,
+      (sprite) => sprite.initializeAffine(x, y, configuration, blendMode, blendValue, layer),
+      (result) => {
+        if (result === 0x80000001) return 1;
+        if (result === 0x80000004) return 8;
+        throw new Error('Aokana affine sprite returned an unknown native configuration status');
+      },
+    ) as 0 | 1 | 8 | 0xffffffff;
+  }
+  /** 0858E0 maps either missing reveal input to one and a non-mask input to two. */
+  initializeRevealSprite(
+    handle: number,
+    x: number,
+    y: number,
+    sourceSurface: number,
+    maskSurface: number,
+    revealProgress: number,
+    transitionValue: number,
+    blendMode: number,
+    blendValue: number,
+    layer: number,
+  ): 0 | 1 | 2 | 0xffffffff {
+    return this.initializeSprite(
+      handle,
+      (sprite) =>
+        sprite.initializeReveal(
+          x,
+          y,
+          sourceSurface,
+          maskSurface,
+          revealProgress,
+          transitionValue,
+          blendMode,
+          blendValue,
+          layer,
+        ),
+      (result) => {
+        if (result === 0x80000001 || result === 0x80000002) return 1;
+        if (result === 0x8000000a) return 2;
+        throw new Error('Aokana reveal sprite returned an unknown native configuration status');
+      },
+    ) as 0 | 1 | 2 | 0xffffffff;
+  }
+  /** 085780 preserves all seven displacement diagnostics. */
+  initializeDisplacementSprite(
+    handle: number,
+    x: number,
+    y: number,
+    sourceSurface: number,
+    mapSurface: number,
+    coefficientCount: number,
+    coefficientSlot: number,
+    blendValue: number,
+    transparency: number,
+    layer: number,
+  ): 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 0xffffffff {
+    return this.initializeSprite(
+      handle,
+      (sprite) =>
+        sprite.initializeDisplacement(
+          x,
+          y,
+          sourceSurface,
+          mapSurface,
+          coefficientCount,
+          coefficientSlot,
+          blendValue,
+          transparency,
+          layer,
+        ),
+      (result) => {
+        switch (result) {
+          case 0x80000001:
+            return 1;
+          case 0x8000000a:
+            return 2;
+          case 0x80000005:
+            return 3;
+          case 0x80000006:
+            return 4;
+          case 0x80000007:
+            return 5;
+          case 0x80000008:
+            return 6;
+          case 0x80000009:
+            return 7;
+          default:
+            throw new Error('Aokana displacement sprite returned an unknown native status');
+        }
+      },
+    ) as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 0xffffffff;
+  }
+  private initializeTransformedSprite(
+    handle: number,
+    initialize: (sprite: AokanaDisplaySprite) => AokanaSpriteConfigurationStatus,
+  ): 0 | 1 | 8 | 9 | 0xffffffff {
+    return this.initializeSprite(handle, initialize, (result) => {
+      if (result === 0x80000001 || result === 0x80000002) return 1;
+      if (result === 0x80000003) return 9;
+      if (result === 0x80000004) return 8;
+      throw new Error('Aokana transformed sprite returned an unknown native configuration status');
+    }) as 0 | 1 | 8 | 9 | 0xffffffff;
+  }
+  /** 0855F0 initializes coordinate-positioned affine blend mode five. */
+  initializeAffineBlendSprite(
+    handle: number,
+    x: number,
+    y: number,
+    z: number,
+    configuration: AokanaSpriteAffineBlendConfiguration,
+    blendMode: number,
+    blendValue: number,
+    layer: number,
+  ): 0 | 1 | 8 | 9 | 0xffffffff {
+    return this.initializeTransformedSprite(handle, (sprite) =>
+      sprite.initializeAffineBlend(x, y, z, configuration, blendMode, blendValue, layer),
+    );
+  }
+  /** 085440 initializes coordinate-positioned perspective mesh mode six. */
+  initializeMeshSprite(
+    handle: number,
+    x: number,
+    y: number,
+    z: number,
+    configuration: AokanaSpriteMeshConfiguration,
+    blendMode: number,
+    blendValue: number,
+    layer: number,
+  ): 0 | 1 | 8 | 9 | 0xffffffff {
+    return this.initializeTransformedSprite(handle, (sprite) =>
+      sprite.initializeMesh(x, y, z, configuration, blendMode, blendValue, layer),
+    );
+  }
   /**
    * 083350/0824e0/081a40 configure before publishing the slot. Rain alone uses
    * zero as success. Slot and count precede list insertion and handle assignment.
@@ -407,11 +729,70 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     this.backdrop.setContentEnabled(contentEnabled);
     this.environment.damage.force();
   }
+  /** 086000's type-eight branch reuses an RPL backdrop or replaces the current concrete type. */
+  private selectRippleBackdrop(): AokanaRippleBackdrop {
+    this.check();
+    let selected: AokanaRippleBackdrop;
+    if (this.backdrop instanceof AokanaRippleBackdrop) selected = this.backdrop;
+    else {
+      const previous = this.backdrop;
+      this.lists.remove(previous);
+      previous.dispose();
+      const replacement = new AokanaRippleBackdrop(this.environment, this.surfaces);
+      this.backdrop = replacement;
+      selected = replacement;
+      this.lists.insert(replacement);
+      replacement.setActivation(this.backdropActivation);
+      replacement.setContentEnabled(this.backdropContentEnabled);
+    }
+    this.setBackdropRenderType(selected.backdropType);
+    this.environment.damage.force();
+    return selected;
+  }
+  /** 086B10 installs the source before map/table configuration and keeps either on failure. */
+  configureRippleBackdrop(
+    sourceSurface: number,
+    mapSurface: number,
+    gradientCount: number,
+    coefficientSlot: number,
+    blend: number,
+  ): 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 {
+    const backdrop = this.selectRippleBackdrop(),
+      source = backdrop.setSourceSurface(sourceSurface);
+    if (source !== 0) return source === 0x80000001 ? 1 : 2;
+    const configured: AokanaRippleBackdropStatus = backdrop.configureMap(
+      mapSurface,
+      gradientCount,
+      coefficientSlot,
+      blend,
+    );
+    switch (configured) {
+      case 0:
+        return 0;
+      case 0x80000003:
+        return 3;
+      case 0x80000004:
+        return 4;
+      case 0x80000005:
+        return 5;
+      case 0x80000006:
+        return 6;
+      case 0x80000007:
+        return 7;
+      default:
+        throw new Error('Aokana ripple backdrop returned an unknown native configuration status');
+    }
+  }
   /** 080170; this reference point is separate from global origin and presentation shake. */
   setReferencePoint(x: number, y: number): void {
     this.check();
     this.referencePoint.x = x | 0;
     this.referencePoint.y = y | 0;
+    this.environment.damage.force();
+  }
+  /** 07fdc0 reaches the native empty 056d00 hook before forcing full damage. */
+  invalidateScene(): void {
+    this.check();
     this.environment.damage.force();
   }
   /** 080140/056ce0 updates independent global 1d1d20. */

@@ -30,7 +30,12 @@ function weightedRgb(
   return pixel >>> 0;
 }
 
-function alphaPairPixel(source: number, destination: number, destinationWeight: number): number {
+/** Shared reciprocal pair path used by RGBA-over-RGBA and format-three glyph masks. */
+export function aokanaAlphaPairPixel(
+  source: number,
+  destination: number,
+  destinationWeight: number,
+): number {
   const sourceAlpha = f32((source >>> 24) * f32((256 - destinationWeight) / 256));
   const destinationAlpha = f32(f32((destination >>> 24) / 256) * f32(256 - sourceAlpha));
   const alpha = f32(sourceAlpha + destinationAlpha);
@@ -46,7 +51,12 @@ function alphaPairPixel(source: number, destination: number, destinationWeight: 
   );
 }
 
-function alphaTailPixel(source: number, destination: number, destinationWeight: number): number {
+/** Shared scalar integer tail used by RGBA-over-RGBA and format-three glyph masks. */
+export function aokanaAlphaTailPixel(
+  source: number,
+  destination: number,
+  destinationWeight: number,
+): number {
   const sourceAlpha = Math.imul(source >>> 24, 256 - destinationWeight) >>> 0;
   const destinationAlpha = Math.imul(destination >>> 24, 65536 - sourceAlpha) >>> 8;
   const denominator = (sourceAlpha + destinationAlpha) >>> 0;
@@ -73,8 +83,8 @@ export function blendAokanaAlpha(destination: AokanaBitmap, source: AokanaBitmap
       }
       const old = readAokanaPixelPair(destination, offset);
       writeAokanaPixelPair(destination, offset, [
-        alphaPairPixel(pixels[0], old[0], 0),
-        alphaPairPixel(pixels[1], old[1], 0),
+        aokanaAlphaPairPixel(pixels[0], old[0], 0),
+        aokanaAlphaPairPixel(pixels[1], old[1], 0),
       ]);
     },
     (pixel, offset) => {
@@ -82,7 +92,9 @@ export function blendAokanaAlpha(destination: AokanaBitmap, source: AokanaBitmap
       bitmapWrite32(
         destination,
         offset,
-        pixel >>> 24 === 255 ? pixel : alphaTailPixel(pixel, bitmapRead32(destination, offset), 0),
+        pixel >>> 24 === 255
+          ? pixel
+          : aokanaAlphaTailPixel(pixel, bitmapRead32(destination, offset), 0),
       );
     },
   );
@@ -101,8 +113,8 @@ export function blendAokanaAlphaWithTransparency(
       if (pixels[0] >>> 24 === 0 && pixels[1] >>> 24 === 0) return;
       const old = readAokanaPixelPair(destination, offset);
       writeAokanaPixelPair(destination, offset, [
-        alphaPairPixel(pixels[0], old[0], destinationWeight),
-        alphaPairPixel(pixels[1], old[1], destinationWeight),
+        aokanaAlphaPairPixel(pixels[0], old[0], destinationWeight),
+        aokanaAlphaPairPixel(pixels[1], old[1], destinationWeight),
       ]);
     },
     (pixel, offset) => {
@@ -110,7 +122,7 @@ export function blendAokanaAlphaWithTransparency(
         bitmapWrite32(
           destination,
           offset,
-          alphaTailPixel(pixel, bitmapRead32(destination, offset), destinationWeight),
+          aokanaAlphaTailPixel(pixel, bitmapRead32(destination, offset), destinationWeight),
         );
     },
   );

@@ -242,6 +242,36 @@ export function nativeParticleSineCosine(fixedDegrees: number): {sine: number; c
   return {sine: sineFixedAngle(fixedDegrees), cosine: cosineFixedAngle(fixedDegrees)};
 }
 
+/**
+ * 140056920's signed-Q24 selector, trigonometric curves and default division.
+ * Curves 4-15 preserve its binary64 operation order but still use host Math.pow;
+ * identity with the executable's 023710 implementation remains an arithmetic gate.
+ */
+export function nativeDisplayEasing(progress: number, easing: number): number {
+  progress |= 0;
+  easing |= 0;
+  const scaledAngle = (multiplier: number): number =>
+    Number((BigInt(progress) * BigInt(multiplier)) / 256n) | 0;
+  switch (easing) {
+    case 1:
+      return truncateInt32((cosineFixedAngle((0xb40000 - scaledAngle(0xb4)) | 0) + 1) * 32768);
+    case 2:
+      return truncateInt32(sineFixedAngle(scaledAngle(0x5a)) * 65536);
+    case 3:
+      return truncateInt32((1 - sineFixedAngle((0x5a0000 - scaledAngle(0x5a)) | 0)) * 65536);
+    default:
+      if (easing >= 4 && easing <= 15) {
+        const exponent = [2, 2, 2.5, 2.5, 3, 3, 4, 4, 5, 5, 6, 6][easing - 4]!;
+        const denominator = Math.pow(0x1000000, exponent);
+        if ((easing & 1) === 0)
+          return truncateInt32((Math.pow(progress, exponent) * 65536) / denominator);
+        const reverse = (0x1000000 - progress) | 0;
+        return truncateInt32((1 - Math.pow(reverse, exponent) / denominator) * 65536);
+      }
+      return (progress + ((progress >> 31) & 0xff)) >> 8;
+  }
+}
+
 /** 052030 negates the rounded Q16-degree angle, then separately adds the rounded PI/2. */
 export function nativeAffineSineCosine(fixedDegrees: number): {
   sine: number;

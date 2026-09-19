@@ -44,6 +44,125 @@ function mixAlpha(first: number, second: number, factor: number): number {
   return result >>> 0;
 }
 
+const signedHighWord = (first: number, second: number): number =>
+  (Math.imul(signed16(first), signed16(second)) >> 16) | 0;
+
+function fusedPremultipliedChannel(
+  first: number,
+  second: number,
+  destination: number,
+  firstAlpha: number,
+  secondAlpha: number,
+  factor: number,
+  transparency: number,
+): number {
+  const opacity = (256 - transparency) | 0,
+    firstScaledAlpha = Math.imul(firstAlpha, opacity) >>> 8,
+    secondScaledAlpha = Math.imul(secondAlpha, opacity) >>> 8,
+    firstPremultiplied = signedHighWord(first << 4, firstScaledAlpha << 4),
+    secondPremultiplied = signedHighWord(second << 4, secondScaledAlpha << 4),
+    mixed =
+      firstPremultiplied +
+      signedHighWord((secondPremultiplied - firstPremultiplied) << 4, factor << 4),
+    alpha =
+      firstScaledAlpha + signedHighWord((secondScaledAlpha - firstScaledAlpha) << 4, factor << 4),
+    retained = signedHighWord(destination << 4, (256 - alpha) << 4);
+  return saturateAokanaByte((mixed + retained) | 0);
+}
+
+function fusedMixedAlpha(
+  firstAlpha: number,
+  secondAlpha: number,
+  factor: number,
+  transparency: number,
+): number {
+  const opacity = (256 - transparency) | 0,
+    firstScaledAlpha = Math.imul(firstAlpha, opacity) >>> 8,
+    secondScaledAlpha = Math.imul(secondAlpha, opacity) >>> 8;
+  return (
+    (firstScaledAlpha + signedHighWord((secondScaledAlpha - firstScaledAlpha) << 4, factor << 4)) &
+    0xffff
+  );
+}
+
+function fusedMixedPixel(
+  firstPixel: number,
+  secondPixel: number,
+  destinationPixel: number,
+  factor: number,
+  transparency: number,
+): number {
+  const firstAlpha = firstPixel >>> 24,
+    secondAlpha = secondPixel >>> 24;
+  let output = 0;
+  for (let shift = 0; shift < 24; shift += 8)
+    output |=
+      fusedPremultipliedChannel(
+        (firstPixel >>> shift) & 255,
+        (secondPixel >>> shift) & 255,
+        (destinationPixel >>> shift) & 255,
+        firstAlpha,
+        secondAlpha,
+        factor,
+        transparency,
+      ) << shift;
+  return output >>> 0;
+}
+
+/** 03C8B0/03C580 fuse RGBA crossfade, transparency and RGB destination blending. */
+export function blendMixedAokanaBitmapsIntoRgb(
+  destination: AokanaBitmap,
+  first: AokanaBitmap,
+  second: AokanaBitmap,
+  factor: number,
+  transparency: number,
+): 0 | 9 | 10 {
+  if (destination.format !== 1) return 10;
+  if (first.format !== 2 || second.format !== 2) return 9;
+  if (transparency >>> 0 >= 256) return 0;
+  const width = Math.min(destination.width >>> 0, first.width >>> 0, second.width >>> 0),
+    height = Math.min(destination.height >>> 0, first.height >>> 0, second.height >>> 0);
+  factor = signed16(factor);
+  transparency |= 0;
+  for (let row = 0; row < height; row++) {
+    const destinationRow = destination.offset + row * destination.stride,
+      firstRow = first.offset + row * first.stride,
+      secondRow = second.offset + row * second.stride;
+    let column = 0;
+    for (; column + 1 < width; column += 2) {
+      // 03C700 loads both source pairs before either destination store.
+      const firstPixel0 = bitmapRead32(first, firstRow + column * 4),
+        firstPixel1 = bitmapRead32(first, firstRow + column * 4 + 4),
+        secondPixel0 = bitmapRead32(second, secondRow + column * 4),
+        secondPixel1 = bitmapRead32(second, secondRow + column * 4 + 4),
+        alpha0 = fusedMixedAlpha(firstPixel0 >>> 24, secondPixel0 >>> 24, factor, transparency),
+        alpha1 = fusedMixedAlpha(firstPixel1 >>> 24, secondPixel1 >>> 24, factor, transparency);
+      if (alpha0 === 0 && alpha1 === 0) continue;
+      const destinationOffset = destinationRow + column * 4,
+        old0 = bitmapRead32(destination, destinationOffset),
+        old1 = bitmapRead32(destination, destinationOffset + 4),
+        output0 = fusedMixedPixel(firstPixel0, secondPixel0, old0, factor, transparency),
+        output1 = fusedMixedPixel(firstPixel1, secondPixel1, old1, factor, transparency);
+      bitmapWrite32(destination, destinationOffset, output0);
+      bitmapWrite32(destination, destinationOffset + 4, output1);
+    }
+    if (column < width) {
+      const firstPixel = bitmapRead32(first, firstRow + column * 4),
+        secondPixel = bitmapRead32(second, secondRow + column * 4);
+      if (fusedMixedAlpha(firstPixel >>> 24, secondPixel >>> 24, factor, transparency) !== 0) {
+        const destinationOffset = destinationRow + column * 4,
+          old = bitmapRead32(destination, destinationOffset);
+        bitmapWrite32(
+          destination,
+          destinationOffset,
+          fusedMixedPixel(firstPixel, secondPixel, old, factor, transparency),
+        );
+      }
+    }
+  }
+  return 0;
+}
+
 /** 03c370 / 03bef0, with MOVQ pairs then one MOVD and native pointer-equality traversal. */
 function mixRows(
   destination: AokanaBitmap,

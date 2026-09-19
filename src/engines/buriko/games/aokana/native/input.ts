@@ -1,11 +1,12 @@
 import type {AokanaNativeClock} from './clock.js';
+import type {AokanaBitmapRectangle} from './bitmap.js';
 import {AokanaNativeDisplayState} from './display-state.js';
 import type {AokanaNativeRectangle} from './display-state.js';
 
 /** The three verified CDspObj virtual calls used by native input-region nodes. */
 export interface AokanaInputHitObject {
   inputActive(): number; // vtable +10
-  inputRectangle(mode: 0): AokanaNativeRectangle; // vtable +48
+  inputRectangle(mode: 0): AokanaNativeRectangle | AokanaBitmapRectangle; // vtable +48
   inputHitTest(x: number, y: number, mode: 1): number; // vtable +C8
 }
 interface Capture {
@@ -63,6 +64,9 @@ export class AokanaNativeInput {
   systemMouseButtonsSwapped = false;
   pointerClientX = 0;
   pointerClientY = 0;
+  /** Raw host screen coordinates retained separately for GetCursorPos consumers. */
+  pointerScreenX = 0;
+  pointerScreenY = 0;
   /** Positions are already in native logical coordinates, as stored by the touch receiver. */
   touchPositions: readonly (readonly [number, number])[] = [];
   inputEventCount = 0;
@@ -113,6 +117,16 @@ export class AokanaNativeInput {
   /** Direct GetAsyncKeyState consumers bypass logical-button mapping and foreground gating. */
   asynchronousKeyState(key: number): number {
     return this.rawKey(key >>> 0);
+  }
+
+  /** Browser GetCursorPos boundary; this deliberately performs no client/logical transform. */
+  screenCursorPosition(): readonly [number, number] {
+    return [this.pointerScreenX | 0, this.pointerScreenY | 0];
+  }
+
+  /** 1400c4290 is a wrapping DWORD increment shared by every input-message handler. */
+  incrementActivityGeneration(): void {
+    this.inputEventCount = (this.inputEventCount + 1) >>> 0;
   }
 
   /** 1400c4c50 maps logical mouse buttons before the foreground gate. */
@@ -337,6 +351,13 @@ export class AokanaNativeInput {
     this.pointerCaptures.splice(index, 1);
     return true;
   }
+  /** 1400C4E30/1400C4930 remove the first pointer capture with this object identity. */
+  releaseObjectCapture(object: AokanaInputHitObject): boolean {
+    const index = this.pointerCaptures.findIndex((node) => node.object === object);
+    if (index < 0) return false;
+    this.pointerCaptures.splice(index, 1);
+    return true;
+  }
   releaseKeyCapture(token: number): boolean {
     const index = this.keyCaptures.findIndex((node) => node.token === token >>> 0);
     if (index < 0) return false;
@@ -369,7 +390,11 @@ export class AokanaNativeInput {
     for (const node of this.pointerCaptures) {
       if (node.object !== null) {
         if (!inView || node.object.inputActive() === 0) continue;
-        node.rectangle = node.object.inputRectangle(0);
+        const rectangle = node.object.inputRectangle(0);
+        node.rectangle =
+          'left' in rectangle
+            ? [rectangle.left, rectangle.top, rectangle.right, rectangle.bottom]
+            : rectangle;
       }
       if (node.token < token) return false;
       const [left, top, right, bottom] = node.rectangle;

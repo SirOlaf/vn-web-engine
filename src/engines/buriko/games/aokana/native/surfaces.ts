@@ -15,6 +15,7 @@ import {AokanaNativeFonts} from './fonts.js';
 import {AokanaDistributedAllocator} from './distributed-processing.js';
 import type {AokanaMovieRegistry} from './movie-registry.js';
 import type {AokanaBpPointer} from '../bp/memory.js';
+import {AokanaSurfaceCoefficientTables} from './surface-coefficients.js';
 
 export interface AokanaSurfaceRecord {
   bitmap: AokanaBitmap | null;
@@ -33,6 +34,8 @@ interface SurfaceSlot extends AokanaSurfaceRecord {
 /** Global 1401e8d58's fixed 0x4000-slot table and CMemoryDX ownership. */
 export class AokanaSurfaces {
   readonly capacity = 0x4000;
+  /** The same eight-record owner used by every sprite/filter coefficient consumer. */
+  readonly coefficientTables = new AokanaSurfaceCoefficientTables();
   deviceIndex = 0;
   preserveImageIds = 0;
   private nextImageId = 0;

@@ -14,7 +14,14 @@ interface ArchiveNode {
   next: ArchiveNode | null;
 }
 function node(): ArchiveNode {
-  return {initialized: false, path: Uint8Array.of(0), count: 0, payloadBase: 0, index: new Uint8Array(), next: null};
+  return {
+    initialized: false,
+    path: Uint8Array.of(0),
+    count: 0,
+    payloadBase: 0,
+    index: new Uint8Array(),
+    next: null,
+  };
 }
 function equal(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
@@ -30,15 +37,23 @@ export interface AokanaArchiveResource {
 export class AokanaProgramArchives {
   private root = node();
   private pending: Promise<void> = Promise.resolve();
-  constructor(readonly files: AokanaProgramFiles, readonly errors: AokanaEngineErrors, readonly mainProcessing: AokanaDistributedProcessing) {}
+  constructor(
+    readonly files: AokanaProgramFiles,
+    readonly errors: AokanaEngineErrors,
+    readonly mainProcessing: AokanaDistributedProcessing,
+  ) {}
 
   clear(): void {
     this.root = node();
   }
 
   private normalize(bytes: Uint8Array): Uint8Array {
-    const result = this.files.text.convertEncoding({bytes: terminatedNativeBytes(bytes), offset: 0}, 1);
-    if (result.length > 784) throw new RangeError('Aokana archive path exceeds native scratch storage');
+    const result = this.files.text.convertEncoding(
+      {bytes: terminatedNativeBytes(bytes), offset: 0},
+      1,
+    );
+    if (result.length > 784)
+      throw new RangeError('Aokana archive path exceeds native scratch storage');
     this.files.text.lowercase({bytes: result, offset: 0});
     return result;
   }
@@ -59,7 +74,9 @@ export class AokanaProgramArchives {
     target.index = new Uint8Array(target.count * 128);
     const stored = await this.files.read(opened.source, 16, storedSize);
     if (stored.length !== target.count * recordSize) {
-      throw new AokanaUndefinedResourceRead('Aokana archive index includes unwritten allocation bytes');
+      throw new AokanaUndefinedResourceRead(
+        'Aokana archive index includes unwritten allocation bytes',
+      );
     }
     if (!packed) target.index.set(stored);
     const source = new DataView(stored.buffer, stored.byteOffset, stored.byteLength);
@@ -70,14 +87,18 @@ export class AokanaProgramArchives {
       if (packed) {
         // Each destination record is cleared immediately before converting that record.
         target.index.fill(0, offset, offset + 128);
-        writeText(destination, this.files.text.convertEncoding({bytes: stored, offset: index * 32}, 1));
+        writeText(
+          destination,
+          this.files.text.convertEncoding({bytes: stored, offset: index * 32}, 1),
+        );
         this.files.text.lowercase(destination);
         records.setUint32(offset + 96, source.getUint32(index * 32 + 16, true), true);
         records.setUint32(offset + 100, source.getUint32(index * 32 + 20, true), true);
       } else {
         if (this.files.text.detectEncoding(target.index, offset) === 0) {
           const original = textBytes(destination, true).slice();
-          if (original.length > 96) throw new RangeError('Aokana ARC20 name overflows native conversion scratch');
+          if (original.length > 96)
+            throw new RangeError('Aokana ARC20 name overflows native conversion scratch');
           writeText(destination, this.files.text.convertEncoding({bytes: original, offset: 0}, 1));
         }
         this.files.text.lowercase(destination);
@@ -88,12 +109,18 @@ export class AokanaProgramArchives {
   }
 
   private async archive(pathBytes: Uint8Array): Promise<ArchiveNode | null> {
+    return this.serialized(() => this.findOrOpenArchive(pathBytes));
+  }
+
+  private async serialized<T>(operation: () => Promise<T>): Promise<T> {
     const previous = this.pending;
     let release!: () => void;
-    this.pending = new Promise((resolve) => { release = resolve; });
+    this.pending = new Promise((resolve) => {
+      release = resolve;
+    });
     await previous;
     try {
-      return await this.findOrOpenArchive(pathBytes);
+      return await operation();
     } finally {
       release();
     }
@@ -109,11 +136,27 @@ export class AokanaProgramArchives {
       } else if (same || current.path.length === 1) {
         if (await this.openIndex(current, path)) return current;
       }
-      // Failed unopened nodes cannot grow a successor (039390).
+      // 039390 returns an existing successor before consulting this node's flag.
+      if (current.next !== null) {
+        current = current.next;
+        continue;
+      }
+      // Failed unopened nodes cannot grow a new successor (039390).
       if (!current.initialized) return null;
-      current.next ??= node();
+      current.next = node();
       current = current.next;
     }
+  }
+
+  /** 039A70 matches or opens one node, then 039500 releases only that node's index. */
+  async release(path: Uint8Array): Promise<0 | 0x80000010> {
+    return this.serialized(async () => {
+      const archive = await this.findOrOpenArchive(path);
+      if (archive === null) return 0x80000010;
+      archive.initialized = false;
+      archive.index = new Uint8Array();
+      return 0;
+    });
   }
 
   private find(archive: ArchiveNode, name: Uint8Array): number | null {
@@ -125,11 +168,37 @@ export class AokanaProgramArchives {
     return null;
   }
 
+  /** 0399B0 clones the matching cache node's 128-byte index before exposing its names. */
+  async enumerateNames(path: Uint8Array): Promise<Uint8Array[] | null> {
+    const archive = await this.archive(path);
+    if (archive === null) return null;
+    const names: Uint8Array[] = [];
+    for (let index = 0; index < archive.count; index++)
+      names.push(textBytes({bytes: archive.index, offset: index * 128}, true).slice());
+    return names;
+  }
+
   async size(path: Uint8Array, name: Uint8Array): Promise<number> {
     const archive = await this.archive(path);
     if (archive === null) return 0x80000010;
     const record = this.find(archive, name);
-    return record === null ? 0x80000020 : new DataView(archive.index.buffer).getUint32(record + 100, true);
+    return record === null
+      ? 0x80000020
+      : new DataView(archive.index.buffer).getUint32(record + 100, true);
+  }
+
+  /** BB350 tests record identity directly, so a present zero-byte entry remains available. */
+  async contains(path: Uint8Array, name: Uint8Array): Promise<boolean> {
+    if (textLength({bytes: terminatedNativeBytes(name), offset: 0}) >= 96) {
+      return this.errors.fatal(
+        this.files.text.encodeWide(
+          `指定されたファイル名 [ ${this.files.path(name)} ] は95文字を超えています`,
+          1,
+        ),
+      );
+    }
+    const archive = await this.archive(path);
+    return archive !== null && this.find(archive, name) !== null;
   }
 
   /** Native metadata query 038a00 returns the first matching entry's untouched qword at +104. */
@@ -137,10 +206,17 @@ export class AokanaProgramArchives {
     const archive = await this.archive(path);
     if (archive === null) return null;
     const record = this.find(archive, name);
-    return record === null ? null : new DataView(archive.index.buffer).getBigUint64(record + 104, true);
+    return record === null
+      ? null
+      : new DataView(archive.index.buffer).getBigUint64(record + 104, true);
   }
 
-  async read(path: Uint8Array, name: Uint8Array, offset = 0, length = 0): Promise<AokanaArchiveResource> {
+  async read(
+    path: Uint8Array,
+    name: Uint8Array,
+    offset = 0,
+    length = 0,
+  ): Promise<AokanaArchiveResource> {
     const archive = await this.archive(path);
     if (archive === null) return {result: 0x80000010, bytes: null};
     const record = this.find(archive, name);
@@ -167,9 +243,19 @@ export class AokanaProgramArchives {
   }
 
   /** 1400bbee0 maps cache/read/decode statuses; callers receive the native high-bit result. */
-  async resource(path: Uint8Array, name: Uint8Array, offset = 0, length = 0): Promise<AokanaArchiveResource> {
+  async resource(
+    path: Uint8Array,
+    name: Uint8Array,
+    offset = 0,
+    length = 0,
+  ): Promise<AokanaArchiveResource> {
     if (textLength({bytes: terminatedNativeBytes(name), offset: 0}) > 95) {
-      return this.errors.fatal(this.files.text.encodeWide(`指定されたファイル名 [ ${this.files.path(name)} ] は95文字を超えています`, 1));
+      return this.errors.fatal(
+        this.files.text.encodeWide(
+          `指定されたファイル名 [ ${this.files.path(name)} ] は95文字を超えています`,
+          1,
+        ),
+      );
     }
     const size = await this.size(path, name);
     if (size > 0x7fffffff) return {result: 0x80000020, bytes: null};
@@ -177,7 +263,9 @@ export class AokanaProgramArchives {
     const stored = await this.read(path, name, 0, size);
     if (stored.result !== size || stored.bytes === null) return {result: 0x80000050, bytes: null};
     const decoded = await decodeAokanaResource(stored.bytes, this.mainProcessing, offset, length);
-    const mapped = {0: 0, 2: 0x80000030, 3: 0x80000040, 5: 0x80000050, 6: 0x80000060}[decoded.status];
+    const mapped = {0: 0, 2: 0x80000030, 3: 0x80000040, 5: 0x80000050, 6: 0x80000060}[
+      decoded.status
+    ];
     return {result: decoded.status === 0 ? decoded.bytes!.length : mapped, bytes: decoded.bytes};
   }
 }

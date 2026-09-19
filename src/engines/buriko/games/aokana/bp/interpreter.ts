@@ -10,6 +10,14 @@ import {fetchOpcode, readU8} from './decode.js';
 import type {AokanaBpModuleExtensions} from './module-extensions.js';
 import type {AokanaBpThread} from './state.js';
 
+export type AokanaBpDispatchResult =
+  | {readonly defined: false; readonly opcode: number}
+  | {
+      readonly defined: true;
+      readonly opcode: number;
+      readonly result: AokanaBpInstructionResult;
+    };
+
 /** Instruction dispatch only. Construction requires a complete fixed native bank and primary set. */
 export class AokanaBpInterpreter {
   private readonly primary: readonly (AokanaBpOpcodeHandler | undefined)[];
@@ -48,17 +56,24 @@ export class AokanaBpInterpreter {
     this.primary = handlers;
   }
 
-  step(thread: AokanaBpThread): AokanaBpInstructionResult {
+  /** The distributed interpreter lower distinguishes a genuinely empty primary slot from a handler fault. */
+  dispatchNext(thread: AokanaBpThread): AokanaBpDispatchResult {
     const opcode = fetchOpcode(thread);
     const handler = this.primary[opcode];
-    if (handler === undefined) {
-      throw new Error(
-        `Invalid Aokana primary opcode 0x${opcode.toString(16)} at 0x${thread.instructionStart.toString(16)}`,
-      );
-    }
+    if (handler === undefined) return {defined: false, opcode};
     const context = this.contextForThread(thread);
     if (context.thread !== thread)
       throw new Error('Aokana opcode context refers to another thread');
-    return handler(context);
+    return {defined: true, opcode, result: handler(context)};
+  }
+
+  step(thread: AokanaBpThread): AokanaBpInstructionResult {
+    const dispatched = this.dispatchNext(thread);
+    if (!dispatched.defined) {
+      throw new Error(
+        `Invalid Aokana primary opcode 0x${dispatched.opcode.toString(16)} at 0x${thread.instructionStart.toString(16)}`,
+      );
+    }
+    return dispatched.result;
   }
 }

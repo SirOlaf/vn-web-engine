@@ -18,6 +18,8 @@ import type {AokanaNativeSlotDefinition, AokanaBpOpcodeHandler} from './types.js
 export class AokanaVmControlState {
   /** 0x1401c9a64, returned by 0x1400ec990 to the boot controller. */
   loopOption = 1;
+  /** 0x1401c9a3c; Bank 91:0B and the VM loop share this raw DWORD. */
+  distributedBitmapProcessingEnabled = 0;
   /** 0x1401eaf50, consumed by native resource-load wrappers. */
   asynchronousResourceLoads = 0;
   /** 0x1401d27e0 starts at zero and includes root and shared thread construction. */

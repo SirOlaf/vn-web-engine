@@ -15,6 +15,7 @@ export interface AokanaFontRecord {
   readonly size: number;
   readonly widthPercent: number;
   readonly bold: number;
+  readonly italic: number;
   raster: AokanaFontRaster | null;
   initializationResult: number;
   field44: number;
@@ -211,7 +212,7 @@ export class AokanaNativeFonts {
         height: geometry.fontHeight,
         width: pitch === 2 ? 0 : geometry.fontWidth,
         weight: record.bold === 0 ? 100 : 700,
-        italic: false,
+        italic: record.italic !== 0,
         charset,
         pitchAndFamily: pitch ?? 0,
       });
@@ -241,6 +242,7 @@ export class AokanaNativeFonts {
     size: number,
     widthPercent: number,
     bold: number,
+    italic = 0,
   ): Promise<{result: number; id: number}> {
     if (input === null) {
       if (
@@ -255,12 +257,14 @@ export class AokanaNativeFonts {
     size |= 0;
     widthPercent |= 0;
     bold |= 0;
+    italic |= 0;
     const existing = this.records.find(
       (record) =>
         equal(record.name, name) &&
         record.size === size &&
         record.widthPercent === widthPercent &&
-        record.bold === bold,
+        record.bold === bold &&
+        record.italic === italic,
     );
     if (existing) return {result: 0, id: existing.id};
     const record: AokanaFontRecord = {
@@ -269,6 +273,7 @@ export class AokanaNativeFonts {
       size,
       widthPercent,
       bold,
+      italic,
       raster: null,
       initializationResult: 0,
       field44: 0,
@@ -281,6 +286,46 @@ export class AokanaNativeFonts {
     this.records.push(record);
     return {result: 0, id: record.id};
   }
+
+  /** Formatting in 074F30 owns a temporary font/cache rather than publishing a manager record. */
+  async createTransient(
+    input: Uint8Array,
+    size: number,
+    widthPercent: number,
+    bold: number,
+    italic: number,
+  ): Promise<{result: number; record: AokanaFontRecord | null}> {
+    const name = rawName(input);
+    const record: AokanaFontRecord = {
+      id: 0,
+      name,
+      size: size | 0,
+      widthPercent: widthPercent | 0,
+      bold: bold | 0,
+      italic: italic | 0,
+      raster: null,
+      initializationResult: 0,
+      field44: 0,
+      field48: 0,
+      averageWidthThreshold: Math.trunc(Math.imul(size, 7) / 10),
+    };
+    const result = await this.initialize(record, name, true);
+    record.initializationResult = result;
+    if (result !== 0) {
+      record.raster?.clear();
+      record.raster = null;
+      return {result, record: null};
+    }
+    return {result: 0, record};
+  }
+
+  releaseTransient(record: AokanaFontRecord): void {
+    if (record.id !== 0)
+      throw new Error('Aokana font manager releases a published record as transient');
+    record.raster?.clear();
+    record.raster = null;
+  }
+
   find(id: number): AokanaFontRecord | null {
     return this.records.find((record) => record.id === (id | 0)) ?? null;
   }

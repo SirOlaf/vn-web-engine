@@ -8,6 +8,13 @@ export interface AokanaWindowMessage {
   readonly wParam: number | bigint;
   readonly lParam: number | bigint;
 }
+export interface AokanaWindowMessageReceiver {
+  receive(message: AokanaWindowMessage): number | bigint;
+}
+export interface AokanaDispatchedWindowMessage {
+  readonly message: AokanaWindowMessage;
+  readonly result: number | bigint;
+}
 interface QueuedMessage {
   readonly message: AokanaWindowMessage;
   readonly physicalTransitions: readonly {readonly key: number; readonly down: boolean}[];
@@ -31,6 +38,7 @@ export class AokanaWindowMessages {
   private readonly targets = new Set<AokanaWindowTarget>();
   private readonly invalidated = new Set<AokanaWindowTarget>();
   private readonly physicalMessages = new WeakSet<AokanaWindowMessage>();
+  private mainReceiver: AokanaWindowMessageReceiver | null = null;
   constructor(readonly input: AokanaNativeInput) {}
 
   createTarget(): number {
@@ -45,6 +53,16 @@ export class AokanaWindowMessages {
   createMainTarget(): 'main' {
     this.targets.add('main');
     return 'main';
+  }
+
+  /** The concrete main-window profile installs its one synchronous, re-entrant receiver here. */
+  bindMainReceiver(receiver: AokanaWindowMessageReceiver): void {
+    this.mainReceiver = receiver;
+  }
+
+  /** Current native HWND global: null represents a not-yet-created or destroyed main window. */
+  mainTarget(): 'main' | null {
+    return this.targets.has('main') ? 'main' : null;
   }
 
   hasTarget(target: AokanaWindowTarget): boolean {
@@ -108,6 +126,29 @@ export class AokanaWindowMessages {
     this.append(message, []);
   }
 
+  /** SendMessage's synchronous path; null targets retain its zero-result behavior. */
+  send(
+    target: AokanaWindowTarget | null,
+    message: number,
+    wParam: number | bigint,
+    lParam: number | bigint,
+  ): number | bigint {
+    if (target === null) return 0;
+    return this.dispatch({
+      target,
+      message: message >>> 0,
+      wParam: nativeParameter(wParam),
+      lParam: nativeParameter(lParam),
+    });
+  }
+
+  /** Both direct sends and the GUI dequeue path enter this same receiver synchronously. */
+  dispatch(message: AokanaWindowMessage): number | bigint {
+    if (!this.targets.has(message.target)) return 0;
+    if (message.target === 'main') return this.mainReceiver?.receive(message) ?? 0;
+    return 0;
+  }
+
   /** Host input changes asynchronous state at arrival and queued keyboard state at dequeue. */
   enqueuePhysicalKey(
     target: AokanaWindowTarget,
@@ -147,5 +188,11 @@ export class AokanaWindowMessages {
       this.input.setDequeuedKey(key, down);
     }
     return entry.message;
+  }
+
+  /** The concrete GUI pump's dequeue-and-dispatch boundary. */
+  dispatchNext(): AokanaDispatchedWindowMessage | null {
+    const message = this.take();
+    return message === null ? null : {message, result: this.dispatch(message)};
   }
 }

@@ -25,6 +25,7 @@ export type AokanaWorkYield =
   {readonly kind: 'event'; readonly event: WorkEvent} | {readonly kind: 'cooperate'};
 export type AokanaWorkContinuation = Generator<AokanaWorkYield, number, number>;
 export type AokanaWorkResult = number | AokanaWorkContinuation;
+export type AokanaAsyncWorkerCallback<T> = (context: T, worker: number) => number | Promise<number>;
 
 type WorkerPhase = 'idle' | 'callback' | 'activation' | 'event' | 'finishing' | 'terminated';
 interface WorkThread {
@@ -145,6 +146,7 @@ export class AokanaDistributedProcessing {
   private wakeAllLatch: number | undefined;
   private callback: ((context: unknown) => AokanaWorkResult) | null = null;
   private workerCallback: ((context: unknown, worker: number) => AokanaWorkResult) | null = null;
+  private asyncWorkerCallback: AokanaAsyncWorkerCallback<unknown> | null = null;
   private context: unknown = null;
   private readonly workers: WorkThread[];
   private running = false;
@@ -182,6 +184,8 @@ export class AokanaDistributedProcessing {
 
   setCallback<T>(callback: ((context: T) => AokanaWorkResult) | null, context: T): void {
     this.check();
+    if (this.asyncWorkerCallback !== null)
+      throw new Error('Aokana asynchronous indexed callback is already installed');
     this.callback = callback === null ? null : (value) => callback(value as T);
     this.context = context;
   }
@@ -191,6 +195,8 @@ export class AokanaDistributedProcessing {
     context: T,
   ): void {
     this.check();
+    if (this.asyncWorkerCallback !== null)
+      throw new Error('Aokana asynchronous indexed callback is already installed');
     this.workerCallback =
       callback === null ? null : (value, worker) => callback(value as T, worker);
     this.context = context;
@@ -345,6 +351,9 @@ export class AokanaDistributedProcessing {
   }
 
   advanceCooperatively(): boolean {
+    // Promise callbacks are serialized by their own barrier so the allocator's
+    // single actor identity remains current across every await.
+    if (this.asyncWorkerCallback !== null) return false;
     const count = this.capacity > 1 && this.distributedFlag !== 0 ? this.capacity : 1;
     for (let attempt = 0; attempt < count; attempt++) {
       const id = this.nextWorker++ % count;
@@ -409,6 +418,119 @@ export class AokanaDistributedProcessing {
     this.running = false;
     this.allocator.endRun(this);
     this.mainActor = null;
+  }
+
+  private async invokeAsync(worker: WorkThread): Promise<boolean> {
+    if (worker.executing) return false;
+    const actor = worker.id === 0 ? this.mainActor! : worker.actor;
+    if (this.sharedOwner !== null && this.sharedOwner !== actor) return false;
+    if (worker.phase === 'finishing' || worker.phase === 'idle' || worker.phase === 'terminated')
+      return false;
+    if (worker.id !== 0 && worker.id >= this.activeCapacity) {
+      const activation = worker.activation!;
+      activation.check();
+      if (!activation.signaled) {
+        worker.phase = 'activation';
+        return false;
+      }
+    }
+    const callback = this.asyncWorkerCallback;
+    if (callback === null)
+      throw new Error('Aokana asynchronous indexed callback became null during its run');
+    const previousActor = this.allocator.currentActor;
+    this.allocator.currentActor = actor;
+    worker.executing = true;
+    worker.phase = 'callback';
+    try {
+      const result = await callback(this.context, worker.id);
+      worker.phase = (result | 0) === 0 ? 'finishing' : 'callback';
+      return true;
+    } finally {
+      worker.executing = false;
+      this.allocator.currentActor = previousActor;
+    }
+  }
+
+  private async advanceAsync(): Promise<boolean> {
+    const count = this.capacity > 1 && this.distributedFlag !== 0 ? this.capacity : 1;
+    for (let attempt = 0; attempt < count; attempt++) {
+      const id = this.nextWorker++ % count;
+      if (await this.invokeAsync(this.workers[id]!)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Promise-aware companion for native indexed callbacks. It uses this pool's
+   * real worker records and keeps each worker actor current for the whole await.
+   */
+  async runWorkerCallbackAsync<T>(
+    callback: AokanaAsyncWorkerCallback<T>,
+    context: T,
+    distributedFlag: number,
+  ): Promise<void> {
+    this.check();
+    if (this.running) throw new Error('Aokana work manager entered a recursive native run barrier');
+    if (this.callback !== null || this.workerCallback !== null || this.asyncWorkerCallback !== null)
+      throw new Error('Aokana work manager already has an installed callback');
+    this.asyncWorkerCallback = (value, worker) => callback(value as T, worker);
+    this.context = context;
+    this.running = true;
+    this.allocator.beginRun(this);
+    const entryActor = this.allocator.currentActor;
+    this.mainActor = entryActor;
+    this.distributedFlag = distributedFlag | 0;
+    this.nextWorker = 0;
+    const distributed = this.capacity > 1 && this.distributedFlag !== 0;
+    let registered = false;
+    try {
+      if (distributed) {
+        this.wakeAllLatch = 0;
+        this.allocator.update(this, true);
+        registered = true;
+        for (const worker of this.workers.slice(1)) {
+          worker.gate1 = 'main';
+          worker.gate2 = null;
+          worker.gate0 = 'worker';
+          worker.gate3 = null;
+          worker.phase = 'callback';
+        }
+      }
+      this.workers[0]!.phase = 'callback';
+      while (!this.mainFinished()) {
+        if (!(await this.advanceAsync()))
+          throw new Error('Aokana asynchronous work run is blocked with no runnable worker');
+      }
+      if (distributed) {
+        this.allocator.update(this, false);
+        registered = false;
+        for (const worker of this.workers.slice(1)) {
+          worker.gate2 = 'main';
+          worker.gate1 = null;
+        }
+        while (this.workers.some((worker) => worker.phase !== 'finishing')) {
+          if (!(await this.advanceAsync()))
+            throw new Error('Aokana asynchronous work completion has no runnable worker');
+        }
+      }
+    } finally {
+      if (registered) this.allocator.update(this, false);
+      for (const worker of this.workers.slice(1)) {
+        worker.gate3 = 'worker';
+        worker.gate2 = 'main';
+        worker.gate1 = null;
+        worker.gate0 = null;
+        worker.phase = 'idle';
+      }
+      this.workers[0]!.phase = 'idle';
+      this.distributedFlag = 0;
+      this.running = false;
+      this.allocator.endRun(this);
+      this.mainActor = null;
+      this.asyncWorkerCallback = null;
+      this.context = null;
+      this.allocator.currentActor = entryActor;
+    }
   }
 
   workerState(id: number): Readonly<{
