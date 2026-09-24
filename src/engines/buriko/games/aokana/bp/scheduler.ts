@@ -5,6 +5,7 @@ import type {
 } from '../native/types.js';
 import type {AokanaBpThread} from './state.js';
 import type {AokanaGridEvaluationWorkers} from '../native/grid-evaluation-workers.js';
+import type {AokanaDataCodecWorkers} from '../native/data-codec-workers.js';
 
 export const AOKANA_BP_BURST_INSTRUCTIONS = 0x400000;
 export type AokanaBpSchedulerResult = 0 | 1 | 2;
@@ -77,6 +78,7 @@ export class AokanaBpScheduler {
   exclusiveMode = false;
   private running = false;
   private gridEvaluationWorkers: AokanaGridEvaluationWorkers | null = null;
+  private dataCodecWorkers: AokanaDataCodecWorkers | null = null;
 
   constructor(
     root: AokanaBpThread,
@@ -98,9 +100,17 @@ export class AokanaBpScheduler {
   }
 
   private yieldBackgroundWork(): Promise<void> | undefined {
-    if (this.gridEvaluationWorkers?.hasPendingWork())
+    const gridPending = this.gridEvaluationWorkers?.hasPendingWork() ?? false,
+      codecPending = this.dataCodecWorkers?.hasPendingWork() ?? false;
+    if (gridPending || codecPending)
       return new Promise<void>((resolve) => setTimeout(resolve, 0));
     return undefined;
+  }
+
+  attachDataCodecWorkers(workers: AokanaDataCodecWorkers): void {
+    if (this.dataCodecWorkers !== null && this.dataCodecWorkers !== workers)
+      throw new Error('Aokana scheduler already has its native data codec workers');
+    this.dataCodecWorkers = workers;
   }
 
   append(thread: AokanaBpThread): AokanaBpScheduledThread {

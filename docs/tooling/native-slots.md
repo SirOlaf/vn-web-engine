@@ -156,26 +156,25 @@ references, source drift, omitted/duplicated slots, owner/address/factory mismat
 and the refusal to turn a complete plan into integration success.
 
 <!-- BEGIN GENERATED NATIVE SLOT COUNTS -->
-
 Binary SHA-256: `f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a`.
 
 The manifest contains **840 native slots**. Ownership: runtime 208, storage 321, opcodes 311.
 
 | Bank | Native slots | Source declarations observed | Provider referenced by tests | Accepted focused tests | Verified aggregate slots |
-| ---- | -----------: | ---------------------------: | ---------------------------: | ---------------------: | -----------------------: |
-| 7F   |           12 |                           12 |                           12 |                      0 |                        0 |
-| 80   |          182 |                           87 |                           79 |                      0 |                        0 |
-| 81   |           92 |                           92 |                           88 |                      0 |                        0 |
-| 90   |          187 |                           67 |                           67 |                      0 |                        0 |
-| 91   |          109 |                           17 |                           17 |                      0 |                        0 |
-| 92   |           46 |                            8 |                            8 |                      0 |                        0 |
-| A0   |           30 |                            5 |                            5 |                      0 |                        0 |
-| B0   |           68 |                           68 |                           68 |                      0 |                        0 |
-| C0   |           45 |                           45 |                           45 |                      0 |                        0 |
-| D0   |           58 |                           58 |                           58 |                      0 |                        0 |
-| E0   |           11 |                            8 |                            8 |                      0 |                        0 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 7F | 12 | 12 | 12 | 0 | 0 |
+| 80 | 182 | 159 | 152 | 0 | 0 |
+| 81 | 92 | 92 | 88 | 0 | 0 |
+| 90 | 187 | 181 | 181 | 0 | 0 |
+| 91 | 109 | 100 | 100 | 0 | 0 |
+| 92 | 46 | 41 | 41 | 0 | 0 |
+| A0 | 30 | 19 | 19 | 0 | 0 |
+| B0 | 68 | 68 | 68 | 0 | 0 |
+| C0 | 45 | 45 | 45 | 0 | 0 |
+| D0 | 58 | 58 | 58 | 0 | 0 |
+| E0 | 11 | 11 | 11 | 0 | 0 |
 
-96 exported factories and 3 static declaration providers were found; 92 factories and 3 static providers have references only in tests. 373 slots have no recognized source declaration. 0 slots have multiple source declarations.
+209 exported factories and 3 static declaration providers were found; 206 factories and 3 static providers have references only in tests. 54 slots have no recognized source declaration. 0 slots have multiple source declarations.
 
 Aggregate state: `no-aggregate-supplied`; production construction candidates: 0. Body-review, focused-test acceptance, and runtime integration are unreviewed in this manifest. These zero acceptance counts describe imported evidence, not a denial of historical test receipts.
 <!-- END GENERATED NATIVE SLOT COUNTS -->

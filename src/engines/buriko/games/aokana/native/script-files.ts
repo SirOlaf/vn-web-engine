@@ -55,10 +55,10 @@ export class AokanaScriptFiles {
     output: AokanaBpPointer | null,
     path: AokanaBpPointer | null,
     mode: number,
+    actor = this.actors.currentActor,
   ): Promise<number> {
     mode >>>= 0;
     if (mode > 2) return 0x80000001;
-    const actor = this.actors.currentActor;
     await this.section.enter(actor);
     try {
       const normalized = {bytes: new Uint8Array(784), offset: 0};
@@ -209,8 +209,7 @@ export class AokanaScriptFiles {
   }
 
   /** 031BB0 queues real closes recursively, then yields while the shared worker drains them. */
-  async shutdown(): Promise<void> {
-    const actor = this.actors.currentActor;
+  async shutdown(actor = this.actors.currentActor): Promise<void> {
     await this.section.enter(actor);
     try {
       for (let record = this.first; record !== null; record = record.next)

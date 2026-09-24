@@ -1,3 +1,8 @@
+import {perspectiveScale} from './perspective-point.js';
+import {
+  displayPropertyOutput,
+  type AokanaDisplayPropertyDestination,
+} from './display-property-output.js';
 import {
   allocateAokanaBitmap,
   aokanaBitmapRectangle,
@@ -24,12 +29,13 @@ import {blendMixedAokanaBitmapsIntoRgb, mixAokanaBitmaps} from './bitmap-mix.js'
 import {reduceAokanaBitmapHalf} from './bitmap-reduce.js';
 import {blendRevealedAokanaBitmap, revealAokanaBitmap} from './bitmap-reveal.js';
 import {waveAokanaBitmap} from './bitmap-wave.js';
-import {nativeAffineSineCosine} from '../bp/opcodes/native-math.js';
+import {nativeAffineSineCosine, nativeDisplayEasing} from '../bp/opcodes/native-math.js';
 import {
   AokanaDisplayObject,
   type AokanaDisplayObjectEnvironment,
   type AokanaDisplayPoint,
 } from './display-object.js';
+import {aokanaRectangleContained} from './display-damage.js';
 import {AokanaSpriteEffects} from './sprite-effects.js';
 import {aokanaSpriteBounds} from './sprite-bounds.js';
 import type {AokanaSurfaces} from './surfaces.js';
@@ -154,47 +160,6 @@ function multiplyShiftSigned(left: number, right: number, shift: bigint): number
 
 function multiplyShiftUnsigned(left: number, right: number, shift: bigint): number {
   return Number((BigInt(left >>> 0) * BigInt(right >>> 0)) >> shift) | 0;
-}
-
-/** 056920's Q24-to-Q16 animation curve family used by both transform evaluators. */
-function evaluateSpriteEasing(progress: number, easing: number): number {
-  progress >>>= 0;
-  easing |= 0;
-  const scaledAngle = (degrees: number): number => Math.trunc((progress * degrees) / 0x1000000) | 0;
-  switch (easing) {
-    case 1: {
-      const {cosine} = nativeAffineSineCosine((0xb40000 - scaledAngle(0xb40000)) | 0);
-      return truncateInt32((cosine + 1) * 32768);
-    }
-    case 2: {
-      const {sine} = nativeAffineSineCosine(scaledAngle(0x5a0000));
-      return truncateInt32(sine * 65536);
-    }
-    case 3: {
-      const {sine} = nativeAffineSineCosine((0x5a0000 - scaledAngle(0x5a0000)) | 0);
-      return truncateInt32((1 - sine) * 65536);
-    }
-    default:
-      if (easing >= 4 && easing <= 15) {
-        const exponent = [2, 2, 2.5, 2.5, 3, 3, 4, 4, 5, 5, 6, 6][easing - 4]!;
-        const reverse = (easing & 1) !== 0,
-          input = reverse ? 0x1000000 - progress : progress,
-          value = Math.pow(input, exponent) / Math.pow(0x1000000, exponent);
-        return truncateInt32((reverse ? 1 - value : value) * 65536);
-      }
-      return ((progress + (((progress | 0) >> 31) & 0xff)) >> 8) | 0;
-  }
-}
-
-function perspectiveScale(depth: number, perspective: number): number {
-  depth |= 0;
-  perspective >>>= 0;
-  if (depth === 0 || perspective === 0) return 0x10000;
-  if (depth >= 0)
-    return (
-      Number((BigInt(perspective) << 32n) / (BigInt(depth) + BigInt(perspective) * 0x10000n)) | 0
-    );
-  return Number((BigInt(perspective) * 0x10000n - BigInt(depth)) / BigInt(perspective)) | 0;
 }
 
 /** CDspObjSprite, constructor 066910 and the seven-case draw virtual 065550. */
@@ -372,7 +337,7 @@ export class AokanaDisplaySprite extends AokanaDisplayObject {
   private easedDelta(delta: number): number {
     return multiplyShiftSigned(
       delta,
-      evaluateSpriteEasing(this.getValueD8(1), this.animation.easing),
+      nativeDisplayEasing(this.getValueD8(1), this.animation.easing),
       16n,
     );
   }
@@ -1385,14 +1350,27 @@ export class AokanaDisplaySprite extends AokanaDisplayObject {
     return 0;
   }
 
-  private acceptMaskOwner(owner: AokanaDisplaySprite | null): 0 | 0x8000000d | 0x8000000e {
+  /** 063050 publishes a reciprocal link only for the supplied creation-order token. */
+  private updateMaskChild(mask: AokanaDisplaySprite | null, token: number): boolean {
+    if (this.depthOrder >>> 0 !== token >>> 0) return false;
+    this.dynamicMask = mask;
+    this.staticMaskEnabled = mask === null ? 0 : 1;
+    return true;
+  }
+
+  private acceptMaskOwner(
+    owner: AokanaDisplaySprite | null,
+    token: number,
+  ): 0 | 0x8000000d | 0x8000000e {
     if (owner !== null) {
       if (this.maskOwner !== null) return 0x8000000d;
+      owner.updateMaskChild(this, token);
       this.maskOwner = owner;
-      this.maskOwnerToken = owner.depthOrder >>> 0;
+      this.maskOwnerToken = token >>> 0;
       return 0;
     }
     if (this.maskOwner === null) return 0x8000000e;
+    this.maskOwner.updateMaskChild(null, token);
     this.maskOwner = null;
     return 0;
   }
@@ -1400,21 +1378,13 @@ export class AokanaDisplaySprite extends AokanaDisplayObject {
   /** 063090/062FE0 maintain both native pointers and their creation-order token. */
   setDynamicMask(mask: AokanaDisplaySprite | null): AokanaSpriteMaskAssociationStatus {
     if (mask !== null) {
-      this.staticMaskEnabled = 0;
-      this.staticMaskSurface = -1;
-      if (this.dynamicMask !== null) return 0x8000000b;
-      const linked = mask.acceptMaskOwner(this);
-      if (linked !== 0) return linked;
-      this.dynamicMask = mask;
-      this.staticMaskEnabled = 1;
-      return 0;
+      this.setStaticMaskSurface(-1);
+      if (this.staticMaskEnabled !== 0 || this.dynamicMask !== null) return 0x8000000b;
+      return mask.acceptMaskOwner(this, this.depthOrder);
     }
     const previous = this.dynamicMask;
     if (this.staticMaskEnabled === 0 || previous === null) return 0x8000000c;
-    this.dynamicMask = null;
-    this.staticMaskEnabled = 0;
-    previous.acceptMaskOwner(null);
-    return 0;
+    return previous.acceptMaskOwner(null, this.depthOrder);
   }
 
   /** 064EA0 only changes source-bearing modes zero, two, five and six. */
@@ -1590,22 +1560,44 @@ export class AokanaDisplaySprite extends AokanaDisplayObject {
     if (this.staticMaskEnabled === 0) return null;
     let source: AokanaBitmap | null,
       position: AokanaDisplayPoint,
+      spritePosition: AokanaDisplayPoint,
       dynamic = false;
     if (this.dynamicMask !== null) {
-      source = this.dynamicMask.currentSource();
+      source = this.surfaces.snapshot(this.dynamicMask.sourceSurface);
+      if (source === null) return null;
+      spritePosition = this.effectivePosition();
       position = this.dynamicMask.effectivePosition();
       dynamic = true;
     } else {
       source = this.current(this.staticMaskSurface, this.staticMaskImageId);
       position = this.environment.origin;
+      if (source === null) return null;
+      spritePosition = this.effectivePosition();
     }
-    if (source === null) return null;
-    const spritePosition = this.effectivePosition(),
-      aligned = allocateAokanaBitmap(
-        rectangleWidth(rectangle),
-        rectangleHeight(rectangle),
-        source.format,
-      );
+    if (dynamic && this.dynamicMask !== null) {
+      const globalRectangle = {
+          left: (rectangle.left + spritePosition.x) | 0,
+          top: (rectangle.top + spritePosition.y) | 0,
+          right: (rectangle.right + spritePosition.x) | 0,
+          bottom: (rectangle.bottom + spritePosition.y) | 0,
+        },
+        bounds = this.dynamicMask.inputRectangle(0);
+      if (aokanaRectangleContained(globalRectangle, bounds)) {
+        const borrowed = {...source};
+        cropAokanaBitmap(borrowed, {
+          left: (Math.max(globalRectangle.left, bounds.left) - position.x) | 0,
+          top: (Math.max(globalRectangle.top, bounds.top) - position.y) | 0,
+          right: (Math.min(globalRectangle.right, bounds.right) - position.x) | 0,
+          bottom: (Math.min(globalRectangle.bottom, bounds.bottom) - position.y) | 0,
+        });
+        return {bitmap: borrowed, owned: false, dynamic: true};
+      }
+    }
+    const aligned = allocateAokanaBitmap(
+      rectangleWidth(rectangle),
+      rectangleHeight(rectangle),
+      source.format,
+    );
     clearAokanaBitmap(aligned);
     this.environment.compositor.draw(
       aligned,
@@ -2020,12 +2012,9 @@ export class AokanaDisplaySprite extends AokanaDisplayObject {
     }
   }
 
-  override getProperty(selector: number, output: Uint32Array): number {
-    const write = (index: number, value: number): void => {
-      if (index >= output.length)
-        throw new RangeError('CDspObjSprite property writes outside native output');
-      output[index] = value >>> 0;
-    };
+  override getProperty(selector: number, output: AokanaDisplayPropertyDestination): number {
+    const access = displayPropertyOutput(output),
+      write = (index: number, value: number): void => access.write32(index, value >>> 0);
     switch (selector >>> 0) {
       case 0x10:
         write(0, this.sourceSurface);
@@ -2046,17 +2035,17 @@ export class AokanaDisplaySprite extends AokanaDisplayObject {
         return 0;
       }
       case 0x10000100: {
-        const source = this.currentSource();
-        if (source === null)
-          throw new Error('CDspObjSprite dimension property reads an invalid native source');
-        write(0, source.width);
-        write(1, source.height);
+        const source = this.surfaces.snapshot(this.sourceSurface);
+        if (source !== null) {
+          write(0, source.width);
+          write(1, source.height);
+        }
         if (this.mode === 2 || this.mode === 5 || this.mode === 6) {
           write(2, this.bitmap.width);
           write(3, this.bitmap.height);
         } else {
-          write(2, source.width);
-          write(3, source.height);
+          write(2, access.read32(0));
+          write(3, access.read32(1));
         }
         return 0;
       }
@@ -2068,16 +2057,8 @@ export class AokanaDisplaySprite extends AokanaDisplayObject {
   /** 066880 clears both association directions before every owned sprite allocation. */
   override dispose(): void {
     if (this.disposedSprite) throw new Error('Aokana accesses a deleted CDspObjSprite');
-    if (this.dynamicMask !== null) this.setDynamicMask(null);
-    if (this.maskOwner !== null) {
-      const owner = this.maskOwner;
-      const ownerToken = this.maskOwnerToken;
-      this.acceptMaskOwner(null);
-      if (owner.depthOrder >>> 0 === ownerToken && owner.dynamicMask === this) {
-        owner.dynamicMask = null;
-        owner.staticMaskEnabled = 0;
-      }
-    }
+    this.setDynamicMask(null);
+    this.acceptMaskOwner(null, this.maskOwnerToken);
     this.clearModeCaches();
     this.disposedSprite = true;
     super.dispose();

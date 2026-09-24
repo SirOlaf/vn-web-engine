@@ -62,7 +62,10 @@ export function createGroupB0Fonts(
     return 0;
   });
   add(0xc2, 0x1400d4130, 'LoadFontFile', async (h): Promise<0> => {
-    push32(h.thread, Number((await resources.load(null, textBytes(required(pointer(h))))) === 0));
+    push32(
+      h.thread,
+      Number((await resources.load(null, textBytes(required(pointer(h))), h.actor)) === 0),
+    );
     return 0;
   });
   add(0xc3, 0x1400d40e0, 'LoadFontResource', async (h): Promise<0> => {
@@ -73,7 +76,11 @@ export function createGroupB0Fonts(
     push32(
       h.thread,
       Number(
-        (await resources.load(archive === null ? null : () => textBytes(archive), filename)) === 0,
+        (await resources.load(
+          archive === null ? null : () => textBytes(archive),
+          filename,
+          h.actor,
+        )) === 0,
       ),
     );
     return 0;

@@ -329,17 +329,24 @@ export class AokanaNativeFonts {
   find(id: number): AokanaFontRecord | null {
     return this.records.find((record) => record.id === (id | 0)) ?? null;
   }
-  async rebuild(): Promise<void> {
-    for (const record of this.records) {
-      record.raster?.clear();
-      record.raster = null;
-      record.initializationResult = await this.initialize(record, record.name, true);
-    }
+  /** Native replacement constructs a fresh CFontDx, including its spacing fields. */
+  private async replaceRaster(record: AokanaFontRecord): Promise<void> {
+    record.raster?.clear();
+    record.raster = null;
+    record.field44 = 0;
+    record.field48 = 0;
+    record.initializationResult = await this.initialize(record, record.name, true);
   }
-  async setTransform(input: Uint8Array, transform: AokanaFontTransform): Promise<number> {
+  async rebuild(): Promise<void> {
+    for (const record of this.records) await this.replaceRaster(record);
+  }
+  async setTransform(
+    input: Uint8Array | (() => Uint8Array),
+    transform: AokanaFontTransform,
+  ): Promise<number> {
     const result = validateAokanaFontTransform(transform);
     if (result !== 0) return result;
-    const name = rawName(input);
+    const name = rawName(typeof input === 'function' ? input() : input);
     const existing = this.transforms.find((entry) => equal(entry.name, name));
     if (!existing) {
       this.transforms.unshift({
@@ -356,11 +363,7 @@ export class AokanaNativeFonts {
     existing.name = copiedRecordName(existing.name, 0x80, transform);
     if (geometryChanged)
       for (const record of this.records)
-        if (equal(record.name, name)) {
-          record.raster?.clear();
-          record.raster = null;
-          record.initializationResult = await this.initialize(record, record.name, true);
-        }
+        if (equal(record.name, name)) await this.replaceRaster(record);
     if (!geometryChanged)
       for (const record of this.records)
         if (equal(record.name, name)) record.raster?.setExtra(transform[4]);

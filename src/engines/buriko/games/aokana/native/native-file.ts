@@ -23,6 +23,9 @@ export class AokanaNativeFile {
       wide = this.files.path(bytes);
     if (wide.length > 783)
       throw new RangeError('Aokana native file path exceeds its wide stack record');
+    return {bytes, wide, identity: this.pathIdentity(wide)};
+  }
+  private pathIdentity(wide: string): string {
     let identity = wide;
     if (this.files.paths !== null) {
       try {
@@ -31,7 +34,7 @@ export class AokanaNativeFile {
         if (!(error instanceof FileError)) throw error;
       }
     }
-    return {bytes, wide, identity};
+    return identity;
   }
   /** The shared mounted native-file namespace retains GENERIC_READ/share-read versus exclusive write. */
   private reserve(path: string, write: boolean): boolean {
@@ -55,8 +58,12 @@ export class AokanaNativeFile {
   /** 0695F0 -> 08CAF0: OPEN_EXISTING and share-read; failure updates +10. */
   async openRead(path: AokanaBpPointer): Promise<0 | 1> {
     if (this.openPath !== null) return 0;
-    const {wide, identity} = this.pathname(path);
-    if (!this.reserve(identity, false)) {
+    return this.openReadWide(this.pathname(path).wide);
+  }
+  /** Direct08CAF0 has no CFileDX encoded-to-wide stack conversion. */
+  async openReadWide(wide: string): Promise<0 | 1> {
+    if (this.openPath !== null) return 0;
+    if (!this.reserve(this.pathIdentity(wide), false)) {
       this.lastError = 32; // ERROR_SHARING_VIOLATION at the selected Windows file boundary.
       return 0;
     }
@@ -99,10 +106,19 @@ export class AokanaNativeFile {
     return true;
   }
   /** 08CCF0 clips at EOF and returns the actual DWORD count; host failure returns zero. */
-  async read(output: AokanaBpPointer, count: number): Promise<number> {
+  async read(output: AokanaBpPointer, count: number, initialized?: Uint8Array): Promise<number> {
+    return (await this.readResult(output, count, initialized)).transferred;
+  }
+  /** Shared actual ReadFile boundary; CFileStorage also consumes the BOOL result. */
+  async readResult(
+    output: AokanaBpPointer,
+    count: number,
+    initialized?: Uint8Array,
+  ): Promise<{success: boolean; transferred: number}> {
     count >>>= 0;
     const source = this.source;
-    if (source === null || this.position >= BigInt(source.size) || count === 0) return 0;
+    if (source === null) return {success: false, transferred: 0};
+    if (this.position >= BigInt(source.size) || count === 0) return {success: true, transferred: 0};
     let bytes: Uint8Array;
     try {
       bytes = await source.read(
@@ -110,13 +126,17 @@ export class AokanaNativeFile {
         Math.min(count, source.size - Number(this.position)),
       );
     } catch (error) {
-      if (error instanceof FileError || error instanceof DOMException) return 0;
+      if (error instanceof FileError || error instanceof DOMException)
+        return {success: false, transferred: 0};
       throw error;
     }
     const destination = pointerView(output, bytes.length);
+    if (initialized !== undefined && output.offset + bytes.length > initialized.length)
+      throw new RangeError('Aokana native file read exceeds destination initialization mask');
     new Uint8Array(destination.buffer, destination.byteOffset, destination.byteLength).set(bytes);
+    initialized?.fill(1, output.offset, output.offset + bytes.length);
     this.position += BigInt(bytes.length);
-    return bytes.length >>> 0;
+    return {success: true, transferred: bytes.length >>> 0};
   }
   /** 08CCB0 observes the supplied transfer bytes at call time, after the worker dequeues its job. */
   async write(source: AokanaBpPointer, count: number): Promise<number> {
@@ -134,6 +154,16 @@ export class AokanaNativeFile {
     if (this.mountedPath === null || this.files.metadata === null) return null;
     try {
       return await this.files.metadata.getTimes(this.mountedPath);
+    } catch (error) {
+      if (error instanceof FileError || error instanceof DOMException) return null;
+      throw error;
+    }
+  }
+  /** 08CA60 with only last-write output: unrelated FILETIMEs need not be known. */
+  async getWriteTime(): Promise<bigint | null> {
+    if (this.mountedPath === null || this.files.metadata === null) return null;
+    try {
+      return (await this.files.metadata.metadata(this.mountedPath)).writeTime;
     } catch (error) {
       if (error instanceof FileError || error instanceof DOMException) return null;
       throw error;

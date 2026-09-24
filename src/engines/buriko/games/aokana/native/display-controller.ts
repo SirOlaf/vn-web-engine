@@ -13,6 +13,7 @@ import {AokanaFullscreenMovieState} from './movie-fullscreen-state.js';
 import {AokanaInlineTextControl} from './inline-text-control.js';
 import {AokanaNativeNotifications} from './notification-queue.js';
 import {AokanaDisplayCapabilities} from './display-capabilities.js';
+import {pointerView, type AokanaBpPointer} from '../bp/memory.js';
 
 const retryKey = {
   bytes: new TextEncoder().encode('DIRECT3DINITIALIZINGFAILEDDOYOUWANTTOTRYAGAIN\0'),
@@ -22,6 +23,8 @@ const retryKey = {
 /** Native B6EC0/B6A90 mode policy over the actual shared display, device and HWND owners. */
 export class AokanaDisplayController {
   readonly capabilities: AokanaDisplayCapabilities;
+  private modeToggleEnabled = 0; // 1e8d04, distinct from foreground.
+  private readonly modeToggleKeys = new Uint32Array(16); // 1e8d10.
   constructor(
     readonly manager: AokanaDisplayManager,
     readonly device: AokanaDisplayDevice,
@@ -36,9 +39,15 @@ export class AokanaDisplayController {
     readonly inline: AokanaInlineTextControl,
     readonly notifications: AokanaNativeNotifications,
   ) {
-    if (device.manager !== manager || host.manager !== manager || device.adapter !== adapters ||
-        adapters.display !== manager.displayState)
-      throw new Error('Aokana display controller requires the shared device, window and adapter owners');
+    if (
+      device.manager !== manager ||
+      host.manager !== manager ||
+      device.adapter !== adapters ||
+      adapters.display !== manager.displayState
+    )
+      throw new Error(
+        'Aokana display controller requires the shared device, window and adapter owners',
+      );
     this.capabilities = new AokanaDisplayCapabilities(device, adapters);
   }
   get display() {
@@ -57,6 +66,11 @@ export class AokanaDisplayController {
   /** B11F0 queries primary-adapter mode/identity/caps before any device creation.
    * Its retry deadline is the DWORD BGI elapsed clock, unlike B6A90's raw ticks. */
   async initialize(): Promise<0 | 1> {
+    const operationAllocator = this.manager.surfaces.allocator,
+      operationActor = operationAllocator.currentActor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
     const capabilities = this.capabilities;
     let deadline = (Number(BigInt.asUintN(32, this.device.clock.read())) + 10000) >>> 0;
     let created = capabilities.create();
@@ -69,12 +83,15 @@ export class AokanaDisplayController {
       const caps = {caps: 0, caps2: 0, pixelShaderVersion: 0},
         status = capabilities.readCapabilities(0, 1, caps);
       if ((status | 0) < 0) {
-        if ((status >>> 0) !== 0x8876086a)
+        if (status >>> 0 !== 0x8876086a)
           return this.initializationError('COULDNOTGETTHEINFORMATIONOFDISPLAYADAPTOR');
         if (Number(BigInt.asUintN(32, this.device.clock.read())) < deadline)
           await new Promise<void>((resolve) => setTimeout(resolve, 200));
         else {
-          if (await this.mouseTrails.dialogs.show(this.localized.lookup(retryKey), null, 0x124) !== 6)
+          if (
+            (await this.mouseTrails.dialogs.show(this.localized.lookup(retryKey), null, 0x124)) !==
+            6
+          )
             return 0;
           deadline = (Number(BigInt.asUintN(32, this.device.clock.read())) + 2000) >>> 0;
           capabilities.release();
@@ -85,21 +102,28 @@ export class AokanaDisplayController {
       if ((caps.caps2 & 0x20000000) === 0)
         return this.initializationError('DISPLAYADAPTORDOESNOTSUPPORTREQUISITEFUNCTION');
       this.display.physicalRasterStatus = (caps.caps >>> 17) & 1;
-      if ((capabilities.checkDeviceType(0, 1, 22, 22, 1) | 0) < 0 ||
-          (capabilities.checkDeviceType(0, 1, 22, 22, 0) | 0) < 0)
+      if (
+        (capabilities.checkDeviceType(0, 1, 22, 22, 1) | 0) < 0 ||
+        (capabilities.checkDeviceType(0, 1, 22, 22, 0) | 0) < 0
+      )
         return this.initializationError('DISPLAYADAPTORDOESNOTSUPPORTREQUISITEPIXELFORMAT');
       if ((capabilities.checkDeviceFormat(0, 1, 22, 0x200, 3, 22) | 0) < 0)
         return this.initializationError('DISPLAYADAPTORDOESNOTSUPPORTREQUISITESURFACEFORMAT');
       this.display.pixelShaderVersion = caps.pixelShaderVersion >>> 0;
-      return this.reconfigure(2, 1, 0, null, 1);
+      return runAsActor(() => this.reconfigure(2, 1, 0, null, 1));
     }
   }
 
   /** B1CE0 retains ten concrete attempts, with Sleep(200) only between failed attempts. */
   async createDevice(fullscreen: number): Promise<number> {
+    const operationAllocator = this.manager.surfaces.allocator,
+      operationActor = operationAllocator.currentActor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
     for (let remaining = 10; remaining !== 0;) {
       remaining--;
-      const result = this.device.create(fullscreen, this.capabilities);
+      const result = runAsActor(() => this.device.create(fullscreen, this.capabilities));
       if (result === 0 || remaining === 0) return result;
       await new Promise<void>((resolve) => setTimeout(resolve, 200));
     }
@@ -114,6 +138,11 @@ export class AokanaDisplayController {
     position: readonly [number, number] | null,
     forceCreate: number,
   ): Promise<1> {
+    const operationAllocator = this.manager.surfaces.allocator,
+      operationActor = operationAllocator.currentActor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
     const display = this.display;
     if (display.resizeInProgress !== 0) return 1;
     display.resizeInProgress = 1;
@@ -134,10 +163,15 @@ export class AokanaDisplayController {
       // are routed through the shared HWND/input owner; this does not invent foreground state.
       this.host.focus();
       for (;;) {
-        const result = forceCreate === 0 ? this.device.reset(1, 0) : await this.createDevice(0);
+        const result =
+          forceCreate === 0
+            ? runAsActor(() => this.device.reset(1, 0))
+            : await runAsActor(() => this.createDevice(0));
         if (result === 0) break;
         if (forceCreate === 0) forceCreate = 1;
-        else if (await this.mouseTrails.dialogs.show(this.localized.lookup(retryKey), null, 0x124) !== 6)
+        else if (
+          (await this.mouseTrails.dialogs.show(this.localized.lookup(retryKey), null, 0x124)) !== 6
+        )
           throw new AokanaNativeExit(0x7fffffff, 'Aokana display initialization retry declined');
       }
       if (display.windowMoveImmediate === 0) {
@@ -161,10 +195,13 @@ export class AokanaDisplayController {
       await this.mouseTrails.transition(1);
       this.host.applyFullscreenGeometry(origin[0], origin[1], desktopWidth, desktopHeight);
       this.device.clearWindowClient();
-      const result = forceCreate === 0 ? this.device.reset(1, 1) : await this.createDevice(1);
+      const result =
+        forceCreate === 0
+          ? runAsActor(() => this.device.reset(1, 1))
+          : await runAsActor(() => this.createDevice(1));
       if (result !== 0) {
         display.resizeInProgress = 0;
-        return this.reconfigure(preset, format, 0, null, 0);
+        return runAsActor(() => this.reconfigure(preset, format, 0, null, 0));
       }
     }
     const budget = aokanaDisplayRenderPixelBudget(this.cpu, display);
@@ -183,6 +220,41 @@ export class AokanaDisplayController {
   /** B6C40 only sets the pending request. */
   requestModeToggle(): void {
     this.display.modeChangePending = 1;
+  }
+
+  /** B67E0 publishes the flag before reading the full terminated source list. */
+  configureModeToggle(enabled: number, source: AokanaBpPointer | null): 0 | 1 {
+    this.modeToggleEnabled = enabled >>> 0;
+    if (this.modeToggleEnabled === 0) return 1;
+    if (source === null) {
+      this.modeToggleKeys[0] = 0;
+      return 1;
+    }
+    let count = 0;
+    while (
+      pointerView({bytes: source.bytes, offset: source.offset + count * 4}, 4).getUint32(
+        0,
+        true,
+      ) !== 0
+    )
+      count++;
+    if (count > 15) return 0;
+    for (let index = 0; index <= count; index++)
+      this.modeToggleKeys[index] = pointerView(
+        {bytes: source.bytes, offset: source.offset + index * 4},
+        4,
+      ).getUint32(0, true);
+    return 1;
+  }
+
+  /** B67B0 tests the same enabled flag and terminated copied list. */
+  containsModeToggleKey(key: number): boolean {
+    if (this.modeToggleEnabled === 0) return false;
+    for (const current of this.modeToggleKeys) {
+      if (current === 0) return false;
+      if (current === key >>> 0) return true;
+    }
+    return false;
   }
 
   /** B6CF0 changes only the main window style, without SetWindowPos or redraw. */
@@ -204,22 +276,45 @@ export class AokanaDisplayController {
 
   /** B6A90 runs after the main HWND pump; all deadlines here use raw GetTickCount. */
   async poll(): Promise<void> {
+    const operationAllocator = this.manager.surfaces.allocator,
+      operationActor = operationAllocator.currentActor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
     const display = this.display;
-    if (display.deviceChangePending !== 0 && this.ticks.getTickCount() >= (display.deviceChangeDeadline >>> 0)) {
+    if (
+      display.deviceChangePending !== 0 &&
+      this.ticks.getTickCount() >= display.deviceChangeDeadline >>> 0
+    ) {
       if (display.forcedDeviceChange !== 0) {
         const rectangle = this.adapters.readWindowRectangle();
-        await this.reconfigure(
-          display.selectedSizePreset, display.selectedWindowParameter, this.device.fullscreen,
-          [rectangle[0], rectangle[1]], 1,
+        await runAsActor(() =>
+          this.reconfigure(
+            display.selectedSizePreset,
+            display.selectedWindowParameter,
+            this.device.fullscreen,
+            [rectangle[0], rectangle[1]],
+            1,
+          ),
         );
         // Assembly reads the raw clock before clearing the forced flag.
         const delay = Math.floor(1000 / this.device.refreshRate),
           now = this.ticks.getTickCount();
         display.forcedDeviceChange = 0;
         display.delayedRedrawDeadline = (now + 1 + delay) >>> 0;
-      } else if (this.device.fullscreen === 1 && this.capabilities.isPresent() && this.adapters.desktopSizeChanged()) {
-        await this.reconfigure(
-          display.selectedSizePreset, display.selectedWindowParameter, this.device.fullscreen, null, 0,
+      } else if (
+        this.device.fullscreen === 1 &&
+        this.capabilities.isPresent() &&
+        this.adapters.desktopSizeChanged()
+      ) {
+        await runAsActor(() =>
+          this.reconfigure(
+            display.selectedSizePreset,
+            display.selectedWindowParameter,
+            this.device.fullscreen,
+            null,
+            0,
+          ),
         );
         this.scheduleRedraw();
       }
@@ -227,17 +322,29 @@ export class AokanaDisplayController {
       display.deviceChangeDeadline = 0;
     }
     if (display.modeChangePending !== 0) {
-      if (this.messages.input.foreground && this.fullscreenMovie.presentationFlag === 0 &&
-          !this.fullscreenMovie.suppressesOrdinaryDisplay() && this.inline.target === null) {
-        const result = await this.reconfigure(
-          display.selectedSizePreset, display.selectedWindowParameter,
-          Number(this.device.fullscreen === 0), null, 0,
+      if (
+        this.modeToggleEnabled !== 0 &&
+        this.fullscreenMovie.presentationFlag === 0 &&
+        !this.fullscreenMovie.suppressesOrdinaryDisplay() &&
+        this.inline.target === null
+      ) {
+        const result = await runAsActor(() =>
+          this.reconfigure(
+            display.selectedSizePreset,
+            display.selectedWindowParameter,
+            Number(this.device.fullscreen === 0),
+            null,
+            0,
+          ),
         );
         if (result) this.notifications.push(1, this.device.fullscreen, 0);
       }
       display.modeChangePending = 0;
     }
-    if (display.delayedRedrawDeadline !== 0 && this.ticks.getTickCount() >= (display.delayedRedrawDeadline >>> 0)) {
+    if (
+      display.delayedRedrawDeadline !== 0 &&
+      this.ticks.getTickCount() >= display.delayedRedrawDeadline >>> 0
+    ) {
       this.manager.redraw.request(1);
       display.delayedRedrawDeadline = 0;
     }

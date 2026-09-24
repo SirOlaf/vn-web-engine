@@ -15,7 +15,14 @@ export interface AokanaModalDisplayDevice {
 /** The binary retains the requested integer, separately from the OS cursor visibility count. */
 export class AokanaNativeCursor {
   private visible = 1;
-  constructor(private readonly surface: HTMLElement) {}
+  private shape = '';
+  constructor(readonly surface: HTMLElement) {}
+
+  /** SetCursor changes the retained shape independently of ShowCursor visibility. */
+  setShape(css: string): void {
+    this.shape = css;
+    if (this.visible !== 0) this.surface.style.cursor = css;
+  }
 
   get requestedVisibility(): number {
     return this.visible;
@@ -26,7 +33,7 @@ export class AokanaNativeCursor {
     const previous = this.visible;
     if ((value === 0) === (previous === 0)) return previous;
     this.visible = value;
-    this.surface.style.cursor = value === 0 ? 'none' : '';
+    this.surface.style.cursor = value === 0 ? 'none' : this.shape;
     return previous;
   }
 }
@@ -94,7 +101,7 @@ export class AokanaEngineDialogs {
 
   async show(
     message: Uint8Array | AokanaBpPointer | null,
-    title: Uint8Array | null,
+    title: Uint8Array | AokanaBpPointer | null,
     flags: number,
   ): Promise<1 | 2 | 6 | 7> {
     return this.withNativeModal(async () => {
@@ -105,10 +112,12 @@ export class AokanaEngineDialogs {
           ? {bytes: terminatedNativeBytes(message), offset: 0}
           : message;
       const content = this.text.decodeMixed(source).replace(/\\n/g, '\n');
-      const caption = this.text.decodeAuto({
-        bytes: terminatedNativeBytes(title ?? this.preferredTitle ?? this.fallbackTitle),
-        offset: 0,
-      });
+      const captionSource = title ?? this.preferredTitle ?? this.fallbackTitle;
+      const caption = this.text.decodeAuto(
+        captionSource instanceof Uint8Array
+          ? {bytes: terminatedNativeBytes(captionSource), offset: 0}
+          : captionSource,
+      );
       const buttonKind = flags & 15;
       if (buttonKind !== 0 && buttonKind !== 1 && buttonKind !== 4)
         throw new RangeError('Aokana engine modal uses unsupported native button kind');

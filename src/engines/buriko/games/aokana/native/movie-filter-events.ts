@@ -15,8 +15,25 @@ export class AokanaMovieFilterEvents {
   private message = 0;
   private instance = 0n;
   private disposed = false;
+  private readonly observers = new Set<() => void>();
   constructor(readonly messages: AokanaWindowMessages) {}
 
+  /** Host readiness observation; the actual event FIFO remains authoritative. */
+  onAvailable(observer: () => void): () => void {
+    if (this.disposed) throw new Error('Aokana movie observes a released event queue');
+    this.observers.add(observer);
+    if (this.events.length !== 0) this.observe(observer);
+    return () => {
+      this.observers.delete(observer);
+    };
+  }
+  private observe(observer: () => void): void {
+    try {
+      observer();
+    } catch {
+      /* Observation cannot change native publication. */
+    }
+  }
   addRenderer(renderer: object): void {
     if (this.disposed) throw new Error('Aokana movie adds a renderer to a released graph');
     this.renderers.add(renderer);
@@ -49,6 +66,8 @@ export class AokanaMovieFilterEvents {
         lParam: this.instance,
       });
     }
+    // Preserve native FIFO/PostMessage publication before any host observer.
+    for (const observer of [...this.observers]) this.observe(observer);
   }
 
   setNotifyWindow(
@@ -72,5 +91,6 @@ export class AokanaMovieFilterEvents {
     this.events.length = 0;
     this.renderers.clear();
     this.completed.clear();
+    this.observers.clear();
   }
 }

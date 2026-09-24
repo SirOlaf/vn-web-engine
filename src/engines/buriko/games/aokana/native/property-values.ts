@@ -1,8 +1,21 @@
 import type {AokanaBpPointer} from '../bp/memory.js';
 import type {AokanaNativeText} from './text.js';
 
-export function readPropertyWord(pointer: AokanaBpPointer | null): number {
+/** A borrowed native DWORD represented by its actual TypeScript owner field. */
+export interface AokanaPropertyWordBinding {
+  readPropertyWord(): number;
+}
+export type AokanaPropertySource = AokanaBpPointer | AokanaPropertyWordBinding;
+
+export function propertyTextPointer(source: AokanaPropertySource | null): AokanaBpPointer {
+  if (source === null || 'readPropertyWord' in source)
+    throw new Error('Aokana property text requires native byte storage');
+  return source;
+}
+
+export function readPropertyWord(pointer: AokanaPropertySource | null): number {
   if (pointer === null) throw new Error('Aokana property editor dereferences a null value');
+  if ('readPropertyWord' in pointer) return pointer.readPropertyWord() | 0;
   if (pointer.offset < 0 || pointer.offset + 4 > pointer.bytes.length)
     throw new RangeError('Aokana property DWORD read exceeds native storage');
   return new DataView(
@@ -12,8 +25,10 @@ export function readPropertyWord(pointer: AokanaBpPointer | null): number {
   ).getInt32(pointer.offset, true);
 }
 
-export function writePropertyWord(pointer: AokanaBpPointer | null, value: number): void {
+export function writePropertyWord(pointer: AokanaPropertySource | null, value: number): void {
   if (pointer === null) throw new Error('Aokana property editor dereferences a null output');
+  if ('readPropertyWord' in pointer)
+    throw new Error('Aokana borrowed object property requires its native edit callback');
   if (pointer.offset < 0 || pointer.offset + 4 > pointer.bytes.length)
     throw new RangeError('Aokana property DWORD write exceeds native storage');
   new DataView(pointer.bytes.buffer, pointer.bytes.byteOffset, pointer.bytes.byteLength).setInt32(
@@ -50,7 +65,7 @@ export function formatPropertyScalar(kind: number, value: number): string {
 /** 1400b0550 formats before the caller reads the row name or constructs its live-source record. */
 export function formatPropertySource(
   kind: number,
-  source: AokanaBpPointer | null,
+  source: AokanaPropertySource | null,
   text: AokanaNativeText,
 ): {result: number; value?: string} {
   kind |= 0;
@@ -58,7 +73,7 @@ export function formatPropertySource(
     return {result: 0, value: formatPropertyScalar(kind, readPropertyWord(source))};
   if (kind === 5) {
     if (source === null) throw new Error('Aokana property text decoder dereferences a null source');
-    return {result: 0, value: text.decodeAuto(source)};
+    return {result: 0, value: text.decodeAuto(propertyTextPointer(source))};
   }
   return {result: 0x8000000d};
 }

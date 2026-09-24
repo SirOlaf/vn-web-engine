@@ -9,6 +9,16 @@ export class AokanaBitmapStorage {
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     this.defined = initialized ? null : new Uint8Array(bytes.length);
   }
+  /** Import validity metadata without reading retained pixel storage. */
+  static tracked(bytes: Uint8Array, initialized?: Uint8Array): AokanaBitmapStorage {
+    const storage = new AokanaBitmapStorage(bytes, initialized === undefined);
+    if (initialized !== undefined) {
+      if (initialized.length !== bytes.length)
+        throw new RangeError('Aokana bitmap validity does not cover its backing storage');
+      storage.defined = initialized.slice();
+    }
+    return storage;
+  }
   range(offset: number, length: number, read: boolean): void {
     if (this.disposed) throw new Error('Aokana bitmap accesses a released native allocation');
     if (
@@ -28,6 +38,23 @@ export class AokanaBitmapStorage {
     this.range(offset, length, false);
     if (offset === 0 && length === this.bytes.length) this.defined = null;
     else this.defined?.fill(1, offset, offset + length);
+  }
+  /** Copy native initialization state without reading the stored pixel values. */
+  initializedRange(offset: number, length: number): Uint8Array {
+    this.range(offset, length, false);
+    return this.defined === null
+      ? new Uint8Array(length).fill(1)
+      : this.defined.slice(offset, offset + length);
+  }
+  /** Native temporary pixel snapshots preserve unwritten bytes and their state. */
+  cloneRange(offset: number, length: number): AokanaBitmapStorage {
+    this.range(offset, length, false);
+    const clone = new AokanaBitmapStorage(
+      this.bytes.slice(offset, offset + length),
+      this.defined === null,
+    );
+    if (this.defined !== null) clone.defined = this.defined.slice(offset, offset + length);
+    return clone;
   }
   release(): void {
     this.disposed = true;

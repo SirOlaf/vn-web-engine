@@ -24,7 +24,7 @@ export function clearAokanaBitmap(
   }
 }
 
-function copyBlock(
+export function copyBlock(
   destination: AokanaBitmap,
   destinationOffset: number,
   source: AokanaBitmap,

@@ -1,13 +1,25 @@
 import {AokanaBitmapStorage} from './bitmap.js';
 import type {AokanaMovieMediaType} from './movie-image.js';
 import type {AokanaMovieTimedSample} from './movie-receive.js';
-import {AokanaMovieVideoDecoder} from './movie-video-decoder.js';
+import {AokanaMovieVideoDecoder, type AokanaMovieVideoOutputLimits} from './movie-video-decoder.js';
 import {
   createAokanaIsoTimeline,
   type AokanaIsoPresentation,
   type AokanaIsoTimeline,
 } from './movie-iso-timeline.js';
 import type {AokanaIsoMovie, AokanaIsoTrack} from './movie-iso-samples.js';
+
+export interface AokanaMovieVideoSampleOptions {
+  readonly outputLimits?: AokanaMovieVideoOutputLimits;
+  /** One pixel payload; row-swap scratch and returned samples are separate owners. */
+  readonly maxRgb32Bytes?: number;
+  readonly timestampMode?: 'relative' | 'absolute';
+}
+
+function validateCopyLimit(limit: number | undefined): void {
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 0xffffffff))
+    throw new RangeError('Invalid movie RGB32 payload budget');
+}
 
 /** The installed decoder negotiates an unscaled, bottom-up VIDEOINFOHEADER/RGB32 pin. */
 export function aokanaMovieRgb32Type(
@@ -58,12 +70,20 @@ export async function aokanaCopyMoviePicture(
   presentation: AokanaIsoPresentation,
   averageFrameTime: bigint,
   discontinuity: boolean,
+  maxRgb32Bytes?: number,
 ): Promise<AokanaMovieVideoSample> {
+  validateCopyLimit(maxRgb32Bytes);
   const rectangle = frame.visibleRect;
   if (rectangle === null)
     throw new DOMException('Decoded movie has no visible rectangle', 'InvalidStateError');
   const width = rectangle.width,
     height = rectangle.height;
+  const byteLength = width * height * 4;
+  if (
+    maxRgb32Bytes !== undefined &&
+    (!Number.isSafeInteger(byteLength) || byteLength > maxRgb32Bytes)
+  )
+    throw new RangeError('Movie RGB32 payload exceeds its declared byte budget');
   const type = aokanaMovieRgb32Type(width, height, averageFrameTime);
   const bytes = new Uint8Array(width * height * 4);
   await frame.copyTo(bytes, {
@@ -125,7 +145,11 @@ export class AokanaMovieVideoSamples {
   private disposed = false;
   private reading: number | null = null;
 
-  private constructor(readonly decoder: AokanaMovieVideoDecoder) {
+  private constructor(
+    readonly decoder: AokanaMovieVideoDecoder,
+    private readonly maxRgb32Bytes: number | undefined,
+    private readonly timestampMode: 'relative' | 'absolute',
+  ) {
     const {track, movie} = decoder;
     this.timeline = createAokanaIsoTimeline(movie, track);
     const total = track.samples.reduce((sum, sample) => sum + BigInt(sample.duration), 0n);
@@ -138,10 +162,17 @@ export class AokanaMovieVideoSamples {
   static async create(
     movie: AokanaIsoMovie,
     track: AokanaIsoTrack,
+    options: AokanaMovieVideoSampleOptions = {},
   ): Promise<AokanaMovieVideoSamples> {
-    const decoder = await AokanaMovieVideoDecoder.create(movie, track);
+    const maxRgb32Bytes = options.maxRgb32Bytes,
+      timestampMode = options.timestampMode ?? 'relative',
+      outputLimits = options.outputLimits === undefined ? undefined : {...options.outputLimits};
+    validateCopyLimit(maxRgb32Bytes);
+    if (timestampMode !== 'relative' && timestampMode !== 'absolute')
+      throw new RangeError('Invalid movie video timestamp mode');
+    const decoder = await AokanaMovieVideoDecoder.create(movie, track, outputLimits);
     try {
-      return new AokanaMovieVideoSamples(decoder);
+      return new AokanaMovieVideoSamples(decoder, maxRgb32Bytes, timestampMode);
     } catch (error) {
       decoder.dispose();
       throw error;
@@ -160,11 +191,12 @@ export class AokanaMovieVideoSamples {
         entries = [];
         edits.set(presentation.editIndex, entries);
       }
-      // DirectShow segment timestamps are relative to the seek start, including preroll starts below zero.
+      // Default DirectShow segments remain seek-relative. PCM clock consumers select absolute mode.
       entries.push({
         ...presentation,
-        start: presentation.start - position,
-        end: presentation.end - position,
+        start:
+          this.timestampMode === 'absolute' ? presentation.start : presentation.start - position,
+        end: this.timestampMode === 'absolute' ? presentation.end : presentation.end - position,
       });
     }
     this.edits = [...edits]
@@ -254,6 +286,7 @@ export class AokanaMovieVideoSamples {
               presentation,
               this.averageFrameTime,
               this.firstSample,
+              this.maxRgb32Bytes,
             );
             try {
               this.check(generation);

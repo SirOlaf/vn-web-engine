@@ -45,10 +45,11 @@ export class AokanaBpModuleExtensions {
     index: number,
     archiveName: Uint8Array | null,
     resourceName: Uint8Array,
+    actor?: object,
   ): boolean | Promise<boolean> {
     this.unregister(index);
     // Native replacement deletes the old entry before attempting the resource read.
-    const module = this.source.readModule(archiveName, resourceName);
+    const module = this.source.readModule(archiveName, resourceName, undefined, actor);
     const finish = (bytes: Uint8Array | null): boolean => {
       if (bytes === null || bytes.length === 0) return false;
       this.resources.set(index, {name: resourceName.slice(), module: bytes.slice()});
@@ -72,7 +73,7 @@ export class AokanaBpModuleExtensions {
           throw new Error(`Aokana module extension resource load failed for slot ${index}`);
         return 0;
       };
-      const registered = this.register(index, archiveName, resourceName);
+      const registered = this.register(index, archiveName, resourceName, context.actor);
       return typeof registered === 'boolean' ? finish(registered) : registered.then(finish);
     }
     if (secondary === 0xf1) {

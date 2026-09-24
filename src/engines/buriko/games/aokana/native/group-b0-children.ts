@@ -95,6 +95,7 @@ export function createGroupB0Children(
       y = pop32(h.thread),
       x = pop32(h.thread),
       id = pop32(h.thread);
+    const actor = h.actor ?? children.surfaces.allocator.currentActor;
     await checkSurface(h, surface);
     if (!validModes.has(mode))
       return fatal(h, `無効なエフェクトモード [ ${mode | 0} ] が指定されました`);
@@ -103,7 +104,9 @@ export function createGroupB0Children(
         h,
         `無効なエフェクトレベル／トランスペアレンシィ／オパシティ／アディションレベル [ ${opacity | 0} ] が指定されました`,
       );
-    const result = children.copy(id, x, y, surface, mode, opacity);
+    const result = children.surfaces.allocator.withActor(actor, () =>
+      children.copy(id, x, y, surface, mode, opacity),
+    );
     if (result === 0x80000003)
       return fatal(h, `指定されたビットマップ [ ${surface | 0} ] は存在しません`);
     if (result === 0x80000004)
@@ -155,6 +158,7 @@ export function createGroupB0Children(
       proportional,
       color,
       output,
+      h.actor,
     );
     if (result === 0x80000009)
       return fatal(h, `指定されたフォントサイズ [ ${size | 0} ] は無効です`);
@@ -173,8 +177,11 @@ export function createGroupB0Children(
       y = pop32(h.thread),
       x = pop32(h.thread),
       id = pop32(h.thread);
+    const actor = h.actor ?? children.surfaces.allocator.currentActor;
     await checkSurface(h, surface);
-    const result = children.copyCrop(id, x, y, surface, left, top, width, height);
+    const result = children.surfaces.allocator.withActor(actor, () =>
+      children.copyCrop(id, x, y, surface, left, top, width, height),
+    );
     if (result === 0x80000008)
       return fatal(h, `指定されたコピー幅 [ ${width | 0} , ${height | 0} ] は無効な値です`);
     if (result === 0x80000003)

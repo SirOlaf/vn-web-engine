@@ -1,5 +1,5 @@
 // AAN scale products, rounded as in native table 0x1401647a0.
-const scale = [
+export const aokanaMovieAanScale = [
   1, 1.3870398998260498, 1.3065630197525024, 1.1758755445480347, 1, 0.78569495677948,
   0.5411961078643799, 0.27589938044548035, 1.3870398998260498, 1.9238795042037964,
   1.8122549057006836, 1.6309863328933716, 1.3870398998260498, 1.0897902250289917,
@@ -55,7 +55,7 @@ export function movieIdct(coefficients: Int16Array, quantization: Uint8Array): U
   for (let x = 0; x < 8; x++) {
     const column = Array.from({length: 8}, (_, y) => {
       const i = y * 8 + x;
-      return mul(coefficients[i]!, mul(quantization[i]!, scale[i]!));
+      return mul(coefficients[i]!, mul(quantization[i]!, aokanaMovieAanScale[i]!));
     });
     const result = aan(column);
     for (let y = 0; y < 8; y++) work[y * 8 + x] = result[y]!;

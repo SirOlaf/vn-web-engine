@@ -1,13 +1,26 @@
+import {FileError} from '../../../../../platform/filesystem.js';
 import type {AokanaBpModuleResourceSource} from './types.js';
 import {pointerView, type AokanaBpPointer} from '../bp/memory.js';
 import {AokanaProgramArchives, type AokanaArchiveResource} from './program-archives.js';
 import {AokanaProgramFiles, terminatedNativeBytes} from './program-files.js';
 import {AokanaEngineDialogs, AokanaNativeExit} from './engine-dialogs.js';
-import {AokanaUndefinedResourceRead, decodeAokanaResource} from './resource-decode.js';
+import {
+  AokanaUndefinedResourceRead,
+  decodeAokanaResource,
+  type AokanaResourceDestination,
+} from './resource-decode.js';
+import {assertAokanaPathDomain} from './path-domain.js';
 import {textBytes, textLength, writeText} from './text.js';
 import {AokanaEngineErrors} from './engine-errors.js';
 import type {AokanaDistributedProcessing} from './distributed-processing.js';
 import type {AokanaSelectionDialog} from './selection-dialog.js';
+
+function bounded(path: string, capacity = 784, checkDomain = true): string {
+  if (path.length >= capacity)
+    throw new RangeError('Aokana availability path exceeds native wide scratch');
+  if (checkDomain) assertAokanaPathDomain(path);
+  return path;
+}
 
 /** Native archive pointers are not dereferenced when primary loose lookup succeeds. */
 export type AokanaArchiveName = Uint8Array | (() => Uint8Array);
@@ -44,6 +57,26 @@ export class AokanaProgramResources implements AokanaBpModuleResourceSource {
     this.archives = new AokanaProgramArchives(files, errors, mainProcessing);
   }
 
+  /** E8F80 updates both shared primary-root globals after the actual directory check. */
+  async setPrimaryRoot(path: AokanaBpPointer): Promise<0 | 1> {
+    const wide = this.files.text.decodeAuto(path);
+    assertAokanaPathDomain(wide);
+    if (!(await this.files.isDirectoryWide(wide))) return 0;
+    const original = textBytes(path);
+    if (original.length + 2 > 784)
+      throw new RangeError('Aokana primary root exceeds native byte buffer');
+    const encoded = new Uint8Array(original.length + 2);
+    encoded.set(original);
+    encoded[original.length] = 92;
+    // The native sprintf always appends a slash, even to a caller's trailing slash.
+    this.configuration.primaryRoot = encoded;
+    const decoded = this.files.text.decodeAuto({bytes: encoded, offset: 0});
+    if (decoded.length >= 784)
+      throw new RangeError('Aokana primary root exceeds native wide buffer');
+    this.configuration.nativeFileRoot = decoded;
+    return 1;
+  }
+
   private convert(bytes: Uint8Array, mode: number): Uint8Array {
     return this.files.text.convertEncoding({bytes: terminatedNativeBytes(bytes), offset: 0}, mode);
   }
@@ -77,33 +110,69 @@ export class AokanaProgramResources implements AokanaBpModuleResourceSource {
     return this.concatenate(this.convert(root, mode), this.convert(archive, mode), false, 1040);
   }
 
-  private async looseFile(path: Uint8Array): Promise<AokanaArchiveResource> {
+  private async looseFile(
+    path: Uint8Array,
+    offset = 0,
+    length = 0,
+    destination?: AokanaResourceDestination | null,
+    actor = this.mainProcessing.allocator.currentActor,
+  ): Promise<AokanaArchiveResource> {
     if (!this.files.isAvailable(path)) return {result: 1, bytes: null};
     const opened = await this.files.open(path);
     if (opened.source === null) return {result: 1, bytes: null};
     const size = opened.source.size >>> 0;
     if (size > 0x4000000) return {result: 6, bytes: null};
-    const stored = await this.files.read(opened.source, 0, size);
+    let stored: Uint8Array;
+    try {
+      stored = await this.files.read(opened.source, 0, size);
+    } catch (error) {
+      if (error instanceof FileError || error instanceof DOMException)
+        return {result: 5, bytes: null};
+      throw error;
+    }
     if (stored.length !== size) return {result: 5, bytes: null};
-    const decoded = await decodeAokanaResource(stored, this.mainProcessing);
-    return {result: decoded.status, bytes: decoded.bytes};
+    const decoded = await decodeAokanaResource(
+      stored,
+      this.mainProcessing,
+      offset,
+      length,
+      destination,
+      undefined,
+      actor,
+    );
+    return {result: decoded.status, bytes: decoded.bytes, initialized: decoded.initialized};
   }
 
-  private async loose(root: Uint8Array, name: Uint8Array): Promise<Uint8Array | null> {
+  private async loose(
+    root: Uint8Array,
+    name: Uint8Array,
+    destination?: AokanaResourceDestination | null,
+    actor = this.mainProcessing.allocator.currentActor,
+  ): Promise<AokanaArchiveResource | null> {
     const terminated = terminatedNativeBytes(name);
     const absolute = terminated[0] === 92 || terminated[1] === 58;
-    let result = await this.looseFile(absolute ? terminated : this.loosePath(root, terminated));
+    let result = await this.looseFile(
+      absolute ? terminated : this.loosePath(root, terminated),
+      0,
+      0,
+      destination,
+      actor,
+    );
     if (!absolute && result.result === 1 && this.configuration.searchDirectoriesEnabled !== 0) {
       for (const directory of this.configuration.searchDirectories) {
         result = await this.looseFile(
           this.loosePath(this.loosePath(root, directory), terminated, true),
+          0,
+          0,
+          destination,
+          actor,
         );
         if (result.result !== 1) break;
       }
     }
     // bda60 collapses every loose decoder failure (including empty files) into size zero.
     return result.result === 0 && result.bytes !== null && result.bytes.length !== 0
-      ? result.bytes
+      ? {result: result.bytes.length, bytes: result.bytes, initialized: result.initialized}
       : null;
   }
 
@@ -194,6 +263,19 @@ export class AokanaProgramResources implements AokanaBpModuleResourceSource {
         this.files.text.encodeWide(`指定されたファイル [ ${item} ] は存在しません`, 1),
       );
     }
+    await this.mediaRetryDialog();
+  }
+
+  /** BBC90 consumes the prepared diagnostic only when the native root byte is empty. */
+  async requestMediaRetry(diagnostic: Uint8Array): Promise<void> {
+    if (this.configuration.secondaryRoot.length === 0)
+      throw new Error('Aokana media retry reads absent secondary-root storage');
+    if (this.configuration.secondaryRoot[0] === 0) return this.errors.fatal(diagnostic);
+    await this.mediaRetryDialog();
+  }
+
+  /** Shared actual dialog/exit/sleep portion; legacy generic retry retains its own formatting. */
+  private async mediaRetryDialog(): Promise<void> {
     const answer = await this.dialogs.show(
       this.configuration.retryMessage,
       this.configuration.retryTitle,
@@ -218,13 +300,20 @@ export class AokanaProgramResources implements AokanaBpModuleResourceSource {
     archive: AokanaArchiveName | null,
     name: Uint8Array,
     retry: boolean,
+    destination?: AokanaResourceDestination | null,
+    actor = this.mainProcessing.allocator.currentActor,
   ): Promise<AokanaArchiveResource> {
-    const primary = await this.loose(this.configuration.primaryRoot, name);
-    if (primary !== null) return {result: primary.length, bytes: primary};
+    const primary = await this.loose(this.configuration.primaryRoot, name, destination, actor);
+    if (primary !== null) return primary;
     if (archive === null) {
       for (;;) {
-        const secondary = await this.loose(this.configuration.secondaryRoot, name);
-        if (secondary !== null) return {result: secondary.length, bytes: secondary};
+        const secondary = await this.loose(
+          this.configuration.secondaryRoot,
+          name,
+          destination,
+          actor,
+        );
+        if (secondary !== null) return secondary;
         if (!retry) return {result: 0, bytes: null};
         await this.retry(null, name);
       }
@@ -232,12 +321,20 @@ export class AokanaProgramResources implements AokanaBpModuleResourceSource {
     let result = await this.archives.resource(
       this.archivePath(this.configuration.primaryRoot, archiveBytes(archive)),
       name,
+      0,
+      0,
+      destination,
+      actor,
     );
     while (result.result === 0x80000010 || result.result === 0x80000020) {
       if (this.files.media.isAvailable(this.configuration.secondaryMediaPath)) {
         result = await this.archives.resource(
           this.archivePath(this.configuration.secondaryRoot, archiveBytes(archive)),
           name,
+          0,
+          0,
+          destination,
+          actor,
         );
       }
       if (result.result === 0x80000010 || result.result === 0x80000020) {
@@ -248,15 +345,216 @@ export class AokanaProgramResources implements AokanaBpModuleResourceSource {
     return result;
   }
 
-  /** 1400bd6b0 really loads/decodes and frees the bytes; its fallback differs from bd7d0. */
-  async size(archive: AokanaArchiveName | null, name: Uint8Array): Promise<number> {
-    const primary = await this.loose(this.configuration.primaryRoot, name);
-    if (primary !== null) return primary.length;
+  /** BBD80/BC030 preserve decoder statuses for the BBAB0 partial-load path. */
+  async partialLoose(
+    root: Uint8Array | null,
+    name: Uint8Array,
+    offset: number,
+    length: number,
+    destination?: AokanaResourceDestination | null,
+    actor = this.mainProcessing.allocator.currentActor,
+  ): Promise<AokanaArchiveResource> {
+    const terminated = terminatedNativeBytes(name);
+    if (terminated[0] === 92 || terminated[1] === 58)
+      return this.looseFile(terminated, offset, length, destination, actor);
+    if (root === null)
+      throw new Error('Aokana relative loose resource path converts a null native root');
+    let result = await this.looseFile(
+      this.loosePath(root, terminated),
+      offset,
+      length,
+      destination,
+      actor,
+    );
+    if (this.configuration.searchDirectoriesEnabled !== 0)
+      for (const directory of this.configuration.searchDirectories) {
+        if (result.result !== 1) break;
+        result = await this.looseFile(
+          this.loosePath(this.loosePath(root, directory), terminated, true),
+          offset,
+          length,
+          destination,
+          actor,
+        );
+      }
+    return result;
+  }
+
+  /** BBAB0: primary loose, then secondary loose or archive fallback; success is status zero. */
+  async loadPartial(
+    archive: AokanaArchiveName | null,
+    name: Uint8Array,
+    offset: number,
+    length: number,
+    destination?: AokanaResourceDestination | null,
+    actor = this.mainProcessing.allocator.currentActor,
+  ): Promise<AokanaArchiveResource> {
+    let result = await this.partialLoose(
+      this.configuration.primaryRoot,
+      name,
+      offset,
+      length,
+      destination,
+      actor,
+    );
+    if (result.result !== 1) return result;
     if (archive === null)
-      return (await this.loose(this.configuration.secondaryRoot, name))?.length ?? 0;
+      return this.partialLoose(
+        this.configuration.secondaryRoot,
+        name,
+        offset,
+        length,
+        destination,
+        actor,
+      );
+    const archiveName = archiveBytes(archive);
+    const path = (root: Uint8Array): Uint8Array => {
+      const value = this.archivePath(root, archiveName);
+      if (value.length > 784)
+        throw new RangeError('Aokana partial resource archive path exceeds native scratch');
+      return value;
+    };
+    result = await this.archives.resource(
+      path(this.configuration.primaryRoot),
+      name,
+      offset,
+      length,
+      destination,
+      actor,
+    );
+    if (
+      (result.result === 0x80000010 || result.result === 0x80000020) &&
+      this.files.media.isAvailable(this.configuration.secondaryMediaPath)
+    )
+      result = await this.archives.resource(
+        path(this.configuration.secondaryRoot),
+        name,
+        offset,
+        length,
+        destination,
+        actor,
+      );
+    const statuses: Readonly<Record<number, number>> = {
+      0x80000010: 1,
+      0x80000020: 1,
+      0x80000030: 2,
+      0x80000040: 3,
+      0x80000050: 5,
+      0x80000060: 6,
+    };
+    return {...result, result: statuses[result.result] ?? 0};
+  }
+
+  private async relativePath(root: string, name: AokanaBpPointer): Promise<string | null> {
+    const files = this.files,
+      configuration = this.configuration;
+    if (!files.media.isAvailable(root)) return null;
+    const decoded = this.files.text.decodeAuto(name);
+    assertAokanaPathDomain(root);
+    assertAokanaPathDomain(decoded);
+    if (decoded.length >= 784)
+      throw new RangeError('Aokana relative name exceeds native wide scratch');
+    const direct = bounded(root + decoded, 784, false);
+    if (await files.isFileWide(direct)) return direct;
+    if (configuration.searchDirectoriesEnabled !== 0)
+      for (const directory of configuration.searchDirectories) {
+        const middle = root + files.path(directory);
+        bounded(middle, 780, false);
+        const path = bounded(middle + '\\' + decoded, 784, false);
+        if (await files.isFileWide(path)) return path;
+      }
+    return null;
+  }
+
+  /** BB3C0's nonnull output branch encodes the resolved wide path in UTF8. */
+  async findRelativeFile(root: string, name: AokanaBpPointer): Promise<Uint8Array | null> {
+    const path = await this.relativePath(root, name);
+    return path === null ? null : this.files.text.encodeWide(path, 1);
+  }
+
+  /** BA330: raw entry, independent physical-name lookup, then independent payload base. */
+  async locateArchiveEntry(
+    archive: Uint8Array,
+    name: Uint8Array,
+  ): Promise<{
+    path: Uint8Array;
+    record: Uint8Array;
+  } | null> {
+    const configuration = this.configuration;
+    let path = this.archivePath(configuration.primaryRoot, archive);
+    if (path.length > 784)
+      throw new RangeError('Aokana archive locator path exceeds native scratch');
+    let record = await this.archives.copyEntry(path, name);
+    if (record === null) {
+      if (!this.files.media.isAvailable(configuration.secondaryMediaPath)) return null;
+      path = this.archivePath(configuration.secondaryRoot, archive);
+      if (path.length > 784)
+        throw new RangeError('Aokana archive locator path exceeds native scratch');
+      record = await this.archives.copyEntry(path, name);
+      if (record === null) return null;
+    }
+    const physical = await this.archives.entryPath(path, name);
+    if (physical === null)
+      throw new AokanaUndefinedResourceRead(
+        'Aokana archive locator consumes unwritten physical path',
+      );
+    const base = await this.archives.payloadBase(physical);
+    if (base === null)
+      throw new AokanaUndefinedResourceRead(
+        'Aokana archive locator consumes unwritten payload base',
+      );
+    const view = new DataView(record.buffer, record.byteOffset, record.byteLength);
+    view.setUint32(96, (view.getUint32(96, true) + base) >>> 0, true);
+    return {path: physical, record};
+  }
+  async isAvailable(archive: AokanaArchiveName | null, name: AokanaBpPointer): Promise<number> {
+    const pointer = name,
+      files = this.files,
+      config = this.configuration;
+    if (
+      archive === null &&
+      (textBytes(pointer, true)[0] === 92 || textBytes(pointer, true)[1] === 58)
+    ) {
+      const wide = bounded(this.files.text.decodeAuto(pointer), 788);
+      return Number(files.media.isAvailable(wide) && (await files.isFileWide(wide)));
+    }
+    if ((await this.relativePath(config.nativeFileRoot, pointer)) !== null) return 1;
+    if (archive === null)
+      return Number((await this.relativePath(config.secondaryMediaPath, pointer)) !== null);
+    const archiveBytes = typeof archive === 'function' ? archive() : archive;
+    const path = (root: Uint8Array): Uint8Array => {
+      const result = this.archivePath(root, archiveBytes);
+      if (result.length > 784)
+        throw new RangeError('Aokana availability archive path exceeds native scratch');
+      return result;
+    };
+    const filename = textBytes(pointer);
+    if (await this.archives.contains(path(config.primaryRoot), filename)) return 1;
+    return Number(
+      files.media.isAvailable(config.secondaryMediaPath) &&
+        (await this.archives.contains(path(config.secondaryRoot), filename)),
+    );
+  }
+
+  /** 1400bd6b0 really loads/decodes and frees the bytes; its fallback differs from bd7d0. */
+  async size(
+    archive: AokanaArchiveName | null,
+    name: Uint8Array,
+    actor = this.mainProcessing.allocator.currentActor,
+  ): Promise<number> {
+    const primary = await this.loose(this.configuration.primaryRoot, name, undefined, actor);
+    if (primary !== null) return primary.result;
+    if (archive === null)
+      return (
+        (await this.loose(this.configuration.secondaryRoot, name, undefined, actor))?.result ?? 0
+      );
     let result = await this.archives.resource(
       this.archivePath(this.configuration.primaryRoot, archiveBytes(archive)),
       name,
+      0,
+      0,
+      undefined,
+      actor,
     );
     if (
       result.result === 0x80000010 &&
@@ -265,6 +563,10 @@ export class AokanaProgramResources implements AokanaBpModuleResourceSource {
       result = await this.archives.resource(
         this.archivePath(this.configuration.secondaryRoot, archiveBytes(archive)),
         name,
+        0,
+        0,
+        undefined,
+        actor,
       );
     }
     return result.result < 0x80000000 ? result.result : 0;
@@ -274,8 +576,9 @@ export class AokanaProgramResources implements AokanaBpModuleResourceSource {
     archive: Uint8Array | null,
     name: Uint8Array,
     retry = true,
+    actor = this.mainProcessing.allocator.currentActor,
   ): Promise<Uint8Array | null> {
-    const result = await this.load(archive, name, retry);
+    const result = await this.load(archive, name, retry, undefined, actor);
     if (result.result === 0) return null;
     if (result.bytes === null) {
       // Native callers regard these high-bit archive errors as nonzero sizes, then dereference

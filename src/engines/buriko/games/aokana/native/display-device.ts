@@ -361,10 +361,50 @@ export class AokanaDisplayDevice {
     if (mode === 1 && this.shader === null)
       throw new Error('Aokana presentation shader has not been created');
     this.moveQuad(x, y);
+    this.rasterizeQuad(sampled, mode === 1);
+  }
+  /** B31A0 draws the real movie texture without clearing or uploading ordinary display pixels. */
+  drawMovieTexture(
+    texture: AokanaDisplayTexture,
+    widthMinusOne: number,
+    heightMinusOne: number,
+  ): void {
+    if (this.lost || this.context === null || this.frame === null) return;
+    if (this.vertices === null || this.baseVertices === null)
+      throw new Error('Aokana movie draw uses an absent display quad');
+    this.sampler = 'linear';
+    const [width, height] = aokanaDisplayTextureSize(
+      this.display.logicalWidth,
+      this.display.logicalHeight,
+    );
+    this.vertices.set(this.baseVertices);
     const quad = new DataView(
       this.vertices.buffer,
       this.vertices.byteOffset,
       this.vertices.byteLength,
+    );
+    const u = Math.fround(Math.fround(widthMinusOne >>> 0) / Math.fround(width));
+    const v = Math.fround(Math.fround(heightMinusOne >>> 0) / Math.fround(height));
+    for (const [offset, value] of [
+      [20, 0],
+      [24, 0],
+      [48, u],
+      [52, 0],
+      [76, 0],
+      [80, v],
+      [104, u],
+      [108, v],
+    ])
+      quad.setFloat32(offset!, value!, true);
+    this.shifted = 1;
+    this.rasterizeQuad(texture, false);
+  }
+  private rasterizeQuad(sampled: AokanaDisplayTexture, cubic: boolean): void {
+    const pixels = this.frame!.data;
+    const quad = new DataView(
+      this.vertices!.buffer,
+      this.vertices!.byteOffset,
+      this.vertices!.byteLength,
     );
     const left = quad.getFloat32(0, true),
       top = quad.getFloat32(4, true),
@@ -376,24 +416,24 @@ export class AokanaDisplayDevice {
       height = Math.fround(bottom - top);
     const firstX = Math.max(0, Math.ceil(left)),
       firstY = Math.max(0, Math.ceil(top));
-    const lastX = Math.min(this.frame.width, Math.ceil(right)),
-      lastY = Math.min(this.frame.height, Math.ceil(bottom));
+    const lastX = Math.min(this.frame!.width, Math.ceil(right)),
+      lastY = Math.min(this.frame!.height, Math.ceil(bottom));
     for (let row = firstY; row < lastY; row++) {
       const v = Math.fround(Math.fround(Math.fround(row - top) / height) * vMax);
       for (let column = firstX; column < lastX; column++) {
         const u = Math.fround(Math.fround(Math.fround(column - left) / width) * uMax);
-        const color =
-          mode === 1
-            ? aokanaCubicPresentationSample(
-                sampled,
-                this.display.logicalWidth,
-                this.display.logicalHeight,
-                u,
-                v,
-                this.sampler,
-              )
-            : aokanaPresentationTextureSample(sampled, u, v, this.sampler);
-        const offset = (row * this.frame.width + column) * 4;
+        const color = cubic
+          ? aokanaCubicPresentationSample(
+              sampled,
+              this.display.logicalWidth,
+              this.display.logicalHeight,
+              u,
+              v,
+              this.sampler,
+            )
+          : aokanaPresentationTextureSample(sampled, u, v, this.sampler);
+        const offset = (row * this.frame!.width + column) * 4;
+        pixels[offset + 3] = 255;
         // XRGB target discards output alpha; Uint8ClampedArray defines UNORM rounding.
         for (let channel = 0; channel < 3; channel++)
           pixels[offset + channel] = Math.fround(color[channel]! * 255);

@@ -258,6 +258,11 @@ export class AokanaProgramFiles {
     return this.paths?.resolve(wide) ?? wide;
   }
 
+  /** Concrete host adapters must attach sources to this same file-service owner. */
+  usesFileSystem(files: FileSystem): boolean {
+    return this.files === files;
+  }
+
   path(bytes: Uint8Array): string {
     return this.text.decodeAuto({bytes: terminatedNativeBytes(bytes), offset: 0});
   }
@@ -334,6 +339,37 @@ export class AokanaProgramFiles {
 
   isAvailable(bytes: Uint8Array): boolean {
     return this.media.isAvailable(this.path(bytes));
+  }
+
+  /** GetFileAttributesW success accepts either an actual file or directory. */
+  async hasPathWide(path: string): Promise<boolean> {
+    try {
+      await this.files.stat(this.mountedPath(path));
+      return true;
+    } catch (error) {
+      if (error instanceof FileError || error instanceof DOMException) return false;
+      throw error;
+    }
+  }
+
+  /** GetFileAttributesW's structural nondirectory test; no opening/decoding or read-time mutation. */
+  async isFileWide(path: string): Promise<boolean> {
+    try {
+      return (await this.files.stat(this.mountedPath(path))).kind === 'file';
+    } catch (error) {
+      if (error instanceof FileError || error instanceof DOMException) return false;
+      throw error;
+    }
+  }
+
+  /** GetFileAttributesW's structural directory bit, without opening the path. */
+  async isDirectoryWide(path: string): Promise<boolean> {
+    try {
+      return (await this.files.stat(this.mountedPath(path))).kind === 'directory';
+    } catch (error) {
+      if (error instanceof FileError || error instanceof DOMException) return false;
+      throw error;
+    }
   }
 
   async open(bytes: Uint8Array): Promise<AokanaOpenResult> {

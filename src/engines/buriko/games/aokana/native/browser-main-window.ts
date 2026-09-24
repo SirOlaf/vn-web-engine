@@ -167,6 +167,13 @@ export class AokanaBrowserMainWindow {
     this.surface.focus();
   }
 
+  /** SetWindowTextW: the selected browser profile maps the main caption to Document.title. */
+  setCaption(value: string): boolean {
+    if (!this.callbacks.isReady()) return false;
+    this.document.title = value;
+    return true;
+  }
+
   blitSurface(x: number, y: number, index: number): 0 | 1 | 2 {
     if (!this.callbacks.isReady()) return 1;
     const bitmap = this.manager.surfaces.snapshot(index);

@@ -8,10 +8,15 @@ class RecursiveSection {
   owner: object | null = null;
   depth = 0;
   private alive = true;
+  private readonly waiters: {
+    actor: object;
+    acquired: () => void;
+    resolve: () => void;
+    reject: (reason: Error) => void;
+  }[] = [];
   constructor(private readonly actors: AokanaLockActors) {}
-  tryEnter(): boolean {
+  tryEnter(actor = this.actors.currentActor): boolean {
     if (!this.alive) throw new Error('Aokana exclusion section is no longer available');
-    const actor = this.actors.currentActor;
     if (this.owner !== null && this.owner !== actor) return false;
     this.owner = actor;
     this.depth++;
@@ -23,10 +28,27 @@ class RecursiveSection {
         throw new Error('Aokana exclusion wait has no runnable owning-actor continuation');
     }
   }
-  leave(): void {
-    if (!this.alive || this.depth === 0 || this.owner !== this.actors.currentActor)
+  enterAsync(actor: object, acquired: () => void): Promise<void> {
+    if (this.tryEnter(actor)) {
+      acquired();
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve, reject) =>
+      this.waiters.push({actor, acquired, resolve, reject}),
+    );
+  }
+  leave(actor = this.actors.currentActor): void {
+    if (!this.alive || this.depth === 0 || this.owner !== actor)
       throw new Error('Aokana exclusion section is not owned by its current actor');
-    if (--this.depth === 0) this.owner = null;
+    if (--this.depth === 0) {
+      const next = this.waiters.shift();
+      this.owner = next?.actor ?? null;
+      if (next !== undefined) {
+        this.depth = 1;
+        next.acquired();
+        next.resolve();
+      }
+    }
   }
   run<T>(operation: () => T): T {
     this.enter();
@@ -36,8 +58,22 @@ class RecursiveSection {
       this.leave();
     }
   }
+  runAs<T>(actor: object, operation: () => T): T {
+    // Registry metadata never yields; no actor is globally installed across an await.
+    if (!this.tryEnter(actor))
+      throw new Error('Aokana async admission encountered a suspended registry section');
+    try {
+      return operation();
+    } finally {
+      this.leave(actor);
+    }
+  }
   dispose(): void {
     this.alive = false;
+    for (const waiter of this.waiters.splice(0))
+      waiter.reject(
+        new Error('Aokana pending exclusion acquisition targets a removed native section'),
+      );
   }
 }
 
@@ -123,6 +159,19 @@ export class AokanaExclusionRegistry {
     record.acquired = (record.acquired + 1) | 0;
     return 0;
   }
+  /** Same08c690 record and counters, awaiting an actual host continuation when contended. */
+  async enterAsync(id: number, actor: object): Promise<AokanaExclusionResult> {
+    const record = this.registry.runAs(actor, () => {
+      const found = this.find(id);
+      if (found !== null) found.admitted = (found.admitted + 1) | 0;
+      return found;
+    });
+    if (record === null) return 0x80000001;
+    await record.section.enterAsync(actor, () => {
+      record.acquired = (record.acquired + 1) | 0;
+    });
+    return 0;
+  }
   /** 08c700's record behavior; AokanaNativeLocks exposes it only on the script instance. */
   tryEnter(id: number): AokanaExclusionResult {
     return this.registry.run(() => {
@@ -135,18 +184,21 @@ export class AokanaExclusionRegistry {
     });
   }
   /** 08c600 checks acquired depth before its temporary ownership-proving acquisition. */
-  leave(id: number): AokanaExclusionResult {
-    return this.registry.run(() => {
+  leave(id: number, actor?: object): AokanaExclusionResult {
+    const operation = (): AokanaExclusionResult => {
       const record = this.find(id);
       if (record === null) return 0x80000001;
       if (record.acquired < 1) return 0x80000003;
-      if (!record.section.tryEnter()) return 0x80000002;
-      record.section.leave();
+      if (!record.section.tryEnter(actor)) return 0x80000002;
+      record.section.leave(actor);
       record.acquired = (record.acquired - 1) | 0;
-      record.section.leave();
+      record.section.leave(actor);
       record.admitted = (record.admitted - 1) | 0;
       return 0;
-    });
+    };
+    return actor === undefined
+      ? this.registry.run(operation)
+      : this.registry.runAs(actor, operation);
   }
   /** 08c770 unlinks before destroying the selected record section. */
   remove(id: number, force = 0): AokanaExclusionResult {
@@ -166,13 +218,16 @@ export class AokanaExclusionRegistry {
     });
   }
   /** 08c570 repeatedly releases each current-actor acquisition, newest record first. */
-  releaseCurrentActor(): number {
-    return this.registry.run(() => {
+  releaseCurrentActor(actor?: object): number {
+    const operation = (): number => {
       let count = 0;
       for (let record = this.head; record !== null; record = record.next)
-        while (this.leave(record.id) === 0) count = (count + 1) | 0;
+        while (this.leave(record.id, actor) === 0) count = (count + 1) | 0;
       return count;
-    });
+    };
+    return actor === undefined
+      ? this.registry.run(operation)
+      : this.registry.runAs(actor, operation);
   }
   /** 08c8a0 force-removes the current head until empty, then deletes its registry section. */
   dispose(): void {
@@ -210,12 +265,15 @@ export class AokanaNativeLocks {
   enterEngine(index: number): void {
     this.engine.enter(this.engineId(index));
   }
-  leaveEngine(index: number): void {
-    this.engine.leave(this.engineId(index));
+  async enterEngineAsync(index: number, actor: object): Promise<void> {
+    await this.engine.enterAsync(this.engineId(index), actor);
+  }
+  leaveEngine(index: number, actor?: object): void {
+    this.engine.leave(this.engineId(index), actor);
   }
   /** b97f0's thunk targets the script instance, never the five engine locks. */
-  releaseScriptCurrentActor(): number {
-    return this.script.releaseCurrentActor();
+  releaseScriptCurrentActor(actor?: object): number {
+    return this.script.releaseCurrentActor(actor);
   }
 }
 

@@ -194,6 +194,17 @@ export class AokanaBrowserFontFace {
         bytes[y * stride + x] = rgba[(y * width + x) * 4 + 3]! >= 128 ? 255 : 0;
     return {bytes, stride};
   }
+  /** Top-down monochrome DIB boundary used by the separate CDsp mono-font cache. */
+  rasterMonochrome(text: string, width: number, height: number): AokanaFontDib {
+    const coverage = this.rasterText(text, width, height),
+      stride = Math.ceil(width / 32) * 4,
+      bytes = new Uint8Array(stride * height);
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++)
+        if (coverage.bytes[y * coverage.stride + x]! !== 0)
+          bytes[y * stride + (x >>> 3)]! |= 0x80 >>> (x & 7);
+    return {bytes, stride};
+  }
   /** GGO_GRAY2/4/8_BITMAP-shaped result; coverage sampling is supplied by the browser. */
   outline(character: number, bits: 2 | 4 | 6): AokanaFontOutline {
     const text = String.fromCharCode(character & 0xffff);

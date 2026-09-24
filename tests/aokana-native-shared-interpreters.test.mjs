@@ -14,6 +14,8 @@ import {
 import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
 import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
 import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
+import {createGroup91RasterSettings} from '../dist/engines/buriko/games/aokana/native/group-91-raster-settings.js';
+import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
 import {createGroup81SharedInterpreters} from '../dist/engines/buriko/games/aokana/native/group-81-shared-interpreters.js';
 import {
   AOKANA_NATIVE_SLOT_ADDRESSES,
@@ -73,7 +75,14 @@ test('81 48 runs one short result-four child per indexed global worker and resto
   parent.moduleMemory[0] = 0x17;
   parent.moduleSize = 1;
   control.nextThreadId = 10;
-  control.distributedBitmapProcessingEnabled = 1;
+  push32(parent, 1);
+  const rasterControl = createGroup91RasterSettings(
+    compositor,
+    new AokanaNativeFonts(text),
+    control,
+  ).find((slot) => slot.secondary === 0x0b);
+  assert.equal(rasterControl.execute({thread: parent, memory, diagnostics}), 0);
+  assert.equal(parent.stackIndex, 0);
   compositor.processing = processing;
   const entryActor = allocator.currentActor,
     seen = [];

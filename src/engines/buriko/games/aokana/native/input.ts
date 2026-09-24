@@ -14,6 +14,7 @@ interface Capture {
   rectangle: AokanaNativeRectangle;
   object: AokanaInputHitObject | null;
 }
+export type AokanaInputCaptureView = Readonly<Pick<Capture, 'token' | 'object'>>;
 const DEFAULT_KEYS: readonly (readonly [number, readonly number[]])[] = [
   [1, [1]],
   [2, [2]],
@@ -314,6 +315,14 @@ export class AokanaNativeInput {
     return index < 5
       ? [this.clickPositions[index * 2]!, this.clickPositions[index * 2 + 1]!]
       : null;
+  }
+
+  /** AB3C0 reads the actual capture nodes; no separate diagnostic registry. */
+  captureDiagnosticView(): {
+    pointer: readonly AokanaInputCaptureView[];
+    key: readonly AokanaInputCaptureView[];
+  } {
+    return {pointer: this.pointerCaptures, key: this.keyCaptures};
   }
 
   private insertCapture(

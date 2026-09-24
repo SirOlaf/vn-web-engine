@@ -4,7 +4,6 @@ import type {AokanaBpPointer} from '../bp/memory.js';
 import {AokanaWindowDisplayState} from './display-window-state.js';
 import {AokanaEngineErrors} from './engine-errors.js';
 import {
-  AOKANA_DEFAULT_HORIZONTAL_TEXT_EFFECT,
   AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
   createAokanaHorizontalTextEffect,
   drawAokanaHorizontalTextWindowFacade,
@@ -245,7 +244,7 @@ export function createHorizontalTextLayoutServices(
           wrapping,
           color,
           color,
-          AOKANA_DEFAULT_HORIZONTAL_TEXT_EFFECT,
+          state.defaultEffect,
         );
       },
     },
@@ -269,9 +268,7 @@ export function createHorizontalTextLayoutServices(
           wrapping,
           color,
           color,
-          disableEffect === 0
-            ? AOKANA_DEFAULT_HORIZONTAL_TEXT_EFFECT
-            : AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
+          disableEffect === 0 ? state.defaultEffect : AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
         );
       },
     },
@@ -344,7 +341,7 @@ export function createHorizontalTextLayoutServices(
           lineSpacingPercent,
           color,
           readingColor: color,
-          effect: AOKANA_DEFAULT_HORIZONTAL_TEXT_EFFECT,
+          effect: state.defaultEffect,
         });
       },
     },
@@ -389,9 +386,7 @@ export function createHorizontalTextLayoutServices(
           color,
           readingColor: color,
           effect:
-            disableEffect === 0
-              ? AOKANA_DEFAULT_HORIZONTAL_TEXT_EFFECT
-              : AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
+            disableEffect === 0 ? state.defaultEffect : AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
         });
       },
     },

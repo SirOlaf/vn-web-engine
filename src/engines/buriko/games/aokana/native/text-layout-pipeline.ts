@@ -1,3 +1,4 @@
+import {recolorAokanaBitmapAlpha as recolorAlpha} from './bitmap-recolor.js';
 import type {AokanaBpPointer} from '../bp/memory.js';
 import {
   allocateAokanaBitmap,
@@ -22,6 +23,11 @@ import {
   type AokanaHorizontalTextLayoutNode,
 } from './text-layout-horizontal.js';
 import type {AokanaTextLayoutState} from './text-layout-state.js';
+import {
+  addAokanaVerticalReadings,
+  alignAokanaVerticalTextNodes,
+  buildAokanaVerticalTextLayout,
+} from './text-layout-vertical.js';
 
 export interface AokanaHorizontalTextLineOutput {
   value: number;
@@ -80,27 +86,6 @@ function copiedBitmap(state: AokanaTextLayoutState, source: AokanaBitmap): Aokan
   clearAokanaBitmap(result);
   state.surfaces.compositor.copy(result, source);
   return result;
-}
-
-function recolorAlpha(destination: AokanaBitmap, source: AokanaBitmap, color: number): void {
-  if (destination.format !== 2 || source.format !== 2) return;
-  for (let y = 0; y < source.height >>> 0; y++)
-    for (let x = 0; x < source.width >>> 0; x++) {
-      const input = source.offset + y * source.stride + x * 4,
-        output = destination.offset + y * destination.stride + x * 4,
-        sourceStorage = source.storage,
-        destinationStorage = destination.storage;
-      if (sourceStorage === null || destinationStorage === null)
-        throw new TypeError('Aokana horizontal reading shadow dereferences a null bitmap');
-      sourceStorage.range(input, 4, true);
-      destinationStorage.range(output, 4, false);
-      destinationStorage.view.setUint32(
-        output,
-        (sourceStorage.view.getUint32(input, true) & 0xff000000) | (color & 0xffffff),
-        true,
-      );
-      destinationStorage.written(output, 4);
-    }
 }
 
 function relink(nodes: readonly AokanaHorizontalTextLayoutNode[]): void {
@@ -284,6 +269,11 @@ export async function addAokanaHorizontalReadings(
   effect: AokanaHorizontalTextEffect,
   annotations: AokanaRubyAnnotations,
 ): Promise<0 | 1> {
+  const operationAllocator = state.surfaces.allocator,
+    operationActor = operationAllocator.currentActor;
+  const runAsActor = <T>(operation: () => T): T =>
+    operationAllocator.withActor(operationActor, operation);
+
   const base = state.surfaces.fonts.find(fontId);
   if (base === null) return 0;
   const size = state.readingSize(base.size),
@@ -312,15 +302,17 @@ export async function addAokanaHorizontalReadings(
     if (annotation === null)
       throw new Error('Aokana prepared reading key is absent from its per-call registry');
     const y = (node.annotationY - size + state.readingYOffset) | 0,
-      readings = readingGlyphNodes(
-        state,
-        node,
-        annotation,
-        font,
-        readingColor,
-        readingEffect,
-        (node.annotationX + state.readingXOffset) | 0,
-        y,
+      readings = runAsActor(() =>
+        readingGlyphNodes(
+          state,
+          node,
+          annotation,
+          font,
+          readingColor,
+          readingEffect,
+          (node.annotationX + state.readingXOffset) | 0,
+          y,
+        ),
       );
     const parentIndex = nodes.indexOf(node);
     if (parentIndex < 0)
@@ -437,36 +429,45 @@ export async function drawAokanaHorizontalText(
   state: AokanaTextLayoutState,
   options: AokanaHorizontalTextDrawOptions,
 ): Promise<AokanaHorizontalTextDrawResult> {
+  const operationAllocator = state.surfaces.allocator,
+    operationActor = operationAllocator.currentActor;
+  const runAsActor = <T>(operation: () => T): T =>
+    operationAllocator.withActor(operationActor, operation);
+
   const font = state.surfaces.fonts.find(options.fontId);
   if (font === null) return {result: 0};
   const annotations = new AokanaRubyAnnotations(state.text);
   annotations.import(options.annotations);
   const lineAdvance =
       (font.size + signedDivide(Math.imul(font.size, options.lineSpacingPercent), 100)) | 0,
-    prepared = await buildAokanaHorizontalTextLayout(state, {
-      source: options.source,
-      readingEnabled: options.readingEnabled,
-      annotations,
-      cursor: options.cursor,
-      rectangle: options.rectangle,
-      lineAdvance,
-      fontId: options.fontId,
-      proportional: options.proportional,
-      wrapping: options.wrapping,
-      color: options.color,
-      effect: options.effect,
-      maximumFontSize: options.maximumFontSize,
-    });
+    prepared = await runAsActor(() =>
+      buildAokanaHorizontalTextLayout(state, {
+        source: options.source,
+        readingEnabled: options.readingEnabled,
+        annotations,
+        cursor: options.cursor,
+        rectangle: options.rectangle,
+        lineAdvance,
+        fontId: options.fontId,
+        proportional: options.proportional,
+        wrapping: options.wrapping,
+        color: options.color,
+        effect: options.effect,
+        maximumFontSize: options.maximumFontSize,
+      }),
+    );
   options.lineOutput.value = prepared.outputCount;
   try {
     if ((options.readingEnabled | 0) !== 0)
-      await addAokanaHorizontalReadings(
-        state,
-        prepared.nodes,
-        options.fontId,
-        options.readingColor,
-        options.effect,
-        annotations,
+      await runAsActor(() =>
+        addAokanaHorizontalReadings(
+          state,
+          prepared.nodes,
+          options.fontId,
+          options.readingColor,
+          options.effect,
+          annotations,
+        ),
       );
     alignAokanaHorizontalTextNodes(
       state,
@@ -478,7 +479,64 @@ export async function drawAokanaHorizontalText(
       options.effect,
       options.alignment,
     );
-    const rectangles = emitAokanaHorizontalTextNodes(state, options.destination, prepared.nodes);
+    const rectangles = runAsActor(() =>
+      emitAokanaHorizontalTextNodes(state, options.destination, prepared.nodes),
+    );
+    options.emittedOutput.value = rectangles.length >>> 0;
+    return {result: 1, emittedCount: rectangles.length >>> 0, rectangles};
+  } finally {
+    releaseAokanaHorizontalTextLayout(prepared.nodes);
+    annotations.clear();
+  }
+}
+
+/** 07A8D0 owns the separate vertical prepare/read/align path and shared emission. */
+export async function drawAokanaVerticalText(
+  state: AokanaTextLayoutState,
+  options: AokanaHorizontalTextDrawOptions,
+): Promise<AokanaHorizontalTextDrawResult> {
+  const operationAllocator = state.surfaces.allocator,
+    operationActor = operationAllocator.currentActor;
+  const runAsActor = <T>(operation: () => T): T =>
+    operationAllocator.withActor(operationActor, operation);
+
+  const font = state.surfaces.fonts.find(options.fontId);
+  if (font === null) return {result: 0};
+  const annotations = new AokanaRubyAnnotations(state.text);
+  annotations.import(options.annotations);
+  const prepared = runAsActor(() =>
+    buildAokanaVerticalTextLayout(state, {
+      ...options,
+      annotations,
+      lineAdvance:
+        (font.size + signedDivide(Math.imul(font.size, options.lineSpacingPercent), 100)) | 0,
+    }),
+  );
+  options.lineOutput.value = prepared.outputCount;
+  try {
+    if ((options.readingEnabled | 0) !== 0)
+      await runAsActor(() =>
+        addAokanaVerticalReadings(
+          state,
+          prepared.nodes,
+          options.fontId,
+          options.readingColor,
+          options.effect,
+          annotations,
+        ),
+      );
+    alignAokanaVerticalTextNodes(
+      state,
+      prepared.nodes,
+      options.cursor,
+      options.rectangle,
+      options.fontId,
+      options.wrapping,
+      options.alignment,
+    );
+    const rectangles = runAsActor(() =>
+      emitAokanaHorizontalTextNodes(state, options.destination, prepared.nodes),
+    );
     options.emittedOutput.value = rectangles.length >>> 0;
     return {result: 1, emittedCount: rectangles.length >>> 0, rectangles};
   } finally {
@@ -509,27 +567,34 @@ export async function drawAokanaHorizontalTextToBitmap(
   state: AokanaTextLayoutState,
   options: AokanaBitmapHorizontalTextOptions,
 ): Promise<0 | 1> {
+  const operationAllocator = state.surfaces.allocator,
+    operationActor = operationAllocator.currentActor;
+  const runAsActor = <T>(operation: () => T): T =>
+    operationAllocator.withActor(operationActor, operation);
+
   state.surfaceCursor.x = options.x | 0;
   state.surfaceCursor.y = options.y | 0;
   const emittedOutput = {value: 0};
-  const result = await drawAokanaHorizontalText(state, {
-    destination: options.destination,
-    emittedOutput,
-    lineOutput: options.lineOutput,
-    cursor: state.surfaceCursor,
-    rectangle: aokanaBitmapRectangle(options.destination),
-    source: options.source,
-    readingEnabled: options.readingEnabled,
-    annotations: options.annotations,
-    fontId: options.fontId,
-    proportional: options.proportional,
-    wrapping: options.wrapping,
-    alignment: 0,
-    lineSpacingPercent: options.lineSpacingPercent,
-    color: options.color,
-    readingColor: options.readingColor,
-    effect: options.effect,
-  });
+  const result = await runAsActor(() =>
+    drawAokanaHorizontalText(state, {
+      destination: options.destination,
+      emittedOutput,
+      lineOutput: options.lineOutput,
+      cursor: state.surfaceCursor,
+      rectangle: aokanaBitmapRectangle(options.destination),
+      source: options.source,
+      readingEnabled: options.readingEnabled,
+      annotations: options.annotations,
+      fontId: options.fontId,
+      proportional: options.proportional,
+      wrapping: options.wrapping,
+      alignment: 0,
+      lineSpacingPercent: options.lineSpacingPercent,
+      color: options.color,
+      readingColor: options.readingColor,
+      effect: options.effect,
+    }),
+  );
   return result.result;
 }
 
@@ -549,6 +614,11 @@ export async function drawAokanaRegisteredHorizontalTextToSurface(
   state: AokanaTextLayoutState,
   options: AokanaRegisteredSurfaceHorizontalTextOptions,
 ): Promise<number> {
+  const operationAllocator = state.surfaces.allocator,
+    operationActor = operationAllocator.currentActor;
+  const runAsActor = <T>(operation: () => T): T =>
+    operationAllocator.withActor(operationActor, operation);
+
   const destination = state.surfaces.snapshot(options.surface);
   if (destination === null) return 0x80000004;
   const name = state.surfaces.fonts.name(options.registeredFont);
@@ -564,15 +634,17 @@ export async function drawAokanaRegisteredHorizontalTextToSurface(
   if (selected.result === 0x80000004) return 0x80000003;
   if (selected.result !== 0)
     throw new Error('Aokana registered horizontal text received an unknown font status');
-  await drawAokanaHorizontalTextToBitmap(state, {
-    ...options,
-    destination,
-    fontId: selected.id,
-  });
+  await runAsActor(() =>
+    drawAokanaHorizontalTextToBitmap(state, {
+      ...options,
+      destination,
+      fontId: selected.id,
+    }),
+  );
   return 0;
 }
 
-/** 0686A0's horizontal branch mutates the real window and composes emitted rectangles in order. */
+/** 0686A0 dispatches the two native directions and composes emitted rectangles in order. */
 export async function drawAokanaHorizontalTextToWindow(
   state: AokanaTextLayoutState,
   window: AokanaWindowDisplayObject,
@@ -583,12 +655,17 @@ export async function drawAokanaHorizontalTextToWindow(
   readingColor: number,
   effect: AokanaHorizontalTextEffect,
 ): Promise<0 | 1> {
-  window.setTextTransparency(0);
-  window.setTextEnabled(1);
-  window.disableOverlays();
-  const cursor = window.getTextCursor(),
+  const operationAllocator = state.surfaces.allocator,
+    operationActor = operationAllocator.currentActor;
+  const runAsActor = <T>(operation: () => T): T =>
+    operationAllocator.withActor(operationActor, operation);
+
+  runAsActor(() => window.setTextTransparency(0));
+  runAsActor(() => window.setTextEnabled(1));
+  runAsActor(() => window.disableOverlays());
+  const cursor = runAsActor(() => window.getTextCursor()),
     beforeY = cursor.y | 0,
-    rectangle = window.getTextRectangle(),
+    rectangle = runAsActor(() => window.getTextRectangle()),
     annotationBytes = new Uint8Array(1024);
   if ((readingEnabled | 0) !== 0)
     state.annotations.extract({bytes: annotationBytes, offset: 0}, source);
@@ -596,40 +673,43 @@ export async function drawAokanaHorizontalTextToWindow(
     proportional = window.characterSpacing,
     alignment = window.alignment,
     lineSpacingPercent = window.lineSpacing;
-  if ((window.writingDirection | 0) !== 0) {
-    if ((window.writingDirection | 0) === 1)
-      throw new Error('Aokana vertical text remains outside the horizontal pipeline');
+  if ((window.writingDirection | 0) !== 0 && (window.writingDirection | 0) !== 1) {
     throw new Error('Aokana window text direction yields an undefined native result');
   }
   const previousLineExtent = window.lineExtent >>> 0,
     maximumFontSize = {value: window.lineExtent | 0},
     emittedOutput = {value: 0},
     lineOutput = {value: proportional | 0},
-    result = await drawAokanaHorizontalText(state, {
-      destination: window.textBitmap,
-      emittedOutput,
-      lineOutput,
-      cursor,
-      rectangle,
-      source,
-      readingEnabled,
-      annotations: {bytes: annotationBytes, offset: 0},
-      fontId,
-      proportional,
-      wrapping,
-      alignment,
-      lineSpacingPercent,
-      color,
-      readingColor,
-      effect,
-      maximumFontSize,
-    });
+    result = await runAsActor(() =>
+      (window.writingDirection === 1 ? drawAokanaVerticalText : drawAokanaHorizontalText)(state, {
+        destination: window.textBitmap,
+        emittedOutput,
+        lineOutput,
+        cursor,
+        rectangle,
+        source,
+        readingEnabled,
+        annotations: {bytes: annotationBytes, offset: 0},
+        fontId,
+        proportional,
+        wrapping,
+        alignment,
+        lineSpacingPercent,
+        color,
+        readingColor,
+        effect,
+        maximumFontSize,
+      }),
+    );
   if (result.result === 0) return 0;
-  if (beforeY !== (cursor.y | 0) || previousLineExtent < maximumFontSize.value >>> 0)
-    window.setLineExtent(maximumFontSize.value);
+  if (
+    window.writingDirection === 0 &&
+    (beforeY !== (cursor.y | 0) || previousLineExtent < maximumFontSize.value >>> 0)
+  )
+    runAsActor(() => window.setLineExtent(maximumFontSize.value));
   for (const emitted of result.rectangles.slice(0, emittedOutput.value >>> 0))
-    window.composeRectangle(emitted);
-  window.setTextCursor(cursor.x, cursor.y);
+    runAsActor(() => window.composeRectangle(emitted));
+  runAsActor(() => window.setTextCursor(cursor.x, cursor.y));
   return 1;
 }
 
@@ -644,22 +724,29 @@ export async function drawAokanaHorizontalTextByWindowHandle(
   readingColor: number,
   effect: AokanaHorizontalTextEffect,
 ): Promise<-1 | 0 | 17> {
-  const found = windows.manager.find('window', handle);
+  const operationAllocator = windows.manager.surfaces.allocator,
+    operationActor = operationAllocator.currentActor;
+  const runAsActor = <T>(operation: () => T): T =>
+    operationAllocator.withActor(operationActor, operation);
+
+  const found = runAsActor(() => windows.manager.find('window', handle));
   if (found === null) return -1;
   if (!(found instanceof AokanaWindowDisplayObject))
     throw new Error('Aokana window pool contains a different native display class');
-  const result = await drawAokanaHorizontalTextToWindow(
-    windows.textLayout,
-    found,
-    source,
-    readingEnabled,
-    wrapping,
-    color,
-    readingColor,
-    effect,
+  const result = await runAsActor(() =>
+    drawAokanaHorizontalTextToWindow(
+      windows.textLayout,
+      found,
+      source,
+      readingEnabled,
+      wrapping,
+      color,
+      readingColor,
+      effect,
+    ),
   );
   if (result === 0) return 17;
-  if (found.inputActive() !== 0) found.invalidate();
+  if (runAsActor(() => found.inputActive()) !== 0) runAsActor(() => found.invalidate());
   return 0;
 }
 
@@ -674,15 +761,22 @@ export async function drawAokanaHorizontalTextWindowFacade(
   readingColor: number,
   effect: AokanaHorizontalTextEffect,
 ): Promise<-1 | 0 | 1> {
-  const result = await drawAokanaHorizontalTextByWindowHandle(
-    windows,
-    handle,
-    source,
-    readingEnabled,
-    wrapping,
-    color,
-    readingColor,
-    effect,
+  const operationAllocator = windows.manager.surfaces.allocator,
+    operationActor = operationAllocator.currentActor;
+  const runAsActor = <T>(operation: () => T): T =>
+    operationAllocator.withActor(operationActor, operation);
+
+  const result = await runAsActor(() =>
+    drawAokanaHorizontalTextByWindowHandle(
+      windows,
+      handle,
+      source,
+      readingEnabled,
+      wrapping,
+      color,
+      readingColor,
+      effect,
+    ),
   );
   return result === 17 ? 1 : result;
 }

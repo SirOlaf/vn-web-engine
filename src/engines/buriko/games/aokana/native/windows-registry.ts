@@ -9,6 +9,7 @@ import type {RecordStore} from '../../../../../platform/store.js';
 import {aokanaRegistryFold} from './registry-case.js';
 
 interface OpenKey {
+  deleted?: boolean;
   readonly key: RegistryKey;
   readonly access: number;
   readonly predefined?: true;
@@ -89,6 +90,7 @@ export class AokanaNativeRegistry {
   ): Promise<{result: number; handle?: bigint; disposition?: 1 | 2}> {
     const root = this.resolve(rootHandle);
     if (root === null) return {result: 6};
+    if (root.deleted) return {result: 1018};
     if ((access & 0x300) === 0x300) return {result: 87};
     if (subkey.startsWith('\\')) return {result: 161};
     const key = this.path(root, subkey, access);
@@ -111,6 +113,7 @@ export class AokanaNativeRegistry {
   ): Promise<{result: number; handle?: bigint}> {
     const root = this.resolve(rootHandle);
     if (root === null) return {result: 6, handle: 0n};
+    if (root.deleted) return {result: 1018, handle: 0n};
     let name = terminated(subkey ?? '');
     if (root.predefined && name === '')
       return {result: 0, handle: BigInt.asUintN(64, BigInt(rootHandle))};
@@ -129,6 +132,29 @@ export class AokanaNativeRegistry {
     return {result: 0, handle};
   }
 
+  /** RegDeleteKeyW: root access masks do not govern the subkey delete operation. */
+  async deleteKey(rootHandle: number | bigint, subkey: string): Promise<number> {
+    const root = this.resolve(rootHandle);
+    if (root === null) return 6;
+    if (root.deleted) return 1018;
+    if (subkey.startsWith('\\')) return 161;
+    const key = this.path(root, subkey, 0);
+    try {
+      await this.storage.deleteKey(key, false);
+    } catch (error) {
+      return status(error);
+    }
+    const identity = aokanaRegistryFold(key.path);
+    for (const open of this.keys.values())
+      if (
+        open.key.hive === key.hive &&
+        open.key.view === key.view &&
+        aokanaRegistryFold(open.key.path) === identity
+      )
+        open.deleted = true;
+    return 0;
+  }
+
   closeKey(handle: number | bigint): number {
     const key = BigInt.asUintN(64, BigInt(handle));
     if (this.keys.delete(key)) return 0;
@@ -143,6 +169,7 @@ export class AokanaNativeRegistry {
   ): Promise<number> {
     const open = this.resolve(handle);
     if (open === null) return 6;
+    if (open.deleted) return 1018;
     if ((open.access & 2) === 0) return 5;
     try {
       await this.storage.setValue(open.key, terminated(name ?? ''), {
@@ -161,6 +188,7 @@ export class AokanaNativeRegistry {
   ): Promise<{result: number; value?: RegistryValue}> {
     const open = this.resolve(handle);
     if (open === null) return {result: 6};
+    if (open.deleted) return {result: 1018};
     if ((open.access & 1) === 0) return {result: 5};
     try {
       const value = await this.storage.getValue(open.key, terminated(name ?? ''));

@@ -57,18 +57,19 @@ export class AokanaBpInterpreter {
   }
 
   /** The distributed interpreter lower distinguishes a genuinely empty primary slot from a handler fault. */
-  dispatchNext(thread: AokanaBpThread): AokanaBpDispatchResult {
+  dispatchNext(thread: AokanaBpThread, actor?: object): AokanaBpDispatchResult {
     const opcode = fetchOpcode(thread);
     const handler = this.primary[opcode];
     if (handler === undefined) return {defined: false, opcode};
-    const context = this.contextForThread(thread);
+    const original = this.contextForThread(thread);
+    const context = actor === undefined ? original : {...original, actor};
     if (context.thread !== thread)
       throw new Error('Aokana opcode context refers to another thread');
     return {defined: true, opcode, result: handler(context)};
   }
 
-  step(thread: AokanaBpThread): AokanaBpInstructionResult {
-    const dispatched = this.dispatchNext(thread);
+  step(thread: AokanaBpThread, actor?: object): AokanaBpInstructionResult {
+    const dispatched = this.dispatchNext(thread, actor);
     if (!dispatched.defined) {
       throw new Error(
         `Invalid Aokana primary opcode 0x${dispatched.opcode.toString(16)} at 0x${thread.instructionStart.toString(16)}`,

@@ -1,6 +1,8 @@
 import {AokanaNativeText} from './text.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {aokanaCrtWideLower} from './crt-case.js';
+import type {AokanaBpPointer} from '../bp/memory.js';
+import {codecView, type AokanaCodecPointer} from './codec-storage.js';
 
 interface CachedResource {
   readonly archive: string | null;
@@ -15,9 +17,15 @@ export class AokanaResourceCache {
   private total = 0;
   constructor(readonly text: AokanaNativeText) {}
 
-  get enabled(): boolean { return this.limit !== 0; }
-  get capacity(): number { return this.limit; }
-  get bytesUsed(): number { return this.total; }
+  get enabled(): boolean {
+    return this.limit !== 0;
+  }
+  get capacity(): number {
+    return this.limit;
+  }
+  get bytesUsed(): number {
+    return this.total;
+  }
 
   /** 07B220 destroys the old cache even when its requested size is unchanged. */
   configure(capacity: number): void {
@@ -27,15 +35,19 @@ export class AokanaResourceCache {
   }
 
   private key(bytes: Uint8Array | null): string | null {
-    return bytes === null ? null : aokanaCrtWideLower(
-      this.text.decodeAuto({bytes: terminatedNativeBytes(bytes), offset: 0}));
+    return bytes === null
+      ? null
+      : aokanaCrtWideLower(this.text.decodeAuto({bytes: terminatedNativeBytes(bytes), offset: 0}));
   }
 
   /** 08B260 promotes the first matching entry even for a size-only query. */
   private find(archive: Uint8Array | null, name: Uint8Array | null): CachedResource | null {
     if (!this.enabled) return null;
-    const archiveKey = this.key(archive), nameKey = this.key(name);
-    const index = this.entries.findIndex((entry) => entry.archive === archiveKey && entry.name === nameKey);
+    const archiveKey = this.key(archive),
+      nameKey = this.key(name);
+    const index = this.entries.findIndex(
+      (entry) => entry.archive === archiveKey && entry.name === nameKey,
+    );
     if (index < 0) return null;
     const [entry] = this.entries.splice(index, 1);
     this.entries.unshift(entry!);
@@ -57,10 +69,35 @@ export class AokanaResourceCache {
   insert(archive: Uint8Array | null, name: Uint8Array | null, bytes: Uint8Array): 0 | 1 {
     const size = bytes.length >>> 0;
     if (!this.enabled || size === 0 || size > this.limit >>> 1) return 0;
-    const entry = {archive: this.key(archive), name: this.key(name), bytes: bytes.slice()};
+    return this.insertPointer(
+      archive === null ? null : {bytes: terminatedNativeBytes(archive), offset: 0},
+      name === null ? null : {bytes: terminatedNativeBytes(name), offset: 0},
+      {bytes, offset: 0},
+      bytes.length,
+    );
+  }
+
+  /** Native pointer/count entry gates capacity before touching names or source bytes. */
+  insertPointer(
+    archive: AokanaBpPointer | null,
+    name: AokanaBpPointer | null,
+    source: AokanaCodecPointer | null,
+    size: number,
+  ): 0 | 1 {
+    size >>>= 0;
+    if (!this.enabled || size === 0 || size > this.limit >>> 1) return 0;
+    const archiveKey = archive === null ? null : aokanaCrtWideLower(this.text.decodeAuto(archive)),
+      nameKey = name === null ? null : aokanaCrtWideLower(this.text.decodeAuto(name));
+    codecView(source, 0, size);
+    const entry = {
+      archive: archiveKey,
+      name: nameKey,
+      bytes: source!.bytes.slice(source!.offset, source!.offset + size),
+    };
     while (this.limit < (this.total + size) >>> 0) {
       const removed = this.entries.pop();
-      if (removed === undefined) throw new Error('Aokana resource cache budget has no removable record');
+      if (removed === undefined)
+        throw new Error('Aokana resource cache budget has no removable record');
       this.total = (this.total - removed.bytes.length) >>> 0;
     }
     this.entries.unshift(entry);

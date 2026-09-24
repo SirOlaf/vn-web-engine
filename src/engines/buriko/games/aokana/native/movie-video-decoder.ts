@@ -7,6 +7,63 @@ import {
 } from './movie-iso-samples.js';
 import {aokanaIsoDecodeStart} from './movie-iso-timeline.js';
 
+/** Explicit retained-output profile; not a bound on opaque browser decoder allocations. */
+export interface AokanaMovieVideoOutputLimits {
+  readonly maxQueuedPictures: number;
+  readonly maxWidth: number;
+  readonly maxHeight: number;
+  readonly maxPixels: number;
+}
+
+function copyOutputLimits(
+  limits: AokanaMovieVideoOutputLimits | undefined,
+): AokanaMovieVideoOutputLimits | undefined {
+  if (limits === undefined) return undefined;
+  const copied = {...limits};
+  if (
+    [copied.maxQueuedPictures, copied.maxWidth, copied.maxHeight, copied.maxPixels].some(
+      (value) => !Number.isSafeInteger(value) || value < 1,
+    ) ||
+    copied.maxWidth > 0x7fffffff ||
+    copied.maxHeight > 0x7fffffff
+  )
+    throw new RangeError('Invalid movie video output admission limits');
+  return copied;
+}
+
+function admitGeometry(frame: VideoFrame, limits: AokanaMovieVideoOutputLimits): void {
+  const rectangle = frame.visibleRect;
+  if (rectangle === null) throw new AokanaIsoSampleError('AVC output has no visible rectangle');
+  for (const [width, height] of [
+    [frame.codedWidth, frame.codedHeight],
+    [frame.displayWidth, frame.displayHeight],
+    [rectangle.width, rectangle.height],
+  ] as const) {
+    if (
+      !Number.isSafeInteger(width) ||
+      !Number.isSafeInteger(height) ||
+      width < 1 ||
+      height < 1 ||
+      width > limits.maxWidth ||
+      height > limits.maxHeight ||
+      !Number.isSafeInteger(width * height) ||
+      width * height > limits.maxPixels
+    )
+      throw new AokanaIsoSampleError('AVC output exceeds its declared geometry profile');
+  }
+  if (
+    !Number.isSafeInteger(rectangle.x) ||
+    !Number.isSafeInteger(rectangle.y) ||
+    rectangle.x < 0 ||
+    rectangle.y < 0 ||
+    !Number.isSafeInteger(rectangle.x + rectangle.width) ||
+    !Number.isSafeInteger(rectangle.y + rectangle.height) ||
+    rectangle.x + rectangle.width > frame.codedWidth ||
+    rectangle.y + rectangle.height > frame.codedHeight
+  )
+    throw new AokanaIsoSampleError('AVC visible rectangle exceeds its coded geometry');
+}
+
 export interface AokanaDecodedMoviePicture {
   readonly sampleIndex: number;
   /** Ownership transfers to the reader, which must close this actual codec output. */
@@ -38,6 +95,7 @@ export class AokanaMovieVideoDecoder {
     readonly movie: AokanaIsoMovie,
     readonly track: AokanaIsoTrack,
     private readonly configurations: ReadonlyMap<number, VideoDecoderConfig>,
+    private readonly limits: AokanaMovieVideoOutputLimits | undefined,
   ) {
     this.endIndex = track.samples.length;
     this.decoder = this.createDecoder();
@@ -46,7 +104,9 @@ export class AokanaMovieVideoDecoder {
   static async create(
     movie: AokanaIsoMovie,
     track: AokanaIsoTrack,
+    limits?: AokanaMovieVideoOutputLimits,
   ): Promise<AokanaMovieVideoDecoder> {
+    const copiedLimits = copyOutputLimits(limits);
     if (typeof VideoDecoder === 'undefined' || typeof EncodedVideoChunk === 'undefined')
       throw new DOMException('This browser has no WebCodecs video decoder', 'NotSupportedError');
     const configurations = new Map<number, VideoDecoderConfig>();
@@ -61,33 +121,42 @@ export class AokanaMovieVideoDecoder {
         throw new DOMException(`This browser cannot decode ${config.codec}`, 'NotSupportedError');
       configurations.set(sample.description, config);
     }
-    return new AokanaMovieVideoDecoder(movie, track, configurations);
+    return new AokanaMovieVideoDecoder(movie, track, configurations, copiedLimits);
   }
 
   private createDecoder(): VideoDecoder {
     const generation = this.generation;
     const decoder = new VideoDecoder({
       output: (frame) => {
-        if (generation !== this.generation || this.disposed) {
-          frame.close();
-          return;
+        let published = false;
+        try {
+          if (generation !== this.generation || this.disposed || this.failure !== null) return;
+          const sampleIndex = frame.timestamp;
+          if (
+            !Number.isSafeInteger(sampleIndex) ||
+            sampleIndex < 0 ||
+            sampleIndex >= this.track.samples.length
+          )
+            throw new AokanaIsoSampleError('AVC decoder returned an unknown access-unit timestamp');
+          if (this.limits !== undefined) {
+            if (this.pictures.length >= this.limits.maxQueuedPictures)
+              throw new AokanaIsoSampleError(
+                'AVC output exceeds its declared queued-picture budget',
+              );
+            admitGeometry(frame, this.limits);
+          }
+          this.pictures.push({sampleIndex, frame});
+          published = true;
+        } catch (error) {
+          this.failure ??= error;
+        } finally {
+          if (!published) frame.close();
+          this.wake();
         }
-        const sampleIndex = frame.timestamp;
-        if (
-          !Number.isSafeInteger(sampleIndex) ||
-          sampleIndex < 0 ||
-          sampleIndex >= this.track.samples.length
-        ) {
-          frame.close();
-          this.failure = new AokanaIsoSampleError(
-            'AVC decoder returned an unknown access-unit timestamp',
-          );
-        } else this.pictures.push({sampleIndex, frame});
-        this.wake();
       },
       error: (error) => {
         if (generation !== this.generation || this.disposed) return;
-        this.failure = error;
+        this.failure ??= error;
         this.wake();
       },
     });

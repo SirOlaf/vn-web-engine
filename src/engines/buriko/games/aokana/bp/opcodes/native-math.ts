@@ -2,6 +2,7 @@ import type {AokanaBpOpcodeHandler} from '../../native/types.js';
 import {pop32, push32} from '../state.js';
 import {pointer, pointerBytes} from './operands.js';
 import {fixedResult, roundToInt32} from './fixed.js';
+import {nativeEasingPower} from './native-easing-power.js';
 import {
   powLogTable,
   powReciprocalTable,
@@ -25,7 +26,7 @@ function truncateInt32(value: number): number {
   const result = Math.trunc(value);
   return !Number.isFinite(result) || result < -0x80000000 || result > 0x7fffffff
     ? -0x80000000
-    : result;
+    : result | 0;
 }
 
 /** 140145250/140144270, statically linked CRT's non-AVX SSE2 path. */
@@ -55,12 +56,12 @@ const largeAngleWindows = [
   [0xd4d377036d8a5664n, 0x391054a7f09d5f47n, 0x28be60db9n],
 ] as const;
 
-/** 145910 for all finite rain and wave inputs, covering unbiased exponents 18..33. */
+/** 145910 for all finite rain and wave inputs, covering unbiased exponents 18..34. */
 function reduceLargeAngle(magnitude: number): {quadrant: number; head: number; tail: number} {
   const input = bits(magnitude),
     unbiased = Number(input >> 52n) - 1023;
-  if (unbiased < 18 || unbiased > 33)
-    throw new RangeError('Aokana large reduction outside its verified rain/wave angle domain');
+  if (unbiased < 18 || unbiased > 34)
+    throw new RangeError('Aokana large reduction outside its verified rain/wave/map angle domain');
   const mask64 = (1n << 64n) - 1n;
   const significand = (input & ((1n << 52n) - 1n)) | (1n << 52n);
   const window = largeAngleWindows[(unbiased >>> 3) - 2]!;
@@ -237,6 +238,25 @@ export function nativeWaveSineRadians(radians: number): number {
   return sineBoundedRadians(radians);
 }
 
+/** 0332A0/033580/033890/034260: exact CRT radians, bounded by DWORD map arguments. */
+function displacementRadians(radians: number, cosine: boolean): number {
+  if (!Number.isFinite(radians)) {
+    const encoding = bits(radians);
+    return number(
+      (encoding & 0xfffffffffffffn) === 0n ? 0xfff8000000000000n : encoding | 0x8000000000000n,
+    );
+  }
+  if (Math.abs(radians) > 0x100000000 * 6.283185307179586)
+    throw new RangeError('Aokana displacement trigonometry exceeds its verified DWORD domain');
+  return cosine ? cosineBoundedRadians(radians) : sineBoundedRadians(radians);
+}
+export function nativeDisplacementSineRadians(radians: number): number {
+  return displacementRadians(radians, false);
+}
+export function nativeDisplacementCosineRadians(radians: number): number {
+  return displacementRadians(radians, true);
+}
+
 /** Particle camera/velocity rotation uses the primary signed Q16-degree conversion. */
 export function nativeParticleSineCosine(fixedDegrees: number): {sine: number; cosine: number} {
   return {sine: sineFixedAngle(fixedDegrees), cosine: cosineFixedAngle(fixedDegrees)};
@@ -244,8 +264,7 @@ export function nativeParticleSineCosine(fixedDegrees: number): {sine: number; c
 
 /**
  * 140056920's signed-Q24 selector, trigonometric curves and default division.
- * Curves 4-15 preserve its binary64 operation order but still use host Math.pow;
- * identity with the executable's 023710 implementation remains an arithmetic gate.
+ * Curves 4-15 use 023710's restricted non-AVX SSE2 power lower.
  */
 export function nativeDisplayEasing(progress: number, easing: number): number {
   progress |= 0;
@@ -261,12 +280,12 @@ export function nativeDisplayEasing(progress: number, easing: number): number {
       return truncateInt32((1 - sineFixedAngle((0x5a0000 - scaledAngle(0x5a)) | 0)) * 65536);
     default:
       if (easing >= 4 && easing <= 15) {
-        const exponent = [2, 2, 2.5, 2.5, 3, 3, 4, 4, 5, 5, 6, 6][easing - 4]!;
-        const denominator = Math.pow(0x1000000, exponent);
+        const exponent = ([2, 2, 2.5, 2.5, 3, 3, 4, 4, 5, 5, 6, 6] as const)[easing - 4]!;
+        const denominator = nativeEasingPower(0x1000000, exponent);
         if ((easing & 1) === 0)
-          return truncateInt32((Math.pow(progress, exponent) * 65536) / denominator);
+          return truncateInt32((nativeEasingPower(progress, exponent) * 65536) / denominator);
         const reverse = (0x1000000 - progress) | 0;
-        return truncateInt32((1 - Math.pow(reverse, exponent) / denominator) * 65536);
+        return truncateInt32((1 - nativeEasingPower(reverse, exponent) / denominator) * 65536);
       }
       return (progress + ((progress >> 31) & 0xff)) >> 8;
   }

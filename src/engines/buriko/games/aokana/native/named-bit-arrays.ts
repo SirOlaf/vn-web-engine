@@ -134,8 +134,7 @@ export class AokanaNamedBitArrays {
     return 0;
   }
 
-  /** 08CDE0 scans packed records once, then publishes and OR-merges them in reverse. */
-  mergePacked(source: AokanaBpPointer): 0 {
+  private packedRecords(source: AokanaBpPointer) {
     const count = pointerView(source, 4).getUint32(0, true),
       records: Array<{
         readonly name: AokanaBpPointer;
@@ -155,6 +154,45 @@ export class AokanaNamedBitArrays {
       offset += aokanaNamedBitByteCount(bitCount);
       records.push({name, bitCount, data});
     }
+    return records;
+  }
+
+  /** 08CFE0 scans first, then replaces records in reverse to retain their linked order. */
+  replacePacked(source: AokanaBpPointer): 0 {
+    const records = this.packedRecords(source);
+    for (let i = records.length - 1; i >= 0; i--) {
+      const record = records[i]!;
+      this.replaceData(record.name, record.bitCount, record.data);
+    }
+    return 0;
+  }
+
+  /** 08D150 measures or copies the current linked order without move-to-front lookup. */
+  copyPacked(output: AokanaBpPointer | null): number {
+    let size = 4,
+      count = 0;
+    for (let entry = this.first; entry !== null; entry = entry.next) {
+      const name = textBytes(entry.name, true),
+        length = aokanaNamedBitByteCount(entry.bitCount);
+      if (output !== null) {
+        const target = pointerView(
+          {bytes: output.bytes, offset: output.offset + size},
+          name.length + 4 + length,
+        );
+        new Uint8Array(target.buffer, target.byteOffset, name.length).set(name);
+        target.setUint32(name.length, entry.bitCount, true);
+        new Uint8Array(target.buffer, target.byteOffset + name.length + 4, length).set(entry.data);
+      }
+      size = (size + name.length + 4 + length) >>> 0;
+      count = (count + 1) >>> 0;
+    }
+    if (output !== null) pointerView(output, 4).setUint32(0, count, true);
+    return size;
+  }
+
+  /** 08CDE0 scans packed records once, then publishes and OR-merges them in reverse. */
+  mergePacked(source: AokanaBpPointer): 0 {
+    const records = this.packedRecords(source);
     for (let index = records.length - 1; index >= 0; index--) {
       const record = records[index]!,
         existing = this.findMoveToFront(record.name);

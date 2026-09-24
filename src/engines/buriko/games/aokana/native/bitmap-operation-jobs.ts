@@ -212,3 +212,71 @@ export function runAokanaBitmapScalarOperation(
     aokanaBitmapOperationScalars(initial, plan),
   );
 }
+
+/** 052D10 mode one: source bounds follow each completed signed Q16 row extent. */
+export function runAokanaBitmapRectangleOperation(
+  processing: AokanaDistributedProcessing | null,
+  bitmaps: readonly AokanaBitmap[],
+  reference: AokanaBitmap,
+  rectangle: import('./bitmap.js').AokanaBitmapRectangle,
+  callback: (
+    bitmaps: readonly AokanaBitmap[],
+    bounds: import('./bitmap.js').AokanaBitmapRectangle,
+  ) => void,
+): boolean {
+  return runBitmapOperation<import('./bitmap.js').AokanaBitmapRectangle>(
+    processing,
+    bitmaps,
+    reference,
+    0,
+    (parts, bounds) => {
+      if (bounds === null) throw new Error('Aokana vector worker consumes missing source bounds');
+      callback(parts, bounds);
+    },
+    (plan) => {
+      const bounds = {...rectangle},
+        result = [];
+      let fraction = 0;
+      for (let index = 0; index < plan.count; index++) {
+        result.push({...bounds});
+        const next = (fraction + plan.increment) | 0,
+          rows = next >> 16;
+        bounds.top = (bounds.top - rows) | 0;
+        bounds.bottom = (bounds.bottom - rows) | 0;
+        fraction = next & 0xffff;
+      }
+      return result;
+    },
+  );
+}
+
+/** 052C60/0541E0 mode three carries float pivots and partitions only the destination. */
+export function runAokanaBitmapFloatPointOperation(
+  processing: AokanaDistributedProcessing | null,
+  destination: AokanaBitmap,
+  point: readonly [number, number],
+  callback: (destination: AokanaBitmap, point: readonly [number, number]) => void,
+): boolean {
+  return runBitmapOperation<readonly [number, number]>(
+    processing,
+    [destination],
+    destination,
+    0,
+    (parts, pivot) => {
+      if (pivot === null) throw new Error('Aokana float worker consumes missing pivot storage');
+      callback(parts[0]!, pivot);
+    },
+    (plan) => {
+      const result: (readonly [number, number])[] = [];
+      let y = Math.fround(point[1]),
+        fraction = 0;
+      for (let index = 0; index < plan.count; index++) {
+        const next = (fraction + plan.increment) >>> 0;
+        result.push([Math.fround(point[0]), y]);
+        y = Math.fround(y - Math.fround(next >>> 16));
+        fraction = next & 0xffff;
+      }
+      return result;
+    },
+  );
+}

@@ -1,14 +1,25 @@
+import {AokanaMultilayerBackdrop} from './display-backdrop-multilayer.js';
 import {
   AokanaBackdrop,
   AokanaNormalBackdrop,
   AokanaRippleBackdrop,
   type AokanaRippleBackdropStatus,
 } from './display-backdrop.js';
+import {AokanaBlendBackdrop} from './display-backdrop-blend.js';
+import {AokanaPanBackdrop} from './display-backdrop-pan.js';
+import {AokanaMaskedBackdrop} from './display-backdrop-mask.js';
+import {AokanaDifferenceBackdrop} from './display-backdrop-difference.js';
+import {AokanaVectorBackdrop} from './display-backdrop-vector.js';
+import {AokanaBlurBackdrop} from './display-backdrop-blur.js';
+import {AokanaMosaicBackdrop} from './display-backdrop-mosaic.js';
+import {AokanaRotationBackdrop} from './display-backdrop-rotation.js';
+import {AokanaStretchBackdrop} from './display-backdrop-stretch.js';
 import {AokanaDisplayObject, AokanaDisplayObjectEnvironment} from './display-object.js';
 import {AokanaDisplayRedraw} from './display-redraw.js';
 import {AokanaNativeDisplayState} from './display-state.js';
 import {AokanaSurfaces} from './surfaces.js';
-import {aokanaBitmapPixelSize, type AokanaBitmapRectangle} from './bitmap.js';
+import {allocateAokanaBitmap, aokanaBitmapPixelSize, type AokanaBitmapRectangle} from './bitmap.js';
+import type {AokanaNativeInput} from './input.js';
 import type {AokanaDisplayContext} from './display-object.js';
 import {AokanaDisplayEffectorRegistry} from './display-effector-registry.js';
 import type {AokanaDisplayDamageResult} from './display-renderer.js';
@@ -69,7 +80,11 @@ export class AokanaDisplayManager extends AokanaObjectManager {
       {slots: Array(definition.capacity).fill(null), count: 0, creationCount: 0},
     ]),
   ) as Record<AokanaDisplayFamily, Pool>;
-  backdrop: AokanaBackdrop;
+  private backdropValue: AokanaBackdrop | null = null;
+  get backdrop(): AokanaBackdrop {
+    if (this.backdropValue === null) throw new Error('Aokana display has no installed backdrop');
+    return this.backdropValue;
+  }
   private disposed = false;
   private texture: AokanaDisplayTexture | null = null;
   private textureLocked = 0;
@@ -92,7 +107,7 @@ export class AokanaDisplayManager extends AokanaObjectManager {
       new AokanaDisplayEffectorRegistry(),
     );
     redraw.bindLocks(locks);
-    this.backdrop = new AokanaNormalBackdrop(environment, surfaces);
+    this.backdropValue = new AokanaNormalBackdrop(environment, surfaces);
     this.setBackdropRenderType(this.backdrop.backdropType);
     this.lists.insert(this.backdrop);
     this.setBackdropActivation(1, 0);
@@ -146,6 +161,13 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     const context = this.environment.displayContext;
     if (context === null) throw new Error('Aokana display descriptor has not been configured');
     return context;
+  }
+  /** 07FC50 delegates to the actual renderer's locked ordinary-list snapshot. */
+  collectOrdinaryObjects(): AokanaDisplayObject[] {
+    this.check();
+    if (this.objectRenderer === null)
+      throw new Error('Aokana object renderer has not been attached');
+    return this.objectRenderer.collectOrdinary();
   }
   /** 07fde0 leaves its caller's count untouched when the display cannot be locked. */
   drawDamage(output: AokanaDisplayDamageResult): 0 | 1 {
@@ -203,6 +225,22 @@ export class AokanaDisplayManager extends AokanaObjectManager {
       throw new Error('Aokana object renderer has not been attached');
     this.objectRenderer.drawToBitmap(destination, maximumLayer);
     return result;
+  }
+  /** 07FF80 draws to an existing RGB surface through the actual translated renderer. */
+  renderTranslatedDisplayBitmap(
+    surface: number,
+    x: number,
+    y: number,
+    maximumLayer: number,
+  ): 0 | 1 | 2 {
+    this.check();
+    const destination = this.surfaces.snapshot(surface);
+    if (destination === null) return 2;
+    if (destination.format !== 1) return 1;
+    if (this.objectRenderer === null)
+      throw new Error('Aokana object renderer has not been attached');
+    this.objectRenderer.drawTranslated(destination, x, y, maximumLayer);
+    return 0;
   }
   /** 0801b0; the three family-specific hooks belong to their actual concrete classes. */
   configureDescriptor(width: number, height: number, format: number, pixelBudget: number): 1 {
@@ -352,6 +390,44 @@ export class AokanaDisplayManager extends AokanaObjectManager {
           this.referencePoint,
         ),
     );
+  }
+  /** 085180 resolves only Sprite and invalidates only on a visibility transition. */
+  setSpriteActivation(handle: number, value: number): boolean {
+    const object = this.find('sprite', handle);
+    if (object === null) return false;
+    const before = object.inputActive() !== 0;
+    object.setActivation(value);
+    if (before !== (object.inputActive() !== 0)) object.invalidate();
+    return true;
+  }
+  /** 0852F0 commits actual static mask state and invalidates successful visible changes. */
+  setSpriteStaticMask(handle: number, surface: number): number {
+    const object = this.find('sprite', handle);
+    if (object === null) return -1;
+    if (!(object instanceof AokanaDisplaySprite))
+      throw new Error('Aokana Sprite pool has a non-Sprite object');
+    const status = object.setStaticMaskSurface(surface);
+    if (status === 0) {
+      if (object.inputActive() !== 0) object.invalidate();
+      return 0;
+    }
+    return status === 0x80000001 ? 1 : status === 0x8000000a ? 2 : handle | 0;
+  }
+  /** 085220 attaches a concrete Sprite mask and maps the reciprocal-link status. */
+  setSpriteDynamicMask(handle: number, maskHandle: number): number {
+    const sprite = this.findSprite(handle);
+    if (sprite === null) return 0xffffffff;
+    const mask = this.findSprite(maskHandle);
+    if (sprite === mask || (mask === null && maskHandle >>> 0 !== 0)) return 0xb;
+    const status = sprite.setDynamicMask(mask);
+    if (status === 0) {
+      if (sprite.inputActive() !== 0) sprite.invalidate();
+      return 0;
+    }
+    if (status === 0x8000000b || status === 0x8000000c) return 0xd;
+    if (status === 0x8000000d) return 0xe;
+    if (status === 0x8000000e) return 0xf;
+    return handle >>> 0;
   }
   /** 085110 converts the script extent to inclusive edges before calling sprite 063140. */
   notifySpriteSourceRegionChanged(
@@ -656,6 +732,43 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     object.handle = handle;
     return {result: 0, handle};
   }
+  /** 07ED70: category dispatch deliberately omits the guarded Sprite deletion facade. */
+  destroyObject(handle: number): 0 | -1 {
+    const object = this.resolve(handle);
+    if (object === null) return -1;
+    switch (object.category >>> 0) {
+      case 1:
+        if (!this.destroy('landscape', handle)) this.destroy('map', handle);
+        break;
+      case 2:
+        this.destroy('sprite', handle);
+        break;
+      case 3:
+        this.destroy('window', handle);
+        break;
+      case 4:
+        this.destroy('particle', handle);
+        break;
+      case 5:
+        this.destroy('rain', handle);
+        break;
+      case 6:
+        this.destroy('effector', handle);
+        break;
+      case 7:
+        this.destroy('filter', handle);
+        break;
+      case 9:
+        this.destroy('group', handle);
+        break;
+      case 10:
+        this.destroy('knob', handle);
+        break;
+      default:
+        return -1;
+    }
+    return 0;
+  }
   /** Pool-specific native removal; group and knob never enter the draw lists. */
   destroy(family: AokanaDisplayFamily, handle: number): boolean {
     this.check();
@@ -701,6 +814,68 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     if (before !== (object.inputActive() !== 0)) object.invalidate();
     return true;
   }
+  /** 07FAA0/0565B0 mutates suppression, whose zero value permits visibility. */
+  setObjectSuppression(handle: number, value: number): boolean {
+    const object = this.resolve(handle);
+    if (object === null) return false;
+    const visible = object.inputActive() !== 0;
+    AokanaDisplayObject.prototype.setSuppression.call(object, value);
+    if (visible !== (object.inputActive() !== 0)) object.invalidate();
+    return true;
+  }
+  private mutateObjectCoordinates(
+    handle: number,
+    apply: (object: AokanaDisplayObject) => void,
+  ): boolean {
+    const object = this.resolve(handle);
+    if (object === null) return false;
+    const visible = object.inputActive() !== 0;
+    if (visible) object.invalidate();
+    const key = object.sortKey();
+    apply(object);
+    if (key !== object.sortKey()) this.lists.resort(object);
+    if (visible) object.invalidate();
+    return true;
+  }
+  /** 07F8D0 dispatches virtual78, including Sprite affine/mesh rebuilds. */
+  setObjectCoordinates(handle: number, x: number, y: number, z: number): boolean {
+    return this.mutateObjectCoordinates(handle, (object) => object.setCoordinates(x, y, z));
+  }
+  /** 07F4B0 calls nonvirtual055AF0, which itself invokes virtual88. */
+  setObjectSecondaryCoordinateOffset(handle: number, x: number, y: number, z: number): boolean {
+    return this.mutateObjectCoordinates(handle, (object) =>
+      AokanaDisplayObject.prototype.setSecondaryCoordinateOffset.call(object, x, y, z),
+    );
+  }
+  /** 07F570 dispatches virtual88. */
+  setObjectCoordinateOffset(handle: number, x: number, y: number, z: number): boolean {
+    return this.mutateObjectCoordinates(handle, (object) => object.setCoordinateOffset(x, y, z));
+  }
+  /** 07EF60 invalidates the child before mutation and after successful attachment. */
+  addObjectChild(
+    parentHandle: number,
+    childHandle: number,
+    x: number,
+    y: number,
+  ): 0 | -1 | 6 | 7 | 8 {
+    const parent = this.resolve(parentHandle);
+    if (parent === null) return -1;
+    const child = this.resolve(childHandle);
+    if (child === null) return 6;
+    if (parent === child) return 7;
+    if (child.inputActive() !== 0) child.invalidate();
+    if (parent.addChild(child, x, y) === 0) return 8;
+    if (child.inputActive() !== 0) child.invalidate();
+    return 0;
+  }
+  /** 07EF00 removes exactly the first matching actual child link without invalidating. */
+  removeObjectChild(parentHandle: number, childHandle: number): 0 | -1 | 6 | 9 {
+    const parent = this.resolve(parentHandle);
+    if (parent === null) return -1;
+    const child = this.resolve(childHandle);
+    if (child === null) return 6;
+    return parent.removeChild(child) !== 0 ? 0 : 9;
+  }
   /** 07fb30 uses the nonvirtual 056620 setter between the two virtual visibility reads. */
   setSecondaryVisibility(handle: number, value: number): boolean {
     const object = this.resolve(handle);
@@ -720,6 +895,113 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     if (visible) object.invalidate();
     return true;
   }
+  /** 07FA20 calls virtual90, then invalidates if either visibility read is nonzero. */
+  setObjectBlendValue(handle: number, value: number): boolean {
+    const object = this.resolve(handle);
+    if (object === null) return false;
+    const before = object.inputActive() !== 0;
+    object.setBlendValue(value);
+    const after = object.inputActive() !== 0;
+    if (before || after) object.invalidate();
+    return true;
+  }
+  /** 07F850 uses the nonvirtual transparency setter. */
+  setObjectTransparency(handle: number, value: number): boolean {
+    const object = this.resolve(handle);
+    if (object === null) return false;
+    const before = object.inputActive() !== 0;
+    AokanaDisplayObject.prototype.setTransparency.call(object, value);
+    const after = object.inputActive() !== 0;
+    if (before || after) object.invalidate();
+    return true;
+  }
+  /** 07F750 captures visibility once around virtualA0 with mode zero. */
+  setObjectValueD8(handle: number, value: number): boolean {
+    const object = this.resolve(handle);
+    if (object === null) return false;
+    const visible = object.inputActive() !== 0;
+    if (visible) object.invalidate();
+    object.setValueD8(0, value);
+    if (visible) object.invalidate();
+    return true;
+  }
+  /** 07F630 calls nonvirtual055E00; 07F6C0 calls virtual70. */
+  setObjectOffset(handle: number, x: number, y: number, secondary: boolean): boolean {
+    const object = this.resolve(handle);
+    if (object === null) return false;
+    const visible = object.inputActive() !== 0;
+    if (visible) object.invalidate();
+    if (secondary) AokanaDisplayObject.prototype.setSecondaryOffset.call(object, x, y);
+    else object.setOffset(x, y);
+    if (visible) object.invalidate();
+    return true;
+  }
+  /** 07F7D0 calls nonvirtual055990 between fresh visibility reads. */
+  setObjectOpacityScale(handle: number, value: number): boolean {
+    const object = this.resolve(handle);
+    if (object === null) return false;
+    const before = object.inputActive() !== 0;
+    AokanaDisplayObject.prototype.setOpacityScale.call(object, value);
+    const after = object.inputActive() !== 0;
+    if (before || after) object.invalidate();
+    return true;
+  }
+  /** 07F290 resorts only when the composite virtual38 key changes. */
+  setObjectLayer(handle: number, value: number): 0 | -1 {
+    const object = this.resolve(handle);
+    if (object === null) return -1;
+    if (object.inputActive() !== 0) object.invalidate();
+    const key = object.sortKey();
+    object.setLayer(value);
+    if (key !== object.sortKey()) this.lists.resort(object);
+    if (object.inputActive() !== 0) object.invalidate();
+    return 0;
+  }
+  /** 07F3C0 keeps the first invalidation even on a property error. */
+  setObjectProperty(handle: number, selector: number, first: number, second: number): number {
+    const object = this.resolve(handle);
+    if (object === null) return -1;
+    if (object.inputActive() !== 0) object.invalidate();
+    const key = object.sortKey(),
+      status = object.setProperty(selector, first, second) >>> 0;
+    if (status !== 0) return status === 0xffff0001 ? 5 : 0xffff;
+    if (key !== object.sortKey()) this.lists.resort(object);
+    if (object.inputActive() !== 0) object.invalidate();
+    return 0;
+  }
+  /** 07F190: category check precedes null/zero-mask/source selection. */
+  setObjectHitMask(handle: number, surface: number): 0 | 1 | 2 | -1 {
+    const object = this.resolve(handle);
+    if (object === null) return -1;
+    if (object.category >>> 0 >= 8) return 1;
+    if (surface >>> 0 === 0xffffffff) {
+      AokanaDisplayObject.prototype.setHitMask.call(object, null);
+      return 0;
+    }
+    if (surface >>> 0 === 0xfffffffe) {
+      const rectangle = object.localRectangle(),
+        temporary = allocateAokanaBitmap((rectangle.right + 1) | 0, (rectangle.bottom + 1) | 0, 3);
+      clearAokanaBitmap(temporary);
+      AokanaDisplayObject.prototype.setHitMask.call(object, temporary);
+      temporary.storage?.release();
+      return 0;
+    }
+    const source = this.surfaces.snapshot(surface);
+    if (source === null) return 2;
+    AokanaDisplayObject.prototype.setHitMask.call(object, source);
+    return 0;
+  }
+  /** 0B5DD0/07F130: effective position precedes pointer read and the second lookup. */
+  hitObjectAtPointer(handle: number, input: AokanaNativeInput): number | null {
+    const object = this.resolve(handle);
+    if (object === null) return null;
+    const position = object.effectivePosition(),
+      [x, y] = input.pointerPosition(),
+      target = this.resolve(handle);
+    return target === null
+      ? null
+      : target.inputHitTest((x - position.x) | 0, (y - position.y) | 0, 1);
+  }
   /** 085fb0 changes the backdrop switches and requests full damage unconditionally. */
   setBackdropActivation(activation: number, contentEnabled: number): void {
     this.check();
@@ -729,25 +1011,284 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     this.backdrop.setContentEnabled(contentEnabled);
     this.environment.damage.force();
   }
-  /** 086000's type-eight branch reuses an RPL backdrop or replaces the current concrete type. */
-  private selectRippleBackdrop(): AokanaRippleBackdrop {
+  private selectBackdrop(type: 1): AokanaNormalBackdrop;
+  private selectBackdrop(type: 2): AokanaBlendBackdrop;
+  private selectBackdrop(type: 3): AokanaPanBackdrop;
+  private selectBackdrop(type: 4): AokanaMaskedBackdrop;
+  private selectBackdrop(type: 5): AokanaDifferenceBackdrop;
+  private selectBackdrop(type: 6): AokanaVectorBackdrop;
+  private selectBackdrop(type: 7): AokanaBlurBackdrop;
+  private selectBackdrop(type: 8): AokanaRippleBackdrop;
+  private selectBackdrop(type: 9): AokanaStretchBackdrop;
+  private selectBackdrop(type: 10): AokanaRotationBackdrop;
+  private selectBackdrop(type: 11): AokanaMosaicBackdrop;
+  private selectBackdrop(type: 12): AokanaMultilayerBackdrop;
+  /** 086000 lifecycle for the concrete implemented types; no placeholder type fallback. */
+  private selectBackdrop(type: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12): AokanaBackdrop {
     this.check();
-    let selected: AokanaRippleBackdrop;
-    if (this.backdrop instanceof AokanaRippleBackdrop) selected = this.backdrop;
-    else {
+    if (this.backdrop.backdropType !== type) {
       const previous = this.backdrop;
       this.lists.remove(previous);
       previous.dispose();
-      const replacement = new AokanaRippleBackdrop(this.environment, this.surfaces);
-      this.backdrop = replacement;
-      selected = replacement;
+      this.backdropValue = null;
+      const replacement =
+        type === 1
+          ? new AokanaNormalBackdrop(this.environment, this.surfaces)
+          : type === 2
+            ? new AokanaBlendBackdrop(this.environment, this.surfaces)
+            : type === 3
+              ? new AokanaPanBackdrop(this.environment, this.surfaces)
+              : type === 4
+                ? new AokanaMaskedBackdrop(this.environment, this.surfaces)
+                : type === 5
+                  ? new AokanaDifferenceBackdrop(this.environment, this.surfaces)
+                  : type === 6
+                    ? new AokanaVectorBackdrop(this.environment, this.surfaces)
+                    : type === 7
+                      ? new AokanaBlurBackdrop(this.environment, this.surfaces)
+                      : type === 8
+                        ? new AokanaRippleBackdrop(this.environment, this.surfaces)
+                        : type === 9
+                          ? new AokanaStretchBackdrop(this.environment, this.surfaces)
+                          : type === 10
+                            ? new AokanaRotationBackdrop(this.environment, this.surfaces)
+                            : type === 11
+                              ? new AokanaMosaicBackdrop(this.environment, this.surfaces)
+                              : new AokanaMultilayerBackdrop(this.environment, this.surfaces);
+      this.backdropValue = replacement;
       this.lists.insert(replacement);
       replacement.setActivation(this.backdropActivation);
       replacement.setContentEnabled(this.backdropContentEnabled);
     }
+    const selected = this.backdrop;
     this.setBackdropRenderType(selected.backdropType);
     this.environment.damage.force();
     return selected;
+  }
+  /** 086800: layer zero source and transform precede activation, selection and virtual move. */
+  configureMultilayerBackdrop(
+    x: number,
+    y: number,
+    surface: number,
+    pivotX: number,
+    pivotY: number,
+    angle: number,
+    scaleX: number,
+    scaleY: number,
+    sampling: number,
+  ): number {
+    const backdrop = this.selectBackdrop(12);
+    let status = backdrop.setLayerSurface(0, surface, pivotX, pivotY);
+    if (status !== 0) return status === 0x80000002 ? 3 : x | 0;
+    status = backdrop.setLayerTransform(0, angle, scaleX, scaleY, sampling);
+    if (status !== 0) return status === 0x80000003 ? 4 : x | 0;
+    backdrop.setLayerActivation(0, 1);
+    backdrop.selectLayer(0);
+    backdrop.move(x, y);
+    return 0;
+  }
+  private mutateBackdropLayer(
+    index: number,
+    operation: (backdrop: AokanaMultilayerBackdrop) => number,
+    damage: 'none' | 'always' | 'active',
+  ): number {
+    this.check();
+    const backdrop = this.backdrop;
+    if (backdrop.backdropType !== 12) return 1;
+    if (!(backdrop instanceof AokanaMultilayerBackdrop))
+      throw new Error('Aokana type12 backdrop has another concrete owner');
+    const status = operation(backdrop);
+    if (status !== 0) {
+      if (status === 0x80000001) return 2;
+      if (status === 0x80000002) return 3;
+      if (status === 0x80000003) return 4;
+      return index | 0;
+    }
+    if (damage === 'always' || (damage === 'active' && backdrop.layerActivation(index) !== 0))
+      this.environment.damage.force();
+    return 0;
+  }
+  selectBackdropLayer(index: number): number {
+    return this.mutateBackdropLayer(index, (b) => b.selectLayer(index), 'none');
+  }
+  setBackdropLayerActivation(index: number, value: number): number {
+    return this.mutateBackdropLayer(index, (b) => b.setLayerActivation(index, value), 'always');
+  }
+  setBackdropLayerPosition(index: number, x: number, y: number): number {
+    return this.mutateBackdropLayer(index, (b) => b.setLayerPosition(index, x, y), 'active');
+  }
+  setBackdropLayerMode(index: number, value: number): number {
+    return this.mutateBackdropLayer(index, (b) => b.setLayerMode(index, value), 'active');
+  }
+  setBackdropLayerLevel(index: number, value: number): number {
+    return this.mutateBackdropLayer(index, (b) => b.setLayerLevel(index, value), 'active');
+  }
+  setBackdropLayerSurface(index: number, surface: number, x: number, y: number): number {
+    return this.mutateBackdropLayer(
+      index,
+      (b) => b.setLayerSurface(index, surface, x, y),
+      'active',
+    );
+  }
+  setBackdropLayerTransform(
+    index: number,
+    angle: number,
+    x: number,
+    y: number,
+    sampling: number,
+  ): number {
+    return this.mutateBackdropLayer(
+      index,
+      (b) => b.setLayerTransform(index, angle, x, y, sampling),
+      'active',
+    );
+  }
+  setBackdropLayerEasing(index: number, angle: number, scale: number): number {
+    return this.mutateBackdropLayer(index, (b) => b.setLayerEasing(index, angle, scale), 'none');
+  }
+  setBackdropLayerPivotDelta(index: number, x: number, y: number): number {
+    return this.mutateBackdropLayer(index, (b) => b.setLayerPivotDelta(index, x, y), 'none');
+  }
+  setBackdropLayerTransformDelta(index: number, angle: number, x: number, y: number): number {
+    return this.mutateBackdropLayer(
+      index,
+      (b) => b.setLayerTransformDelta(index, angle, x, y),
+      'none',
+    );
+  }
+  private selectRippleBackdrop(): AokanaRippleBackdrop {
+    return this.selectBackdrop(8);
+  }
+  /** 087030 selects first, then validates/stores the actual normal surface. */
+  configureNormalBackdrop(surface: number): 0 | 1 {
+    return this.selectBackdrop(1).setSurface(surface);
+  }
+  /** 086FC0 mutates virtual blend before validating the source pair. */
+  configureBlendBackdrop(first: number, second: number, blend: number): 0 | 1 {
+    const backdrop = this.selectBackdrop(2);
+    backdrop.setBlendValue(blend);
+    return backdrop.setSurfaces(first, second);
+  }
+  /** 086F30 commits valid coordinates before attempting all four source surfaces. */
+  configurePanBackdrop(
+    first: number,
+    second: number,
+    third: number,
+    fourth: number,
+    x: number,
+    y: number,
+  ): 0 | 1 | 2 {
+    const backdrop = this.selectBackdrop(3);
+    if (backdrop.setPan(x, y) === 0) return 1;
+    return backdrop.setSurfaces(first, second, third, fourth) === 0 ? 2 : 0;
+  }
+  /** 086E30 commits sources, then mask, and sets blend only after both succeed. */
+  configureMaskedBackdrop(
+    firstX: number,
+    firstY: number,
+    first: number,
+    secondX: number,
+    secondY: number,
+    second: number,
+    mask: number,
+    parameter: number,
+    blend: number,
+  ): 0 | 1 | 2 | 3 | 4 | 5 | -1 {
+    const backdrop = this.selectBackdrop(4);
+    const sources = backdrop.setSurfaces(firstX, firstY, first, secondX, secondY, second);
+    if (sources !== 0) return sources === 0x80000001 ? 1 : sources === 0x80000002 ? 2 : -1;
+    const status: number = backdrop.setMask(mask, parameter);
+    if (status !== 0)
+      return status === 0x80000003 ? 3 : status === 0x80000004 ? 4 : status === 0x80000005 ? 5 : -1;
+    backdrop.setBlendValue(blend);
+    return 0;
+  }
+  /** 086D90 sets the raw source selector before clearing/rebuilding difference tables. */
+  configureDifferenceBackdrop(
+    count: number,
+    surfaces: readonly number[],
+    selection: number,
+  ): number {
+    const backdrop = this.selectBackdrop(5);
+    backdrop.setBlendValue(selection);
+    const status: number = backdrop.setSurfaces(count, surfaces);
+    return status === 0 ? 0 : status === 0x80000001 ? 1 : status === 0x80000002 ? 2 : count | 0;
+  }
+  /** 086CB0 sets blend and sampling only after all source/map validation succeeds. */
+  configureVectorBackdrop(
+    source: number,
+    primary: number,
+    secondary: number,
+    effect: number,
+    sampling: number,
+  ): number {
+    const backdrop = this.selectBackdrop(6);
+    const status = backdrop.setSurfaces(source, primary, secondary);
+    if (status === 0) {
+      backdrop.setBlendValue(effect);
+      backdrop.setSampling(sampling);
+      return 0;
+    }
+    return status >= 0x80000001 && status <= 0x80000006 ? status - 0x80000000 : source | 0;
+  }
+  /** 086C00 commits source then selector, with blend written only after both succeed. */
+  configureBlurBackdrop(source: number, selector: number, effect: number): number {
+    const backdrop = this.selectBackdrop(7);
+    const image = backdrop.setSurface(source);
+    if (image !== 0) return image === 0x80000001 ? 1 : image === 0x80000002 ? 2 : source | 0;
+    const status = backdrop.setSelector(selector);
+    if (status !== 0) return status === 0x80000003 ? 3 : source | 0;
+    backdrop.setBlendValue(effect);
+    return 0;
+  }
+  /** 0868F0 configures pair, selector and second-source enable before publishing level. */
+  configureMosaicBackdrop(
+    first: number,
+    second: number,
+    selector: number,
+    level: number,
+    enabled: number,
+  ): number {
+    const backdrop = this.selectBackdrop(11);
+    let status = backdrop.setSurfaces(first, second);
+    if (status === 0) status = backdrop.setSelector(selector);
+    if (status === 0) status = backdrop.setSecondEnabled(enabled);
+    if (status === 0) {
+      backdrop.setBlendValue(level);
+      return 0;
+    }
+    return status >= 0x80000001 && status <= 0x80000004 ? status - 0x80000000 : first | 0;
+  }
+  /** 0869C0 commits source before base scale/angle and resets both deltas. */
+  configureRotationBackdrop(source: number, scale: number, angle: number): number {
+    const backdrop = this.selectBackdrop(10);
+    const image = backdrop.setSurface(source);
+    if (image !== 0) return image === 0x80000001 ? 1 : source | 0;
+    const status = backdrop.setBase(scale, angle);
+    return status === 0 ? 0 : status === 0x80000002 ? 2 : source | 0;
+  }
+  /** 086A60 commits source and window size before publishing Q16 sampling position. */
+  configureStretchBackdrop(
+    source: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): number {
+    const backdrop = this.selectBackdrop(9);
+    const image = backdrop.setSurface(source);
+    if (image !== 0) return image === 0x80000001 ? 1 : source | 0;
+    const status = backdrop.setExtent(width, height);
+    if (status !== 0) return status === 0x80000002 ? 2 : source | 0;
+    backdrop.move(x << 16, y << 16);
+    return 0;
+  }
+  /** 07F090 dispatches the real D8 virtual (055130 for all verified native families). */
+  runObjectDefaultOperation(handle: number): 0 | 3 | 4 | -1 {
+    const object = this.resolve(handle);
+    if (object === null) return -1;
+    const status = object.defaultOperation() >>> 0;
+    return status === 0 ? 0 : status === 0x80000001 ? 3 : status === 0x80000002 ? 4 : -1;
   }
   /** 086B10 installs the source before map/table configuration and keeps either on failure. */
   configureRippleBackdrop(

@@ -211,7 +211,7 @@ test('81 38 opens with exact ANSI request bytes and the shared display/clock lif
   assert.equal(request.owner, state.mainWindowIdentity);
   assert.equal(request.filterIndex, 1);
   assert.equal(request.fileCapacity, 0x30c);
-  assert.equal(request.defaultExtension, null);
+  assert.deepEqual(request.defaultExtension, Uint8Array.of(0));
   assert.equal(request.flags, 0x1804);
   assert.deepEqual(state.memoryBytes.slice(OUTPUT, OUTPUT + selected.length), selected);
   assert.deepEqual(

@@ -78,6 +78,19 @@ export class AokanaStringLists {
     return this.find(id)?.count ?? 0;
   }
 
+  /** F9300 checks the list before consuming the source, then signed hash/unsigned byte equality. */
+  contains(id: number, source: AokanaBpPointer | null): 0 | 1 | 0x80000001 {
+    const list = this.find(id);
+    if (list === null) return 0x80000001;
+    if (source === null) throw new RangeError('Aokana string membership consumed a null string');
+    const hash = aokanaNamedValueHash(source);
+    for (let i = 0; i < (list.count | 0); i++) {
+      const entry = list.entry(i);
+      if (entry.hash === hash && aokanaCompareNamedBytes(source, entry.value) === 0) return 0;
+    }
+    return 1;
+  }
+
   /** F94E0 links the replacement and records its full count before copying each input string. */
   replace(id: number, count: number, source: AokanaBpPointer | null): 0 | 1 {
     id >>>= 0;

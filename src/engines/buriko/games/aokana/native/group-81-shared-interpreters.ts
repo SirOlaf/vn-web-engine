@@ -37,6 +37,7 @@ export function createGroup81SharedInterpreters(
           moduleSize,
           frameSize,
           initialIp,
+          context.actor,
         );
         if (result === 0x80000001)
           return threadFatal(

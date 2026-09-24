@@ -1,5 +1,6 @@
 import {AokanaNativeText} from './text.js';
 import {terminatedNativeBytes} from './program-files.js';
+import {codecView, type AokanaCodecPointer} from './codec-storage.js';
 
 interface PreloadedBitmap {
   readonly archive: Uint8Array | null;
@@ -18,7 +19,8 @@ export class AokanaBitmapPreloadCache {
 
   private key(bytes: Uint8Array): Uint8Array {
     const result = terminatedNativeBytes(bytes).slice();
-    if (result.length > 784) throw new RangeError('Aokana preload name exceeds native lookup scratch');
+    if (result.length > 784)
+      throw new RangeError('Aokana preload name exceeds native lookup scratch');
     this.text.lowercase({bytes: result, offset: 0});
     return result;
   }
@@ -27,9 +29,11 @@ export class AokanaBitmapPreloadCache {
   private find(archive: Uint8Array | null, name: Uint8Array): number {
     const archiveKey = archive === null ? Uint8Array.of(0) : this.key(archive);
     const nameKey = this.key(name);
-    return this.entries.findIndex((entry) =>
-      (entry.archive === null ? archive === null : equal(entry.archive, archiveKey)) &&
-      equal(entry.name, nameKey));
+    return this.entries.findIndex(
+      (entry) =>
+        (entry.archive === null ? archive === null : equal(entry.archive, archiveKey)) &&
+        equal(entry.name, nameKey),
+    );
   }
 
   /** 09AE50's null output-pointer query never consumes an entry. */
@@ -49,11 +53,28 @@ export class AokanaBitmapPreloadCache {
 
   /** 09AF20 retains the old payload on duplicate names and prepends only new records. */
   insert(archive: Uint8Array | null, name: Uint8Array, bytes: Uint8Array): 0 | 1 {
+    return this.insertPointer(archive, name, {bytes, offset: 0}, bytes.length);
+  }
+
+  /** Duplicate lookup precedes all payload consumption, including validity checks. */
+  insertPointer(
+    archive: Uint8Array | null,
+    name: Uint8Array,
+    source: AokanaCodecPointer | null,
+    count: number,
+  ): 0 | 1 {
     if (this.find(archive, name) >= 0) return 0;
+    const archiveKey = archive === null ? null : this.key(archive),
+      nameKey = this.key(name);
+    count >>>= 0;
+    if (count !== 0) codecView(source, 0, count);
     this.entries.unshift({
-      archive: archive === null ? null : this.key(archive),
-      name: this.key(name),
-      bytes: bytes.slice(),
+      archive: archiveKey,
+      name: nameKey,
+      bytes:
+        count === 0
+          ? new Uint8Array(0)
+          : source!.bytes.slice(source!.offset, source!.offset + count),
     });
     return 1;
   }

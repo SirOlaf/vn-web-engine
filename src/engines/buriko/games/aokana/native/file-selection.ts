@@ -14,7 +14,8 @@ export interface AokanaFileDialogRequest {
   readonly fileCapacity: 0x30c;
   readonly initialDirectory: Uint8Array | null;
   readonly title: Uint8Array | null;
-  readonly defaultExtension: null;
+  /** BAF00 supplies a nonnull pointer to the static empty ANSI string. */
+  readonly defaultExtension: Uint8Array;
   readonly flags: number;
 }
 
@@ -61,6 +62,43 @@ export class AokanaFileSelectionService {
     return storage.slice(0, offset);
   }
 
+  /** BAE50 formats original ANSI bytes before entering the shared modal picker. */
+  selectExtension(
+    output: AokanaBpPointer | null,
+    description: AokanaBpPointer | null,
+    extension: AokanaBpPointer | null,
+    title: AokanaBpPointer | null,
+    initialDirectory: AokanaBpPointer | null,
+    mode: number,
+  ): Promise<0 | 4 | 7 | 0xffffffff> {
+    if (extension === null) throw new RangeError('Aokana file extension consumed a null string');
+    const suffix = textBytes(extension),
+      pattern = new Uint8Array(suffix.length + 3);
+    if (pattern.length > 1024)
+      throw new RangeError('Aokana extension pattern exceeds native scratch');
+    pattern.set([42, 46]);
+    pattern.set(suffix, 2);
+    if (description === null)
+      throw new RangeError('Aokana file description consumed a null string');
+    const label = textBytes(description),
+      combined = new Uint8Array(label.length + pattern.length + 2);
+    if (combined.length > 1024)
+      throw new RangeError('Aokana extension description exceeds native scratch');
+    combined.set(label);
+    combined[label.length] = 40;
+    combined.set(pattern.subarray(0, -1), label.length + 1);
+    combined[combined.length - 2] = 41;
+    return this.select(
+      output,
+      1,
+      [{bytes: combined, offset: 0}],
+      [{bytes: pattern, offset: 0}],
+      title,
+      initialDirectory,
+      mode,
+    );
+  }
+
   async select(
     output: AokanaBpPointer | null,
     count: number,
@@ -90,7 +128,7 @@ export class AokanaFileSelectionService {
           initialDirectory:
             initialDirectory === null ? null : textBytes(initialDirectory, true).slice(),
           title: title === null ? null : textBytes(title, true).slice(),
-          defaultExtension: null,
+          defaultExtension: Uint8Array.of(0),
           flags: mode === 0 ? 0x1804 : 0x806,
         },
         selected = await (mode === 0

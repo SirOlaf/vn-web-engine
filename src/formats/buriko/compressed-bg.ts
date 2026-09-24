@@ -1,5 +1,9 @@
 import {checkRange} from '../../core/binary.js';
 import {Bits, randomByteGenerator, signature, unsignedVarint, view} from './binary.js';
+export interface BurikoImageDestination {
+  readonly bytes: Uint8Array;
+  readonly initialized: Uint8Array;
+}
 export interface BurikoImage {
   width: number;
   height: number;
@@ -39,13 +43,23 @@ export function decodeCompressedBgV1(bytes: Uint8Array): BurikoImage {
 }
 
 /** 0x1400bfa50 accepts every non-v2 legacy version and scalar byte-channel depth. */
-export function decodeCompressedBgLegacy(bytes: Uint8Array): BurikoImage {
-  return decodeLegacy(bytes, false);
+export function decodeCompressedBgLegacy(
+  bytes: Uint8Array,
+  destination?: BurikoImageDestination,
+): BurikoImage {
+  return decodeLegacy(bytes, false, destination);
 }
 
-function decodeLegacy(bytes: Uint8Array, strictVersionOne: boolean): BurikoImage {
+function decodeLegacy(
+  bytes: Uint8Array,
+  strictVersionOne: boolean,
+  destination?: BurikoImageDestination,
+): BurikoImage {
   checkRange(bytes.length, 0, 48);
-  if (!signature(bytes, 'CompressedBG___\0') || (strictVersionOne && view(bytes).getUint16(46, true) !== 1))
+  if (
+    !signature(bytes, 'CompressedBG___\0') ||
+    (strictVersionOne && view(bytes).getUint16(46, true) !== 1)
+  )
     throw new Error('Not legacy CompressedBG version 1');
   const data = view(bytes),
     width = data.getUint16(16, true),
@@ -72,9 +86,18 @@ function decodeLegacy(bytes: Uint8Array, strictVersionOne: boolean): BurikoImage
   }
   if (sum !== bytes[44] || xor !== bytes[45])
     throw new Error('CompressedBG table checksum mismatch');
+  // BFA50 publishes the header after checksum, before frequency/entropy work.
+  const outputChannels = depth === 24 ? 4 : channels;
+  if (destination !== undefined) {
+    checkRange(destination.bytes.length, 0, 16 + width * height * outputChannels);
+    checkRange(destination.initialized.length, 0, 16 + width * height * outputChannels);
+    destination.bytes.set(bytes.subarray(16, 32));
+    destination.initialized.fill(1, 0, 16);
+  }
   const cursor = {position: 0},
     weights = Array.from({length: 256}, () => unsignedVarint(table, cursor));
-  if (strictVersionOne && cursor.position !== table.length) throw new Error('Trailing CompressedBG table data');
+  if (strictVersionOne && cursor.position !== table.length)
+    throw new Error('Trailing CompressedBG table data');
   const tree = frequencyTree(weights),
     bits = new Bits(bytes.subarray(48 + tableSize)),
     intermediate = new Uint8Array(intermediateSize);
@@ -103,29 +126,61 @@ function decodeLegacy(bytes: Uint8Array, strictVersionOne: boolean): BurikoImage
     literal = !literal;
   }
   if (p !== size) throw new Error('CompressedBG residual size mismatch');
-  // The scalar predictor matches the native SIMD paths: average available left/up bytes.
-  const stride = width * channels;
-  for (let y = 0; y < height; y++)
-    for (let x = 0; x < width; x++)
-      for (let c = 0; c < channels; c++) {
-        const i = y * stride + x * channels + c;
-        const predictor = y
-          ? x
-            ? (residuals[i - stride]! + residuals[i - channels]!) >>> 1
-            : residuals[i - stride]!
-          : x
-            ? residuals[i - channels]!
-            : 0;
-        residuals[i] = residuals[i]! + predictor;
+  const header =
+    destination === undefined ? bytes.slice(16, 32) : destination.bytes.subarray(0, 16);
+  let pixels: Uint8Array;
+  if (destination === undefined) {
+    // The scalar predictor matches the native SIMD paths: average available left/up bytes.
+    const stride = width * channels;
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++)
+        for (let c = 0; c < channels; c++) {
+          const i = y * stride + x * channels + c;
+          const predictor = y
+            ? x
+              ? (residuals[i - stride]! + residuals[i - channels]!) >>> 1
+              : residuals[i - stride]!
+            : x
+              ? residuals[i - channels]!
+              : 0;
+          residuals[i] = residuals[i]! + predictor;
+        }
+    pixels = residuals;
+    if (depth === 24) {
+      pixels = new Uint8Array(width * height * 4);
+      for (let src = 0, dst = 0; src < size; src += 3, dst += 4)
+        pixels.set(residuals.subarray(src, src + 3), dst);
+      view(header).setUint16(4, 32, true);
+      view(header).setUint16(8, 7, true);
+    }
+  } else {
+    // BF350 reads already reconstructed left/up bytes from this very caller destination.
+    pixels = destination.bytes.subarray(16, 16 + width * height * outputChannels);
+    const stride = width * outputChannels;
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        for (let c = 0; c < channels; c++) {
+          const i = y * stride + x * outputChannels + c;
+          const predictor = y
+            ? x
+              ? (pixels[i - stride]! + pixels[i - outputChannels]!) >>> 1
+              : pixels[i - stride]!
+            : x
+              ? pixels[i - outputChannels]!
+              : 0;
+          pixels[i] = residuals[(y * width + x) * channels + c]! + predictor;
+          destination.initialized[16 + i] = 1;
+        }
+        for (let c = channels; c < outputChannels; c++) {
+          const i = y * stride + x * outputChannels + c;
+          pixels[i] = 0;
+          destination.initialized[16 + i] = 1;
+        }
       }
-  const header = bytes.slice(16, 32);
-  let pixels = residuals;
-  if (depth === 24) {
-    pixels = new Uint8Array(width * height * 4);
-    for (let src = 0, dst = 0; src < size; src += 3, dst += 4)
-      pixels.set(residuals.subarray(src, src + 3), dst);
-    view(header).setUint16(4, 32, true);
-    view(header).setUint16(8, 7, true);
+    if (depth === 24) {
+      view(header).setUint16(4, 32, true);
+      view(header).setUint16(8, 7, true);
+    }
   }
   return {
     width,

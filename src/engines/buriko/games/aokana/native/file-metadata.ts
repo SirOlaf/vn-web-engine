@@ -26,7 +26,26 @@ export interface AokanaFileMetadataVolume {
   readonly identity: object;
   readonly writable: boolean;
 }
+export interface AokanaNamespaceEntry {
+  readonly path: string;
+  readonly name: string;
+  readonly shortName: string | null;
+}
+export interface AokanaNamespaceProfile {
+  /** Explicit find order; new entries append. No order or spelling is inferred from backing list. */
+  readonly entries: readonly AokanaNamespaceEntry[];
+  readonly newShortNames: 'disabled';
+  readonly fold: (name: string) => string;
+}
+export interface AokanaMoveProfile {
+  readonly contents: 'ordinary-single-stream';
+  readonly security: 'unsupported';
+  readonly copiedTimes: 'preserve-source';
+  readonly copyDeleteFailure: 'success-retain-source';
+}
 export interface AokanaFileMetadataProfile {
+  readonly move?: AokanaMoveProfile;
+  readonly namespace?: AokanaNamespaceProfile;
   readonly records: readonly AokanaFileMetadataRecord[];
   /** Removed imported empty directories remain hidden if the backing retains their identity. */
   readonly removedDirectories?: readonly string[];
@@ -55,12 +74,17 @@ function unavailable(error: unknown): boolean {
  * It does not obtain timestamps or attributes from browser identity or monotonic frame state. */
 export class AokanaMountedFileMetadata implements FileSystem {
   private readonly records = new Map<string, AokanaFileMetadataRecord>();
+  private readonly names = new Map<string, AokanaNamespaceEntry>();
   private readonly removedDirectories = new Set<string>();
   private readonly volumes: readonly AokanaFileMetadataVolume[];
   constructor(
     private readonly backing: FileSystem,
     readonly profile: AokanaFileMetadataProfile,
   ) {
+    for (const entry of profile.namespace?.entries ?? []) {
+      const path = this.canonical(entry.path);
+      this.names.set(path, {...entry, path});
+    }
     this.volumes = profile.volumes
       .map((volume) => ({...volume, path: this.canonical(volume.path)}))
       .sort((a, b) => b.path.length - a.path.length);
@@ -91,6 +115,37 @@ export class AokanaMountedFileMetadata implements FileSystem {
   }
   snapshotState(): {records: AokanaFileMetadataRecord[]; removedDirectories: string[]} {
     return {records: this.snapshot(), removedDirectories: [...this.removedDirectories]};
+  }
+  namespaceSnapshot(): AokanaNamespaceEntry[] {
+    return [...this.names.values()].map((entry) => ({...entry}));
+  }
+  private registerName(path: string): void {
+    if (this.profile.namespace === undefined) return;
+    const canonical = this.canonical(path);
+    if (!this.names.has(canonical))
+      this.names.set(canonical, {
+        path: canonical,
+        name: filePath(path).slice(filePath(path).lastIndexOf('/') + 1),
+        shortName: null,
+      });
+  }
+  /** Find snapshots use actual children and the explicit imported namespace order. */
+  async findEntries(path: string): Promise<(AokanaNamespaceEntry & FileInfo)[]> {
+    if (this.profile.namespace === undefined)
+      throw new Error('Aokana enumeration requires an explicit namespace profile');
+    const children = await this.list(path),
+      byPath = new Map(children.map((child) => [this.canonical(child.path), child]));
+    for (const child of children)
+      if (!this.names.has(this.canonical(child.path)))
+        throw new Error(
+          `Aokana enumeration lacks imported name/short-name/order metadata: ${child.path}`,
+        );
+    const result: (AokanaNamespaceEntry & FileInfo)[] = [];
+    for (const entry of this.names.values()) {
+      const child = byPath.get(entry.path);
+      if (child !== undefined) result.push({...child, ...entry});
+    }
+    return result;
   }
   private removed(path: string): boolean {
     for (const directory of this.removedDirectories) if (below(path, directory)) return true;
@@ -236,10 +291,11 @@ export class AokanaMountedFileMetadata implements FileSystem {
     }
     await this.backing.commit(prepared);
     const now = BigInt.asUintN(64, this.profile.currentFileTime());
-    for (const change of prepared) {
+    for (const [index, change] of prepared.entries()) {
       const old = before.get(change.path) ?? null;
       if (change.kind === 'delete') {
         this.records.delete(change.path);
+        this.names.delete(change.path);
         before.set(change.path, null);
       } else {
         const record: AokanaFileMetadataRecord =
@@ -258,6 +314,7 @@ export class AokanaMountedFileMetadata implements FileSystem {
           if (record.attributes !== null)
             record.attributes = ((record.attributes & ~0x80) | 0x20) >>> 0;
         }
+        if (old === null) this.registerName(changes[index]!.path);
         this.records.set(change.path, record);
         before.set(change.path, record);
       }
@@ -275,8 +332,9 @@ export class AokanaMountedFileMetadata implements FileSystem {
     if (record.kind === 'directory') throw new FileError('IS_DIRECTORY', path);
     await this.commit([{kind: 'delete', path}]);
   }
-  /** MoveFileW's same-volume replacement transfers the source file and its metadata. */
+  /** Installer DeleteFileW then same-volume MoveFileW, committed atomically by the backing owner. */
   async replaceFile(sourcePath: string, destinationPath: string): Promise<void> {
+    const destinationSpelling = destinationPath;
     sourcePath = this.canonical(sourcePath);
     destinationPath = this.canonical(destinationPath);
     if (sourcePath === destinationPath) throw new FileError('INVALID_PATH', sourcePath);
@@ -323,6 +381,9 @@ export class AokanaMountedFileMetadata implements FileSystem {
     );
     await this.backing.commit(changes);
 
+    this.names.delete(sourcePath);
+    this.names.delete(destinationPath);
+    this.registerName(destinationSpelling);
     this.records.delete(sourcePath);
     this.records.set(destinationPath, {...source, path: destinationPath});
     const now = BigInt.asUintN(64, this.profile.currentFileTime()),
@@ -333,8 +394,163 @@ export class AokanaMountedFileMetadata implements FileSystem {
       this.records.set(directoryPath, directory);
     }
   }
+  /** CopyFileW(FALSE) within the explicitly selected ordinary-file metadata profile. */
+  async copyPath(sourcePath: string, destinationPath: string): Promise<void> {
+    if (this.profile.move === undefined)
+      throw new Error('Aokana copy requires an explicit ordinary-file move/copy profile');
+    const spelling = destinationPath;
+    sourcePath = this.canonical(sourcePath);
+    destinationPath = this.canonical(destinationPath);
+    if (sourcePath === destinationPath) throw new FileError('INVALID_PATH', destinationPath);
+    this.assertWritable(destinationPath);
+    const source = await this.metadata(sourcePath);
+    if (source.kind !== 'file') throw new FileError('IS_DIRECTORY', sourcePath);
+    if (source.attributes !== null && (source.attributes & (0x400 | 0x800 | 0x4000)) !== 0)
+      throw new Error('Aokana copy profile does not support reparse/compressed/encrypted contents');
+    const directory = await this.metadata(parent(destinationPath));
+    if (directory.kind !== 'directory') throw new FileError('NOT_DIRECTORY', directory.path);
+    let destination: AokanaFileMetadataRecord | null = null;
+    try {
+      destination = await this.metadata(destinationPath);
+    } catch (error) {
+      if (!unavailable(error)) throw error;
+    }
+    if (destination !== null) {
+      if (destination.kind !== 'file') throw new FileError('IS_DIRECTORY', destinationPath);
+      if (destination.attributes === null)
+        throw new Error('Aokana copy cannot determine destination hidden/readonly state');
+      if ((destination.attributes & (0x400 | 0x800 | 0x4000)) !== 0)
+        throw new Error(
+          'Aokana copy profile does not support reparse/compressed/encrypted destination',
+        );
+      if ((destination.attributes & 3) !== 0) throw new FileError('READ_ONLY', destinationPath);
+    }
+    const opened = await this.backing.open(sourcePath);
+    const bytes = new Uint8Array(await opened.read(0, opened.size));
+    await this.backing.commit([{kind: 'write', path: destinationPath, data: bytes}]);
+    this.removedDirectories.delete(destinationPath);
+    this.records.set(destinationPath, {...source, path: destinationPath});
+    if (destination === null) {
+      this.registerName(spelling);
+      directory.writeTime = BigInt.asUintN(64, this.profile.currentFileTime());
+      this.records.set(directory.path, directory);
+    }
+  }
+  /** Nonreplacing rename/cross-volume copy-delete over this same metadata and byte owner. */
+  async movePath(sourcePath: string, destinationPath: string): Promise<void> {
+    if (this.profile.move === undefined)
+      throw new Error('Aokana move requires an explicit ordinary-file move profile');
+    const destinationSpelling = destinationPath;
+    sourcePath = this.canonical(sourcePath);
+    destinationPath = this.canonical(destinationPath);
+    if (sourcePath === destinationPath || below(destinationPath, sourcePath))
+      throw new FileError('INVALID_PATH', destinationPath);
+    const sourceVolume = this.volume(sourcePath),
+      destinationVolume = this.volume(destinationPath);
+    if (sourceVolume === null || destinationVolume === null)
+      throw new FileError('NOT_FOUND', sourcePath);
+    this.assertWritable(sourcePath);
+    this.assertWritable(destinationPath);
+    if (
+      sourcePath === '/' ||
+      sourceVolume.path === sourcePath ||
+      destinationVolume.path === destinationPath
+    )
+      throw new FileError('INVALID_PATH', sourcePath);
+    const root = await this.metadata(sourcePath);
+    try {
+      await this.stat(destinationPath);
+      throw new FileError('INVALID_PATH', destinationPath);
+    } catch (error) {
+      if (!unavailable(error)) throw error;
+    }
+    const destinationParent = await this.metadata(parent(destinationPath));
+    if (destinationParent.kind !== 'directory')
+      throw new FileError('NOT_DIRECTORY', destinationParent.path);
+    const sameVolume = sourceVolume.identity === destinationVolume.identity;
+    if (!sameVolume && root.kind === 'directory') throw new FileError('CROSS_MOUNT', sourcePath);
+    const records: AokanaFileMetadataRecord[] = [];
+    const gather = async (path: string): Promise<void> => {
+      if (
+        this.volume(path)?.identity !== sourceVolume.identity ||
+        (path !== sourcePath && this.volumes.some((volume) => volume.path === path))
+      )
+        throw new Error('Aokana move cannot transfer a nested mounted volume');
+      const record = await this.metadata(path);
+      if (record.attributes !== null && (record.attributes & (0x400 | 0x800 | 0x4000)) !== 0)
+        throw new Error(
+          'Aokana move profile does not support reparse/compressed/encrypted contents',
+        );
+      records.push(record);
+      if (record.kind === 'directory')
+        for (const child of await this.list(path)) await gather(child.path);
+    };
+    await gather(sourcePath);
+    const names =
+      this.profile.namespace === undefined
+        ? []
+        : records.map((record) => {
+            const entry = this.names.get(record.path);
+            if (entry === undefined)
+              throw new Error('Aokana move lacks imported namespace metadata');
+            return entry;
+          });
+    const sourceNames = new Set(names.map((entry) => entry.path));
+    const orderedNames = [...this.names.values()].filter((entry) => sourceNames.has(entry.path));
+    const changes: FileChange[] = [];
+    for (const record of records)
+      if (record.kind === 'file') {
+        const opened = await this.backing.open(record.path);
+        changes.push({
+          kind: 'write',
+          path: destinationPath + record.path.slice(sourcePath.length),
+          data: new Uint8Array(await opened.read(0, opened.size)),
+        });
+      }
+    const now = BigInt.asUintN(64, this.profile.currentFileTime());
+    if (!sameVolume) {
+      // Separate commits are essential: the backing rejects cross-mount atomic batches.
+      await this.backing.commit(changes);
+      this.removedDirectories.delete(destinationPath);
+      this.records.set(destinationPath, {...root, path: destinationPath});
+      this.registerName(destinationSpelling);
+      destinationParent.writeTime = now;
+      this.records.set(destinationParent.path, destinationParent);
+      try {
+        await this.deleteFile(sourcePath);
+      } catch (error) {
+        if (!(error instanceof FileError || error instanceof DOMException)) throw error;
+        // Selected COPY_ALLOWED policy: copied destination survives, source remains on delete failure.
+      }
+      return;
+    }
+    for (const record of records)
+      if (record.kind === 'file') changes.push({kind: 'delete', path: record.path});
+    await this.backing.commit(changes);
+    for (const record of records) {
+      this.records.delete(record.path);
+      this.names.delete(record.path);
+      const path = destinationPath + record.path.slice(sourcePath.length);
+      this.removedDirectories.delete(path);
+      this.records.set(path, {...record, path});
+    }
+    for (const record of records)
+      if (record.kind === 'directory') this.removedDirectories.add(record.path);
+    this.registerName(destinationSpelling);
+    for (const entry of orderedNames)
+      if (entry.path !== sourcePath) {
+        const path = destinationPath + entry.path.slice(sourcePath.length);
+        this.names.set(path, {...entry, path});
+      }
+    for (const directoryPath of new Set([parent(sourcePath), parent(destinationPath)])) {
+      const directory = await this.metadata(directoryPath);
+      directory.writeTime = now;
+      this.records.set(directoryPath, directory);
+    }
+  }
   /** Concrete empty directories have no backing byte record; the same owner exposes them to stat/list. */
   async createDirectory(path: string): Promise<void> {
+    const spelling = path;
     path = this.canonical(path);
     this.assertWritable(path);
     try {
@@ -346,6 +562,7 @@ export class AokanaMountedFileMetadata implements FileSystem {
     const directory = await this.metadata(parent(path));
     if (directory.kind !== 'directory') throw new FileError('NOT_DIRECTORY', directory.path);
     const now = BigInt.asUintN(64, this.profile.currentFileTime());
+    this.registerName(spelling);
     this.removedDirectories.delete(path);
     this.records.set(path, {
       path,
@@ -364,6 +581,7 @@ export class AokanaMountedFileMetadata implements FileSystem {
     if (this.volume(path)?.path === path || path === '/') throw new FileError('INVALID_PATH', path);
     if ((await this.stat(path)).kind !== 'directory') throw new FileError('NOT_DIRECTORY', path);
     if ((await this.list(path)).length !== 0) throw new FileError('IS_DIRECTORY', path);
+    this.names.delete(path);
     this.records.delete(path);
     this.removedDirectories.add(path);
     const directory = await this.metadata(parent(path));

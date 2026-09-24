@@ -44,10 +44,15 @@ export class AokanaNativeTouch {
   private minimumDistance = 0;
 
   constructor(
-    private readonly input: AokanaNativeInput,
+    readonly input: AokanaNativeInput,
     private readonly clock: AokanaNativeClock,
     private readonly window: AokanaNativeTouchWindow,
   ) {}
+
+  /** C0D50 reads the same capability gate used by native touch registration. */
+  get available(): boolean {
+    return this.window.available;
+  }
 
   /** 1400c0930 clears contacts after either OS call, including an OS failure. */
   setRegistration(enabled: number): number {

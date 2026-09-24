@@ -1,4 +1,8 @@
 import {
+  displayPropertyOutput,
+  type AokanaDisplayPropertyDestination,
+} from './display-property-output.js';
+import {
   AokanaBitmapStorage,
   aokanaBitmapPixelSize,
   bitmapStorage,
@@ -106,6 +110,60 @@ export class AokanaDisplayObject {
   }
   protected check(): void {
     if (this.disposed) throw new Error('Aokana accesses a deleted CDspObj');
+  }
+  /** ABB40 borrows these raw fields; no virtual coordinate/visibility evaluation occurs. */
+  diagnosticPropertyWord(offset: number): number {
+    this.check();
+    switch (offset) {
+      case 0x08:
+        return this.secondaryVisibility;
+      case 0x10:
+        return this.suppression;
+      case 0x18:
+        return this.activation;
+      case 0x20:
+        return this.layer;
+      case 0x40:
+        return this.point.x;
+      case 0x44:
+        return this.point.y;
+      case 0x48:
+        return this.offset.x;
+      case 0x4c:
+        return this.offset.y;
+      case 0x50:
+        return this.secondaryOffset.x;
+      case 0x54:
+        return this.secondaryOffset.y;
+      case 0x60:
+        return this.coordinatesValue.x;
+      case 0x64:
+        return this.coordinatesValue.y;
+      case 0x68:
+        return this.coordinatesValue.z;
+      case 0x70:
+        return this.coordinateOffset.x;
+      case 0x74:
+        return this.coordinateOffset.y;
+      case 0x78:
+        return this.coordinateOffset.z;
+      case 0x80:
+        return this.secondaryCoordinateOffset.x;
+      case 0x84:
+        return this.secondaryCoordinateOffset.y;
+      case 0x88:
+        return this.secondaryCoordinateOffset.z;
+      case 0xc8:
+        return this.blendMode;
+      case 0xcc:
+        return this.blendValue;
+      case 0xd0:
+        return this.transparency;
+      case 0xd4:
+        return this.opacityScale;
+      default:
+        throw new Error('Aokana object diagnostic references an unsupported field');
+    }
   }
   /** 056670. This association does not own or invoke the procedure. */
   getOwner(): object | null {
@@ -355,13 +413,10 @@ export class AokanaDisplayObject {
     return 0;
   }
   /** Output is native caller memory: unsupported selectors do not dereference it. */
-  getProperty(selector: number, output: Uint32Array): number {
+  getProperty(selector: number, output: AokanaDisplayPropertyDestination): number {
     this.check();
-    const write = (index: number, value: number): void => {
-      if (index >= output.length)
-        throw new RangeError('CDspObj property writes outside native output');
-      output[index] = value >>> 0;
-    };
+    const access = displayPropertyOutput(output),
+      write = (index: number, value: number): void => access.write32(index, value >>> 0);
     switch (selector >>> 0) {
       case 0: {
         const p = this.position();
@@ -386,9 +441,7 @@ export class AokanaDisplayObject {
         break;
       }
       case 0x7fffffff: {
-        if (output.length === 0)
-          throw new RangeError('CDspObj property reads outside native output');
-        const value = this.getCustom(output[0]!);
+        const value = this.getCustom(access.read32(0));
         if (value === null) return 0xffff0002;
         write(0, value);
         break;
@@ -450,6 +503,15 @@ export class AokanaDisplayObject {
     this.bitmap.storage = null;
     this.bitmap.offset = 0;
     this.bitmap.stride = Math.imul(width, bytesPerPixel);
+    return 1;
+  }
+
+  /** 0568E0 changes only dimensions when the descriptor has no pixel backing. */
+  setUnbackedDimensions(width: number, height: number): 0 | 1 {
+    this.check();
+    if (this.bitmap.storage !== null) return 0;
+    this.bitmap.width = width | 0;
+    this.bitmap.height = height | 0;
     return 1;
   }
 

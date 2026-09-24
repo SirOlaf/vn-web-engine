@@ -3,7 +3,7 @@ import {AokanaEngineErrors} from './engine-errors.js';
 import {AokanaKnobDisplays} from './knob-displays.js';
 import type {AokanaBpOpcodeContext, AokanaNativeSlotDefinition} from './types.js';
 
-/** Bank 90:D0,D1,D4-DF, the complete scene-facing CDspObjKnob family. */
+/** Bank 90:D0,D1,D4-DF, the scene-facing CDspObjKnob family. */
 export function createGroup90Knobs(
   knobs: AokanaKnobDisplays,
   errors: AokanaEngineErrors,
@@ -185,6 +185,22 @@ export function createGroup90Knobs(
       name: 'UnregisterKnobWheelControl',
       execute: (context) =>
         knobs.unregisterWheel(pop32(context.thread)) ? 0 : invalidKnob(context),
+    },
+  ];
+}
+
+/** 0DE4C0 is Bank 91's view of the same current pointer receiver, not a Group operation. */
+export function createGroup91KnobPointer(knobs: AokanaKnobDisplays): AokanaNativeSlotDefinition[] {
+  return [
+    {
+      primary: 0x91,
+      secondary: 0xdb,
+      nativeAddress: 0x1400de4c0,
+      name: 'GetCurrentKnobPointerId',
+      execute: (context) => {
+        push32(context.thread, knobs.currentPointerId());
+        return 0;
+      },
     },
   ];
 }

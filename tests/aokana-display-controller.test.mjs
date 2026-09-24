@@ -129,6 +129,7 @@ test('deferred mode toggle appends its actual result and adapter changes refresh
   const s = fixture();
   await s.controller.initialize();
   s.input.foreground = true;
+  s.controller.configureModeToggle(1, null);
   s.controller.requestModeToggle();
   await s.controller.poll();
   assert.equal(s.display.fullscreen, 1);

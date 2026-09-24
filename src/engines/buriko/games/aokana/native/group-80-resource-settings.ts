@@ -79,5 +79,17 @@ export function createGroup80ResourceSettings(
         return 0;
       },
     },
+    {
+      primary: 0x80,
+      secondary: 0x3e,
+      nativeAddress: 0x1400e8f80,
+      name: 'SetPrimaryResourceRoot',
+      execute: async (context): Promise<0> => {
+        const path = popPointer(context);
+        if (path === null) throw new RangeError('Aokana primary root consumed a null path');
+        push32(context.thread, await resources.setPrimaryRoot(path));
+        return 0;
+      },
+    },
   ];
 }

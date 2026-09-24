@@ -8,6 +8,8 @@ import {
   propertyEditDeleteAllowed,
   readPropertyWord,
   writePropertyWord,
+  propertyTextPointer,
+  type AokanaPropertySource,
 } from './property-values.js';
 import {AokanaWindowMessages, type AokanaWindowMessage} from './window-messages.js';
 
@@ -17,7 +19,7 @@ export interface AokanaPropertyRow {
   value: number;
   rawCopy: Uint8Array;
   formatted: string;
-  readonly source: AokanaBpPointer | null;
+  readonly source: AokanaPropertySource | null;
   readonly mutable: boolean;
   readonly editable: number;
   readonly refreshCallback: AokanaPropertyCallback | null;
@@ -231,7 +233,7 @@ export class AokanaPropertyEditors {
     tabIndex: number,
     name: AokanaBpPointer | null,
     kind: number,
-    source: AokanaBpPointer | null,
+    source: AokanaPropertySource | null,
     mutable: number,
     editable: number,
     refreshCallback: AokanaPropertyCallback | null = null,
@@ -250,7 +252,10 @@ export class AokanaPropertyEditors {
       name: name === null ? '' : this.text.decodeAuto(name),
       kind,
       value: kind === 5 ? 0 : readPropertyWord(source),
-      rawCopy: kind === 5 && mutable !== 0 ? textBytes(source!).slice() : new Uint8Array(),
+      rawCopy:
+        kind === 5 && mutable !== 0
+          ? textBytes(propertyTextPointer(source)).slice()
+          : new Uint8Array(),
       formatted: formatted.value!,
       source: mutable === 0 ? null : source,
       mutable: mutable !== 0,
@@ -309,14 +314,15 @@ export class AokanaPropertyEditors {
           if (row.kind === 5) {
             if (row.source === null)
               throw new Error('Aokana live property string dereferences a null source');
-            const bytes = textBytes(row.source);
+            const pointer = propertyTextPointer(row.source);
+            const bytes = textBytes(pointer);
             if (
               bytes.length === row.rawCopy.length &&
               bytes.every((value, index) => value === row.rawCopy[index])
             )
               continue;
             row.rawCopy = bytes.slice();
-            row.formatted = this.text.decodeAuto(row.source);
+            row.formatted = this.text.decodeAuto(pointer);
           } else {
             const value = readPropertyWord(row.source);
             if (row.kind === 4 ? (value === 0) === (row.value === 0) : value === row.value)

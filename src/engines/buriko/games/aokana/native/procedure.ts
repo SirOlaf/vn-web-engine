@@ -8,6 +8,26 @@ import type {AokanaBpProcessMessage, AokanaBpWaitProcess} from './types.js';
 export class AokanaProcedureState {
   nextId = 0;
   enabled = 1;
+  private readonly pointerPriorities: {id: number; key: number}[] = [];
+
+  /** C5240: descending unsigned keys, after existing entries of equal priority. */
+  registerPointerPriority(id: number, key: number): void {
+    key >>>= 0;
+    const index = this.pointerPriorities.findIndex((entry) => entry.key < key);
+    this.pointerPriorities.splice(index < 0 ? this.pointerPriorities.length : index, 0, {
+      id: id >>> 0,
+      key,
+    });
+  }
+  /** C5210 consults only the head; this is distinct from ordinary pointer capture. */
+  pointerPriorityAllowed(key: number): boolean {
+    return this.pointerPriorities.length === 0 || this.pointerPriorities[0]!.key <= key >>> 0;
+  }
+  /** C57D0 removes the first matching procedure ID. */
+  releasePointerPriority(id: number): void {
+    const index = this.pointerPriorities.findIndex((entry) => entry.id === id >>> 0);
+    if (index >= 0) this.pointerPriorities.splice(index, 1);
+  }
 }
 
 /** The actual CProcedure FIFO, stop override, DWORD deadline, and lifetime fields. */
@@ -68,6 +88,7 @@ export abstract class AokanaProcedure implements AokanaBpWaitProcess {
 
   dispose(): void {
     this.messages.length = 0;
+    this.shared.releasePointerPriority(this.id);
   }
 }
 

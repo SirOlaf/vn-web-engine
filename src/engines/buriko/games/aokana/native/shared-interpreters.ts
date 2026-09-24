@@ -29,7 +29,11 @@ export class AokanaSharedInterpreters {
     return this.errors.files.text.encodeWide(value, 0);
   }
 
-  private async runWorker(records: SharedInterpreterRecord[], worker: number): Promise<0> {
+  private async runWorker(
+    records: SharedInterpreterRecord[],
+    worker: number,
+    actor: object,
+  ): Promise<0> {
     const record = records[worker >>> 0];
     if (record === undefined)
       throw new RangeError('Aokana shared-interpreter worker index exceeds its record array');
@@ -42,7 +46,9 @@ export class AokanaSharedInterpreters {
       released = 0;
     try {
       while (count < 0x10000000) {
-        const dispatched = this.interpreter.dispatchNext(child);
+        const dispatched = this.processing.allocator.withActor(actor, () =>
+          this.interpreter.dispatchNext(child, actor),
+        );
         opcode = dispatched.opcode;
         if (!dispatched.defined) {
           result = 7;
@@ -53,7 +59,7 @@ export class AokanaSharedInterpreters {
         if ((result | 0) !== 0) break;
       }
     } finally {
-      released = this.locks.releaseScriptCurrentActor();
+      released = this.locks.releaseScriptCurrentActor(actor);
     }
 
     if (result === 4 && released === 0) return 0;
@@ -82,6 +88,7 @@ export class AokanaSharedInterpreters {
     moduleSize: number,
     frameSize: number,
     initialIp: number,
+    actor = this.processing.allocator.currentActor,
   ): Promise<AokanaSharedInterpreterResult> {
     operandCapacity >>>= 0;
     moduleSize >>>= 0;
@@ -124,9 +131,10 @@ export class AokanaSharedInterpreters {
 
       if (successful === 0) return constructionResult;
       await this.processing.runWorkerCallbackAsync(
-        (context, worker) => this.runWorker(context, worker),
+        (context, worker, workerActor) => this.runWorker(context, worker, workerActor),
         records,
         1,
+        actor,
       );
       for (let worker = 0; worker < successful; worker++) {
         const record = records[worker]!,

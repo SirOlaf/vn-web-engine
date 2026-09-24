@@ -461,7 +461,13 @@ export class AokanaChildWindows {
     proportional: number,
     color: number,
     output: AokanaFontTextOutput,
+    actor = this.surfaces.allocator.currentActor,
   ): Promise<number> {
+    const operationAllocator = this.surfaces.allocator,
+      operationActor = actor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
     const record = this.record(handle);
     if (record === null) return 0xffffffff;
     const font = await this.bitmapText.fonts.get(
@@ -478,20 +484,22 @@ export class AokanaChildWindows {
           : font.result === 0x80000004
             ? 0x8000000b
             : font.id;
-    this.bitmapText.draw(
-      record.bitmap,
-      output,
-      x,
-      y,
-      source,
-      font.id,
-      color,
-      0,
-      proportional,
-      0,
-      0,
+    runAsActor(() =>
+      this.bitmapText.draw(
+        record.bitmap,
+        output,
+        x,
+        y,
+        source,
+        font.id,
+        color,
+        0,
+        proportional,
+        0,
+        0,
+      ),
     );
-    this.present(record);
+    runAsActor(() => this.present(record));
     return 0;
   }
 

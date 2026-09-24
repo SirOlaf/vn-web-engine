@@ -53,6 +53,13 @@ export interface AokanaDecodedMovieAudio {
   readonly mediaStart: AokanaIsoRational;
 }
 
+/** Optional bounds on copied JavaScript PCM, not browser decoder-internal memory. */
+export interface AokanaMovieAudioOutputLimits {
+  readonly channels: 1 | 2;
+  readonly maxChunkFrames: number;
+  readonly maxQueuedFrames: number;
+}
+
 interface AudioOrigin {
   readonly microseconds: number;
   readonly ticks: bigint;
@@ -76,6 +83,7 @@ export class AokanaMovieAudioDecoder {
   private flushed = false;
   private disposed = false;
   private failure: unknown = null;
+  private queuedFrames = 0;
 
   private constructor(
     readonly movie: AokanaIsoMovie,
@@ -83,6 +91,7 @@ export class AokanaMovieAudioDecoder {
     private readonly Decoder: BrowserAudioDecoderConstructor,
     private readonly Chunk: BrowserAudioChunkConstructor,
     private readonly configurations: ReadonlyMap<number, AokanaAacDecoderConfiguration>,
+    private readonly limits: AokanaMovieAudioOutputLimits | undefined,
   ) {
     for (const sample of track.samples) {
       const microseconds = Number((sample.compositionTime * 1000000n) / BigInt(track.timescale));
@@ -99,7 +108,19 @@ export class AokanaMovieAudioDecoder {
   static async create(
     movie: AokanaIsoMovie,
     track: AokanaIsoTrack,
+    limits?: AokanaMovieAudioOutputLimits,
   ): Promise<AokanaMovieAudioDecoder> {
+    const copiedLimits = limits === undefined ? undefined : {...limits};
+    if (
+      copiedLimits !== undefined &&
+      ((copiedLimits.channels !== 1 && copiedLimits.channels !== 2) ||
+        !Number.isSafeInteger(copiedLimits.maxChunkFrames) ||
+        copiedLimits.maxChunkFrames < 1 ||
+        !Number.isSafeInteger(copiedLimits.maxQueuedFrames) ||
+        copiedLimits.maxQueuedFrames < copiedLimits.maxChunkFrames ||
+        !Number.isSafeInteger(copiedLimits.maxQueuedFrames * copiedLimits.channels * 4))
+    )
+      throw new AokanaIsoSampleError('Invalid copied AAC output admission limits');
     const {AudioDecoder: Decoder, EncodedAudioChunk: Chunk} = globalThis as AudioCodecWindow;
     if (Decoder === undefined || Chunk === undefined)
       throw new DOMException('This browser has no WebCodecs audio decoder', 'NotSupportedError');
@@ -115,18 +136,29 @@ export class AokanaMovieAudioDecoder {
         throw new DOMException(`This browser cannot decode ${config.codec}`, 'NotSupportedError');
       configurations.set(sample.description, config);
     }
-    return new AokanaMovieAudioDecoder(movie, track, Decoder, Chunk, configurations);
+    return new AokanaMovieAudioDecoder(movie, track, Decoder, Chunk, configurations, copiedLimits);
   }
   private createDecoder(): BrowserAudioDecoder {
     const generation = this.generation;
     const decoder = new this.Decoder({
       output: (data) => {
         try {
-          if (this.disposed || generation !== this.generation) return;
+          if (this.disposed || generation !== this.generation || this.failure !== null) return;
           if (!Number.isSafeInteger(data.timestamp))
             throw new AokanaIsoSampleError(
               'AAC output timestamp exceeds the browser integer range',
             );
+          if (
+            this.limits !== undefined &&
+            (data.numberOfChannels !== this.limits.channels ||
+              !Number.isSafeInteger(data.numberOfFrames) ||
+              data.numberOfFrames < 1 ||
+              data.numberOfFrames > this.limits.maxChunkFrames ||
+              data.numberOfFrames > this.limits.maxQueuedFrames - this.queuedFrames ||
+              !Number.isSafeInteger(data.sampleRate) ||
+              data.sampleRate < 1)
+          )
+            throw new AokanaIsoSampleError('Actual AAC output exceeds its negotiated PCM profile');
           const planes = Array.from({length: data.numberOfChannels}, (_, planeIndex) => {
             const plane = new Float32Array(data.numberOfFrames);
             data.copyTo(plane, {planeIndex, format: 'f32-planar'});
@@ -143,8 +175,9 @@ export class AokanaMovieAudioDecoder {
             frameCount: data.numberOfFrames,
             sampleRate: data.sampleRate,
           });
+          this.queuedFrames += data.numberOfFrames;
         } catch (error) {
-          this.failure = error;
+          this.failure ??= error;
         } finally {
           data.close();
           this.wake();
@@ -152,7 +185,7 @@ export class AokanaMovieAudioDecoder {
       },
       error: (error) => {
         if (this.disposed || generation !== this.generation) return;
-        this.failure = error;
+        this.failure ??= error;
         this.wake();
       },
     });
@@ -178,7 +211,10 @@ export class AokanaMovieAudioDecoder {
       for (;;) {
         this.check(generation);
         const output = this.output.shift();
-        if (output !== undefined) return output;
+        if (output !== undefined) {
+          this.queuedFrames -= output.frameCount;
+          return output;
+        }
         if (this.flushed) return null;
         const sample = this.track.samples[this.index];
         if (sample === undefined) {
@@ -211,7 +247,8 @@ export class AokanaMovieAudioDecoder {
         if (!Number.isSafeInteger(timestamp) || !Number.isSafeInteger(duration))
           throw new AokanaIsoSampleError('AAC sample time exceeds the browser integer range');
         const chunk = new this.Chunk({
-          type: sample.sync ? 'key' : 'delta',
+          // AAC's WebCodecs registration requires key even when ISO stss differs.
+          type: 'key',
           timestamp,
           duration,
           data: aokanaIsoSampleBytes(this.movie, this.track, sample),
@@ -229,6 +266,7 @@ export class AokanaMovieAudioDecoder {
     this.generation++;
     if (this.decoder.state !== 'closed') this.decoder.close();
     this.output.length = 0;
+    this.queuedFrames = 0;
     this.index = 0;
     this.description = -1;
     this.flushed = false;
@@ -242,6 +280,7 @@ export class AokanaMovieAudioDecoder {
     this.generation++;
     if (this.decoder.state !== 'closed') this.decoder.close();
     this.output.length = 0;
+    this.queuedFrames = 0;
     this.origins.clear();
     this.wake();
   }

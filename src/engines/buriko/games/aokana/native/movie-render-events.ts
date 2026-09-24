@@ -1,5 +1,9 @@
+export interface AokanaMovieGraphClock {
+  now(): bigint;
+}
+
 /** The browser profile's graph clock is independent of Aokana's pausable script clock. */
-export class AokanaMovieReferenceClock {
+export class AokanaMovieReferenceClock implements AokanaMovieGraphClock {
   constructor(private readonly readMilliseconds: () => number = () => performance.now()) {}
   now(): bigint {
     return BigInt.asIntN(64, BigInt(Math.trunc(this.readMilliseconds() * 10000)));
@@ -105,7 +109,7 @@ export class AokanaMovieRenderEvents {
   }
 
   /** The concrete browser clock link, canceled by native CancelNotification. */
-  advise(clock: AokanaMovieReferenceClock, graphStart: bigint, sampleStart: bigint): void {
+  advise(clock: AokanaMovieGraphClock, graphStart: bigint, sampleStart: bigint): void {
     if (this.disposed) throw new Error('Aokana movie advises a released renderer event');
     if (this.notification !== null) throw new Error('Aokana movie overwrites an active clock link');
     const deadline = BigInt.asIntN(64, graphStart + sampleStart);

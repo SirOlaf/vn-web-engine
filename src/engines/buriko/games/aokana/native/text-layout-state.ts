@@ -6,6 +6,7 @@ import {allocateAokanaBitmap, type AokanaBitmap} from './bitmap.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {AokanaCustomGlyphs} from './custom-text-glyphs.js';
 import type {AokanaFontRecord} from './fonts.js';
+import {validateAokanaFont} from './font-raster.js';
 import {
   buildAokanaHorizontalTextLayout,
   type AokanaHorizontalTextLayoutOptions,
@@ -74,19 +75,99 @@ export class AokanaTextLayoutState {
   linkColor = 0xffffffff;
   currentInlineColor = 0;
   /** 1d1dc0 and 1d1e20..2c provide the optional font selected while a link is open. */
-  readonly alternateFontName = new Uint8Array(256);
-  alternateFontSize = 0;
-  alternateFontWidth = 0;
-  alternateFontBold = 0;
-  alternateFontItalic = 0;
+  readonly alternateFontName = new Uint8Array(120);
+  private readonly alternateFontFields = new DataView(this.alternateFontName.buffer);
+  get alternateFontSize(): number {
+    return this.alternateFontFields.getInt32(96, true);
+  }
+  set alternateFontSize(value: number) {
+    this.alternateFontFields.setInt32(96, value, true);
+  }
+  get alternateFontWidth(): number {
+    return this.alternateFontFields.getInt32(100, true);
+  }
+  set alternateFontWidth(value: number) {
+    this.alternateFontFields.setInt32(100, value, true);
+  }
+  get alternateFontBold(): number {
+    return this.alternateFontFields.getInt32(104, true);
+  }
+  set alternateFontBold(value: number) {
+    this.alternateFontFields.setInt32(104, value, true);
+  }
+  get alternateFontItalic(): number {
+    return this.alternateFontFields.getInt32(108, true);
+  }
+  set alternateFontItalic(value: number) {
+    this.alternateFontFields.setInt32(108, value, true);
+  }
   /** 1d1e50/1d1e60 retain at most sixteen encoded link positions from the latest build. */
   readonly linkRegions: AokanaTextLinkRegion[] = [];
+  /** Actual sixteen128-byte BSS records; clear-count never erases retained padding. */
+  private readonly packedLinkRegions = new Uint8Array(16 * 128);
   /** 1D1E58 is the bitmap-text caller's shared horizontal cursor pair. */
   readonly surfaceCursor = {x: 0, y: 0};
   /** 077bb0 publishes an opaque ID for the latest per-line extent vector when policy 80000009 is on. */
   readonly lineHeightLayouts = new Map<number, readonly number[]>();
   private nextLineHeightLayoutId = 0;
   missingGlyphHandler: ((character: number) => void) | null = null;
+
+  /** Mutable defaults shared by immediate layout and CProcDspMsg/Ex (1c90c0..d0). */
+  readonly defaultEffect = {
+    mode: 0,
+    radiusXPercent: 17,
+    radiusYPercent: 17,
+    color: 0,
+    opacity: 192,
+  };
+  glyphInterval = 50;
+  scrollSteps = 6;
+  scrollInterval = 30;
+  fadeSteps = 16;
+  fadeInterval = 60;
+  initialWaitEnabled = 0;
+  initialWaitInterval = 0;
+  autoWaitEnabled = 0;
+  autoWaitInterval = 0;
+  finishOnInput = 0;
+  captureMode = 0;
+  captureLayer = 0;
+  suppressProcedureRedraw = 0;
+
+  /** 072150/072130 retain both fields when the signed step count is not positive. */
+  setScrollTiming(steps: number, interval: number): boolean {
+    if ((steps | 0) <= 0) return false;
+    this.scrollSteps = steps | 0;
+    this.scrollInterval = interval >>> 0;
+    return true;
+  }
+  setFadeTiming(steps: number, interval: number): boolean {
+    if ((steps | 0) <= 0) return false;
+    this.fadeSteps = steps | 0;
+    this.fadeInterval = interval >>> 0;
+    return true;
+  }
+  /** 0720c0, separately from the raw mode setter072100. */
+  setDefaultEffectParameters(x: number, y: number, opacity: number): boolean {
+    if (x >>> 0 > 100 || y >>> 0 > 100 || opacity >>> 0 > 256) return false;
+    Object.assign(this.defaultEffect, {
+      radiusXPercent: x >>> 0,
+      radiusYPercent: y >>> 0,
+      color: 0,
+      opacity: opacity >>> 0,
+    });
+    return true;
+  }
+  /** 072fe0. */
+  setCapture(mode: number, layer: number): number {
+    mode |= 0;
+    if (mode === 1) {
+      if (layer >>> 0 >= 65536) return 0x80000005;
+      this.captureLayer = layer >>> 0;
+    } else if (mode !== 0 && mode !== 2) return 0x80000004;
+    this.captureMode = mode;
+    return 0;
+  }
 
   /** 1d1d78/1d1da8 belong to animated window overlay zero, separately from custom glyphs. */
   overlayFrames: AokanaBitmap[] | null = null;
@@ -190,8 +271,78 @@ export class AokanaTextLayoutState {
     const encoded = this.text.encodeWide(text, 1),
       end = encoded.indexOf(0),
       length = Math.min(end < 0 ? encoded.length : end, 95);
+    const offset = this.linkRegions.length * 128;
+    this.packedLinkRegions.fill(0, offset, offset + 96);
+    this.packedLinkRegions.set(encoded.subarray(0, length), offset);
+    const view = new DataView(this.packedLinkRegions.buffer);
+    view.setInt32(offset + 120, x | 0, true);
+    view.setInt32(offset + 124, y | 0, true);
     this.linkRegions.push({text: encoded.slice(0, length), x: x | 0, y: y | 0});
     return true;
+  }
+
+  /** 073810 copies persistent records before resetting only the shared count. */
+  collectLinkRegions(output: AokanaBpPointer | null): number {
+    const count = this.linkRegions.length;
+    if (count !== 0) {
+      if (output === null) throw new Error('Aokana link query copies through a null output');
+      const view = pointerView(output, count * 128);
+      new Uint8Array(view.buffer, view.byteOffset, view.byteLength).set(
+        this.packedLinkRegions.subarray(0, count * 128),
+      );
+      this.resetLinkRegions();
+    }
+    return count;
+  }
+  /** 078f60: count-only reads retain ownership; successful copy consumes the exact ID. */
+  collectLineHeightLayout(output: AokanaBpPointer | null, id: number): number {
+    const values = this.lineHeightLayouts.get(id | 0);
+    if (values === undefined) return 0;
+    if (output !== null) {
+      if (values.length !== 0) {
+        const view = pointerView(output, values.length * 4);
+        values.forEach((value, index) => view.setUint32(index * 4, value, true));
+      }
+      this.lineHeightLayouts.delete(id | 0);
+    }
+    return values.length >>> 0;
+  }
+  /** 078970 writes only the selected existing output fields. */
+  copyLayoutResult(output: AokanaBpPointer | null, selector: number): number {
+    selector >>>= 0;
+    if (selector !== 0x100 && selector !== 0x101) return 0x80000007;
+    if (output === null) throw new Error('Aokana text layout result writes through null');
+    const view = pointerView(output, selector === 0x100 ? 8 : 4);
+    if (selector === 0x100) {
+      view.setInt32(0, this.surfaceCursor.x, true);
+      view.setInt32(4, this.surfaceCursor.y, true);
+    } else view.setUint32(0, this.currentInlineColor, true);
+    return 0;
+  }
+  /** B4620/073640 validates with allowDefault=1 before mutating the native fields. */
+  setRegisteredAlternateFont(
+    index: number,
+    size: number,
+    width: number,
+    bold: number,
+    italic: number,
+  ): number {
+    const name = this.surfaces.fonts.name(index);
+    const status = validateAokanaFont(name?.length ?? null, size | 0, width | 0, true);
+    if (status === 0x80000002) return 0x80000005;
+    if (status === 0x80000003) return 0x80000006;
+    if (status !== 0) return status === 0x80000004 ? status : 0xffffffff;
+    this.alternateFontName.fill(0, 0, 120);
+    if (name !== null)
+      copyText(
+        {bytes: this.alternateFontName, offset: 0},
+        {bytes: terminatedNativeBytes(name), offset: 0},
+      );
+    this.alternateFontItalic = italic | 0;
+    this.alternateFontSize = size | 0;
+    this.alternateFontWidth = width | 0;
+    this.alternateFontBold = bold | 0;
+    return 0;
   }
 
   publishLineHeightLayout(values: readonly number[]): number {

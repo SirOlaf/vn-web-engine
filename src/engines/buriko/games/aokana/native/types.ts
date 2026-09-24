@@ -6,6 +6,7 @@ import type {AokanaBpDiagnostics} from './diagnostics.js';
 export type AokanaBpHandlerResult = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface AokanaBpOpcodeContext {
+  readonly actor?: object;
   readonly thread: AokanaBpThread;
   readonly memory: AokanaBpMemory;
   readonly diagnostics: AokanaBpDiagnostics;
@@ -34,6 +35,8 @@ export interface AokanaBpModuleResourceSource {
   readModule(
     archiveName: Uint8Array | null,
     resourceName: Uint8Array,
+    retry?: boolean,
+    actor?: object,
   ): Uint8Array | null | Promise<Uint8Array | null>;
 }
 

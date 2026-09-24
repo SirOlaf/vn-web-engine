@@ -59,3 +59,13 @@ export function parseAokanaWaveBoxHeader(bytes: Uint8Array): AokanaWaveBoxHeader
     hfAdpcmShiftParameter: word(60),
   };
 }
+
+/** A copied byte can become undefined; unread zero-initialized header bytes remain defined. */
+export function requireAokanaWaveHeaderBytes(
+  mask: Uint8Array,
+  offset: number,
+  length: number,
+): void {
+  if (offset + length > mask.length || mask.subarray(offset, offset + length).includes(0))
+    throw new Error('Aokana WaveBox consumes unwritten header bytes');
+}

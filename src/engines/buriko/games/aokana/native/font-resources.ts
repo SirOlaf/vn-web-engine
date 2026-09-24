@@ -33,7 +33,13 @@ export class AokanaFontResources {
   async load(
     archive: Uint8Array | null | (() => Uint8Array),
     filename: Uint8Array,
+    actor = this.resources.mainProcessing.allocator.currentActor,
   ): Promise<number> {
+    const operationAllocator = this.resources.mainProcessing.allocator,
+      operationActor = actor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
     const key = aokanaCrtWideLower(
       this.fonts.text.decodeAuto({bytes: terminatedNativeBytes(filename), offset: 0}),
     );
@@ -53,9 +59,13 @@ export class AokanaFontResources {
     } else {
       // The resource-name pointer is not scanned at all for an already loaded filename.
       const archiveName = typeof archive === 'function' ? archive() : archive;
-      const size = await this.resources.size(archiveName, filename);
+      const size = await runAsActor(() =>
+        this.resources.size(archiveName, filename, operationActor),
+      );
       if (size === 0) return 0x80000019;
-      const loaded = await this.resources.load(archiveName, filename, true);
+      const loaded = await runAsActor(() =>
+        this.resources.load(archiveName, filename, true, undefined, operationActor),
+      );
       if (loaded.result !== size) return 0x8000001b;
       if (loaded.bytes === null)
         throw new Error('Aokana font resource dereferences a null successful load');

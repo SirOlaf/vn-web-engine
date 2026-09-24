@@ -13,7 +13,7 @@ export function createGroup81Files(files: AokanaScriptFiles): AokanaNativeSlotDe
         const mode = pop32(h.thread),
           path = h.memory.resolve(h.thread, pop32(h.thread)),
           output = h.memory.resolve(h.thread, pop32(h.thread));
-        const result = await files.open(output, path, mode);
+        const result = await files.open(output, path, mode, h.actor);
         push32(
           h.thread,
           result >= 0x80000001 && result <= 0x80000003 ? result - 0x80000000 : result,
@@ -29,7 +29,7 @@ export function createGroup81Files(files: AokanaScriptFiles): AokanaNativeSlotDe
       execute: async (h): Promise<0> => {
         const id = pop32(h.thread),
           output = h.memory.resolve(h.thread, pop32(h.thread)),
-          result = await files.queueClose(output, id);
+          result = await files.queueClose(output, id, h.actor);
         push32(h.thread, result === 0x80000004 ? 4 : result);
         return 0;
       },
@@ -44,7 +44,7 @@ export function createGroup81Files(files: AokanaScriptFiles): AokanaNativeSlotDe
           buffer = h.memory.resolve(h.thread, pop32(h.thread)),
           id = pop32(h.thread),
           output = h.memory.resolve(h.thread, pop32(h.thread)),
-          result = await files.queueTransfer(output, id, buffer, count);
+          result = await files.queueTransfer(output, id, buffer, count, h.actor);
         push32(h.thread, result === 0x80000004 ? 4 : result);
         return 0;
       },
@@ -58,7 +58,7 @@ export function createGroup81Files(files: AokanaScriptFiles): AokanaNativeSlotDe
         const position = pop32(h.thread),
           id = pop32(h.thread),
           output = h.memory.resolve(h.thread, pop32(h.thread)),
-          result = await files.queueSeek(output, id, position);
+          result = await files.queueSeek(output, id, position, h.actor);
         push32(h.thread, result === 0x80000004 ? 4 : result);
         return 0;
       },

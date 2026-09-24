@@ -219,10 +219,10 @@ export class AokanaRubyAnnotations {
   }
 
   /** 078e40 extracts matching persistent readings in source order, including repeated words. */
-  extract(output: AokanaBpPointer, source: AokanaBpPointer): number {
+  extract(output: AokanaBpPointer | null, source: AokanaBpPointer): number {
     const normalized = this.text.convertEncoding(source, 1);
     let offset = 0,
-      destination = output.offset,
+      destination = output?.offset ?? 0,
       skip = 0,
       count = 0;
     while (textByte(normalized, offset) !== 0) {
@@ -241,6 +241,7 @@ export class AokanaRubyAnnotations {
           line[key.length] = 92;
           line.set(reading, key.length + 1);
           line[line.length - 2] = 10;
+          if (output === null) throw new Error('Aokana annotation collection writes through null');
           writeText({bytes: output.bytes, offset: destination}, line);
           destination += line.length - 1;
           skip = (aokanaTextCodes(this.text, pointer(matched.key)) - 1) | 0;

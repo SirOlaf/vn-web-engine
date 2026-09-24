@@ -145,7 +145,29 @@ export class AokanaBpMemory {
   ];
   private indirectNext = [0, 0];
 
-  constructor(readonly globalMemory: Uint8Array) {}
+  private globalBytes: Uint8Array;
+
+  constructor(globalMemory: Uint8Array) {
+    this.globalBytes = globalMemory;
+  }
+
+  /** Live DAT1E9080; existing pointers retain their own native allocation identity. */
+  get globalMemory(): Uint8Array {
+    return this.globalBytes;
+  }
+
+  /** C1200 replaces and zeroes the actual BP arena; no other memory bank is reset. */
+  resizeGlobal(exponent: number): 0 | 1 {
+    exponent >>>= 0;
+    if (exponent >= 13) return 0;
+    this.globalBytes = new Uint8Array(0x1000 << exponent);
+    return 1;
+  }
+
+  /** E82F0 clears the current configured global arena. */
+  clearGlobal(): void {
+    this.globalBytes.fill(0);
+  }
 
   resolve(thread: AokanaBpThread, address: number): AokanaBpPointer | null {
     address >>>= 0;

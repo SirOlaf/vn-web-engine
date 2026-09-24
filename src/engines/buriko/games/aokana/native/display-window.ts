@@ -15,6 +15,7 @@ import {AokanaWindowDisplayState} from './display-window-state.js';
 import {AokanaMemoryDx} from './memory-dx.js';
 import {configureAokanaOwnedBitmap} from './owned-bitmap.js';
 import {AokanaInnerDisplayObjectManager} from './object-manager.js';
+import {AokanaDisplaySprite} from './display-sprite.js';
 
 const emptyBitmap = (): AokanaBitmap => ({
   storage: null,
@@ -696,6 +697,141 @@ export class AokanaWindowDisplayObject extends AokanaDisplayObject {
       point = this.effectivePosition();
     translateAokanaBitmapRectangle(rectangle, point.x, point.y);
     return rectangle;
+  }
+
+  /** 067D60 replaces one owned inner Sprite, then inserts only a configured object. */
+  createInnerSprite(
+    index: number,
+    source: number,
+    x: number,
+    y: number,
+    pivotX: number,
+    pivotY: number,
+    layer: number,
+  ): 0 | 2 | 9 {
+    this.check();
+    index >>>= 0;
+    if (index >= this.innerObjects.length) return 9;
+    const previous = this.innerObjects[index]!;
+    if (previous !== null) {
+      this.inner!.lists.remove(previous);
+      previous.dispose();
+    }
+    const sprite = new AokanaDisplaySprite(
+      this.environment,
+      this.windowState.manager.surfaces,
+      index,
+      0,
+    );
+    this.innerObjects[index] = sprite;
+    sprite.usesGlobalOrigin = 0;
+    if (this.innerOrigin === null || this.innerProjection === undefined)
+      throw new Error('Aokana Window consumes unwritten inner projection');
+    const result = sprite.initializeAffineBlend(
+      ((this.innerOrigin.x + x) | 0) << 16,
+      ((this.innerOrigin.y + y) | 0) << 16,
+      0,
+      {
+        sourceSurface: source,
+        secondarySurface: -1,
+        mixValue: 0,
+        blendSelector: 0,
+        pivotX,
+        pivotY,
+        angle: 0,
+        perspective: this.innerProjection,
+        pivotPolicy: 0,
+        sampling: 1,
+      },
+      0x20,
+      0,
+      layer,
+    );
+    if (result === 0) {
+      sprite.setActivation(1);
+      this.inner!.lists.insert(sprite);
+      return 0;
+    }
+    sprite.dispose();
+    this.innerObjects[index] = null;
+    return 2;
+  }
+
+  /** 067A70 publishes the actual inner rectangle before composing and translating it. */
+  composeInnerObject(output: AokanaBitmapRectangle, index: number): 0 | 1 {
+    this.check();
+    index >>>= 0;
+    if (index >= this.innerObjects.length) return 0;
+    const object = this.innerObjects[index]!;
+    if (object === null) return 0;
+    Object.assign(output, object.inputRectangle(0));
+    this.composeRectangle(output);
+    const point = this.effectivePosition();
+    translateAokanaBitmapRectangle(output, point.x, point.y);
+    return 1;
+  }
+
+  /** 0679D0 composes the old area while temporarily deactivating the inner object. */
+  eraseInnerObject(output: AokanaBitmapRectangle, index: number): 0 | 1 {
+    const object = this.innerSprite(index);
+    if (object === null) return 0;
+    object.setActivation(0);
+    this.composeInnerObject(output, index);
+    this.innerSprite(index)!.setActivation(1);
+    return 1;
+  }
+  private innerSprite(index: number): AokanaDisplaySprite | null {
+    this.check();
+    index >>>= 0;
+    if (index >= this.innerObjects.length) return null;
+    const object = this.innerObjects[index]!;
+    if (object !== null && !(object instanceof AokanaDisplaySprite))
+      throw new Error('Aokana Window inner operation requires its actual Sprite');
+    return object;
+  }
+  /** 067B00. */
+  setInnerLayer(index: number, layer: number): 0 | 9 {
+    const object = this.innerSprite(index);
+    if (object === null) return 9;
+    object.setLayer(layer);
+    this.inner!.lists.resort(this.innerSprite(index)!);
+    return 0;
+  }
+  /** 067B90. */
+  setInnerRotation(index: number, angle: number): 0 | 9 {
+    const object = this.innerSprite(index);
+    if (object === null) return 9;
+    object.setAngle(angle);
+    return 0;
+  }
+  /** 067BD0. */
+  setInnerBlendValue(index: number, value: number): 0 | 9 {
+    const object = this.innerSprite(index);
+    if (object === null) return 9;
+    object.setBlendValue(value);
+    return 0;
+  }
+  /** 067C20. */
+  setInnerCoordinates(index: number, x: number, y: number, z: number): 0 | 9 {
+    const object = this.innerSprite(index);
+    if (object === null) return 9;
+    if (this.innerOrigin === null) throw new Error('Aokana Window consumes unwritten inner origin');
+    object.setCoordinates((this.innerOrigin.x + x) << 16, (this.innerOrigin.y + y) << 16, z << 16);
+    this.inner!.lists.resort(this.innerSprite(index)!);
+    return 0;
+  }
+  /** 067CD0. */
+  replaceInnerSource(index: number, source: number): 0 | 2 | 9 {
+    const object = this.innerSprite(index);
+    if (object === null) return 9;
+    return object.replaceSource(source) === 0 ? 0 : 2;
+  }
+  /** 067D20 calls the nonvirtual secondary visibility owner. */
+  setInnerVisibility(index: number, value: number): 0 | 9 {
+    const object = this.innerSprite(index);
+    if (object === null) return 9;
+    AokanaDisplayObject.prototype.setSecondaryVisibility.call(object, value);
+    return 0;
   }
 
   /** 068040 owns the inner array and local CObjectManager; no global display pool is created. */

@@ -25,7 +25,11 @@ export type AokanaWorkYield =
   {readonly kind: 'event'; readonly event: WorkEvent} | {readonly kind: 'cooperate'};
 export type AokanaWorkContinuation = Generator<AokanaWorkYield, number, number>;
 export type AokanaWorkResult = number | AokanaWorkContinuation;
-export type AokanaAsyncWorkerCallback<T> = (context: T, worker: number) => number | Promise<number>;
+export type AokanaAsyncWorkerCallback<T> = (
+  context: T,
+  worker: number,
+  actor: object,
+) => number | Promise<number>;
 
 type WorkerPhase = 'idle' | 'callback' | 'activation' | 'event' | 'finishing' | 'terminated';
 interface WorkThread {
@@ -57,6 +61,17 @@ export class AokanaDistributedAllocator {
   constructor(readonly processorCount: number) {
     if (!Number.isInteger(processorCount) || processorCount <= 0 || processorCount > 0xffffffff)
       throw new RangeError('Aokana work-manager processor count must be a positive DWORD');
+  }
+
+  /** Native actor scope ends as soon as invocation returns, even for a promise result. */
+  withActor<T>(actor: Actor, operation: () => T): T {
+    const previous = this.currentActor;
+    this.currentActor = actor;
+    try {
+      return operation();
+    } finally {
+      this.currentActor = previous;
+    }
   }
 
   initialize(): void {
@@ -371,12 +386,12 @@ export class AokanaDistributedProcessing {
     return this.workers[0]!.phase === 'finishing';
   }
 
-  run(distributedFlag: number): void {
+  run(distributedFlag: number, actor = this.allocator.currentActor): void {
     this.check();
     if (this.running) throw new Error('Aokana work manager entered a recursive native run barrier');
     this.running = true;
     this.allocator.beginRun(this);
-    this.mainActor = this.allocator.currentActor;
+    this.mainActor = actor;
     this.distributedFlag = distributedFlag | 0;
     this.nextWorker = 0;
     const distributed = this.capacity > 1 && this.distributedFlag !== 0;
@@ -437,17 +452,17 @@ export class AokanaDistributedProcessing {
     const callback = this.asyncWorkerCallback;
     if (callback === null)
       throw new Error('Aokana asynchronous indexed callback became null during its run');
-    const previousActor = this.allocator.currentActor;
-    this.allocator.currentActor = actor;
     worker.executing = true;
     worker.phase = 'callback';
     try {
-      const result = await callback(this.context, worker.id);
+      const pending = this.allocator.withActor(actor, () =>
+        callback(this.context, worker.id, actor),
+      );
+      const result = await pending;
       worker.phase = (result | 0) === 0 ? 'finishing' : 'callback';
       return true;
     } finally {
       worker.executing = false;
-      this.allocator.currentActor = previousActor;
     }
   }
 
@@ -462,23 +477,24 @@ export class AokanaDistributedProcessing {
 
   /**
    * Promise-aware companion for native indexed callbacks. It uses this pool's
-   * real worker records and keeps each worker actor current for the whole await.
+   * real worker records; actor scope covers invocation only, never the awaited continuation.
    */
   async runWorkerCallbackAsync<T>(
     callback: AokanaAsyncWorkerCallback<T>,
     context: T,
     distributedFlag: number,
+    actor = this.allocator.currentActor,
   ): Promise<void> {
     this.check();
     if (this.running) throw new Error('Aokana work manager entered a recursive native run barrier');
     if (this.callback !== null || this.workerCallback !== null || this.asyncWorkerCallback !== null)
       throw new Error('Aokana work manager already has an installed callback');
-    this.asyncWorkerCallback = (value, worker) => callback(value as T, worker);
+    this.asyncWorkerCallback = (value, worker, workerActor) =>
+      callback(value as T, worker, workerActor);
     this.context = context;
     this.running = true;
     this.allocator.beginRun(this);
-    const entryActor = this.allocator.currentActor;
-    this.mainActor = entryActor;
+    this.mainActor = actor;
     this.distributedFlag = distributedFlag | 0;
     this.nextWorker = 0;
     const distributed = this.capacity > 1 && this.distributedFlag !== 0;
@@ -529,7 +545,6 @@ export class AokanaDistributedProcessing {
       this.mainActor = null;
       this.asyncWorkerCallback = null;
       this.context = null;
-      this.allocator.currentActor = entryActor;
     }
   }
 

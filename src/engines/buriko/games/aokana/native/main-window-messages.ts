@@ -2,6 +2,9 @@ import type {AokanaBrowserMainWindow} from './browser-main-window.js';
 import type {AokanaNativeInput} from './input.js';
 import type {AokanaKnobDisplays} from './knob-displays.js';
 import type {AokanaNativeNotifications} from './notification-queue.js';
+import type {AokanaDisplayController} from './display-controller.js';
+import type {AokanaCursorShapes} from './cursor-shapes.js';
+import type {AokanaDroppedFiles} from './dropped-files.js';
 import type {AokanaWindowMessages as AokanaWaitWindowMessages} from './procedure.js';
 import type {
   AokanaWindowMessage,
@@ -38,7 +41,17 @@ export class AokanaMainWindowMessageReceiver implements AokanaWindowMessageRecei
     readonly notifications: AokanaNativeNotifications,
     readonly window: AokanaMainWindowFocus,
     readonly knobs: AokanaKnobDisplays,
+    readonly controller: AokanaDisplayController | null = null,
+    readonly cursorShapes: AokanaCursorShapes | null = null,
+    readonly droppedFiles: AokanaDroppedFiles | null = null,
   ) {
+    if (controller !== null && (controller.messages !== messages || messages.input !== input ||
+        controller.notifications !== notifications))
+      throw new Error('Aokana keyboard receiver requires the shared display/input/message owners');
+    if (cursorShapes !== null && cursorShapes.messages !== messages)
+      throw new Error('Aokana cursor receiver requires the shared message owner');
+    if (droppedFiles !== null && droppedFiles.messages !== messages)
+      throw new Error('Aokana drop receiver requires the shared message owner');
     messages.bindMainReceiver(this);
   }
 
@@ -49,6 +62,50 @@ export class AokanaMainWindowMessageReceiver implements AokanaWindowMessageRecei
       nativeParameter(message.lParam),
     );
     switch (message.message >>> 0) {
+      case 0x233:
+        this.notifications.push(0x10, 0, 0);
+        if (this.droppedFiles === null)
+          throw new Error('Aokana WM_DROPFILES requires the actual mounted drop owner');
+        this.droppedFiles.receive(Number(nativeParameter(message.wParam)));
+        return 0;
+      case 0x9000:
+        this.notifications.push(0x10, 0, 0);
+        throw new Error('Aokana message9000 requires the unimplemented named-file-mapping IPC owner');
+      case 0x9001:
+        this.notifications.push(0x11, 0, 0);
+        return 0;
+      case 0x20:
+        if (this.cursorShapes === null)
+          throw new Error('Aokana WM_SETCURSOR requires the actual cursor shape owner');
+        this.cursorShapes.applySelected();
+        return this.cursorShapes.defaultClientCursor(lowWord(message.lParam));
+      case 0x100: {
+        const key = Number(nativeParameter(message.wParam) & 0xffffffffn);
+        if (this.input.keyOption(key) !== 0) this.input.recordKeyUp(key);
+        this.keyDown(key);
+        break;
+      }
+      case 0x101:
+        this.input.recordKeyUp(Number(nativeParameter(message.wParam) & 0xffffffffn));
+        break;
+      case 0x104: {
+        const key = nativeParameter(message.wParam);
+        if (key === 0x0dn) {
+          if (this.input.inputActive && (nativeParameter(message.lParam) & 0x40000000n) === 0n)
+            this.keyboardController().requestModeToggle();
+        } else if (key === 0x73n) {
+          const target = this.messages.mainTarget();
+          if (target !== null) this.messages.post({target, message: 0x10, wParam: 0, lParam: 0});
+        } else if (key === 0x79n) this.keyDown(0x79);
+        break;
+      }
+      case 0x105: {
+        const key = nativeParameter(message.wParam);
+        if (key === 0x12n) this.keyDown(0x12);
+        else if (key !== 0x79n) break;
+        this.input.recordKeyUp(Number(key));
+        break;
+      }
       case 0x201:
         this.leftDown(message);
         break;
@@ -88,8 +145,22 @@ export class AokanaMainWindowMessageReceiver implements AokanaWindowMessageRecei
         this.horizontalWheel(message);
         break;
     }
-    // The browser has no additional DefWindowProc mouse result for this exact handled slice.
+    // This profile has no additional DefWindowProc result for these handled input messages.
     return 0;
+  }
+
+  private keyboardController(): AokanaDisplayController {
+    if (this.controller === null)
+      throw new Error('Aokana main keyboard receiver requires a display controller');
+    return this.controller;
+  }
+
+  private keyDown(key: number): void {
+    if (!this.input.recordKeyDown(key)) return;
+    this.input.incrementActivityGeneration();
+    this.notifications.push(3, key, 0);
+    const controller = this.keyboardController();
+    if (controller.containsModeToggleKey(key)) controller.requestModeToggle();
   }
 
   private leftDown(message: AokanaWindowMessage): void {

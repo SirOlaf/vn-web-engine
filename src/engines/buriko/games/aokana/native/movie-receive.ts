@@ -1,12 +1,19 @@
 import type {AokanaMovieMediaType, AokanaMovieSample} from './movie-image.js';
-import {AokanaMovieRenderer} from './movie-renderer.js';
+import type {AokanaMovieImage} from './movie-image.js';
 import {AokanaMovieFilterEvents} from './movie-filter-events.js';
 import {
   AokanaMovieReferenceClock,
   AokanaMovieRenderEvents,
   aokanaMovieThrottle,
+  type AokanaMovieGraphClock,
 } from './movie-render-events.js';
 import {AokanaMovieRenderTiming, type AokanaMovieQuality} from './movie-render-timing.js';
+
+export interface AokanaMovieSampleConsumer {
+  readonly image: AokanaMovieImage;
+  setMediaType(type: AokanaMovieMediaType): number;
+  deliver(sample: AokanaMovieSample | null): number | Promise<number>;
+}
 
 export interface AokanaMovieTimedSample extends AokanaMovieSample {
   readonly time: {readonly start: bigint; readonly end: bigint} | null;
@@ -48,9 +55,9 @@ export class AokanaMovieReceivePin {
   private disposed = false;
 
   constructor(
-    readonly renderer: AokanaMovieRenderer,
+    readonly renderer: AokanaMovieSampleConsumer,
     readonly graphEvents: AokanaMovieFilterEvents,
-    readonly clock: AokanaMovieReferenceClock | null,
+    readonly clock: AokanaMovieGraphClock | null,
     readonly rawClock = new AokanaMovieReferenceClock(),
   ) {
     this.timing = new AokanaMovieRenderTiming(rawClock.rawMilliseconds());
@@ -262,17 +269,22 @@ export class AokanaMovieReceivePin {
     // OnRenderStart records the sums before reading timeGetTime.
     this.timing.recordFrame(this.timing.performanceLate, this.timing.performanceInterval);
     this.timing.renderStartMilliseconds = this.rawClock.rawMilliseconds();
-    try {
-      // 1225a0 intentionally ignores the image sender's HRESULT.
-      this.renderer.deliver(this.pending);
-      return aokanaMovieThrottle(this.timing.renderEnd(this.rawClock.rawMilliseconds())).then(
-        finish,
-      );
-    } catch (error) {
+    const fail = (error: unknown): never => {
       this.renderBarrier = null;
       release!();
       this.finishReceive();
       throw error;
+    };
+    const afterDelivery = (): Promise<number> =>
+      aokanaMovieThrottle(this.timing.renderEnd(this.rawClock.rawMilliseconds())).then(finish);
+    try {
+      // 1225a0 ignores the HRESULT, but the real callback completes under the render lock.
+      const delivered = this.renderer.deliver(this.pending);
+      return typeof delivered === 'number'
+        ? afterDelivery().catch(fail)
+        : delivered.then(afterDelivery).catch(fail);
+    } catch (error) {
+      return fail(error);
     }
   }
 

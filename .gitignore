@@ -4,5 +4,7 @@ __pycache__/
 .DS_Store
 targetgame/
 docs/investigations
+docs/reconstruction/
 docs/tooling/boundaries/
 docs/tooling/evidence/
+tools/native-audit/workspace

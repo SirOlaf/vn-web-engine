@@ -1,3 +1,4 @@
+import {recolorAokanaBitmapAlpha as recolorAlpha} from './bitmap-recolor.js';
 import type {AokanaBpPointer} from '../bp/memory.js';
 import {
   allocateAokanaBitmap,
@@ -283,27 +284,6 @@ function copyBitmap(state: AokanaTextLayoutState, source: AokanaBitmap): AokanaB
   return result;
 }
 
-function recolorAlpha(destination: AokanaBitmap, source: AokanaBitmap, color: number): void {
-  if (destination.format !== 2 || source.format !== 2) return;
-  for (let y = 0; y < source.height >>> 0; y++)
-    for (let x = 0; x < source.width >>> 0; x++) {
-      const input = source.offset + y * source.stride + x * 4,
-        output = destination.offset + y * destination.stride + x * 4;
-      const sourceStorage = source.storage,
-        destinationStorage = destination.storage;
-      if (sourceStorage === null || destinationStorage === null)
-        throw new TypeError('Aokana horizontal text shadow dereferences a null bitmap');
-      sourceStorage.range(input, 4, true);
-      destinationStorage.range(output, 4, false);
-      destinationStorage.view.setUint32(
-        output,
-        (sourceStorage.view.getUint32(input, true) & 0xff000000) | (color & 0xffffff),
-        true,
-      );
-      destinationStorage.written(output, 4);
-    }
-}
-
 function appendNode(
   nodes: AokanaHorizontalTextLayoutNode[],
   node: AokanaHorizontalTextLayoutNode,
@@ -351,6 +331,19 @@ function characterSpacing(
   return (state.field1D1E48 + (font.italic !== 0 ? font.record.field48 : font.record.field44)) | 0;
 }
 
+function metricInteger(value: number): number {
+  const integer = Math.trunc(value);
+  return !Number.isFinite(integer) || integer < -2147483648 || integer > 2147483647
+    ? -2147483648
+    : integer;
+}
+
+function fontExtra(font: MutableFont): number {
+  if (font.record.raster === null)
+    throw new Error('Aokana horizontal metrics read an undefined native font raster');
+  return font.record.raster.extraPixels;
+}
+
 function glyphMetrics(
   state: AokanaTextLayoutState,
   glyph: AokanaDrawnGlyph,
@@ -358,28 +351,32 @@ function glyphMetrics(
   font: MutableFont,
   proportional: number,
   fixedCellWidth: number,
+  extra = fontExtra(font),
 ): {width: number; left: number; right: number} {
-  const average = Math.trunc(font.record.averageWidthThreshold) | 0;
+  const integerExtra = metricInteger(extra);
   if ((proportional | 0) === 0)
     return {
       width: customWidth ?? (glyph.wideExtent === 0 ? divide(fixedCellWidth, 2) : fixedCellWidth),
       left: 0,
-      right: average,
+      right: integerExtra,
     };
-  if (customWidth !== null) return {width: customWidth | 0, left: 0, right: average};
+  if (customWidth !== null) return {width: customWidth | 0, left: 0, right: integerExtra};
   if ((state.proportionalSideBearing | 0) !== 0) {
     const margin = Math.imul(state.proportionalSideBearing, fixedCellWidth) >> 16,
       left = margin >> 1;
     return {
       width: (glyph.right - glyph.left + 1) | 0,
       left,
-      right: (average - left + margin) | 0,
+      right: (integerExtra - left + margin) | 0,
     };
   }
-  const left = Math.trunc(snapNearInteger(glyph.abc[0])) | 0,
+  const left = metricInteger(snapNearInteger(glyph.abc[0])),
     end = Math.fround(glyph.abc[0] + glyph.abc[1]),
-    body = Math.ceil(snapNearInteger(end - left)) | 0,
-    right = Math.trunc(end - (body + left) + glyph.abc[2] + average + 0.5) | 0;
+    body = metricInteger(Math.ceil(snapNearInteger(Math.fround(end - Math.fround(left))))),
+    remainder = Math.fround(end - Math.fround((body + left) | 0)),
+    right = metricInteger(
+      Math.fround(Math.fround(Math.fround(remainder + glyph.abc[2]) + extra) + 0.5),
+    );
   return {width: body, left, right};
 }
 
@@ -394,6 +391,8 @@ function measureWideText(
     font.size,
     alphaScratchFormat(state),
   );
+  const extra = fontExtra(font),
+    integerExtra = metricInteger(extra);
   let total = 0,
     firstLeft = 0,
     lastRight = 0,
@@ -413,12 +412,12 @@ function measureWideText(
           ? divide(cellWidth(font), 2)
           : cellWidth(font);
       metrics = {
-        width,
+        width: (width + integerExtra) | 0,
         left: 0,
-        right: Math.trunc(font.record.averageWidthThreshold) | 0,
+        right: 0,
       };
     } else if (custom) metrics = {width: state.customGlyphs.width(marked), left: 0, right: 0};
-    else metrics = glyphMetrics(state, glyph, null, font, proportional, cellWidth(font));
+    else metrics = glyphMetrics(state, glyph, null, font, proportional, cellWidth(font), extra);
     total = (total + spacing + metrics.left + metrics.width + metrics.right) | 0;
     if (first) firstLeft = metrics.left;
     first = false;
@@ -467,6 +466,11 @@ export async function buildAokanaHorizontalTextLayout(
   state: AokanaTextLayoutState,
   options: AokanaHorizontalTextLayoutOptions,
 ): Promise<AokanaHorizontalTextLayoutResult> {
+  const operationAllocator = state.surfaces.allocator,
+    operationActor = operationAllocator.currentActor;
+  const runAsActor = <T>(operation: () => T): T =>
+    operationAllocator.withActor(operationActor, operation);
+
   const base = state.surfaces.fonts.find(options.fontId);
   if (base === null)
     return {
@@ -548,11 +552,13 @@ export async function buildAokanaHorizontalTextLayout(
       ? firstCharacter
       : reservedCharacter;
     if (indentCharacter !== null) {
-      const measured = measureWideText(
-        state,
-        String.fromCodePoint(indentCharacter),
-        current,
-        options.proportional,
+      const measured = runAsActor(() =>
+        measureWideText(
+          state,
+          String.fromCodePoint(indentCharacter),
+          current,
+          options.proportional,
+        ),
       );
       lineStartIndent =
         (measured.total + characterSpacing(state, options.proportional, current)) | 0;
@@ -920,12 +926,14 @@ export async function buildAokanaHorizontalTextLayout(
       allocationHeight = custom ? (customHeight + effectHeight) | 0 : scratchDimensions.height,
       glyphBitmap = allocateAokanaBitmap(allocationWidth, allocationHeight, format);
     clearAokanaBitmap(glyphBitmap);
-    const glyph = state.customGlyphs.draw(
-      glyphBitmap,
-      character,
-      current.record,
-      currentColor,
-      state.field1D1D94,
+    const glyph = runAsActor(() =>
+      state.customGlyphs.draw(
+        glyphBitmap,
+        character,
+        current.record,
+        currentColor,
+        state.field1D1D94,
+      ),
     );
 
     if (state.field1D1E40 !== 0 && character > 0x7f && character !== 0x3000) {
@@ -972,7 +980,9 @@ export async function buildAokanaHorizontalTextLayout(
         const wordStart = opens ? skipFormattingTags(text, nextIndex) : index,
           word = scanWord(text, wordStart);
         if (word.length > 0) {
-          const measured = measureWideText(state, word, current, options.proportional);
+          const measured = runAsActor(() =>
+            measureWideText(state, word, current, options.proportional),
+          );
           openingNeedsOwnExtent = false;
           if (opens) {
             wordCountdown = word.length;
@@ -997,7 +1007,9 @@ export async function buildAokanaHorizontalTextLayout(
         const remaining = state.text.encodeWide(text.slice(index), 1),
           match = options.annotations.matchPrefix({bytes: remaining, offset: 0}, true);
         if (match !== null && match.wide !== null) {
-          const measured = measureWideText(state, match.wide, current, options.proportional);
+          const measured = runAsActor(() =>
+            measureWideText(state, match.wide, current, options.proportional),
+          );
           openingNeedsOwnExtent = false;
           groupExtent = Math.max(groupExtent, measured.withoutLastBearing);
           annotationKey = match.key.slice();
@@ -1023,7 +1035,9 @@ export async function buildAokanaHorizontalTextLayout(
             ((Number.isNaN(following) ? 0 : following) & 0xffdf) === 0 ||
             following === 0x3000)
         ) {
-          const measured = measureWideText(state, punctuation, current, options.proportional);
+          const measured = runAsActor(() =>
+            measureWideText(state, punctuation, current, options.proportional),
+          );
           punctuationTrailingExtent = measured.total;
           let lastNonClosing = -1;
           for (let unit = 0; unit < punctuation.length; unit++)
@@ -1031,11 +1045,13 @@ export async function buildAokanaHorizontalTextLayout(
           let retainedLength = punctuation.length;
           if (lastNonClosing >= 0) {
             retainedLength = lastNonClosing + 1;
-            const retained = measureWideText(
-              state,
-              punctuation.slice(0, retainedLength),
-              current,
-              options.proportional,
+            const retained = runAsActor(() =>
+              measureWideText(
+                state,
+                punctuation.slice(0, retainedLength),
+                current,
+                options.proportional,
+              ),
             );
             groupExtent = (groupExtent + retained.withoutLastBearing) | 0;
             punctuationTrailingExtent =
@@ -1050,11 +1066,8 @@ export async function buildAokanaHorizontalTextLayout(
 
     let projectedExtent = groupExtent;
     if (opens && openingNeedsOwnExtent) {
-      const measured = measureWideText(
-        state,
-        String.fromCodePoint(character),
-        current,
-        options.proportional,
+      const measured = runAsActor(() =>
+        measureWideText(state, String.fromCodePoint(character), current, options.proportional),
       );
       projectedExtent = (projectedExtent + measured.total) | 0;
     }
@@ -1130,21 +1143,23 @@ export async function buildAokanaHorizontalTextLayout(
       clearAokanaBitmap(main);
       node.bitmap = main;
       if ((options.effect.mode | 0) === 0) {
-        state.surfaces.compositor.draw(main, 0, 0, glyphBitmap, 0, 0);
+        runAsActor(() => state.surfaces.compositor.draw(main, 0, 0, glyphBitmap, 0, 0));
       } else if ((options.effect.mode | 0) === 1) {
         const shadow = allocateAokanaBitmap(glyphBitmap.width, glyphBitmap.height, format);
         clearAokanaBitmap(shadow);
         recolorAlpha(shadow, glyphBitmap, options.effect.color);
-        state.surfaces.compositor.draw(
-          main,
-          effectRadiusX,
-          effectRadiusY,
-          shadow,
-          1,
-          (0x100 - options.effect.opacity) >>> 0,
+        runAsActor(() =>
+          state.surfaces.compositor.draw(
+            main,
+            effectRadiusX,
+            effectRadiusY,
+            shadow,
+            1,
+            (0x100 - options.effect.opacity) >>> 0,
+          ),
         );
         shadow.storage?.release();
-        state.surfaces.compositor.draw(main, 0, 0, glyphBitmap, 0, 0);
+        runAsActor(() => state.surfaces.compositor.draw(main, 0, 0, glyphBitmap, 0, 0));
       } else if ((options.effect.mode | 0) === 2) {
         const outline = allocateAokanaBitmap(
           (scratchDimensions.width + effectWidth) | 0,
@@ -1152,36 +1167,44 @@ export async function buildAokanaHorizontalTextLayout(
           format,
         );
         clearAokanaBitmap(outline);
-        state.drawGlyphOutline(
-          outline,
-          character,
-          current.record,
-          effectRadiusX,
-          effectRadiusY,
-          options.effect.color,
+        runAsActor(() =>
+          state.drawGlyphOutline(
+            outline,
+            character,
+            current.record,
+            effectRadiusX,
+            effectRadiusY,
+            options.effect.color,
+          ),
         );
         const outlineView = {...outline};
         if ((options.proportional | 0) !== 0) cropToGlyph(outlineView, glyph);
         const previous = nodes.at(-1);
         if (previous?.auxiliary.storage !== null && previous?.auxiliary.storage !== undefined)
-          state.surfaces.compositor.draw(
-            outlineView,
-            (previous.x - node.x + effectRadiusX) | 0,
-            (previous.y - node.y + effectRadiusY) | 0,
-            previous.auxiliary,
-            7,
-            0x100,
+          runAsActor(() =>
+            state.surfaces.compositor.draw(
+              outlineView,
+              (previous.x - node.x + effectRadiusX) | 0,
+              (previous.y - node.y + effectRadiusY) | 0,
+              previous.auxiliary,
+              7,
+              0x100,
+            ),
           );
-        state.surfaces.compositor.draw(
-          main,
-          0,
-          0,
-          outlineView,
-          1,
-          (0x100 - options.effect.opacity) >>> 0,
+        runAsActor(() =>
+          state.surfaces.compositor.draw(
+            main,
+            0,
+            0,
+            outlineView,
+            1,
+            (0x100 - options.effect.opacity) >>> 0,
+          ),
         );
-        state.surfaces.compositor.draw(main, effectRadiusX, effectRadiusY, glyphBitmap, 0, 0);
-        node.auxiliary = copyBitmap(state, glyphBitmap);
+        runAsActor(() =>
+          state.surfaces.compositor.draw(main, effectRadiusX, effectRadiusY, glyphBitmap, 0, 0),
+        );
+        node.auxiliary = runAsActor(() => copyBitmap(state, glyphBitmap));
         outline.storage?.release();
       }
       if (lineFirstGlyphIndex === null) lineFirstGlyphIndex = nodes.length;

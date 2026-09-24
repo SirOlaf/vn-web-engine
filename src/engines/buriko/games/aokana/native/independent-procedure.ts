@@ -66,12 +66,17 @@ export class AokanaIndependentProcedure {
 
   /** 08e000; disabling a procedure does not interrupt the remainder of its queued messages. */
   protected async drainMessages(): Promise<void> {
+    const operationAllocator = this.shared.surfaces.allocator,
+      operationActor = operationAllocator.currentActor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
     let words: Uint32Array | null;
     while ((words = this.dequeue()) !== null) {
       if (words[0] === 0) {
-        if (words.length === 2) this.setEnabled(words[1]!);
+        if (words.length === 2) runAsActor(() => this.setEnabled(words![1]!));
       } else {
-        const result = this.handleMessage(words);
+        const result = runAsActor(() => this.handleMessage(words!));
         if (result instanceof Promise) await result;
       }
     }
@@ -92,8 +97,13 @@ export class AokanaIndependentProcedure {
 
   /** Native base virtual +8, 08e140. Derived DCIP classes provide their concrete polling. */
   async poll(): Promise<number> {
-    await this.drainMessages();
-    if (this.getEnabled() !== 0) this.flushRedraw();
+    const operationAllocator = this.shared.surfaces.allocator,
+      operationActor = operationAllocator.currentActor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
+    await runAsActor(() => this.drainMessages());
+    if (runAsActor(() => this.getEnabled()) !== 0) runAsActor(() => this.flushRedraw());
     return 0;
   }
 
@@ -199,16 +209,27 @@ export class AokanaIndependentProcedures {
 
   /** c2a80 deliberately calls the base poll, while message dispatch remains virtual. */
   async resetEnabled(): Promise<void> {
+    const operationAllocator = this.surfaces.allocator,
+      operationActor = operationAllocator.currentActor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
     for (let entry = this.first; entry !== null; entry = entry.next)
-      if (entry.procedure.getEnabled() !== 0)
-        await AokanaIndependentProcedure.prototype.poll.call(entry.procedure);
+      if (runAsActor(() => entry!.procedure.getEnabled()) !== 0)
+        await runAsActor(() => AokanaIndependentProcedure.prototype.poll.call(entry!.procedure));
   }
 
   /** c2ac0 visits enabled entries newest first and stops at the first nonzero poll result. */
   async pollEnabled(): Promise<0 | 1> {
+    const operationAllocator = this.surfaces.allocator,
+      operationActor = operationAllocator.currentActor;
+    const runAsActor = <T>(operation: () => T): T =>
+      operationAllocator.withActor(operationActor, operation);
+
     let result: 0 | 1 = 1;
     for (let entry = this.first; entry !== null && result !== 0; entry = entry.next)
-      if (entry.procedure.getEnabled() !== 0) result = (await entry.procedure.poll()) === 0 ? 1 : 0;
+      if (runAsActor(() => entry!.procedure.getEnabled()) !== 0)
+        result = (await runAsActor(() => entry!.procedure.poll())) === 0 ? 1 : 0;
     return result;
   }
 }

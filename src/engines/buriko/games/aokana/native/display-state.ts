@@ -105,6 +105,15 @@ export class AokanaNativeDisplayState {
     return [x, y];
   }
 
+  /** 1400b6a10 compares desktop/logical aspect ratios after native CVTTSD2SI. */
+  desktopAspectDiffers(): number {
+    const [width, height] = this.adjustedDesktopSize();
+    return Number(
+      truncateInt32((width / height) * 10000) !==
+        truncateInt32((this.logicalWidth / this.logicalHeight) * 10000),
+    );
+  }
+
   /** 1400b2b70 falls back to aspect-fit if native-size display cannot fit. */
   effectiveDisplayMode(): number {
     if (this.displayMode === 2) {
