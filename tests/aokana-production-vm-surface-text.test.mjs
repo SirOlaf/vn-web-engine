@@ -125,7 +125,7 @@ test('mounted registered surface text draws and reports multiline metrics throug
   }
 });
 
-test('mounted graph without a selected font provider omits registered surface text', async () => {
+test('mounted graph selects registered surface text with browser fonts', async () => {
   const fixture = await createMountedVmFixture();
   try {
     assert.deepEqual(
@@ -134,7 +134,7 @@ test('mounted graph without a selected font provider omits registered surface te
           ({primary, secondary}) => primary === 0x92 && [0x1c, 0x1d, 0x1e].includes(secondary),
         )
         .map(({secondary}) => secondary),
-      [],
+      [0x1c, 0x1d, 0x1e],
     );
   } finally {
     await fixture.close();

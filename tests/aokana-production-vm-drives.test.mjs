@@ -94,16 +94,16 @@ test('mounted drive callbacks share the selected media, files and volume-label h
   }
 });
 
-test('mounted partial catalog omits drive callbacks without an explicit host', async () => {
+test('mounted catalog selects browser no-drive callbacks', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.resource.driveHost, null);
-    assert.equal(fixture.graph.resource.volumeLabels, null);
+    assert.ok(fixture.graph.resource.driveHost);
+    assert.ok(fixture.graph.resource.volumeLabels);
     assert.equal(
       fixture.definitions.some(
         ({primary, secondary}) => primary === 0x81 && driveSlots.includes(secondary),
       ),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

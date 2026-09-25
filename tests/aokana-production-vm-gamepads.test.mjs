@@ -103,16 +103,16 @@ test('mounted 81:1B/1D use one explicitly initialized and polled in-memory gamep
   }
 });
 
-test('mounted partial catalog omits gamepad callbacks without a selected host', async () => {
+test('mounted catalog selects the browser gamepad host', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.gamepadHost, null);
-    assert.equal(fixture.graph.gamepads, null);
-    assert.deepEqual(
+    assert.ok(fixture.graph.gamepadHost);
+    assert.equal(fixture.graph.gamepads.host, fixture.graph.gamepadHost);
+    assert.equal(
       fixture.definitions.filter(
         ({primary, secondary}) => primary === 0x81 && [0x1b, 0x1d].includes(secondary),
-      ),
-      [],
+      ).length,
+      2,
     );
   } finally {
     await fixture.close();

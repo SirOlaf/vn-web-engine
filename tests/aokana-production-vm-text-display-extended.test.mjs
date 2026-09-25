@@ -149,7 +149,7 @@ test('mounted extended horizontal Window messages use bound layout timing and no
   }
 });
 
-test('mounted graph without a selected font provider omits extended Window messages and layout timing', async () => {
+test('mounted graph selects extended Window messages and layout timing with browser fonts', async () => {
   const fixture = await createMountedVmFixture();
   try {
     assert.deepEqual(
@@ -158,7 +158,7 @@ test('mounted graph without a selected font provider omits extended Window messa
           ({primary, secondary}) => primary === 0x91 && [0x90, 0x92, 0x98].includes(secondary),
         )
         .map(({secondary}) => secondary),
-      [],
+      [0x98, 0x90, 0x92],
     );
   } finally {
     await fixture.close();

@@ -95,6 +95,13 @@ export class AokanaDroppedFiles {
     this.handles.delete(handle);
   }
 
+  /** B8040's bounded raw-byte publication after the separate WM_9000 mapping read. */
+  publishMappedPath(bytes: Uint8Array): void {
+    const end = bytes.indexOf(0);
+    if (end < 0 || end >= this.bytes.length) return;
+    this.bytes.set(bytes.subarray(0, end + 1));
+  }
+
   dispose(): void {
     this.surface.removeEventListener('dragover', this.drag);
     this.surface.removeEventListener('drop', this.drop);

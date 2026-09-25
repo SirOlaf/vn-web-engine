@@ -1,16 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaTemporaryFileProfile} from '../dist/engines/buriko/games/aokana/native/temporary-directory-probe.js';
+import {AokanaBrowserTemporaryFileHost, AokanaTemporaryFileProfile} from '../dist/engines/buriko/games/aokana/native/temporary-directory-probe.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
-test('temporary directory callback stays absent without an explicit host profile', async () => {
+test('temporary directory callback uses the selected browser mounted-file host by default', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.resource.temporaryDirectoryProbe, null);
+    assert.ok(fixture.graph.resource.temporaryDirectoryProbe);
+    assert.ok(fixture.graph.resource.temporaryDirectoryProbe.host instanceof AokanaBrowserTemporaryFileHost);
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x81 && secondary === 0x2f),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

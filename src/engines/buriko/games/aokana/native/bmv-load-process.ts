@@ -10,6 +10,9 @@ import type {AokanaBpOpcodeContext} from './types.js';
 
 /** DCProcLoadBurikoMV 09CE80/09CD90/09CE30 over the existing CProcLoad resource FIFO. */
 export class AokanaBmvLoadProcess extends AokanaLoadProcedure {
+  needsLiveOperandStorageOnDispose(): boolean {
+    return true;
+  }
   private finalStatus = 1;
   private unavailable = false;
   private constructor(

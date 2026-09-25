@@ -1,29 +1,15 @@
 import {pointerView, type AokanaBpPointer} from '../bp/memory.js';
+import type {
+  WindowsFileDialogHost,
+  WindowsFileDialogRequest,
+} from '../../../../../platform/windows-picker.js';
 import type {AokanaNativeClock} from './clock.js';
 import type {AokanaEngineDialogs} from './engine-dialogs.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {textBytes} from './text.js';
 
-export interface AokanaFileDialogRequest {
-  readonly structureSize: 0x98;
-  /** Opaque identity of the title's current shared main window. */
-  readonly owner: object;
-  /** Raw ANSI description/pattern pairs ending in a second NUL. */
-  readonly filter: Uint8Array;
-  readonly filterIndex: 1;
-  readonly fileCapacity: 0x30c;
-  readonly initialDirectory: Uint8Array | null;
-  readonly title: Uint8Array | null;
-  /** BAF00 supplies a nonnull pointer to the static empty ANSI string. */
-  readonly defaultExtension: Uint8Array;
-  readonly flags: number;
-}
-
-/** Explicit GetOpenFileNameA/GetSaveFileNameA boundary returning a raw ANSI path. */
-export interface AokanaFileDialogHost {
-  selectOpenFile(request: AokanaFileDialogRequest): Promise<Uint8Array | null>;
-  selectSaveFile(request: AokanaFileDialogRequest): Promise<Uint8Array | null>;
-}
+export type AokanaFileDialogRequest = WindowsFileDialogRequest;
+export type AokanaFileDialogHost = WindowsFileDialogHost;
 
 function writableBytes(pointer: AokanaBpPointer | null, length: number): Uint8Array {
   const view = pointerView(pointer!, length);

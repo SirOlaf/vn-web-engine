@@ -16,7 +16,11 @@ import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/w
 import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
 import {createGroupB0Children} from '../dist/engines/buriko/games/aokana/native/group-b0-children.js';
 import {createGroupB0Properties} from '../dist/engines/buriko/games/aokana/native/group-b0-properties.js';
-import {createGroupB0Dialogs} from '../dist/engines/buriko/games/aokana/native/group-b0-dialogs.js';
+import {
+  createGroupB0FormDialogs,
+  createGroupB0ModalDialogs,
+  createGroupB0ModelessSettings,
+} from '../dist/engines/buriko/games/aokana/native/group-b0-dialogs.js';
 import {AokanaSelectionDialog} from '../dist/engines/buriko/games/aokana/native/selection-dialog.js';
 import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
 import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
@@ -1061,13 +1065,11 @@ test('B0 dialog binding enters the real single form and translates its accepted 
   const dialogs = dialog.dialogs,
     product = new AokanaProductKeyDialog(host, host.parent, dialogs, text);
   const settings = new AokanaModelessSettings(host, host.parent, dialogs);
-  const definitions = createGroupB0Dialogs(
-    dialogs,
-    dialog,
-    product,
-    new AokanaSelectionDialog(dialogs, text),
-    settings,
-  );
+  const definitions = [
+    ...createGroupB0ModelessSettings(settings),
+    ...createGroupB0ModalDialogs(dialogs, new AokanaSelectionDialog(dialogs, text)),
+    ...createGroupB0FormDialogs(dialog, product),
+  ];
   const vm = vmSlots(definitions);
   assert.equal(vm.slots.size, 14);
   vm.write(64, text.encodeWide('Initial'));

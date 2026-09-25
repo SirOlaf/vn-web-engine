@@ -111,14 +111,14 @@ test('mounted font raster settings change ordinary upright and italic glyph layo
   }
 });
 
-test('mounted graph without a selected font provider omits font raster settings', async () => {
+test('mounted graph selects browser font raster settings', async () => {
   const fixture = await createMountedVmFixture();
   try {
     assert.deepEqual(
       fixture.definitions
         .filter(({primary, secondary}) => primary === 0x91 && [0x0e, 0x0f].includes(secondary))
         .map(({secondary}) => secondary),
-      [],
+      [0x0e, 0x0f],
     );
   } finally {
     await fixture.close();

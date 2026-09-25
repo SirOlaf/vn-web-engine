@@ -78,6 +78,7 @@ export class AokanaChildWindows {
     readonly metrics: AokanaChildWindowMetrics,
     readonly nativeWindowTitle: Uint8Array,
     readonly desktopCanvas: HTMLCanvasElement,
+    readonly presentationMode: 'canvas' | 'none' = 'canvas',
   ) {}
 
   /** 14006de40: zeroing is intentionally independent of 14006ddd0's closing pass. */
@@ -383,6 +384,7 @@ export class AokanaChildWindows {
     return found.result;
   }
   private present(record: ChildRecord, bitmap = record.bitmap, x = 0, y = 0): void {
+    if (this.presentationMode === 'none') return;
     presentAokanaChildBitmap(record.window?.canvas ?? this.desktopCanvas, bitmap, x, y);
   }
   fill(handle: number, color: number): 0 | 1 {

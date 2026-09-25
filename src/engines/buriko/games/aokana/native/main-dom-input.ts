@@ -3,6 +3,8 @@ import type {AokanaNativeInput} from './input.js';
 import type {AokanaKeyboardMessages} from './keyboard-messages.js';
 import type {AokanaWindowMessages} from './window-messages.js';
 import {AokanaMainMouseInput, type AokanaMainWheelTranslator} from './main-mouse-input.js';
+import {AokanaMainTouchInput, type AokanaBrowserTouchWindow} from './main-touch-input.js';
+import type {AokanaNativeTouch} from './touch-input.js';
 
 /** Scoped browser input ingress for the main canvas. Child and EDIT owners route themselves. */
 export class AokanaMainDomInput {
@@ -10,6 +12,7 @@ export class AokanaMainDomInput {
   private readonly originalTabIndex: number;
   private readonly view: Window | null;
   readonly mouse: AokanaMainMouseInput;
+  readonly touch: AokanaMainTouchInput | null;
 
   constructor(
     readonly host: AokanaBrowserMainWindow,
@@ -17,6 +20,8 @@ export class AokanaMainDomInput {
     readonly messages: AokanaWindowMessages,
     readonly keyboard: AokanaKeyboardMessages,
     wheel: AokanaMainWheelTranslator | null = null,
+    touch: AokanaNativeTouch | null = null,
+    touchWindow: AokanaBrowserTouchWindow | null = null,
   ) {
     if (
       input.display !== host.display ||
@@ -28,7 +33,19 @@ export class AokanaMainDomInput {
     this.originalTabIndex = Number.isInteger(host.surface.tabIndex) ? host.surface.tabIndex : -1;
     if (!(host.surface.tabIndex >= 0)) host.surface.tabIndex = 0;
     this.view = host.document.defaultView;
-    this.mouse = new AokanaMainMouseInput(host, input, messages, wheel);
+    if ((touch === null) !== (touchWindow === null))
+      throw new Error('Aokana main DOM input requires touch and touch window together');
+    this.touch =
+      touch !== null && touchWindow !== null
+        ? new AokanaMainTouchInput(host, input, messages, touch, touchWindow)
+        : null;
+    this.mouse = new AokanaMainMouseInput(
+      host,
+      input,
+      messages,
+      wheel,
+      this.touch === null ? null : (event) => this.touch!.suppressCompatibilityMouse(event),
+    );
     host.surface.addEventListener('keydown', this.onKey);
     host.surface.addEventListener('keyup', this.onKey);
     host.parent.addEventListener('focusin', this.onFocusIn);
@@ -99,6 +116,7 @@ export class AokanaMainDomInput {
     this.input.foreground = false;
     this.keyboard.deactivate();
     this.mouse.deactivate();
+    this.touch?.deactivate();
   }
 
   dispose(): void {
@@ -113,6 +131,7 @@ export class AokanaMainDomInput {
     this.view?.removeEventListener?.('blur', this.onWindowBlur);
     this.view?.removeEventListener?.('focus', this.onWindowFocus);
     this.mouse.dispose();
+    this.touch?.dispose();
     this.host.surface.tabIndex = this.originalTabIndex;
   }
 }

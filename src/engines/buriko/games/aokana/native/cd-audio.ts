@@ -1,18 +1,16 @@
 import {pop32, push32} from '../bp/state.js';
+import type {
+  CdAudioTrack,
+  CdAudioMedium,
+  CdAudioMediumLease,
+  CdAudioMediaHost,
+} from '../../../../../audio/cd-media.js';
 import type {AokanaNativeSlotDefinition} from './types.js';
 
-/** A user-supplied Red Book track. One CD frame contains 588 stereo PCM samples. */
-export interface AokanaCdTrack {
-  readonly frames: number;
-  /** Null represents a data track, which the CD audio device cannot play. */
-  readonly pcm: AudioBuffer | null;
-}
-
-export interface AokanaCdMedium {
-  readonly context: BaseAudioContext;
-  readonly destination: AudioNode;
-  readonly tracks: readonly AokanaCdTrack[];
-}
+export type AokanaCdTrack = CdAudioTrack;
+export type AokanaCdMedium = CdAudioMedium;
+export type AokanaCdMediumLease = CdAudioMediumLease;
+export type AokanaCdMediaHost = CdAudioMediaHost;
 
 /** The native 0x1400edc30 mapping of MCI mode constants. */
 export function aokanaCdMode(mode: number): number {
@@ -39,6 +37,10 @@ export function aokanaCdMode(mode: number): number {
 /** Aokana's optional CD-audio device, with the native successful-notification repeat. */
 export class AokanaCdAudio {
   private opened = false;
+  private disposed = false;
+  private medium: AokanaCdMedium | null;
+  private readonly host: AokanaCdMediaHost | null;
+  private lease: AokanaCdMediumLease | null = null;
   private mode = 0x20c;
   private positionFrame = 0;
   private endFrame = 0;
@@ -49,12 +51,22 @@ export class AokanaCdAudio {
   private readonly starts: number[] = [0];
   private sources: AudioBufferSourceNode[] = [];
   private generation = 0;
+  private pendingSuccessfulNotification: number | null = null;
   private pendingCompletion: ReturnType<typeof setTimeout> | null = null;
   /** 0x1401eb8c8 is written even when MCI_PLAY rejects an available disc's track. */
   lastRequestedTrack = 0;
 
-  constructor(private readonly medium: AokanaCdMedium | null) {
-    if (medium === null) return;
+  constructor(
+    mediumOrHost: AokanaCdMedium | AokanaCdMediaHost | null,
+    private readonly postSuccessfulNotification: ((token: number) => void) | null = null,
+  ) {
+    this.host = mediumOrHost !== null && 'open' in mediumOrHost ? mediumOrHost : null;
+    this.medium = this.host === null ? (mediumOrHost as AokanaCdMedium | null) : null;
+    if (this.medium !== null) this.validateMedium(this.medium);
+  }
+
+  private validateMedium(medium: AokanaCdMedium): void {
+    this.starts.length = 1;
     if (medium.tracks.length < 1 || medium.tracks.length > 99) {
       throw new RangeError('Aokana CD medium must contain 1..99 tracks');
     }
@@ -77,9 +89,23 @@ export class AokanaCdAudio {
 
   open(): boolean {
     if (this.opened) return true;
+    if (this.disposed) return false;
+    if (this.host !== null) {
+      const lease = this.host.open();
+      if (lease === null) return false;
+      try {
+        this.validateMedium(lease.medium);
+      } catch (error) {
+        lease.release();
+        throw error;
+      }
+      this.medium = lease.medium;
+      this.lease = lease;
+    }
     if (this.medium === null) return false;
     this.opened = true;
     this.mode = 0x20d;
+    this.positionFrame = this.startFrame = this.endFrame = 0;
     return true;
   }
 
@@ -88,7 +114,20 @@ export class AokanaCdAudio {
     this.stop();
     this.opened = false;
     this.mode = 0x20c;
+    const lease = this.lease;
+    this.lease = null;
+    if (lease !== null) {
+      this.medium = null;
+      lease.release();
+    }
     return true;
+  }
+
+  /** The VM owner calls this after native dispatch has quiesced, including abnormal exit. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.close();
   }
 
   get status(): number | null {
@@ -125,6 +164,7 @@ export class AokanaCdAudio {
 
   private cancelSources(): void {
     this.generation++;
+    this.pendingSuccessfulNotification = null;
     if (this.pendingCompletion !== null) {
       clearTimeout(this.pendingCompletion);
       this.pendingCompletion = null;
@@ -174,11 +214,23 @@ export class AokanaCdAudio {
       this.mode = 0x20d;
       this.cancelSources();
       // WndProc 0x140100458 handles MM_MCINOTIFY only for MCI_NOTIFY_SUCCESSFUL.
-      if (repeat) this.playTrack(this.lastRequestedTrack, true);
+      if (repeat) {
+        const token = this.generation;
+        this.pendingSuccessfulNotification = token;
+        if (this.postSuccessfulNotification === null) this.deliverSuccessfulNotification(token);
+        else this.postSuccessfulNotification(token);
+      }
     };
     if (lastSource) lastSource.onended = finish;
     else this.pendingCompletion = setTimeout(finish, 0);
     return true;
+  }
+
+  /** The main HWND consumes only the completion still owned by this open playback. */
+  deliverSuccessfulNotification(token: number): void {
+    if (this.pendingSuccessfulNotification !== token || !this.opened || this.disposed) return;
+    this.pendingSuccessfulNotification = null;
+    this.playTrack(this.lastRequestedTrack, true);
   }
 
   playTrack(track: number, notify: boolean): boolean {

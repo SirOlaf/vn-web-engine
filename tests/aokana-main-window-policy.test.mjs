@@ -34,7 +34,13 @@ import {AokanaInlineTextControl} from '../dist/engines/buriko/games/aokana/nativ
 import {AokanaShakeProcess} from '../dist/engines/buriko/games/aokana/native/shake-process.js';
 import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
 import {AokanaCrtRandom} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {createGroupB0Main} from '../dist/engines/buriko/games/aokana/native/group-b0-main.js';
+import {
+  createGroupB0Blit,
+  createGroupB0Geometry,
+  createGroupB0CursorPolicy,
+  createGroupB0Shake,
+  createGroupB0InlineText,
+} from '../dist/engines/buriko/games/aokana/native/group-b0-main.js';
 import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
 
 // A DOM primitive fixture: it never creates a browser, canvas context, image, or rendered asset.
@@ -621,11 +627,18 @@ test('all eighteen B0 wrapper definitions preserve stack order and install the a
   const s = setup(),
     memory = new AokanaBpMemory(new Uint8Array(128));
   const scheduler = new AokanaBpScheduler(s.thread, () => 0);
-  const slots = createGroupB0Main(s.host, s.cursor, s.inline, scheduler, s.procedures, s.random, {
+  const errors = {
     threadFatal() {
       assert.fail('normal B0 operations should succeed');
     },
-  });
+  };
+  const slots = [
+    ...createGroupB0Blit(s.host, errors),
+    ...createGroupB0Geometry(s.host),
+    ...createGroupB0CursorPolicy(s.cursor, errors),
+    ...createGroupB0Shake(s.host, s.cursor, scheduler, s.procedures, s.random, errors),
+    ...createGroupB0InlineText(s.inline, errors),
+  ];
   assert.equal(slots.length, 18);
   for (const slot of slots)
     assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0xb0][slot.secondary]);

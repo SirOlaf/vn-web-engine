@@ -113,17 +113,17 @@ test('mounted font enumeration registers the selected face for measurement and p
   }
 });
 
-test('default mounted graph omits host font enumeration and pitch callbacks', async () => {
+test('default mounted graph selects host font enumeration and pitch callbacks', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.fontProvider, null);
+    assert.equal(fixture.graph.fonts.browser, fixture.graph.fontProvider);
     assert.deepEqual(
       fixture.definitions
         .filter(
           ({primary, secondary}) => primary === 0xb0 && [0xc4, 0xc5, 0xc6].includes(secondary),
         )
         .map(({secondary}) => secondary),
-      [],
+      [0xc4, 0xc5, 0xc6],
     );
   } finally {
     await fixture.close();

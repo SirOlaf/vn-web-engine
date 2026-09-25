@@ -49,6 +49,14 @@ CHAOS HEAD NOAH/
 
 `Game.exe` is used only as a resource container for the game's original cursors. Native executable code is never run by the browser engine.
 
+### Aokana development page
+
+Place the Aokana game-root `.arc` files and `BGI.gdb` in `targetgame/aokana`, then run `npm run build` and `npm start`. Open [http://127.0.0.1:8000/aokana.html](http://127.0.0.1:8000/aokana.html). To keep the game files elsewhere, set `AOKANA_DATA_ROOT` to their directory before starting the server.
+
+The separate Aokana page is an experimental browser runtime. The server lists only the runtime data files and serves them in byte ranges. It reads one regular `.exe` in the game root to extract static cursor group 106 at `/api/aokana/cursor`; the response contains only CUR bytes and an encoded executable-name header. Missing, ambiguous, or malformed cursor resources return an explicit error. The server does not serve the native Aokana executable. Visual and full-game behavior still require manual validation.
+
+For nonvisual startup and VM diagnostics, open [`/aokana.html?no-canvas=1`](http://127.0.0.1:8000/aokana.html?no-canvas=1) or select **No canvas** before pressing Play. This mode initializes the logical display without acquiring the main canvas context or presenting pixels. It also keeps audio output in memory, mutes browser movie elements, and shows launch stages and errors below the display. The game canvas remains in the page for window geometry and input, with media elements visually suppressed. Use a fresh page load to switch modes after Play.
+
 ## Game page
 
 After the files are loaded, select **Play** to replace the launcher with the game canvas. The 1920×1080 output scales to the browser viewport while preserving its native aspect ratio.

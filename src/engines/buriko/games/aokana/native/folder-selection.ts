@@ -1,4 +1,8 @@
 import type {AokanaBpPointer} from '../bp/memory.js';
+import type {
+  WindowsFolderDialogHost,
+  WindowsFolderDialogRequest,
+} from '../../../../../platform/windows-picker.js';
 import type {AokanaLocalizedMessages} from './localized-messages.js';
 import {writeText} from './text.js';
 
@@ -8,22 +12,8 @@ const selectFolderMessageKey: AokanaBpPointer = {
 };
 
 /** Semantic BROWSEINFOW fields retained by the explicit browser/platform boundary. */
-export interface AokanaFolderDialogRequest {
-  /** Opaque identity of the title's current shared main window. */
-  readonly owner: object;
-  readonly rootItemIdentifier: 0x11;
-  readonly displayNameCapacity: 784;
-  readonly title: string;
-  readonly flags: 3;
-  readonly initialFolder: string | null;
-  readonly centerOnInitialize: true;
-  readonly image: 0;
-}
-
-/** SHBrowseForFolderW-shaped boundary returning a selected wide path or cancellation. */
-export interface AokanaFolderDialogHost {
-  selectFolder(request: AokanaFolderDialogRequest): Promise<string | null>;
-}
+export type AokanaFolderDialogRequest = WindowsFolderDialogRequest;
+export type AokanaFolderDialogHost = WindowsFolderDialogHost;
 
 /** C9850's shared Shell folder chooser, without the engine modal wrapper's extra state. */
 export class AokanaFolderSelectionService {

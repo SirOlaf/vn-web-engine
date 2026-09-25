@@ -11,6 +11,9 @@ import type {AokanaBpOpcodeContext} from './types.js';
 
 /** 09CCB0/09CA60/09CC40: CProcUsingThread with two direct FIFO range reads. */
 export class AokanaBmvHeaderLoadProcess extends AokanaProcedure {
+  needsLiveOperandStorageOnDispose(): boolean {
+    return true;
+  }
   private stage = 0;
   private finalStatus: number | null = null;
   private readonly header = new Uint8Array(0x40);

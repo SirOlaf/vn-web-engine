@@ -31,6 +31,8 @@ export class AokanaBmvService {
   private readonly admission: number[] = [];
   private readonly workers: AokanaBmvWorker[] = [];
   private pending: Promise<boolean> | null = null;
+  private closed = false;
+  private workerReady: (() => void) | null = null;
   constructor(
     readonly registry: AokanaBmvRegistry,
     readonly surfaces: AokanaSurfaces,
@@ -44,6 +46,17 @@ export class AokanaBmvService {
       (asynchronous !== null && asynchronous.allocator !== registry.allocator)
     )
       throw new Error('Aokana BMV owners must share the actual actor allocator');
+  }
+  bindWorkerReady(callback: () => void): void {
+    if (this.workerReady !== null) throw new Error('Aokana BMV worker pump is already bound');
+    this.workerReady = callback;
+  }
+  get hasQueuedWorkers(): boolean {
+    return this.workers.length !== 0;
+  }
+  closeAdmission(): void {
+    this.closed = true;
+    this.admission.length = 0;
   }
   private asActor<T>(actor: object, action: () => T): T {
     const previous = this.registry.allocator.currentActor;
@@ -86,6 +99,7 @@ export class AokanaBmvService {
     movie: number,
     frame: number,
   ): {status: number; worker: AokanaBmvWorker | null} {
+    if (this.closed) throw new Error('Aokana BMV worker admission is closed');
     movie >>>= 0;
     if (this.surfaces.snapshot(surface) === null) return {status: 0x80000005, worker: null};
     const initial = this.registry.lock.run(() => {
@@ -124,6 +138,7 @@ export class AokanaBmvService {
       };
     });
     this.workers.push(worker);
+    this.workerReady?.();
     return {status: 0, worker};
   }
   private async decode(
@@ -167,6 +182,9 @@ export class AokanaBmvService {
     frame: number,
     actor = this.registry.allocator.currentActor,
   ): Promise<number> {
+    // A previously admitted BF worker can retain the same surface and entry
+    // through raw range I/O. Let its serialized host slices finish first.
+    while (this.pending !== null || this.workers.length !== 0) await this.processNext();
     const status = this.asActor(actor, () => this.preflight(surface, movie, frame));
     if (status !== 0) return status;
     this.asActor(actor, () => this.registry.lock.enter());
@@ -189,24 +207,27 @@ export class AokanaBmvService {
     const worker = this.workers.shift();
     if (worker === undefined) return Promise.resolve(false);
     const run = async (): Promise<boolean> => {
-      await this.decode(
-        worker.entry,
-        worker.destination,
-        worker.frame,
-        this.asynchronous ?? this.synchronous,
-        worker.actor,
-      );
-      this.asActor(worker.actor, () => {
-        if (worker.modern)
-          this.registry.lock.run(() => {
-            this.active = 0;
-          });
+      try {
+        await this.decode(
+          worker.entry,
+          worker.destination,
+          worker.frame,
+          this.asynchronous ?? this.synchronous,
+          worker.actor,
+        );
         worker.success = true;
-        worker.entry.lock.leave();
-        this.surfaces.unlock(worker.surface);
-        worker.done = true;
-      });
-      return true;
+        return true;
+      } finally {
+        this.asActor(worker.actor, () => {
+          if (worker.modern)
+            this.registry.lock.run(() => {
+              this.active = 0;
+            });
+          worker.entry.lock.leave();
+          this.surfaces.unlock(worker.surface);
+          worker.done = true;
+        });
+      }
     };
     this.pending = run().finally(() => {
       this.pending = null;

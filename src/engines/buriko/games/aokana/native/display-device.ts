@@ -57,10 +57,11 @@ export function aokanaPresentationVertices(display: AokanaNativeDisplayState): U
 }
 
 /**
- * Actual browser software display device. The one supplied main canvas receives
- * the completed buffer. Texture, quad, shader, dirty-update and present state are
- * retained independently. No canvas image-quality setting substitutes for the
- * native sampling paths. The browser provides no physical scanline-status API.
+ * Actual browser software display device. In canvas mode the one supplied main
+ * canvas receives the completed buffer. In no-presentation mode the logical
+ * device, textures and timing remain available without acquiring a 2D context.
+ * No canvas image-quality setting substitutes for the native sampling paths.
+ * The browser provides no physical scanline-status API.
  * Its explicit virtual raster is between atomic frame commits, while vertical
  * synchronization uses the actual browser RAF callback.
  */
@@ -80,6 +81,7 @@ export class AokanaDisplayDevice {
   private lost = false;
   private needsReset = false;
   private disposed = false;
+  private logicalDeviceReady = false;
   dialogBoxMode = false;
   textureAlpha = 0; // 1e6a5c.
   filterMode = 0; // 1e6a58.
@@ -89,10 +91,15 @@ export class AokanaDisplayDevice {
     readonly manager: AokanaDisplayManager,
     readonly clock: AokanaNativeClock,
     readonly adapter: AokanaDisplayAdapterProfile,
+    readonly presentationMode: 'canvas' | 'none' = 'canvas',
   ) {
+    if (presentationMode !== 'canvas' && presentationMode !== 'none')
+      throw new TypeError('Aokana display requires a selected presentation mode');
     this.nativeLock = new AokanaScopedLock(() => manager.surfaces.allocator.currentActor);
-    canvas.addEventListener('contextlost', this.onContextLost);
-    canvas.addEventListener('contextrestored', this.onContextRestored);
+    if (presentationMode === 'canvas') {
+      canvas.addEventListener('contextlost', this.onContextLost);
+      canvas.addEventListener('contextrestored', this.onContextRestored);
+    }
   }
   private readonly onContextLost = (event: Event): void => {
     event.preventDefault();
@@ -122,7 +129,7 @@ export class AokanaDisplayDevice {
     return 0x81000000;
   }
   isPresent(): boolean {
-    return this.context !== null && !this.disposed;
+    return (this.context !== null || this.logicalDeviceReady) && !this.disposed;
   }
   /** SetDialogBoxMode is independent of the native modal-depth owner. */
   refresh(dialogBoxMode: boolean): void {
@@ -157,7 +164,7 @@ export class AokanaDisplayDevice {
   }
   /** b23a0 preserves source -> attachment -> sampled -> dynamic creation order. */
   private createTextures(): number {
-    if (this.context === null) return 4;
+    if (!this.isPresent()) return 4;
     const [width, height] = aokanaDisplayTextureSize(
       this.display.logicalWidth,
       this.display.logicalHeight,
@@ -190,7 +197,7 @@ export class AokanaDisplayDevice {
   }
   /** b20e0 installs a copied base quad and resets the transient offset latch. */
   private createVertices(): number {
-    if (this.context === null) return 4;
+    if (!this.isPresent()) return 4;
     this.vertices = null;
     this.baseVertices = aokanaPresentationVertices(this.display);
     this.vertices = this.baseVertices.slice();
@@ -204,7 +211,8 @@ export class AokanaDisplayDevice {
         : [this.display.requestedWidth, this.display.requestedHeight];
     this.canvas.width = width;
     this.canvas.height = height;
-    this.frame = this.context!.createImageData(width, height);
+    this.frame =
+      this.presentationMode === 'canvas' ? this.context!.createImageData(width, height) : null;
   }
   /** B1CE0's attempt; the controller supplies the one concrete interface owner.
    * Direct device-level callers can exercise the software device without that outer interface. */
@@ -218,8 +226,10 @@ export class AokanaDisplayDevice {
         capabilities.release(); // b11b0 precedes Direct3DCreate9 on every attempt.
         if (!capabilities.create()) return 1;
       }
-      this.context = this.canvas.getContext('2d', {alpha: false});
-      if (this.context === null) return 3;
+      if (this.presentationMode === 'canvas') {
+        this.context = this.canvas.getContext('2d', {alpha: false});
+        if (this.context === null) return 3;
+      } else this.logicalDeviceReady = true;
       this.display.fullscreen = fullscreen | 0;
       if (this.adapter.queryDesktopMode?.() === false) return 2;
       this.resizeBackBuffer();
@@ -265,7 +275,7 @@ export class AokanaDisplayDevice {
         if (this.adapter.queryDesktopMode?.() === false) return 2;
       }
       if (this.lost) return 0x80000000;
-      if (this.context === null) return 0xfffffffe;
+      if (!this.isPresent()) return 0xfffffffe;
       this.resizeBackBuffer();
       this.sampler = 'point';
       let result = this.createTextures();
@@ -287,6 +297,7 @@ export class AokanaDisplayDevice {
   }
   /** B6EC0's immediate black GDI fill affects the client surface, independently of textures. */
   clearWindowClient(): void {
+    if (this.presentationMode === 'none') return;
     const context = this.canvas.getContext('2d', {alpha: false});
     if (context === null) return;
     context.save();
@@ -332,14 +343,16 @@ export class AokanaDisplayDevice {
     x: number,
     y: number,
   ): void {
-    if (this.lost || this.context === null || this.frame === null) return;
+    if (this.lost || !this.isPresent()) return;
     const source = this.source,
       sampled = this.sampled;
     if (source === null || sampled === null || this.vertices === null)
       throw new Error('Aokana display resources are absent');
-    const pixels = this.frame.data;
-    pixels.fill(0);
-    for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255;
+    if (this.frame !== null) {
+      const pixels = this.frame.data;
+      pixels.fill(0);
+      for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255;
+    }
     if (rectangles === null)
       source.addDirtyRectangle({
         left: 0,
@@ -361,7 +374,7 @@ export class AokanaDisplayDevice {
     if (mode === 1 && this.shader === null)
       throw new Error('Aokana presentation shader has not been created');
     this.moveQuad(x, y);
-    this.rasterizeQuad(sampled, mode === 1);
+    if (this.frame !== null) this.rasterizeQuad(sampled, mode === 1);
   }
   /** B31A0 draws the real movie texture without clearing or uploading ordinary display pixels. */
   drawMovieTexture(
@@ -369,7 +382,7 @@ export class AokanaDisplayDevice {
     widthMinusOne: number,
     heightMinusOne: number,
   ): void {
-    if (this.lost || this.context === null || this.frame === null) return;
+    if (this.lost || !this.isPresent()) return;
     if (this.vertices === null || this.baseVertices === null)
       throw new Error('Aokana movie draw uses an absent display quad');
     this.sampler = 'linear';
@@ -397,7 +410,7 @@ export class AokanaDisplayDevice {
     ])
       quad.setFloat32(offset!, value!, true);
     this.shifted = 1;
-    this.rasterizeQuad(texture, false);
+    if (this.frame !== null) this.rasterizeQuad(texture, false);
   }
   private rasterizeQuad(sampled: AokanaDisplayTexture, cubic: boolean): void {
     const pixels = this.frame!.data;
@@ -442,7 +455,13 @@ export class AokanaDisplayDevice {
   }
   /** b30c0: absent scanline timing leaves the wait count zero; successful commit records native time. */
   async present(output: {waitCount: number}): Promise<number> {
-    if (!this.isPresent() || this.lost || this.frame === null) return 0x80000000;
+    if (!this.isPresent() || this.lost) return 0x80000000;
+    if (this.presentationMode === 'none') {
+      this.display.lastPresentMilliseconds = Number(BigInt.asUintN(32, this.clock.read()));
+      output.waitCount = 0;
+      return 0;
+    }
+    if (this.frame === null) return 0x80000000;
     if (this.display.verticalSynchronization !== 0) {
       const window = this.canvas.ownerDocument.defaultView;
       if (window === null) return 0x80000000;
@@ -466,11 +485,14 @@ export class AokanaDisplayDevice {
     this.vertices = this.baseVertices = null;
     this.frame = null;
     this.context = null;
+    this.logicalDeviceReady = false;
   }
   dispose(): void {
     this.release();
-    this.canvas.removeEventListener('contextlost', this.onContextLost);
-    this.canvas.removeEventListener('contextrestored', this.onContextRestored);
+    if (this.presentationMode === 'canvas') {
+      this.canvas.removeEventListener('contextlost', this.onContextLost);
+      this.canvas.removeEventListener('contextrestored', this.onContextRestored);
+    }
     this.disposed = true;
   }
 }

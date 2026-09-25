@@ -33,6 +33,19 @@ export class AokanaMovieSourceDocument {
     const actor = actors.currentActor;
     const location = await sources.locate(archive, name);
     if (location === null) return null;
+    return this.openSelected(location, sources, actor, rawMilliseconds, maxBytes);
+  }
+
+  /** Continue from a physically selected F04B0 source after 040430 releases the old slot. */
+  static async openSelected(
+    location: AokanaMovieSourceLocation,
+    sources: AokanaMovieSources,
+    actor: object,
+    rawMilliseconds: () => number,
+    maxBytes: number,
+  ): Promise<AokanaMovieSourceDocument> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 0xffffffff)
+      throw new RangeError('Invalid Aokana browser movie document byte budget');
     const selected: AokanaMovieSourceLocation = {
       path: location.path.slice(),
       offset: location.offset >>> 0,

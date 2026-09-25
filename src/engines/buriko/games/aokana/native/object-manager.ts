@@ -73,6 +73,13 @@ export class AokanaObjectManager {
       throw new Error('Aokana object manager already has its renderer');
     this.objectRenderer = renderer;
   }
+  /** Prepare the shared CObjectManager renderer after the CPU-derived budget is selected.
+   * This only establishes traversal/worker ownership; display texture setup is separate. */
+  initializeObjectRenderer(): AokanaDisplayRenderer {
+    this.checkObjectManager();
+    if (this.objectRenderer !== null) return this.objectRenderer;
+    return new AokanaDisplayRenderer(this, this.renderPixelBudget);
+  }
   /** 06F380. */
   clearDamage(): void {
     this.checkObjectManager();

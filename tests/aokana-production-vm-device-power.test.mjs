@@ -67,15 +67,15 @@ test('mounted 81:3E reads selected in-memory device power through one system pro
   }
 });
 
-test('mounted partial catalog omits 81:3E without a selected device-power host', async () => {
+test('mounted catalog selects the browser device-power failure host', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.systemProfile, null);
-    assert.equal(fixture.graph.devicePowerHost, null);
-    assert.equal(fixture.graph.devicePower, null);
+    assert.ok(fixture.graph.systemProfile);
+    assert.ok(fixture.graph.devicePowerHost);
+    assert.ok(fixture.graph.devicePower);
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x81 && secondary === 0x3e),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

@@ -1,4 +1,5 @@
 import {FileError} from '../../../../../platform/filesystem.js';
+import type {WindowsDirectoryNamespaceHost} from '../../../../../platform/windows-directory-namespace.js';
 import {type AokanaBpPointer, pointerView} from '../bp/memory.js';
 import type {AokanaProgramFiles} from './program-files.js';
 import {textBytes} from './text.js';
@@ -50,16 +51,22 @@ export function aokanaDosMatch(
 
 export class AokanaFileEnumeration {
   readonly metadata;
-  constructor(readonly files: AokanaProgramFiles) {
+  constructor(
+    readonly files: AokanaProgramFiles,
+    readonly browserNamespace: WindowsDirectoryNamespaceHost | null = null,
+  ) {
     if (files.metadata === null)
       throw new Error('Aokana enumeration requires the shared metadata owner');
     this.metadata = files.metadata;
   }
+  get available(): boolean {
+    return this.metadata.profile.namespace !== undefined || this.browserNamespace !== null;
+  }
   private async find(pattern: string) {
     assertAokanaPathDomain(pattern, true);
     const profile = this.metadata.profile.namespace;
-    if (profile === undefined)
-      throw new Error('Aokana enumeration requires an explicit namespace profile');
+    if (profile === undefined && this.browserNamespace === null)
+      throw new Error('Aokana enumeration requires a selected namespace host');
     if (pattern.length > 783)
       throw new RangeError('Aokana find path exceeds native wide stack buffer');
     try {
@@ -69,11 +76,19 @@ export class AokanaFileEnumeration {
       const directory =
         slash >= 0 ? normalized.slice(0, slash + 1) : (normalized.match(/^[a-z]:/i)?.[0] ?? '.');
       const expression = normalized.slice(slash >= 0 ? slash + 1 : directory === '.' ? 0 : 2);
-      const entries = await this.metadata.findEntries(this.files.mountedPath(directory));
+      const mounted = this.files.mountedPath(directory);
+      const entries =
+        profile === undefined
+          ? await this.browserNamespace!.list(this.metadata, mounted)
+          : await this.metadata.findEntries(mounted);
+      const fold =
+        profile === undefined
+          ? (name: string) => this.browserNamespace!.fold(name)
+          : (name: string) => profile.fold(name);
       return entries.filter(
         (entry) =>
-          aokanaDosMatch(expression, entry.name, profile.fold) ||
-          (entry.shortName !== null && aokanaDosMatch(expression, entry.shortName, profile.fold)),
+          aokanaDosMatch(expression, entry.name, fold) ||
+          (entry.shortName !== null && aokanaDosMatch(expression, entry.shortName, fold)),
       );
     } catch (error) {
       if (error instanceof FileError || error instanceof DOMException) return [];

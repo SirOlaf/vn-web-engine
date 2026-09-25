@@ -132,7 +132,7 @@ const modifiers: Readonly<Record<string, {key: number; side: number; other: stri
 export type AokanaKeyboardEvent = Pick<
   KeyboardEvent,
   'type' | 'code' | 'keyCode' | 'repeat' | 'getModifierState'
->;
+> & Partial<Pick<KeyboardEvent, 'key' | 'isComposing' | 'ctrlKey' | 'metaKey'>>;
 
 /** The one focused-host hotkey owner is consulted by the existing physical translator. */
 export interface AokanaKeyboardHotkeys {
@@ -183,7 +183,7 @@ export class AokanaKeyboardMessages {
       this.transition(target, 'ControlLeft', 0x11, false, false);
       this.syntheticAltGraphControl = false;
     }
-    this.transition(target, event.code, event.keyCode, down, event.repeat);
+    this.transition(target, event.code, event.keyCode, down, event.repeat, event);
   }
 
   private transition(
@@ -192,6 +192,7 @@ export class AokanaKeyboardMessages {
     browserKey: number,
     down: boolean,
     repeat: boolean,
+    event?: AokanaKeyboardEvent,
   ): void {
     const modifier = modifiers[code],
       key =
@@ -257,10 +258,17 @@ export class AokanaKeyboardMessages {
       (Number(this.held.has('ShiftLeft') || this.held.has('ShiftRight')) << 2) |
       (Number(this.held.has('MetaLeft') || this.held.has('MetaRight')) << 3);
     const hotkey = this.hotkeys?.translate(key, hotkeyModifiers, down) ?? null;
-    this.messages.enqueuePhysicalTransitions(
+    const queued = this.messages.enqueuePhysicalTransitions(
       hotkey ?? {target, message: (system ? 0x104 : 0x100) + Number(!down), wParam: key, lParam},
       transitions,
       hotkey !== null,
     );
+    if (target === 'main' && down && hotkey === null && typeof event?.key === 'string')
+      this.messages.recordKeyCharacterEvidence(queued, {
+        key: event.key,
+        composing: event.isComposing === true,
+        control: event.ctrlKey === true,
+        meta: event.metaKey === true,
+      });
   }
 }

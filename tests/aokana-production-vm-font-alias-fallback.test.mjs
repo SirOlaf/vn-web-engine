@@ -95,15 +95,15 @@ test('mounted font alias mismatch selects the bound fallback for shared text mea
   }
 });
 
-test('default mounted graph omits host font alias and fallback callbacks', async () => {
+test('default mounted graph selects host font alias and fallback callbacks', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.fontProvider, null);
+    assert.equal(fixture.graph.fonts.browser, fixture.graph.fontProvider);
     assert.deepEqual(
       fixture.definitions
         .filter(({primary, secondary}) => primary === 0xb0 && [0xc7, 0xc8].includes(secondary))
         .map(({secondary}) => secondary),
-      [],
+      [0xc7, 0xc8],
     );
   } finally {
     await fixture.close();

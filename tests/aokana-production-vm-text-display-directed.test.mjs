@@ -117,12 +117,12 @@ test('mounted directed Window message uses bound vertical direction and cursor',
   }
 });
 
-test('mounted graph without a selected font provider omits directed Window message', async () => {
+test('mounted graph selects directed Window message with browser fonts', async () => {
   const fixture = await createMountedVmFixture();
   try {
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x92 && secondary === 0x90),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

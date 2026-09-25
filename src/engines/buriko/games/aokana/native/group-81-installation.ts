@@ -16,7 +16,7 @@ function copyString(pointer: AokanaBpPointer | null, what: string): Uint8Array {
   return textBytes(requirePointer(pointer, what), true).slice();
 }
 
-function copyAddressString(
+export function copyAddressString(
   context: AokanaBpOpcodeContext,
   address: number,
   what: string,
@@ -25,7 +25,7 @@ function copyAddressString(
 }
 
 /** 9BFF0's zero-terminated VM-address input becomes independent native strings. */
-function copyStringArray(
+export function copyStringArray(
   context: AokanaBpOpcodeContext,
   address: number,
   nullable: boolean,
@@ -45,7 +45,7 @@ function copyStringArray(
   }
 }
 
-function copyFixedStringArray(
+export function copyFixedStringArray(
   context: AokanaBpOpcodeContext,
   address: number,
   count: number,
@@ -62,7 +62,7 @@ function copyFixedStringArray(
   );
 }
 
-function copyGroupCounts(
+export function copyGroupCounts(
   context: AokanaBpOpcodeContext,
   address: number,
   count: number,

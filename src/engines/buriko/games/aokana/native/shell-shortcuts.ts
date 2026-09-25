@@ -70,6 +70,11 @@ export class AokanaShellShortcuts {
     }
   }
 
+  /** C82E0 uses the same strict-S_OK ShellLink operation at already assembled paths. */
+  saveAtPath(destination: Uint8Array, target: Uint8Array): 0 | 1 {
+    return this.saveShortcut(destination, target, null);
+  }
+
   /** C8650 keeps newly created Programs directories only after a successful shortcut save. */
   async create(
     subdirectory: Uint8Array | null,

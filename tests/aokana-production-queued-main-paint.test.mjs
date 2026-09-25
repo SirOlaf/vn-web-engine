@@ -141,6 +141,30 @@ test('graph queued dispatcher validates generated main paint after wait broadcas
   }
 });
 
+test('initialized main paint awaits the selected ordinary frame owner after validation', async () => {
+  const fixture = await createMountedVmFixture();
+  const {graph} = fixture;
+  try {
+    assert.equal(graph.queuedPaint.frames, graph.frames);
+    const observations = [];
+    graph.frames.present = async (count, rectangles, x, y) => {
+      observations.push([count, rectangles, x, y, graph.messages.pending]);
+      await Promise.resolve();
+      return 1;
+    };
+    graph.initialized.completeStartup(1, () => 1);
+    graph.messages.invalidate('main');
+    assert.equal(await graph.queuedDispatcher.updateMainWindow(), 0);
+    assert.deepEqual(observations, [[1, null, 0, 0, 0]]);
+    graph.display.presentationEnabled = 0;
+    graph.messages.invalidate('main');
+    assert.equal((await graph.queuedDispatcher.dispatchNext()).result, 0);
+    assert.equal(observations.length, 1);
+  } finally {
+    await fixture.close();
+  }
+});
+
 test('graph shutdown joins an accepted numeric dispatch before main destruction', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, core} = fixture;
@@ -168,6 +192,47 @@ test('graph shutdown joins an accepted numeric dispatch before main destruction'
     assert.equal(graph.queuedDispatcher.hasPendingDispatch, false);
   } finally {
     release?.();
+    await fixture.close();
+  }
+});
+
+test('selected scoped minimize and restore join size and activation on the shared main window', async () => {
+  const fixture = await createMountedVmFixture({
+    windowTransitionProfile: {
+      minimize: ['size', 'activate'],
+      restore: ['size', 'activate'],
+    },
+  });
+  const {graph} = fixture;
+  try {
+    const transitions = graph.windowTransitions;
+    assert.ok(transitions);
+    assert.equal(transitions.dispatcher, graph.queuedDispatcher);
+    graph.input.inputActive = true;
+    const observed = [];
+    const broadcast = graph.waits.dispatch.bind(graph.waits);
+    graph.waits.dispatch = (message, wParam, lParam) => {
+      if (message === 5 || message === 6) observed.push([message, Number(wParam), Number(lParam)]);
+      broadcast(message, wParam, lParam);
+    };
+    assert.equal(await transitions.minimize(), true);
+    assert.equal(graph.host.isMinimized, true);
+    assert.equal(graph.input.iconic, 1);
+    assert.equal(graph.input.inputActive, false);
+    assert.equal(graph.input.windowActivated, 0);
+    assert.equal(graph.host.parent.style.visibility, 'hidden');
+    assert.equal(transitions.restoreButton.hidden, false);
+    assert.equal(await transitions.minimize(), false);
+    graph.input.scriptMinimizeLatch = 1;
+    assert.equal(await transitions.restore(), true);
+    assert.equal(graph.host.isMinimized, false);
+    assert.equal(graph.input.iconic, 0);
+    assert.equal(graph.input.inputActive, true);
+    assert.equal(graph.input.windowActivated, 1);
+    assert.equal(graph.input.scriptMinimizeLatch, 0);
+    assert.equal(transitions.restoreButton.hidden, true);
+    assert.deepEqual(observed, [[5, 1, 0], [6, 0, 0], [5, 0, 0x02580320], [6, 1, 0]]);
+  } finally {
     await fixture.close();
   }
 });

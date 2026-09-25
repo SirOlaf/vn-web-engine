@@ -152,15 +152,15 @@ test('selected font provider mounts the B0 inline EDIT lifecycle on the graph', 
   }
 });
 
-test('default graph omits the selected-provider inline EDIT callbacks', async () => {
+test('default graph selects browser font provider for inline EDIT callbacks', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.fontProvider, null);
+    assert.equal(fixture.graph.fonts.browser, fixture.graph.fontProvider);
     assert.equal(
       fixture.definitions.some(
         ({primary, secondary}) => primary === 0xb0 && secondary >= 0x20 && secondary <= 0x2a,
       ),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

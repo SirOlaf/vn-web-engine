@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
+import {BrowserWindowsDirectoryNamespaceHost} from '../dist/platform/windows-directory-namespace.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
 import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
@@ -13,6 +14,30 @@ import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/nat
 import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
 import {AokanaFileEnumeration} from '../dist/engines/buriko/games/aokana/native/file-enumeration.js';
 import {createGroup80Enumeration} from '../dist/engines/buriko/games/aokana/native/group-80-enumeration.js';
+import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+
+test('browser mounted namespace keeps enumeration available without imported short names', async () => {
+  const fixture = await createMountedVmFixture();
+  try {
+    const {graph, memory, child, encode, invoke} = fixture;
+    assert.ok(graph.directoryNamespaceHost instanceof BrowserWindowsDirectoryNamespaceHost);
+    assert.equal(graph.fileEnumeration.available, true);
+    assert.deepEqual(
+      fixture.definitions
+        .filter(
+          ({primary, secondary}) => primary === 0x80 && secondary >= 0x24 && secondary <= 0x26,
+        )
+        .map(({secondary}) => secondary),
+      [0x24, 0x25, 0x26],
+    );
+    memory.globalMemory.set(encode('C:\\game\\*.arc'), 0x100);
+    await invoke(0x80, 0x24, [0x100, 0], 0);
+    assert.equal(pop32(child.state), 1);
+    assert.equal(child.state.stackIndex, 0);
+  } finally {
+    await fixture.close();
+  }
+});
 
 test('80 enumeration uses the live shared namespace, imported aliases and ordered recursive packed names', async () => {
   const canonical = (value) => value.toLowerCase(),

@@ -195,3 +195,44 @@ test('zero-length CD notification replay yields to host tasks and can be cancell
   assert.equal(cd.status, 3);
   assert.equal(source.sources.length, 0);
 });
+
+test('selected CD host leases the active medium across open, close, reopen, and VM disposal', () => {
+  const first = medium();
+  const second = medium();
+  second.tracks[0].frames = 375;
+  second.tracks[0].pcm.length = 375 * 588;
+  const available = [null, first, second];
+  const events = [];
+  let opens = 0;
+  const cd = new AokanaCdAudio({
+    open() {
+      events.push('open');
+      const selected = available[opens++];
+      return selected === null
+        ? null
+        : {
+            medium: selected,
+            release() {
+              events.push('release');
+              assert.equal(selected.sources.at(-1)?.stopped, true);
+              assert.equal(selected.sources.at(-1)?.onended, null);
+            },
+          };
+    },
+  });
+  assert.equal(cd.open(), false);
+  assert.equal(cd.status, null);
+  assert.equal(cd.open(), true);
+  assert.equal(cd.open(), true, 'an open device keeps its existing lease');
+  assert.equal(cd.playTrack(1, true), true);
+  assert.equal(cd.close(), true);
+  assert.equal(cd.close(), false);
+  assert.equal(cd.open(), true);
+  assert.equal(cd.playTrack(1, false), true);
+  assert.deepEqual(second.sources[0].started, [0, 0, 5]);
+  cd.dispose();
+  cd.dispose();
+  assert.equal(cd.status, null);
+  assert.equal(cd.open(), false);
+  assert.deepEqual(events, ['open', 'open', 'release', 'open', 'release']);
+});

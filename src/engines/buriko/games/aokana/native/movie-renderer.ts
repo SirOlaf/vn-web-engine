@@ -148,11 +148,14 @@ export class AokanaMovieRenderer {
     this.deliveredFrames = 0;
     this.initialized = true;
     graph.listen('ended', () => this.events.push(1));
+    graph.listen('error', () => this.events.push(3));
   }
   processEvents(): 0 | 1 {
     if (this.graph === null) return 0;
-    while (this.events.length !== 0)
-      if (this.events.shift() === 1 && this.repeat === 0) this.started = 0;
+    while (this.events.length !== 0) {
+      const event = this.events.shift();
+      if ((event === 1 && this.repeat === 0) || event === 3) this.started = 0;
+    }
     return 1;
   }
   async serviceRepeat(): Promise<void> {
@@ -215,12 +218,12 @@ export class AokanaMovieRenderer {
   stop(): number {
     return this.graph !== null && (this.graph.stop() | 0) >= 0 ? 0 : 0x80000001;
   }
-  async start(): Promise<{status: number; remainingMilliseconds?: number}> {
+  async start(withRemaining = true): Promise<{status: number; remainingMilliseconds?: number}> {
     if (this.graph === null || (this.suspended === 0 && ((await this.graph.run()) | 0) < 0))
       return {status: 0x80000001};
-    const remainingMilliseconds = Number(
-      BigInt.asIntN(32, (this.graph.stopTime - this.graph.currentTime) / 10000n),
-    );
+    const remainingMilliseconds = withRemaining
+      ? Number(BigInt.asIntN(32, (this.graph.stopTime - this.graph.currentTime) / 10000n))
+      : undefined;
     this.started = 1;
     return {status: 0, remainingMilliseconds};
   }

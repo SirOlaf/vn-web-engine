@@ -43,13 +43,13 @@ test('mounted 81:06 uses only the explicitly supplied crypto source', async () =
   }
 });
 
-test('mounted partial catalog omits 81:06 without a crypto host', async () => {
+test('mounted catalog selects browser crypto for 81:06', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.cryptoRandom, null);
+    assert.equal(typeof fixture.graph.cryptoRandom?.getRandomValues, 'function');
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x81 && secondary === 0x06),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

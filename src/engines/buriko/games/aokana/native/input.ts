@@ -60,6 +60,7 @@ export class AokanaNativeInput {
   inputActive = false;
   pointerAvailable = false;
   iconic = 0; // IsIconic window state; independent of foreground and script-minimize latch.
+  windowActivated = 0; // DAT_1401e8b70, published by WM_ACTIVATE / WM_NCACTIVATE.
   scriptMinimizeLatch = 0; // DAT_1401e8b3c, set by 1400e85b0 and cleared on active restore.
   mouseButtonMode = 0;
   systemMouseButtonsSwapped = false;

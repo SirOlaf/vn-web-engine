@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
 import {MountedFileSystem} from '../dist/platform/filesystem.js';
+import {BrowserWindowsNamedFileMappingHost} from '../dist/platform/windows-named-file-mapping.js';
 import {
   AokanaProgramFiles,
   AokanaProgramMedia,
@@ -26,7 +27,8 @@ test('80:6C/6D deliver actual dropped Blobs through the shared path buffer and m
     text = new AokanaNativeText(),
     paths = new AokanaMountedProgramPaths([{native: 'D:\\Drops', mounted: '/drops'}], 'D:\\Drops'),
     files = new AokanaProgramFiles(fs, text, new AokanaProgramMedia(), paths),
-    drops = new AokanaDroppedFiles(s.canvas, s.messages, files, fs, '/drops', 'D:\\Drops');
+    drops = new AokanaDroppedFiles(s.canvas, s.messages, files, fs, '/drops', 'D:\\Drops'),
+    mappings = new BrowserWindowsNamedFileMappingHost();
   new AokanaMainWindowMessageReceiver(
     s.messages,
     new Waits(),
@@ -37,6 +39,12 @@ test('80:6C/6D deliver actual dropped Blobs through the shared path buffer and m
     s.controller,
     null,
     drops,
+    null,
+    null,
+    null,
+    null,
+    null,
+    mappings,
   );
   const [enable, read] = createGroup80DroppedFiles(drops),
     thread = new AokanaBpThread({id: 1, operandCapacity: 4, moduleCapacity: 0, frameCapacity: 0}),
@@ -81,6 +89,14 @@ test('80:6C/6D deliver actual dropped Blobs through the shared path buffer and m
   assert.equal(read.execute(context), 0);
   assert.equal(pop32(thread), 1);
   assert.equal(text.decodeAuto(memory.resolve(thread, 32)), retained[1]);
+  const mappedPath = text.encodeWide(retained[0], 1);
+  mappings.publish('FMO0000002aForBGI', mappedPath);
+  assert.equal(s.messages.send('main', 0x9000, 42, mappedPath.length), 0);
+  assert.deepEqual(s.notifications.take(), {type: 16, value1: 0, value2: 0});
+  push32(thread, 32);
+  assert.equal(read.execute(context), 0);
+  assert.equal(pop32(thread), 1);
+  assert.equal(text.decodeAuto(memory.resolve(thread, 32)), retained[0]);
   assert.equal(s.messages.send('main', 0x9001, 0, 0), 0);
   assert.deepEqual(s.notifications.take(), {type: 17, value1: 0, value2: 0});
   assert.equal(thread.stackIndex, 0);

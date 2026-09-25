@@ -133,12 +133,12 @@ test('mounted Window message uses ordinary timed glyph phases and restores input
   }
 });
 
-test('mounted graph without a selected font provider omits Window message process', async () => {
+test('mounted graph selects Window message process with browser fonts', async () => {
   const fixture = await createMountedVmFixture();
   try {
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x90 && secondary === 0x90),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

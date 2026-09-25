@@ -52,6 +52,11 @@ export class AokanaMountedProgramPaths {
     return this.directory;
   }
 
+  /** Declared path roots for project-level browser dialogs; no undeclared OS path is exposed. */
+  mountSnapshot(): AokanaProgramPathMount[] {
+    return this.mounts.map(({native, mounted}) => ({native, mounted}));
+  }
+
   private rememberDriveDirectory(path: string): void {
     if (/^[A-Z]:/.test(path)) this.driveDirectories.set(path.slice(0, 2), path);
   }

@@ -46,7 +46,7 @@ export class AokanaNativeTouch {
   constructor(
     readonly input: AokanaNativeInput,
     private readonly clock: AokanaNativeClock,
-    private readonly window: AokanaNativeTouchWindow,
+    readonly window: AokanaNativeTouchWindow,
   ) {}
 
   /** C0D50 reads the same capability gate used by native touch registration. */

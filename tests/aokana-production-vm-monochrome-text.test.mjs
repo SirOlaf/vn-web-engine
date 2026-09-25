@@ -97,12 +97,12 @@ test('mounted monochrome text draws packed glyphs through the graph surface and 
   }
 });
 
-test('mounted graph without a selected font provider omits monochrome Surface text', async () => {
+test('mounted graph selects monochrome Surface text with browser fonts', async () => {
   const fixture = await createMountedVmFixture();
   try {
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x92 && secondary === 0x1e),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

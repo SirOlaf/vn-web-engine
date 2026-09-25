@@ -132,14 +132,14 @@ test('mounted named font transform changes shared cached draw and measurement sp
   }
 });
 
-test('mounted graph without a selected font provider omits named font transforms', async () => {
+test('mounted graph selects named font transforms with browser fonts', async () => {
   const fixture = await createMountedVmFixture();
   try {
     assert.deepEqual(
       fixture.definitions
         .filter(({primary, secondary}) => primary === 0x92 && [0x0e, 0x0f].includes(secondary))
         .map(({secondary}) => secondary),
-      [],
+      [0x0e, 0x0f],
     );
   } finally {
     await fixture.close();

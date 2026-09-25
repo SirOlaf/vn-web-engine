@@ -21,7 +21,7 @@ test('mounted VM binds Window lifecycle and capture to its graph', async () => {
     assert.equal(graph.windowState.textLayout.surfaces, graph.surfaces);
     assert.equal(graph.surfaces.fonts, graph.fonts);
     assert.equal(graph.fonts.text, graph.text);
-    assert.equal(graph.fontProvider, null);
+    assert.equal(graph.fonts.browser, graph.fontProvider);
     assert.equal(
       definitions.some(({primary, secondary}) => primary === 0x90 && secondary === 0x0d),
       false,
@@ -30,7 +30,7 @@ test('mounted VM binds Window lifecycle and capture to its graph', async () => {
       definitions.some(
         ({primary, secondary}) => primary === 0x91 && (secondary === 0x91 || secondary === 0x9c),
       ),
-      false,
+      true,
     );
     assert.deepEqual(
       definitions
@@ -38,7 +38,7 @@ test('mounted VM binds Window lifecycle and capture to its graph', async () => {
           ({primary, secondary}) => primary === 0x91 && secondary >= 0x88 && secondary <= 0x8e,
         )
         .map(({secondary}) => secondary),
-      [0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e],
+      [0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e],
     );
     assert.deepEqual(
       definitions

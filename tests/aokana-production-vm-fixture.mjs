@@ -102,6 +102,7 @@ class Element {
 // Each call owns a graph and VM. No browser device, renderer, media playback, or BP interpreter starts.
 export async function createMountedVmFixture({
   boot = true,
+  prepareRenderer = false,
   seedCoreArchives = false,
   resourceWorkerCount = 1,
   performanceNow = () => 0,
@@ -117,15 +118,31 @@ export async function createMountedVmFixture({
   systemProfileHost,
   devicePowerHost,
   gamepadHost,
+  displayEnumerationHost,
+  characterTranslationHost,
   engineCaption,
   temporaryFileHost,
   mountDriveC = false,
   canvas2dContext,
+  presentationMode,
   cryptoRandom,
   namedMutexHost,
   pickerHost,
   shellShortcutHost,
   internetReadHost,
+  cdMediaHost,
+  installerDialogHost,
+  taskbarProgressHost,
+  surfaceMovieDocumentByteBudget,
+  mfMovieDocumentByteBudget,
+  externalProcessHost,
+  shellExecuteHost,
+  dynamicLibraryHost,
+  logicalDriveHost,
+  sleep = async () => {},
+  touchProfile,
+  desktopWallpaperHost,
+  windowTransitionProfile,
   driveHost,
   driveGeometryHost,
   onDialogShown,
@@ -175,6 +192,7 @@ export async function createMountedVmFixture({
       return node;
     },
   };
+  document.body = document.createElement('body');
   const canvas = document.createElement('canvas');
   if (canvas2dContext !== undefined) {
     canvas.context2d = canvas2dContext;
@@ -189,6 +207,7 @@ export async function createMountedVmFixture({
     document,
     parent: document.createElement('div'),
     canvas,
+    presentationMode,
     navigator: {},
     readViewportScreenMapping: () => ({
       originX: 0,
@@ -226,11 +245,25 @@ export async function createMountedVmFixture({
     systemProfileHost,
     devicePowerHost,
     gamepadHost,
+    displayEnumerationHost,
+    characterTranslationHost,
     cryptoRandom,
     namedMutexHost,
     pickerHost,
     shellShortcutHost,
     internetReadHost,
+    cdMediaHost,
+    installerDialogHost,
+    taskbarProgressHost,
+    surfaceMovieDocumentByteBudget,
+    mfMovieDocumentByteBudget,
+    externalProcessHost,
+    shellExecuteHost,
+    dynamicLibraryHost,
+    logicalDriveHost,
+    touchProfile,
+    windowTransitionProfile,
+    desktopWallpaperHost,
     registryStore: new MemoryStore(),
     specialFolderProfile,
     readUserDefaultUiLanguage: () => 0x409,
@@ -262,7 +295,7 @@ export async function createMountedVmFixture({
       backend: new AokanaMemorySpeakerBackend(1000),
       output: {prefer24Bit: false},
       resourceWorkerCount,
-      sleep: async () => {},
+      sleep,
       temporaryFileHost,
     },
   });
@@ -308,6 +341,7 @@ export async function createMountedVmFixture({
       );
     }
     await graph.launchSelection.configureFromCommandLine();
+    if (prepareRenderer) graph.prepareRenderPixelBudget();
     const selectedArchive = new Uint8Array(784);
     const selectedModule = new Uint8Array(784);
     graph.launchSelection.copyBootNames(selectedArchive, selectedModule);

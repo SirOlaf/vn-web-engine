@@ -221,7 +221,11 @@ export class AokanaIndependentProcedures {
   }
   /** ECB90 prefix admission spans its awaited poll and synchronous input suffix. */
   withFrameLane<T>(
-    operation: (poll: {enabled: () => Promise<0 | 1>; reset: () => Promise<void>}) => Promise<T>,
+    operation: (poll: {
+      enabled: () => Promise<0 | 1>;
+      reset: () => Promise<void>;
+      phaseOneEnabled: () => Promise<0 | 1>;
+    }) => Promise<T>,
   ): Promise<T> {
     this.assertMutationAdmission();
     if (this.pendingNativeCallbacks?.())
@@ -229,6 +233,7 @@ export class AokanaIndependentProcedures {
     const token = {};
     this.frameLaneToken = token;
     let pollUsed = false;
+    let phaseOneUsed = false;
     const takePoll = (): void => {
       if (pollUsed) throw new Error('Aokana independent frame lane already polled');
       pollUsed = true;
@@ -243,6 +248,12 @@ export class AokanaIndependentProcedures {
           reset: () => {
             takePoll();
             return this.resetEnabledInternal(token);
+          },
+          phaseOneEnabled: () => {
+            if (!pollUsed || phaseOneUsed || this.phase !== 1)
+              throw new Error('Aokana phase-one frame poll requires completed phase-one prefix');
+            phaseOneUsed = true;
+            return this.pollEnabledInternal(token);
           },
         });
       } catch (error) {

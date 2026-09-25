@@ -14,12 +14,8 @@ import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bi
 import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
 import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
 import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayRenderer} from '../dist/engines/buriko/games/aokana/native/display-renderer.js';
 import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
 import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
 import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
 import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
@@ -64,7 +60,7 @@ function fixture() {
 }
 
 test('pointer picker follows rendered order, real masks and shared cursor/touch capability', () => {
-  const {allocator, manager, surfaces, output} = fixture();
+  const {manager, surfaces, output} = fixture();
   const display = manager.displayState;
   display.setSizePreset(2, 8, 4);
   display.requestedWidth = 16;
@@ -110,11 +106,8 @@ test('pointer picker follows rendered order, real masks and shared cursor/touch 
     sprite.setActivation(1);
   }
   manager.resolve(upper).setHitMask(mask);
-  const renderer = new AokanaDisplayRenderer(
-    manager,
-    1024,
-    new AokanaDistributedProcessing(allocator, 2),
-  );
+  manager.setRenderPixelBudget(1024);
+  const renderer = manager.initializeObjectRenderer();
   renderer.drawFull();
   assert.deepEqual(
     [1, 2].map((x) => output.storage.view.getUint32(output.stride + x * 4, true)),

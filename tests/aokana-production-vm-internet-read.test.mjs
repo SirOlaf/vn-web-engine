@@ -72,14 +72,14 @@ test('mounted 81:31 shares selected internet owner for synchronous and serial pr
   }
 });
 
-test('mounted partial catalog omits 81:31 without a selected internet host', async () => {
+test('mounted catalog selects the browser fetch host for 81:31', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.internetReadHost, null);
-    assert.equal(fixture.graph.internetReads, null);
+    assert.ok(fixture.graph.internetReadHost);
+    assert.ok(fixture.graph.internetReads);
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x81 && secondary === 0x31),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

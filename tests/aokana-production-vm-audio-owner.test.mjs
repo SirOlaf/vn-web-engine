@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
 import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+import {BrowserWindowsPlaySoundHost} from '../dist/platform/windows-sound.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 function pcm(frames) {
@@ -53,8 +54,30 @@ test('mounted A0 volume, status, and release callbacks share inactive graph PCM 
     assert.ok(backend instanceof AokanaMemorySpeakerBackend);
     assert.deepEqual(
       definitions.filter(({primary}) => primary === 0xa0).map(({secondary}) => secondary),
-      [0, 8, 9, 0x15, 0x22, 0x1c, 0x2c, 0x10, 0x11, 0x12, 0x20, 0x21, 0x23, 0x27, 0x28, 0x2f],
+      [0, 8, 9, 0xc0, 0x15, 0x22, 0x1c, 0x2c, 0x10, 0x11, 0x12, 0x20, 0x21, 0x23, 0x27, 0x28, 0x2f, 0x24],
     );
+    assert.ok(graph.playSoundHost instanceof BrowserWindowsPlaySoundHost);
+    assert.equal(graph.playSound.resources, graph.resource.resources);
+    const soundName = new TextEncoder().encode('bell.wav\0');
+    memory.globalMemory.set(soundName, 0x400);
+    push32(child.state, 0x400);
+    assert.equal(find(0xc0).execute({thread: child.state, memory, diagnostics}), 0);
+    assert.equal(pop32(child.state), 0);
+    const originalPlay = graph.playSoundHost.playSoundW;
+    let call;
+    graph.playSoundHost.playSoundW = (filename, module, flags) => {
+      call = {filename, module, flags};
+      return 0;
+    };
+    push32(child.state, 0x400);
+    assert.equal(find(0xc0).execute({thread: child.state, memory, diagnostics}), 0);
+    assert.equal(pop32(child.state), 0);
+    assert.deepEqual(call, {
+      filename: 'C:\\game\\bell.wav',
+      module: graph.playSoundHost.executableModule,
+      flags: 0x22003,
+    });
+    graph.playSoundHost.playSoundW = originalPlay;
     await graph.start({automatic: false});
     assert.equal(channels.flags & 3, 3);
     assert.equal(channels.streamMaster[0], 128);

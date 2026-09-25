@@ -5,6 +5,7 @@ import {AokanaNativeText} from './text.js';
 import type {AokanaMountedProgramPaths} from './program-paths.js';
 import type {AokanaSpecialFolders} from './special-folders.js';
 import {AokanaMountedFileMetadata} from './file-metadata.js';
+import type {WindowsDriveTypeHost} from '../../../../../platform/windows-drives.js';
 
 export function terminatedNativeBytes(bytes: Uint8Array): Uint8Array {
   const end = bytes.indexOf(0);
@@ -14,10 +15,8 @@ export function terminatedNativeBytes(bytes: Uint8Array): Uint8Array {
   return result;
 }
 
-/** Explicit synchronous GetDriveTypeA-shaped primitive for the 26 literal roots. */
-export interface AokanaDriveTypeHost {
-  readDriveType(root: string): number;
-}
+/** The title's 26-root GetDriveTypeA consumer uses the shared drive primitive. */
+export type AokanaDriveTypeHost = WindowsDriveTypeHost;
 
 /** A concrete selected 26-drive profile; no drive type is inferred from mounted paths. */
 export class AokanaDriveTypeProfile implements AokanaDriveTypeHost {
@@ -402,10 +401,14 @@ export class AokanaProgramFiles {
   }
 
   async write(path: Uint8Array, bytes: Uint8Array): Promise<number> {
+    return this.writeWide(this.path(path), bytes);
+  }
+
+  /** GDI+/other wide APIs have already decoded the caller's filename. */
+  async writeWide(path: string, bytes: Uint8Array): Promise<number> {
     try {
-      const wide = this.path(path);
       await this.files.commit([
-        {kind: 'write', path: this.paths?.resolve(wide) ?? wide, data: bytes},
+        {kind: 'write', path: this.paths?.resolve(path) ?? path, data: bytes},
       ]);
       return bytes.length >>> 0;
     } catch (error) {

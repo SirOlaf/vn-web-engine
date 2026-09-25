@@ -61,6 +61,11 @@ export class AokanaNativeClock {
     return previous;
   }
 
+  /** B6320 reads the same FE660 option before suspending surface movies. */
+  get pauseOptionEnabled(): boolean {
+    return this.pauseOption !== 0;
+  }
+
   beginSuspension(force: boolean): boolean {
     let result = false;
     if (this.suspensionEnabled && !this.suspended) {

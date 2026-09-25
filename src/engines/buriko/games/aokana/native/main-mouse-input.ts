@@ -45,6 +45,7 @@ export class AokanaMainMouseInput {
     readonly input: AokanaNativeInput,
     readonly messages: AokanaWindowMessages,
     readonly wheel: AokanaMainWheelTranslator | null = null,
+    readonly suppressMouse: ((event: MouseEvent) => boolean) | null = null,
   ) {
     if (
       input.display !== host.display ||
@@ -98,7 +99,7 @@ export class AokanaMainMouseInput {
   }
 
   private readonly onCanvasDown = (event: MouseEvent): void => {
-    if (!this.live()) return;
+    if (!this.live() || this.suppressMouse?.(event)) return;
     const button = BUTTONS.find((entry) => entry.dom === event.button);
     if (button === undefined) return;
     const lParam = this.position(event),
@@ -124,7 +125,7 @@ export class AokanaMainMouseInput {
   };
 
   private readonly onCanvasUp = (event: MouseEvent): void => {
-    if (!this.live()) return;
+    if (!this.live() || this.suppressMouse?.(event)) return;
     const button = BUTTONS.find((entry) => entry.dom === event.button);
     if (button === undefined) return;
     const lParam = this.position(event),
@@ -148,7 +149,7 @@ export class AokanaMainMouseInput {
   };
 
   private readonly onCanvasMove = (event: MouseEvent): void => {
-    if (!this.live()) return;
+    if (!this.live() || this.suppressMouse?.(event)) return;
     const lParam = this.position(event),
       buttons = event.buttons & 31;
     this.syncObserved(buttons);
@@ -163,7 +164,7 @@ export class AokanaMainMouseInput {
   };
 
   private readonly onWheel = (event: WheelEvent): void => {
-    if (!this.live() || this.wheel === null) return;
+    if (!this.live() || this.wheel === null || this.suppressMouse?.(event)) return;
     event.preventDefault();
     this.position(event);
     this.syncObserved(event.buttons & 31);
@@ -194,11 +195,12 @@ export class AokanaMainMouseInput {
   };
 
   private readonly onCanvasLeave = (event: MouseEvent): void => {
-    if (this.live()) this.position(event);
+    if (this.live() && !this.suppressMouse?.(event)) this.position(event);
   };
 
   private readonly onDocumentMouse = (event: MouseEvent): void => {
     if (event.target === this.host.surface) return;
+    if (this.suppressMouse?.(event)) return;
     if (!this.live()) {
       this.deactivate();
       return;

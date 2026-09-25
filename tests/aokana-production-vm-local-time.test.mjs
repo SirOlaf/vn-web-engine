@@ -34,13 +34,13 @@ test('mounted 80:0C copies the selected local SYSTEMTIME into BP memory', async 
   }
 });
 
-test('mounted partial catalog omits 80:0C without a selected local-time source', async () => {
+test('mounted catalog selects a local host clock for 80:0C', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.readLocalTime, null);
+    assert.equal(typeof fixture.graph.readLocalTime, 'function');
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x80 && secondary === 0x0c),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

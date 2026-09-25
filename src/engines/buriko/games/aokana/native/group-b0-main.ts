@@ -135,11 +135,63 @@ export function createGroupB0InlineText(
   return slots;
 }
 
-/** B0's remaining main-window, cursor, shake and Unicode EDIT services share the real display owner. */
-export function createGroupB0Main(
+/** B0:00 uses the scoped main client and the shared surface descriptor owner. */
+export function createGroupB0Blit(
+  host: AokanaBrowserMainWindow,
+  errors: AokanaEngineErrors,
+): AokanaNativeSlotDefinition[] {
+  const slots: AokanaNativeSlotDefinition[] = [];
+  const add = (
+    secondary: number,
+    nativeAddress: number,
+    name: string,
+    execute: AokanaBpOpcodeHandler,
+  ): void => {
+    slots.push({primary: 0xb0, secondary, nativeAddress, name, execute});
+  };
+  const fatal = (h: AokanaBpOpcodeContext, message: string): Promise<never> =>
+    errors.threadFatal(h.thread, h.diagnostics, errors.files.text.encodeWide(message, 0));
+  add(0x00, 0x1400d60b0, 'DrawSurfaceToWindow', (h) => {
+    const index = pop32(h.thread),
+      y = pop32(h.thread),
+      x = pop32(h.thread);
+    if (index >= 0x4000)
+      return fatal(h, `無効なビットマップ番号 [ ${index | 0} ] が指定されました`);
+    if (host.blitSurface(x, y, index) === 2)
+      return fatal(h, `指定されたビットマップ [ ${index | 0} ] は存在しません`);
+    return 0;
+  });
+  return slots;
+}
+
+/** B0:02/03 use the initialized requested size and selected monitor geometry. */
+export function createGroupB0Geometry(host: AokanaBrowserMainWindow): AokanaNativeSlotDefinition[] {
+  const slots: AokanaNativeSlotDefinition[] = [];
+  const add = (
+    secondary: number,
+    nativeAddress: number,
+    name: string,
+    execute: AokanaBpOpcodeHandler,
+  ): void => {
+    slots.push({primary: 0xb0, secondary, nativeAddress, name, execute});
+  };
+  add(0x02, 0x1400d6080, 'CenterMainWindow', (h) => {
+    push32(h.thread, host.center());
+    return 0;
+  });
+  add(0x03, 0x1400d5fc0, 'MoveMainWindow', (h) => {
+    const y = pop32(h.thread),
+      x = pop32(h.thread);
+    push32(h.thread, host.move(x, y));
+    return 0;
+  });
+  return slots;
+}
+
+/** B0:08 installs the actual scheduler process with the shared frame callback. */
+export function createGroupB0Shake(
   host: AokanaBrowserMainWindow,
   cursor: AokanaCursorPolicy,
-  inline: AokanaInlineTextControl,
   scheduler: AokanaBpScheduler,
   procedures: AokanaProcedureState,
   random: AokanaCrtRandom,
@@ -156,33 +208,6 @@ export function createGroupB0Main(
   };
   const fatal = (h: AokanaBpOpcodeContext, message: string): Promise<never> =>
     errors.threadFatal(h.thread, h.diagnostics, errors.files.text.encodeWide(message, 0));
-  const [setCursorObject, setCursorAutoHide, queryCursorVisibility] = createGroupB0CursorPolicy(
-    cursor,
-    errors,
-  );
-  add(0x00, 0x1400d60b0, 'DrawSurfaceToWindow', (h) => {
-    const index = pop32(h.thread),
-      y = pop32(h.thread),
-      x = pop32(h.thread);
-    if (index >= 0x4000)
-      return fatal(h, `無効なビットマップ番号 [ ${index | 0} ] が指定されました`);
-    if (host.blitSurface(x, y, index) === 2)
-      return fatal(h, `指定されたビットマップ [ ${index | 0} ] は存在しません`);
-    return 0;
-  });
-  add(0x02, 0x1400d6080, 'CenterMainWindow', (h) => {
-    push32(h.thread, host.center());
-    return 0;
-  });
-  add(0x03, 0x1400d5fc0, 'MoveMainWindow', (h) => {
-    const y = pop32(h.thread),
-      x = pop32(h.thread);
-    push32(h.thread, host.move(x, y));
-    return 0;
-  });
-  add(0x04, 0x1400d5f60, 'SetCursorObject', setCursorObject!.execute);
-  add(0x05, 0x1400d5f40, 'SetCursorAutoHide', setCursorAutoHide!.execute);
-  add(0x06, 0x1400d5f10, 'QueryCursorVisibility', queryCursorVisibility!.execute);
   add(0x08, 0x1400d5d60, 'ShakeScreen', (h) => {
     const capture = pop32(h.thread),
       tickFrequency = pop32(h.thread),
@@ -227,6 +252,5 @@ export function createGroupB0Main(
     scheduled.installProcess(process);
     return 2;
   });
-  slots.push(...createGroupB0InlineText(inline, errors));
   return slots;
 }

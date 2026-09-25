@@ -320,6 +320,10 @@ test('one partial production graph joins real display/window and mounted resourc
   assert.equal(graph.sizeEffects.graph.input, graph.input);
   assert.equal(graph.sizeEffects.graph.clock, graph.clock);
   assert.equal(graph.sizeEffects.graph.traditionalMovieAudio, graph.traditionalMovieAudio);
+  assert.equal(graph.showState.host, graph.host);
+  assert.equal(graph.showState.dispatcher, graph.queuedDispatcher);
+  assert.equal(graph.externalProcessWindow.showState, graph.showState);
+  assert.equal(graph.externalProcessWindow.dispatcher, graph.queuedDispatcher);
   assert.equal(graph.sizeEffects.graph.mfMovieVolume, graph.mfMovieVolume);
   assert.equal(graph.controller.fullscreenMovie, graph.fullscreenMovie);
   assert.equal(graph.frames.fullscreenMovie, graph.fullscreenMovie);
@@ -557,7 +561,7 @@ test('one partial production graph joins real display/window and mounted resourc
     } finally {
       releaseSelection();
     }
-    assert.equal(await preparing, null);
+    await assert.rejects(preparing, /prepared across a program reset/);
     await shutdown;
     assert.equal(shutdownComplete, true);
     await assert.rejects(

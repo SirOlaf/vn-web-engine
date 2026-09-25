@@ -7,6 +7,11 @@ import type {AokanaCursorShapes} from './cursor-shapes.js';
 import type {AokanaDroppedFiles} from './dropped-files.js';
 import type {AokanaInlineTextControl} from './inline-text-control.js';
 import type {AokanaWindowMessages as AokanaWaitWindowMessages} from './procedure.js';
+import type {AokanaNativeTouch} from './touch-input.js';
+import type {AokanaCdAudio} from './cd-audio.js';
+import type {AokanaDeviceEnumerationRefresh} from './device-enumeration-refresh.js';
+import type {AokanaMainWindowNonclientMotion} from './main-window-nonclient-motion.js';
+import type {WindowsNamedFileMappingHost} from '../../../../../platform/windows-named-file-mapping.js';
 import type {
   AokanaWindowMessage,
   AokanaWindowMessageReceiver,
@@ -31,6 +36,10 @@ function highWord(value: number | bigint): number {
   return Number((nativeParameter(value) >> 16n) & 0xffffn);
 }
 
+function signedWord(value: number): number {
+  return (value << 16) >> 16;
+}
+
 /**
  * The synchronous main HWND receiver slice used by physical/dequeued and SendMessage traffic.
  * 1400ff770 broadcasts through 1400fee00 before entering any ordinary mouse handler.
@@ -53,6 +62,11 @@ export class AokanaMainWindowMessageReceiver implements AokanaWindowMessageRecei
     readonly cursorShapes: AokanaCursorShapes | null = null,
     readonly droppedFiles: AokanaDroppedFiles | null = null,
     readonly lifecycle: AokanaMainWindowLifecycle | null = null,
+    readonly touch: AokanaNativeTouch | null = null,
+    readonly cdAudio: AokanaCdAudio | null = null,
+    readonly deviceEnumeration: AokanaDeviceEnumerationRefresh | null = null,
+    readonly nonclientMotion: AokanaMainWindowNonclientMotion | null = null,
+    readonly namedFileMapping: WindowsNamedFileMappingHost | null = null,
   ) {
     if (
       controller !== null &&
@@ -73,6 +87,8 @@ export class AokanaMainWindowMessageReceiver implements AokanaWindowMessageRecei
         lifecycle.inline.messages !== messages)
     )
       throw new Error('Aokana lifecycle receiver requires the shared main host and inline owner');
+    if (touch !== null && touch.input !== input)
+      throw new Error('Aokana touch receiver requires the shared input owner');
     messages.bindMainReceiver(this);
   }
 
@@ -89,6 +105,10 @@ export class AokanaMainWindowMessageReceiver implements AokanaWindowMessageRecei
     switch (message.message >>> 0) {
       case 0xf:
         throw new Error('Aokana main WM_PAINT requires awaited queued dispatch');
+      case 5:
+        throw new Error('Aokana main WM_SIZE requires awaited queued dispatch');
+      case 6:
+        throw new Error('Aokana main WM_ACTIVATE requires its selected activation owner');
       case 1:
         this.requireLifecycle();
         this.ready = true;
@@ -131,17 +151,56 @@ export class AokanaMainWindowMessageReceiver implements AokanaWindowMessageRecei
         return 0;
       case 0x9000:
         this.notifications.push(0x10, 0, 0);
-        throw new Error(
-          'Aokana message9000 requires the unimplemented named-file-mapping IPC owner',
-        );
+        if (this.namedFileMapping === null || this.droppedFiles === null)
+          throw new Error('Aokana message9000 requires the selected file-mapping and path owners');
+        {
+          const id = Number(nativeParameter(message.wParam) & 0xffffffffn),
+            length = Number(nativeParameter(message.lParam) & 0xffffffffn),
+            name = `FMO${id.toString(16).padStart(8, '0')}ForBGI`;
+          // ED2D0 copies into a 784-byte caller buffer. Reject an overflowing
+          // request while leaving the previously published path untouched.
+          if (length > 784) return 0;
+          const mapped = this.namedFileMapping.read(name, length);
+          if (mapped !== null) this.droppedFiles.publishMappedPath(mapped);
+        }
+        return 0;
       case 0x9001:
         this.notifications.push(0x11, 0, 0);
         return 0;
+      case 0x219:
+        if (this.deviceEnumeration === null)
+          throw new Error('Aokana WM_DEVICECHANGE requires the selected enumeration owner');
+        this.deviceEnumeration.schedule();
+        break;
+      case 0xa1:
+        if (this.nonclientMotion === null)
+          throw new Error('Aokana WM_NCLBUTTONDOWN requires the main nonclient motion owner');
+        if (
+          this.nonclientMotion.begin(
+            Number(nativeParameter(message.wParam)),
+            signedWord(lowWord(message.lParam)),
+            signedWord(highWord(message.lParam)),
+          )
+        )
+          return 0;
+        break;
+      case 0xa2:
+        if (nativeParameter(message.wParam) === 2n) return 0;
+        break;
       case 0x20:
         if (this.cursorShapes === null)
           throw new Error('Aokana WM_SETCURSOR requires the actual cursor shape owner');
         this.cursorShapes.applySelected();
         return this.cursorShapes.defaultClientCursor(lowWord(message.lParam));
+      case 0x240:
+        if (this.touch === null) return 0;
+        return this.touch.receive(this.messages.touchBatch(message));
+      case 0x3b9: {
+        if (nativeParameter(message.wParam) !== 1n) return 0;
+        const token = this.messages.cdSuccessfulNotificationToken(message);
+        if (token !== null) this.cdAudio?.deliverSuccessfulNotification(token);
+        return 0;
+      }
       case 0x100: {
         const key = Number(nativeParameter(message.wParam) & 0xffffffffn);
         if (this.input.keyOption(key) !== 0) this.input.recordKeyUp(key);

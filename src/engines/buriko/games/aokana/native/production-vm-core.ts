@@ -5,6 +5,7 @@ import {AokanaBootProgramLoader} from './boot-program-loader.js';
 import {AokanaBootTerminationGate} from './boot-termination-gate.js';
 import {AokanaDataDecodeProcess} from './data-decode-process.js';
 import {AokanaInternetReadProcess} from './internet-read-process.js';
+import {AokanaInstallationService} from './installation.js';
 import {AokanaBpDiagnostics} from './diagnostics.js';
 import {AokanaVmControlState} from './group-80-threads.js';
 import type {AokanaLaunchSelection} from './launch-selection.js';
@@ -34,6 +35,7 @@ export class AokanaProductionVmCore {
   readonly scheduler: AokanaBpScheduler;
   readonly loader: AokanaBootProgramLoader;
   readonly gate: AokanaBootTerminationGate;
+  readonly installation: AokanaInstallationService;
   readonly fragments: AokanaProductionNativeFragments;
   /** One reservation for all struct codec calls during this VM lifetime. */
   readonly structCodecScratch: AokanaStructCodecScratch;
@@ -95,7 +97,21 @@ export class AokanaProductionVmCore {
       diagnostics,
     );
     this.gate = new AokanaBootTerminationGate(this.scheduler, graph.resource.loading);
-    this.fragments = new AokanaProductionNativeFragments(graph, data);
+    this.installation = new AokanaInstallationService(
+      graph.resource.resources,
+      graph.resource.loading,
+      data.procedureState,
+      graph.clock,
+      graph.notifications,
+      graph.localized,
+      graph.registry,
+    );
+    this.fragments = new AokanaProductionNativeFragments(
+      graph,
+      data,
+      this.scheduler,
+      this.installation,
+    );
     this.scheduler.bindProcessPollGuard(
       () =>
         this.hasPendingNativeCallbacks ||
@@ -212,17 +228,29 @@ export class AokanaProductionVmCore {
     return result;
   }
 
-  /** Known ECB90 simulation tail through the pre-input prefix; earlier native work remains unbound. */
+  /** ECB90 movie, particle and rain prefix through pre-input work; later lanes remain separate. */
   runKnownSimulationTailAndPreInputFrame(): Promise<0 | 1 | void> {
+    return this.runFrameLanes(async (result) => result);
+  }
+
+  /** Hold the VM frame lane through its awaited display, GUI and phase-one suffix. */
+  runFrameLanes<T>(
+    suffix: (
+      preInputResult: 0 | 1 | void,
+      phaseOneEnabled: () => Promise<0 | 1>,
+    ) => Promise<T>,
+  ): Promise<T> {
     this.assertNativeAdmission();
     return this.data.procedures.withFrameLane(async (poll) => {
       this.graph.frames.metrics.begin();
+      await this.graph.movies.serviceRepeat();
       this.graph.particleFrames.updateAll();
       this.graph.particleFrames.pollRefresh();
       this.graph.rainFrames.updateAll();
       this.graph.rainFrames.pollRefresh();
       this.graph.frames.metrics.end(0);
-      return this.runPreInputSuffix(poll);
+      const result = await this.runPreInputSuffix(poll);
+      return suffix(result, poll.phaseOneEnabled);
     });
   }
 
@@ -251,6 +279,12 @@ export class AokanaProductionVmCore {
       await attempt(() => this.joinPendingNativeCallbacks());
       await attempt(() => this.scheduler.joinPendingInvocation());
       await attempt(() => this.scheduler.joinPendingProcessPoll());
+      // Accepted BF frame workers retain surface and registry entry locks. Finish
+      // their queued slices before process and child BP storage can be retired.
+      await attempt(() => this.graph.bmvPump.closeAndDrain());
+      await attempt(() => this.graph.externalProcesses?.closeAndJoin());
+      await attempt(() => this.graph.secondaryMedia?.closeAndJoin());
+      await attempt(() => this.installation.closeAndJoin());
       await attempt(() => this.graph.internetReads?.closeAndJoin());
       await attempt(() => this.data.procedures.joinPendingFrameLane());
       await attempt(() => this.data.procedures.joinPendingPoll());

@@ -12,12 +12,8 @@ import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bi
 import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
 import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
 import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayRenderer} from '../dist/engines/buriko/games/aokana/native/display-renderer.js';
 import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
 import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
 import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
 import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
@@ -62,7 +58,7 @@ function fixture() {
 }
 
 test('ordinary object list uses real layer ordering and the shared native selection dialog', async () => {
-  const {manager, surfaces, allocator, text} = fixture();
+  const {manager, surfaces, text} = fixture();
   assert.equal(surfaces.allocate(0, 2, 1, 1), 1);
   surfaces.fill(0, 0x204060);
   const first = manager.createSprite(),
@@ -71,7 +67,8 @@ test('ordinary object list uses real layer ordering and the shared native select
   assert.equal(manager.initializeSimpleSprite(second, 2, 0, 0, 0, 0, 3), 0);
   manager.resolve(first).setActivation(1);
   manager.resolve(second).setActivation(0);
-  new AokanaDisplayRenderer(manager, 1024, new AokanaDistributedProcessing(allocator, 2));
+  manager.setRenderPixelBudget(1024);
+  manager.initializeObjectRenderer();
   const clock = new AokanaNativeClock(() => 100),
     input = new AokanaNativeInput(manager.displayState, clock);
   const cursor = new AokanaNativeCursor({style: {cursor: ''}});

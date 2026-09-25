@@ -158,4 +158,20 @@ export class AokanaBmvRegistry {
       return 0;
     });
   }
+
+  /** Final graph retirement after frame workers and native callbacks have joined. */
+  clear(): void {
+    this.lock.run(() => {
+      const released = new Set<AokanaBmvResource>();
+      for (let entry = this.first; entry !== null; entry = entry.next) {
+        entry.lock.enter();
+        entry.lock.leave();
+        if (!released.has(entry.resource)) {
+          entry.resource.release();
+          released.add(entry.resource);
+        }
+      }
+      this.first = null;
+    });
+  }
 }

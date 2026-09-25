@@ -3,19 +3,21 @@ import {pop32} from '../bp/state.js';
 import type {AokanaNativeSlotDefinition} from './types.js';
 import {AokanaNativeRegistry} from './windows-registry.js';
 import {AokanaNativeText} from './text.js';
+import {BrowserWindowsDesktopWallpaperHost} from '../../../../../platform/windows-desktop-wallpaper.js';
+
+/** Explicit SystemParametersInfoW-shaped desktop effect selected by the host. */
+export interface AokanaDesktopWallpaperHost {
+  setWallpaper(path: string, flags: number): boolean | Promise<boolean>;
+}
 
 /** Browsers provide no SystemParametersInfoW desktop-wallpaper operation. */
-export class AokanaBrowserDesktop {
-  setWallpaper(_path: string, _flags: number): false {
-    return false;
-  }
-}
+export class AokanaBrowserDesktop extends BrowserWindowsDesktopWallpaperHost implements AokanaDesktopWallpaperHost {}
 
 /** 1400fece0 deliberately retains the opened registry handle and ignores each API result. */
 export class AokanaWallpaper {
   constructor(
     readonly registry: AokanaNativeRegistry,
-    readonly desktop: AokanaBrowserDesktop,
+    readonly desktop: AokanaDesktopWallpaperHost,
     readonly text: AokanaNativeText,
   ) {}
   async set(filename: AokanaBpPointer | null, stretch: number, tile: number): Promise<void> {
@@ -44,7 +46,7 @@ export class AokanaWallpaper {
     const path = this.text.decodeAuto(filename);
     if (path.length > 783)
       throw new RangeError('Aokana wallpaper overwrites its native wide path stack allocation');
-    this.desktop.setWallpaper(path, 3);
+    await this.desktop.setWallpaper(path, 3);
   }
 }
 

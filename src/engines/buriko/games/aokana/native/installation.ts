@@ -1,5 +1,5 @@
 import {FileError} from '../../../../../platform/filesystem.js';
-import {push32, type AokanaBpThread} from '../bp/state.js';
+import {pop32, push32, type AokanaBpThread} from '../bp/state.js';
 import type {AokanaNativeClock} from './clock.js';
 import {AokanaDirectoryTree} from './directory-tree.js';
 import {updateNativeChecksum} from './group-81-hash.js';
@@ -36,6 +36,15 @@ export interface AokanaInstallationCall {
   readonly product: Uint8Array;
   readonly uninstallerName: Uint8Array;
   readonly uninstallerRetryMessage: Uint8Array;
+  readonly publishUninstaller?: boolean;
+}
+
+export interface AokanaInstallationProgress {
+  readonly completedFiles: number;
+  readonly totalFiles: number;
+  readonly completedBlocks: number;
+  readonly totalBlocks: number;
+  readonly fileName: Uint8Array | null;
 }
 
 /** Optional native outer progress receiver; the archive owner is the verified first argument. */
@@ -157,6 +166,7 @@ export class AokanaInstallationService {
   private workerFailed = false;
   private workerActive = false;
   private workerCancellation = 0;
+  private finalClosing: Promise<void> | null = null;
 
   constructor(
     readonly resources: AokanaProgramResources,
@@ -171,8 +181,45 @@ export class AokanaInstallationService {
       new Promise((resolve) => setTimeout(resolve, milliseconds)),
   ) {}
 
-  createProcess(thread: AokanaBpThread): AokanaInstallationProcess {
-    return new AokanaInstallationProcess(thread, this);
+  createProcess(
+    thread: AokanaBpThread,
+    report: ((progress: AokanaInstallationProgress) => void) | null = null,
+  ): AokanaInstallationProcess {
+    if (this.finalClosing !== null)
+      throw new Error('Aokana installation service is closing');
+    return new AokanaInstallationProcess(thread, this, report);
+  }
+
+  /** C7640's modal route borrows the same copy/rollback owner as DCProcInstallation. */
+  async runModal(
+    thread: AokanaBpThread,
+    call: AokanaInstallationCall,
+    report: (progress: AokanaInstallationProgress) => void,
+    ready: () => void = () => {},
+  ): Promise<boolean> {
+    const process = this.createProcess(thread, report);
+    try {
+      if ((await process.initialize(call)) !== 0) return false;
+      ready();
+      while ((await process.poll()) === 0) {
+        if (this.worker !== null) await this.worker;
+      }
+      return pop32(thread) === 0;
+    } finally {
+      if (this.worker !== null) await this.worker;
+      process.dispose();
+    }
+  }
+
+  /** Stop admitting installer work and retain the owner until its file worker settles. */
+  closeAndJoin(): Promise<void> {
+    if (this.finalClosing !== null) return this.finalClosing;
+    this.workerCancellation = 1;
+    this.finalClosing = (async () => {
+      const worker = this.worker;
+      if (worker !== null) await worker;
+    })();
+    return this.finalClosing;
   }
 
   claim(process: AokanaInstallationProcess): boolean {
@@ -859,14 +906,27 @@ export class AokanaInstallationProcess extends AokanaProcedure {
   private directoryTree: AokanaDirectoryTree | null = null;
   private started = false;
   private finished = false;
+  private completedFiles = 0;
+  private activeFile: Uint8Array | null = null;
   totalFiles = 0;
 
   constructor(
     thread: AokanaBpThread,
     private readonly service: AokanaInstallationService,
+    private readonly report: ((progress: AokanaInstallationProgress) => void) | null = null,
   ) {
     super(thread, service.procedures, service.clock);
     this.ownsSingleton = service.claim(this);
+  }
+
+  private reportProgress(): void {
+    this.report?.({
+      completedFiles: this.completedFiles,
+      totalFiles: this.totalFiles,
+      completedBlocks: this.currentCompletedBlock,
+      totalBlocks: this.currentTotalBlocks,
+      fileName: this.activeFile,
+    });
   }
 
   enqueueWorkerMessage(message: InstallationWorkerMessage): void {
@@ -887,6 +947,7 @@ export class AokanaInstallationProcess extends AokanaProcedure {
       product: nativeString(call.product),
       uninstallerName: nativeString(call.uninstallerName),
       uninstallerRetryMessage: nativeString(call.uninstallerRetryMessage),
+      publishUninstaller: call.publishUninstaller,
     };
   }
 
@@ -930,6 +991,8 @@ export class AokanaInstallationProcess extends AokanaProcedure {
       this.service.resources.loosePath(this.service.resources.configuration.primaryRoot, HVL_NAME),
     );
     this.totalFiles = owned.fileNames.length >>> 0;
+    this.completedFiles = 0;
+    this.activeFile = null;
     this.enqueueWorkerMessage({code: 0, value: 0});
     this.started = true;
     return 0;
@@ -952,6 +1015,10 @@ export class AokanaInstallationProcess extends AokanaProcedure {
           const record = this.service.createWorkerRecord(call, this.sourceFolder, message.value);
           if (record === null) this.enqueueWorkerMessage({code: 6, value: 1});
           else {
+            this.activeFile = record.fileName;
+            this.currentCompletedBlock = 0;
+            this.currentTotalBlocks = 0;
+            this.reportProgress();
             this.service.startFileWorker(this, record);
             this.service.notifications.push(0xf0000000, message.value, this.totalFiles);
           }
@@ -959,14 +1026,18 @@ export class AokanaInstallationProcess extends AokanaProcedure {
         }
         case 2:
           await this.service.waitWorker();
+          this.completedFiles = (message.value + 1) >>> 0;
+          this.reportProgress();
           this.service.notifications.push(0xf0000001, message.value, this.totalFiles);
           this.enqueueWorkerMessage({code: 1, value: (message.value + 1) >>> 0});
           break;
         case 3:
           this.currentTotalBlocks = message.value;
+          this.reportProgress();
           break;
         case 4:
           this.currentCompletedBlock = message.value;
+          this.reportProgress();
           this.service.notifications.push(
             0xf0000002,
             this.currentCompletedBlock,
@@ -997,9 +1068,12 @@ export class AokanaInstallationProcess extends AokanaProcedure {
     if (state === 1) return 0;
     let success = state === 0;
     const call = this.call!;
-    if (success) success = await this.service.writeUninstallList(call);
-    if (success) success = await this.service.installUninstaller(call, this.sourceFolder);
-    if (success) success = await this.service.writeRegistry(call);
+    if (success && call.publishUninstaller !== false)
+      success = await this.service.writeUninstallList(call);
+    if (success && call.publishUninstaller !== false)
+      success = await this.service.installUninstaller(call, this.sourceFolder);
+    if (success && call.publishUninstaller !== false)
+      success = await this.service.writeRegistry(call);
     if (!success) await this.service.rollback(this.directoryTree);
     push32(this.thread, success ? 0 : 4);
     this.service.clearOperation(this.directoryTree);

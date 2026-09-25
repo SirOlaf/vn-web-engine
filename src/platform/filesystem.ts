@@ -73,6 +73,10 @@ export class SourceFileSystem implements FileSystem {
       throw new FileError('IS_DIRECTORY', path);
     this.files.set(path, source);
   }
+  /** File sources retain their range-readable identity in the returned snapshot. */
+  entries(): ReadonlyMap<string, ByteSource> {
+    return new Map(this.files);
+  }
   async stat(path: string): Promise<FileInfo> {
     return info(this.files, this.canonical(filePath(path)));
   }
@@ -86,6 +90,72 @@ export class SourceFileSystem implements FileSystem {
   }
   async commit(changes: readonly FileChange[]): Promise<void> {
     if (changes.length) throw new FileError('READ_ONLY', changes[0]!.path);
+  }
+}
+/** Persistent writes over an installed, range-readable file tree. */
+export class OverlayFileSystem implements FileSystem {
+  constructor(
+    private readonly installed: SourceFileSystem,
+    private readonly store: RecordStore,
+    private readonly canonical: (path: string) => string = filePath,
+  ) {}
+  private path(path: string): string {
+    return filePath(this.canonical(filePath(path)));
+  }
+  private visible(records: ReadonlyMap<string, Uint8Array>): Map<string, {size: number}> {
+    const files = new Map<string, {size: number}>();
+    for (const [path, source] of this.installed.entries())
+      files.set(this.path(path), {size: source.size});
+    for (const key of records.keys())
+      if (key.startsWith('tombstone:')) files.delete(key.slice('tombstone:'.length));
+    for (const [key, data] of records)
+      if (key.startsWith('file:')) files.set(key.slice('file:'.length), {size: data.length});
+    return files;
+  }
+  async stat(path: string): Promise<FileInfo> {
+    return info(this.visible(await this.store.snapshot()), this.path(path));
+  }
+  async list(path: string): Promise<FileInfo[]> {
+    return listing(this.visible(await this.store.snapshot()), this.path(path));
+  }
+  async open(path: string): Promise<ByteSource> {
+    path = this.path(path);
+    const records = await this.store.snapshot();
+    if (info(this.visible(records), path).kind === 'directory')
+      throw new FileError('IS_DIRECTORY', path);
+    const data = records.get('file:' + path);
+    if (data) return new BlobSource(new Blob([data.slice().buffer]));
+    return this.installed.open(path);
+  }
+  async commit(changes: readonly FileChange[]): Promise<void> {
+    const captured = changes.map((change) => {
+      const path = this.path(change.path);
+      return change.kind === 'write'
+        ? {...change, path, data: change.data.slice()}
+        : {...change, path};
+    });
+    if (!captured.length) return;
+    const installed = this.installed.entries();
+    await this.store.update((records) => {
+      const files = this.visible(records);
+      for (const change of captured) {
+        const path = change.path;
+        noParents(files, path);
+        if (path === '/' || Array.from(files.keys()).some((p) => p.startsWith(path + '/')))
+          throw new FileError('IS_DIRECTORY', path);
+        if (change.kind === 'write') {
+          records.set('file:' + path, change.data);
+          records.delete('tombstone:' + path);
+          files.set(path, {size: change.data.length});
+        } else {
+          if (!files.has(path)) throw new FileError('NOT_FOUND', path);
+          records.delete('file:' + path);
+          if (installed.has(path)) records.set('tombstone:' + path, new Uint8Array());
+          else records.delete('tombstone:' + path);
+          files.delete(path);
+        }
+      }
+    });
   }
 }
 export class StoredFileSystem implements FileSystem {

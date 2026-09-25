@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BrowserWindowsDialogPicker} from '../dist/platform/windows-picker.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 const encode = (value) => new TextEncoder().encode(value);
@@ -130,16 +131,16 @@ test('mounted file and folder pickers share explicit selected host and main-wind
     await fixture.close();
   }
 
-  const absent = await createMountedVmFixture();
+  const browser = await createMountedVmFixture();
   try {
-    assert.equal(absent.graph.pickerHost, null);
-    assert.equal(absent.graph.fileSelection, null);
-    assert.equal(absent.graph.folderSelection, null);
+    assert.ok(browser.graph.pickerHost instanceof BrowserWindowsDialogPicker);
+    assert.equal(browser.graph.fileSelection.host, browser.graph.pickerHost);
+    assert.equal(browser.graph.folderSelection.host, browser.graph.pickerHost);
     assert.deepEqual(
-      absent.definitions.map(slotId).filter((id) => selectedSlots.includes(id)),
-      [],
+      browser.definitions.map(slotId).filter((id) => selectedSlots.includes(id)),
+      selectedSlots,
     );
   } finally {
-    await absent.close();
+    await browser.close();
   }
 });

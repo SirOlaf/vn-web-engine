@@ -235,6 +235,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
     const definitions = catalog.nativeDefinitions();
     const keys = definitions.map(({primary, secondary}) => `${primary}:${secondary}`);
     assert.equal(new Set(keys).size, keys.length);
+    assert.equal(keys.includes('144:63'), true); // 90:3F uses the manager's native fatal branch.
     assert.deepEqual(
       definitions
         .filter(

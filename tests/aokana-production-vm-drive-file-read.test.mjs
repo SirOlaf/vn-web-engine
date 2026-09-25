@@ -54,13 +54,13 @@ test('mounted 81:32 reads a real file with the selected sector geometry', async 
   }
 });
 
-test('mounted partial catalog omits 81:32 without selected geometry', async () => {
+test('mounted catalog selects browser no-drive geometry for 81:32', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.resource.driveGeometryHost, null);
+    assert.ok(fixture.graph.resource.driveGeometryHost);
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x81 && secondary === 0x32),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

@@ -12,9 +12,8 @@ export interface AokanaDiskImportSelection {
   readonly finalFormat: 1 | 2 | 3;
 }
 
-/** A codec host's synchronous LockBits result. Stride is signed as in GDI+; this
- * lower currently accepts only positive packed or DWORD-aligned rows. Negative
- * stride needs the codec's orientation and Scan0 semantics before import. */
+/** A codec host's synchronous LockBits result. Scan0 addresses the first logical
+ * row; a negative stride walks toward lower addresses for subsequent rows. */
 export interface AokanaGdiLockedPixels {
   readonly bytes: Uint8Array;
   readonly scan0Offset: number;
@@ -58,7 +57,7 @@ export class AokanaDiskImagePixels {
     };
   }
 
-  /** 036D80 imports positive packed or DWORD-aligned rows, then mode 1 applies 036A80. */
+  /** 036D80 imports packed or DWORD-aligned rows, then mode 1 applies 036A80. */
   importLocked(
     index: number,
     selection: AokanaDiskImportSelection,
@@ -75,24 +74,43 @@ export class AokanaDiskImagePixels {
       !Number.isSafeInteger(frame.scan0Offset) ||
       frame.scan0Offset < 0 ||
       !Number.isSafeInteger(frame.stride) ||
-      frame.stride <= 0
+      frame.stride === 0
     )
       throw new RangeError('Aokana disk image LockBits layout is unsupported');
     const packedStride = frame.width * pixelSize;
     const alignedStride = (packedStride + 3) & ~3;
     if (
-      (frame.stride !== packedStride && frame.stride !== alignedStride) ||
-      frame.scan0Offset + frame.stride * frame.height > frame.bytes.length
+      (Math.abs(frame.stride) !== packedStride && Math.abs(frame.stride) !== alignedStride) ||
+      frame.scan0Offset + Math.min(0, frame.stride * (frame.height - 1)) < 0 ||
+      frame.scan0Offset + Math.max(0, frame.stride * (frame.height - 1)) + packedStride >
+        frame.bytes.length
     )
       throw new RangeError('Aokana disk image LockBits layout is unsupported');
+    let source = frame.bytes;
+    let scan0Offset = frame.scan0Offset;
+    if (frame.stride < 0) {
+      // importRaw's source descriptor has a positive row stride. Normalize only
+      // the borrowed LockBits view, preserving its logical row order and padding.
+      const positiveStride = -frame.stride;
+      source = new Uint8Array(positiveStride * frame.height);
+      for (let row = 0; row < frame.height; row++)
+        source.set(
+          frame.bytes.subarray(
+            frame.scan0Offset + row * frame.stride,
+            frame.scan0Offset + row * frame.stride + packedStride,
+          ),
+          row * positiveStride,
+        );
+      scan0Offset = 0;
+    }
     const imported = this.surfaces.importRaw(
       index,
       frame.width,
       frame.height,
       selection.surfaceFormat,
-      {bytes: frame.bytes, offset: frame.scan0Offset},
+      {bytes: source, offset: scan0Offset},
       null,
-      frame.stride === alignedStride ? 1 : 0,
+      Math.abs(frame.stride) === alignedStride ? 1 : 0,
     );
     if (imported === 0 || selection.mode !== 1) return imported;
     return this.surfaces.convertFormat(index, 1) === 0 ? 1 : 0;

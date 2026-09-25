@@ -61,7 +61,7 @@ export interface AokanaProductionResourceWorkerInputs {
   readonly resourceWorkerCount: number;
   readonly sleep: (milliseconds: number) => Promise<void>;
   /** Explicit GetTempFileNameW profile; absent until the host provides one. */
-  readonly temporaryFileHost?: AokanaTemporaryFileHost;
+  readonly temporaryFileHost?: AokanaTemporaryFileHost | null;
 }
 
 /** One mounted resource/audio/script worker graph; BP bank and GUI loop belong to a later aggregate. */
@@ -100,7 +100,7 @@ export class AokanaProductionResourceWorker {
     this.files = new AokanaProgramFiles(inputs.mounted, inputs.text, this.media, inputs.paths);
     this.volumeLabels = this.driveHost === null ? null : new AokanaVolumeLabels(this.driveHost);
     this.temporaryDirectoryProbe =
-      inputs.temporaryFileHost === undefined
+      inputs.temporaryFileHost == null
         ? null
         : new AokanaTemporaryDirectoryProbe(this.files, inputs.temporaryFileHost);
     this.errors = new AokanaEngineErrors(

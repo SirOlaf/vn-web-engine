@@ -8,7 +8,7 @@ import {createGroup80LocalTime, createGroup80Timing} from './group-80-timing.js'
 import {createGroupC0Rain} from './group-c0-rain.js';
 import {createGroupC0Bwef} from './group-c0-bwef.js';
 import {createGroupB0FontNames, createGroupB0Fonts} from './group-b0-fonts.js';
-import {createGroupB0InlineText} from './group-b0-main.js';
+import {createGroupB0InlineText, createGroupB0Shake} from './group-b0-main.js';
 import {createAokanaBitmapLoadingSlots} from './group-bitmap-loading.js';
 import {createGroup80GlobalMemory} from './group-80-global-memory.js';
 import {createGroup80Launch} from './group-80-launch.js';
@@ -25,7 +25,11 @@ import {createGroup90TextDisplay} from './group-90-text-display.js';
 import {createGroup91TextDisplay} from './group-91-text-display.js';
 import {createGroup92TextDisplay} from './group-92-text-display.js';
 import {createGroup91Landscapes} from './group-91-landscapes.js';
-import {createGroup91ContinuousPresentation} from './group-91-presentation-settings.js';
+import {createGroup91PresentationSettings} from './group-91-presentation-settings.js';
+import {createGroup91SurfaceMovies} from './group-91-surface-movies.js';
+import {createGroup91MfMovies} from './group-91-mf-movies.js';
+import {createGroup92SurfaceMovies} from './group-92-surface-movies.js';
+import {createTraditionalMovieSlots} from './group-90-traditional-movies.js';
 import {createGroup90Knobs, createGroup91KnobPointer} from './group-90-knobs.js';
 import {createGroup90Filters} from './group-90-filters.js';
 import {createGroup90Surfaces} from './group-90-surfaces.js';
@@ -46,6 +50,7 @@ import {createGroup90AspectFit} from './group-90-aspect-fit.js';
 import {createGroup90BitmapCacheServices} from './group-90-bitmap-cache-services.js';
 import {createGroup90CompressedEncode} from './group-90-compressed-encode.js';
 import {createGroup90RawSurfaceExport} from './group-90-raw-surface-export.js';
+import {createGroup90DiskImages} from './group-90-disk-images.js';
 import {createGroup90ToneCurves} from './group-90-tone-curves.js';
 import {createGroup90TransformedMesh} from './group-90-transformed-mesh.js';
 import {createGroup90DisplayBase} from './group-90-display-base.js';
@@ -112,6 +117,10 @@ import {createGroup92SurfaceMasks} from './group-92-surface-masks.js';
 import {createGroup92VectorMaps} from './group-92-vector-maps.js';
 import {createGroup92WindowImages} from './group-92-window-images.js';
 import {createGroupA0StaticDuration} from './group-a0-static-duration.js';
+import {createGroupA0StaticPlay} from './group-a0-static-play.js';
+import {createGroup90BmvResources} from './group-90-bmv-resources.js';
+import {createGroup90BmvFrame} from './group-90-bmv-frame.js';
+import {createGroup92BmvResources} from './group-92-bmv-resources.js';
 import {createGroupA0SoundProcesses} from './group-a0-sound-processes.js';
 import {createGroupA0StreamLoad} from './group-a0-stream-load.js';
 import {createGroupA0MusicLoad} from './group-a0-music-load.js';
@@ -135,17 +144,17 @@ const boundSpriteTargets = new Set([0xf8, 0xfa, 0xfb, 0xfc, 0xfd]);
 const boundSurfaceServices = new Set([
   0x07, 0x0b, 0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x18, 0x1e, 0x1f,
 ]);
-/** Capture/render need a selected display context; font cache needs a selected host font. */
+/** Capture/render enter after device startup; font cache uses the selected host font. */
 const boundDisplayBase = new Set([0x00, 0x01, 0x02, 0x03, 0x06, 0x08, 0x09, 0x0a, 0x0c, 0x0f]);
 /** 90:45 requires a selected vector-map/display context; the graph owns the state-only pair. */
 const boundBackdropState = new Set([0x45, 0x4c, 0x4d]);
-/** 90:66 needs a selected screen-sized mask/display context. */
+/** 90:66 enters after startup establishes the screen-sized mask context. */
 const boundFilterState = new Set([0x60, 0x61, 0x64, 0x65]);
-/** Vector and displacement effectors require selected display bitmap and map context. */
+/** Vector and displacement effectors enter after display bitmap startup. */
 const boundEffectorState = new Set([0x60, 0x61, 0x64, 0x66, 0x68, 0x69]);
-/** Window font selection is added only with an explicitly selected graph font provider. */
+/** Window font selection uses the graph's selected font provider. */
 const boundWindowState = new Set([0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e]);
-/** 91:05 renders through an unselected display context. */
+/** 91:05 enters after startup establishes the display context. */
 const boundTranslatedDisplay = new Set([0x06]);
 /** Annotation collection uses text only; host font raster and layout settings remain separate. */
 const boundTextSettings = new Set([0x94, 0x96]);
@@ -170,6 +179,8 @@ export class AokanaProductionVmFragments {
       data.graph !== graph ||
       this.core.fragments.data !== data ||
       this.core.fragments.graph !== graph ||
+      this.core.fragments.scheduler !== scheduler ||
+      this.core.fragments.installation !== this.core.installation ||
       this.core.launchSelection !== graph.launchSelection ||
       graph.launchSelection.files !== graph.resource.files ||
       graph.launchSelection.paths !== graph.resource.files.paths ||
@@ -289,7 +300,13 @@ export class AokanaProductionVmFragments {
       (graph.internetReadHost === null && graph.internetReads !== null) ||
       (graph.internetReadHost !== null &&
         (graph.internetReads?.host !== graph.internetReadHost ||
-          graph.internetReads.files !== graph.resource.files))
+          graph.internetReads.files !== graph.resource.files)) ||
+      graph.bmvService.registry !== graph.bmvRegistry ||
+      graph.bmvService.surfaces !== graph.surfaces ||
+      graph.bmvService.ranges !== graph.resource.loading.ranges ||
+      graph.bmvService.synchronous !== graph.resource.processing ||
+      graph.bmvService.asynchronous !== graph.bmvAsyncProcessing ||
+      graph.bmvPump.service !== graph.bmvService
     )
       throw new Error('Aokana VM fragments require the graph launch, display and error owners');
     const selectedFontProvider = graph.fontProvider !== null;
@@ -390,7 +407,11 @@ export class AokanaProductionVmFragments {
         graph.resource.loading,
         graph.windowState,
         graph.resource.errors,
-      ).filter(({secondary}) => boundDisplayBase.has(secondary)),
+      ).filter(({secondary}) =>
+        boundDisplayBase.has(secondary) ||
+        (selectedFontProvider && secondary === 0x0e) ||
+        (graph.displayReadyForScriptGeometry && (secondary === 0x04 || secondary === 0x05)),
+      ),
       ...createGroup90DisplayImmediate(graph.manager, graph.resource.errors),
       ...createGroup90DisplayShake(
         graph.manager,
@@ -404,6 +425,7 @@ export class AokanaProductionVmFragments {
       ...createGroup90AspectFit(graph.surfaces, graph.resource.errors),
       ...createGroup90BitmapCacheServices(graph.bitmapCacheServices),
       ...createGroup90RawSurfaceExport(graph.compressedSurfaceEncoder.raw, graph.resource.errors),
+      ...createGroup90DiskImages(graph.diskImageService, graph.resource.errors),
       ...createGroup90CompressedEncode(graph.compressedSurfaceEncoder, graph.resource.errors),
       ...createGroup90ToneCurves(graph.surfaces, graph.resource.errors),
       ...createGroup90TransformedMesh(graph.surfaces, graph.resource.errors),
@@ -526,7 +548,8 @@ export class AokanaProductionVmFragments {
         : []),
       ...createGroup90Knobs(graph.knobs, graph.resource.errors),
       ...createGroup90Filters(graph.filterDisplays, graph.resource.errors).filter(({secondary}) =>
-        boundFilterState.has(secondary),
+        boundFilterState.has(secondary) ||
+          (graph.displayReadyForScriptGeometry && secondary === 0x66),
       ),
       ...createGroup91RasterSettings(graph.compositor, graph.fonts, control),
       ...createGroup91SurfaceScale(graph.surfaces, graph.resource.errors),
@@ -545,14 +568,35 @@ export class AokanaProductionVmFragments {
       ...createGroup91DisplacementGenerators(graph.surfaces, graph.resource.errors),
       ...createGroup91AngularDisplacement(graph.surfaces, graph.resource.errors),
       ...createGroup91Effectors(graph.filterDisplays, graph.resource.errors).filter(({secondary}) =>
-        boundEffectorState.has(secondary),
+        boundEffectorState.has(secondary) ||
+          (graph.displayReadyForScriptGeometry && (secondary === 0x65 || secondary === 0x67)),
       ),
       ...createGroup91KnobPointer(graph.knobs),
       ...createGroup91TranslatedDisplay(graph.manager).filter(({secondary}) =>
-        boundTranslatedDisplay.has(secondary),
+        boundTranslatedDisplay.has(secondary) ||
+          (graph.displayReadyForScriptGeometry && secondary === 0x05),
       ),
       ...createGroup91Landscapes(graph.landscapes, graph.resource.errors),
-      ...createGroup91ContinuousPresentation(graph.display),
+      ...createGroup91PresentationSettings(graph.display, graph.movieImageConfiguration),
+      ...createGroup91SurfaceMovies(
+        graph.surfaceMovieFactory,
+        graph.surfaces,
+        graph.movies,
+        graph.movieFramePosition,
+      ),
+      ...createGroup91MfMovies(
+        graph.mfMovieSession,
+        graph.mfMovieVolume,
+        scheduler,
+        data.procedureState,
+        graph.clock,
+      ),
+      ...createTraditionalMovieSlots(
+        graph.traditionalMovieSession,
+        graph.frames,
+        graph.traditionalMovieAudio,
+        graph.resource.errors,
+      ),
       ...createGroup91BackdropLayers(graph.manager, graph.resource.errors),
       ...createGroup91ObjectCoordinates(graph.manager, graph.resource.errors),
       ...createGroup91ObjectProperty(graph.manager, graph.resource.errors),
@@ -585,19 +629,26 @@ export class AokanaProductionVmFragments {
         : []),
       ...createGroup91TextTags(graph.text),
       ...createGroupB0FontNames(graph.fonts),
+      ...(graph.displayReadyForScriptGeometry
+        ? createGroupB0Shake(
+            graph.host,
+            graph.cursorPolicy,
+            scheduler,
+            data.procedureState,
+            graph.particleRandom,
+            graph.resource.errors,
+          )
+        : []),
       ...(selectedFontProvider ? createGroupB0InlineText(graph.inline, graph.resource.errors) : []),
       ...(selectedFontProvider
-        ? createGroupB0Fonts(graph.fontResources, graph.localized.language).filter(({secondary}) =>
-            [0xc4, 0xc5, 0xc6, 0xc7, 0xc8].includes(secondary),
+        ? createGroupB0Fonts(graph.fontResources, graph.localized.language).filter(
+            ({secondary}) => secondary !== 0xc0 && secondary !== 0xc1,
           )
         : []),
       ...createCustomTextGlyphSettings(graph.windowState.textLayout, graph.resource.errors),
       ...createTextLayoutSettings(graph.windowState.textLayout, graph.resource.errors),
       ...(selectedFontProvider
-        ? createHorizontalTextLayoutServices(graph.windowState, graph.resource.errors).filter(
-            ({primary, secondary}) =>
-              primary === 0x91 && (secondary === 0x91 || secondary === 0x9c),
-          )
+        ? createHorizontalTextLayoutServices(graph.windowState, graph.resource.errors)
         : []),
       ...createGroup92RegisteredLinkFont(graph.windowState.textLayout),
       ...(selectedFontProvider
@@ -625,6 +676,7 @@ export class AokanaProductionVmFragments {
       ),
       ...createGroup92ImmediateBmp(graph.surfaces, graph.resource.resources),
       ...createGroup92SurfacePixels(graph.surfaces),
+      ...createGroup92SurfaceMovies(graph.surfaceMovieFactory, graph.surfaces, graph.movies),
       ...(selectedFontProvider
         ? createGroup92FontTransform(graph.fonts, graph.resource.errors)
         : []),
@@ -654,6 +706,29 @@ export class AokanaProductionVmFragments {
         graph.clock,
       ).filter(({secondary}) => [0x20, 0x21, 0x23, 0x27, 0x28].includes(secondary)),
       ...createGroupA0StaticDuration(graph.resource.statics, graph.resource.errors),
+      ...createGroupA0StaticPlay(graph.resource.statics, graph.resource.errors),
+      ...createGroup90BmvResources(
+        graph.bmvRegistry,
+        graph.resource.loading,
+        scheduler,
+        data.procedureState,
+        graph.clock,
+      ),
+      ...createGroup90BmvFrame(
+        graph.bmvService,
+        graph.resource.loading,
+        scheduler,
+        data.procedureState,
+        graph.clock,
+        control,
+      ),
+      ...createGroup92BmvResources(
+        graph.bmvRegistry,
+        graph.resource.loading,
+        scheduler,
+        data.procedureState,
+        graph.clock,
+      ),
       ...createGroupE0Records(data.counts, data.allocations),
       ...createGroupE0Files(graph.resource.files, graph.folders, data.counts, data.allocations),
       ...createGroupE0BitmapDescription(graph.text),

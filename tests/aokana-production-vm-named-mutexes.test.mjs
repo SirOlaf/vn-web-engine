@@ -87,16 +87,16 @@ test('mounted 81:EC/ED use the selected synchronous named-mutex owner', async ()
   }
 });
 
-test('mounted partial catalog omits named mutex callbacks without a selected host', async () => {
+test('mounted catalog selects the browser named-mutex failure host', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.namedMutexHost, null);
-    assert.equal(fixture.graph.namedMutexes, null);
-    assert.deepEqual(
+    assert.ok(fixture.graph.namedMutexHost);
+    assert.equal(fixture.graph.namedMutexes.host, fixture.graph.namedMutexHost);
+    assert.equal(
       fixture.definitions.filter(
         ({primary, secondary}) => primary === 0x81 && [0xec, 0xed].includes(secondary),
-      ),
-      [],
+      ).length,
+      2,
     );
   } finally {
     await fixture.close();

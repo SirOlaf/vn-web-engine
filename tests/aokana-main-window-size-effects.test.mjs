@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaMainWindowSizeEffects} from '../dist/engines/buriko/games/aokana/native/main-window-size-effects.js';
 import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
 import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
 import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
@@ -39,7 +38,7 @@ class Element {
   remove() {}
 }
 
-test('initialized minimize effects use shared graph owners in native order before size tail', async () => {
+test('queued initialized WM_SIZE joins shared effects before its menu and input tail', async () => {
   const backing = new MountedFileSystem();
   backing.mount('/game', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
   const mounted = new AokanaMountedFileMetadata(backing, {
@@ -145,7 +144,6 @@ test('initialized minimize effects use shared graph owners in native order befor
         sleep: async () => {},
       },
     }),
-    effects = new AokanaMainWindowSizeEffects(graph),
     channels = graph.resource.channels,
     actor = {},
     seen = [];
@@ -182,7 +180,13 @@ test('initialized minimize effects use shared graph owners in native order befor
       return beginSuspension(force);
     };
 
-    await effects.runInitializedMinimize(actor);
+    assert.equal(graph.queuedDispatcher.size, graph.queuedSize);
+    assert.equal(graph.queuedSize.effects, graph.sizeEffects);
+    graph.messages.post({target: 'main', message: 5, wParam: 1, lParam: 0});
+    const dispatched = await graph.allocator.withActor(actor, () =>
+      graph.queuedDispatcher.dispatchNext(),
+    );
+    assert.equal(dispatched.result, 0);
     assert.deepEqual(seen, [
       'mute-complete',
       'suppression-after-muted-1',
@@ -196,12 +200,17 @@ test('initialized minimize effects use shared graph owners in native order befor
     assert.equal(channels.static[127].levels.master, 0);
     assert.equal(graph.traditionalMovieAudio.rawSuppression, 1);
     assert.equal(graph.mfMovieVolume.savedVolume, 0);
-    assert.equal(graph.input.inputActive, true);
-    graph.host.applySizeMenuTail(1, graph.input);
     assert.equal(graph.input.inputActive, false);
     assert.equal(graph.input.iconic, 0);
     assert.equal(graph.input.scriptMinimizeLatch, 0);
-    graph.host.applySizeMenuTail(0, graph.input); // Restore input admission for clock cleanup.
+    graph.messages.post({target: 'main', message: 5, wParam: 0, lParam: 0});
+    assert.equal(
+      (await graph.allocator.withActor(actor, () => graph.queuedDispatcher.dispatchNext())).result,
+      0,
+    );
+    assert.equal(channels.muted, 0);
+    assert.equal(graph.traditionalMovieAudio.rawSuppression, 0);
+    assert.equal(graph.input.inputActive, true);
     now = 110;
     assert.equal(graph.clock.endSuspension(), true);
   } finally {

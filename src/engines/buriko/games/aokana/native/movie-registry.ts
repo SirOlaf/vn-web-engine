@@ -16,12 +16,19 @@ interface AokanaMovieRetirement {
 export class AokanaMovieRegistry {
   private head: AokanaMovieRecord | null = null;
   private nextId = 0;
+  private nextNotificationId = 0;
   private readonly retirements = new Set<AokanaMovieRetirement>();
   /** 03fd00 links before renderer initialization, including later failed-initialization IDs. */
   append(renderer: AokanaMovieRenderer): number {
     const id = this.nextId;
     this.nextId = (id + 1) | 0;
     this.head = {id, renderer, next: this.head};
+    return id;
+  }
+  /** 095780's successful graph initialization publishes an independent event ID. */
+  allocateNotificationId(): number {
+    const id = this.nextNotificationId;
+    this.nextNotificationId = (id + 1) | 0;
     return id;
   }
   find(id: number): AokanaMovieRenderer | null {

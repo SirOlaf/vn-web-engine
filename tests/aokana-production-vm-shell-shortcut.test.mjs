@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
-test('mounted 81:F7 uses the graph folders and selected in-memory ShellLink primitive', async () => {
+test('mounted 80:F7 and 81:F7 use the graph folders and selected in-memory ShellLink primitive', async () => {
   const calls = [];
   const shellShortcutHost = {
     createShellLink() {
@@ -76,6 +76,10 @@ test('mounted 81:F7 uses the graph folders and selected in-memory ShellLink prim
       definitions.filter(({primary, secondary}) => primary === 0x81 && secondary === 0xf7).length,
       1,
     );
+    assert.equal(
+      definitions.filter(({primary, secondary}) => primary === 0x80 && secondary === 0xf7).length,
+      1,
+    );
     memory.globalMemory.set(graph.text.encodeWide('Aokana.lnk', 1), 0x100);
     memory.globalMemory.set(graph.text.encodeWide('C:\\game\\aokana.exe', 1), 0x200);
     memory.globalMemory.set(graph.text.encodeWide('--route misaki', 1), 0x300);
@@ -94,19 +98,40 @@ test('mounted 81:F7 uses the graph folders and selected in-memory ShellLink prim
       ['release-persist'],
       ['release-link'],
     ]);
+
+    calls.length = 0;
+    assert.equal(await invoke(0x80, 0xf7, [0, 0x100, 0x200], 0), 1);
+    assert.equal(pop32(child.state), 1);
+    assert.equal(child.state.stackIndex, 0);
+    assert.equal(child.process, null);
+    assert.equal(core.pendingNativeCallbackCount, 0);
+    assert.deepEqual(calls, [
+      ['create'],
+      ['path', 'C:\\game\\aokana.exe'],
+      ['arguments', ''],
+      ['working-directory', ''],
+      ['query-persist'],
+      ['save', 'C:\\Users\\Player\\Desktop\\Aokana.lnk', true],
+      ['release-persist'],
+      ['release-link'],
+    ]);
   } finally {
     await fixture.close();
   }
 });
 
-test('mounted partial catalog omits 81:F7 without a selected ShellLink host', async () => {
+test('mounted catalog selects the browser ShellLink failure host', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.shellShortcutHost, null);
-    assert.equal(fixture.graph.shellShortcuts, null);
+    assert.ok(fixture.graph.shellShortcutHost);
+    assert.equal(fixture.graph.shellShortcuts.host, fixture.graph.shellShortcutHost);
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x81 && secondary === 0xf7),
-      false,
+      true,
+    );
+    assert.equal(
+      fixture.definitions.some(({primary, secondary}) => primary === 0x80 && secondary === 0xf7),
+      true,
     );
   } finally {
     await fixture.close();

@@ -1,4 +1,8 @@
 import {FileError} from '../../../../../platform/filesystem.js';
+import {
+  BrowserWindowsTemporaryFileHost,
+  type WindowsTemporaryFileOperations,
+} from '../../../../../platform/windows-temporary-file.js';
 import {AokanaDirectoryTree} from './directory-tree.js';
 import {AokanaNativeFile} from './native-file.js';
 import type {AokanaProgramFiles} from './program-files.js';
@@ -14,6 +18,61 @@ export interface AokanaTemporaryFileHost {
     prefix: string,
   ): Promise<string | null>;
   deleteTemporaryFile(files: AokanaProgramFiles, path: string): Promise<number>;
+}
+
+/** Binds the shared browser candidate/operation host to this program's mounted files. */
+export class AokanaBrowserTemporaryFileHost implements AokanaTemporaryFileHost {
+  constructor(readonly host: BrowserWindowsTemporaryFileHost) {}
+
+  private operations(files: AokanaProgramFiles): WindowsTemporaryFileOperations | null {
+    const metadata = files.metadata;
+    if (metadata === null) return null;
+    return {
+      exists: async (path) => {
+        try {
+          await metadata.stat(files.mountedPath(path));
+          return true;
+        } catch (error) {
+          if (error instanceof FileError && error.code === 'NOT_FOUND') return false;
+          if (error instanceof FileError || error instanceof DOMException) return null;
+          throw error;
+        }
+      },
+      create: async (path) => {
+        const created = await files.createOutput(files.text.encodeWide(path, 1));
+        if (created === null) return false;
+        created.close();
+        return true;
+      },
+      remove: async (path) => {
+        try {
+          await metadata.commit([{kind: 'delete', path: files.mountedPath(path)}]);
+          return true;
+        } catch (error) {
+          if (error instanceof FileError || error instanceof DOMException) return false;
+          throw error;
+        }
+      },
+    };
+  }
+
+  createTemporaryFile(
+    files: AokanaProgramFiles,
+    directory: string,
+    prefix: string,
+  ): Promise<string | null> {
+    const operations = this.operations(files);
+    return operations === null
+      ? Promise.resolve(null)
+      : this.host.createTemporaryFile(operations, directory, prefix);
+  }
+
+  deleteTemporaryFile(files: AokanaProgramFiles, path: string): Promise<number> {
+    const operations = this.operations(files);
+    return operations === null
+      ? Promise.resolve(0)
+      : this.host.deleteTemporaryFile(operations, path);
+  }
 }
 
 /** Explicit candidate names that are created in the selected mounted namespace. */

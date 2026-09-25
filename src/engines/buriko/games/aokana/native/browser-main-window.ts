@@ -82,6 +82,7 @@ export class AokanaBrowserMainWindow {
   private readScreenMapping: (() => AokanaViewportScreenMapping) | null = null;
   private lastRestoredOuterRectangle: AokanaNativeRectangle | null = null;
   private outerRectangleMinimized = false;
+  private minimized = false;
   private inputIngress: AokanaMainDomInput | null = null;
 
   constructor(
@@ -90,6 +91,7 @@ export class AokanaBrowserMainWindow {
     readonly surface: HTMLCanvasElement,
     readonly manager: AokanaDisplayManager,
     readonly callbacks: AokanaMainWindowCallbacks,
+    readonly presentationMode: 'canvas' | 'none' = 'canvas',
   ) {
     // The supplied canvas is the sole main client surface, even when the host
     // provides it detached. Keep an existing nested attachment in place.
@@ -213,6 +215,46 @@ export class AokanaBrowserMainWindow {
     this.outerRectangleMinimized = false;
   }
 
+  get isMinimized(): boolean {
+    return this.minimized;
+  }
+
+  /** Scoped CloseWindow profile: preserve the restored screen box before hiding this HWND. */
+  minimizeScopedWindow(): boolean {
+    if (!this.isLiveMainWindow() || this.minimized || this.parent.style.visibility === 'hidden')
+      return false;
+    this.captureOuterRectangleBeforeMinimize();
+    this.minimized = true;
+    this.parent.style.visibility = 'hidden';
+    if (this.closeInput !== null) this.closeInput.iconic = 1;
+    this.refreshInputForeground();
+    return true;
+  }
+
+  /** Host restore publishes IsIconic independently of the script latch and size tail. */
+  restoreScopedWindow(): boolean {
+    if (!this.isLiveMainWindow() || !this.minimized) return false;
+    this.parent.style.visibility = 'visible';
+    this.refreshOuterRectangleAfterRestore();
+    this.minimized = false;
+    if (this.closeInput !== null) this.closeInput.iconic = 0;
+    this.refreshInputForeground();
+    return true;
+  }
+
+  /** Current client extent in native screen pixels for WM_SIZE's packed lParam. */
+  readClientNativeSize(): readonly [number, number] {
+    if (this.readScreenMapping === null)
+      throw new Error('Aokana main client requires a screen mapping');
+    const rectangle = this.surface.getBoundingClientRect(),
+      mapping = this.readScreenMapping(),
+      width = nativeScreenEdge((rectangle.right - rectangle.left) * mapping.nativePixelsPerCssX),
+      height = nativeScreenEdge((rectangle.bottom - rectangle.top) * mapping.nativePixelsPerCssY);
+    if (width < 0 || height < 0)
+      throw new RangeError('Aokana main client has a negative measured size');
+    return [width, height];
+  }
+
   /** Mount the one scoped main-window Close command against the actual HWND/message owners. */
   bindCloseControl(input: AokanaNativeInput, messages: AokanaWindowMessages): HTMLButtonElement {
     if (
@@ -285,24 +327,29 @@ export class AokanaBrowserMainWindow {
     if (target !== null) messages.post({target, message: 0x10, wParam: 0, lParam: 0});
   }
 
-  private hasLiveMainWindow(): boolean {
+  isLiveMainWindow(): boolean {
     return (
       !this.detached && this.callbacks.isReady() && this.closeMessages?.mainTarget() === 'main'
     );
   }
 
   /** FF690's scoped ShowWindow host primitive; UpdateWindow belongs to the awaited paint owner. */
-  showWindow(visible: boolean): boolean {
-    if (!this.hasLiveMainWindow()) return false;
+  showWindow(visible: boolean, deferForegroundRefresh = false): boolean {
+    if (!this.isLiveMainWindow()) return false;
     this.parent.style.visibility = visible ? 'visible' : 'hidden';
-    this.inputIngress?.refreshForeground();
+    if (!deferForegroundRefresh) this.refreshInputForeground();
     return true;
+  }
+
+  /** FF690 refreshes input foreground only after its synchronous UpdateWindow returns. */
+  refreshInputForeground(): void {
+    this.inputIngress?.refreshForeground();
   }
 
   /** GetForegroundWindow equals the live main HWND only while focus belongs to its DOM subtree. */
   isForegroundWindow(): boolean {
     if (
-      !this.hasLiveMainWindow() ||
+      !this.isLiveMainWindow() ||
       this.parent.style.visibility === 'hidden' ||
       this.document.visibilityState === 'hidden' ||
       !this.document.hasFocus()
@@ -451,6 +498,7 @@ export class AokanaBrowserMainWindow {
   /** b7390 transformed GDI path. Browser high-quality canvas resampling is the explicit
    * platform HALFTONE profile; descriptor reads, geometry and clipping remain title-native. */
   private blitBitmap(x: number, y: number, bitmap: AokanaBitmap): void {
+    if (this.presentationMode === 'none') return;
     const pixels = aokanaChildDibPixels(bitmap);
     if (pixels === null) return;
     const [destinationX, destinationY] = this.display.transformPoint(x, y, 0);

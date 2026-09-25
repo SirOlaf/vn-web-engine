@@ -1,5 +1,5 @@
 import type {AokanaBpPointer} from '../bp/memory.js';
-import type {AokanaDriveTypeHost} from './program-files.js';
+import type {WindowsLogicalDriveHost} from '../../../../../platform/windows-drives.js';
 import type {AokanaProgramResources} from './program-resources.js';
 import type {
   AokanaExternalProcessHost,
@@ -9,11 +9,8 @@ import type {AokanaLocalizedMessages} from './localized-messages.js';
 import {AokanaNativeText, textByte, textBytes} from './text.js';
 import {assertAokanaPathDomain} from './path-domain.js';
 
-/** Successful GetLogicalDriveStringsW snapshot in actual returned order.
- * Enumeration failure or size/fill races require an explicit host error, never guessed roots. */
-export interface AokanaLogicalDriveHost extends AokanaDriveTypeHost {
-  readLogicalDriveStrings(): readonly string[];
-}
+/** Title-specific media search uses the shared project-level logical-drive primitive. */
+export type AokanaLogicalDriveHost = WindowsLogicalDriveHost;
 function required(pointer: AokanaBpPointer | null): AokanaBpPointer {
   if (pointer === null)
     throw new RangeError('Aokana media discovery consumed a null native string');
@@ -69,6 +66,9 @@ export function aokanaMediaDirectoryPrefix(
 const quitKey = {bytes: new TextEncoder().encode('AREYOUSUREYOUWANTTOQUIT\0'), offset: 0};
 /** BC440/BC3C0 shares secondary configuration with real resource fallback and retry. */
 export class AokanaSecondaryMediaDiscovery {
+  private closed = false;
+  private readonly active = new Set<Promise<0 | 1>>();
+
   constructor(
     readonly resources: AokanaProgramResources,
     readonly localized: AokanaLocalizedMessages,
@@ -81,14 +81,16 @@ export class AokanaSecondaryMediaDiscovery {
     title: AokanaBpPointer | null,
     message: AokanaBpPointer | null,
     retry: number,
-  ): Promise<0 | 1> {
+  ): Promise<string | null> {
     const files = this.resources.files,
       text = files.text,
       prefix = text.decodeAuto({bytes: aokanaMediaDirectoryPrefix(text, marker), offset: 0});
     // Caller forms outside the existing selected path domain are explicit composition boundaries.
     assertAokanaPathDomain(text.decodeAuto(marker));
     for (;;) {
+      if (this.closed) return null;
       for (let scan = 0; scan < 10; scan++) {
+        if (this.closed) return null;
         const eligible: string[] = [];
         for (const root of this.drives.readLogicalDriveStrings()) {
           if (!/^[A-Za-z]:\\$/.test(root))
@@ -106,32 +108,52 @@ export class AokanaSecondaryMediaDiscovery {
           if (!files.media.isAvailable(root)) continue;
           const path = boundedWide(root + text.decodeAuto(marker));
           if (await files.hasPathWide(path)) {
-            this.resources.configuration.secondaryMediaPath = boundedWide(root + prefix);
-            return 1;
+            if (this.closed) return null;
+            return boundedWide(root + prefix);
           }
         }
         await this.timing.sleep(100);
-        if (this.window.pumpMessages() < 0) return 0;
+        if (this.closed) return null;
+        if ((await this.window.pumpMessages()) < 0) return null;
       }
-      if (retry >>> 0 === 0) return 0;
+      if (this.closed) return null;
+      if (retry >>> 0 === 0) return null;
       if ((await this.resources.dialogs.show(message, title, 0x41)) !== 1) {
         if ((await this.resources.dialogs.show(this.localized.lookup(quitKey), title, 0x124)) === 6)
-          return 0;
+          return null;
       }
     }
   }
-  async select(
+  select(
     marker: AokanaBpPointer | null,
     title: AokanaBpPointer | null,
     message: AokanaBpPointer | null,
     retry: number,
   ): Promise<0 | 1> {
-    const result = await this.discover(required(marker), title, message, retry);
-    if (result !== 0) {
+    if (this.closed) throw new Error('Aokana secondary-media admission is closed');
+    const work = this.selectAccepted(marker, title, message, retry);
+    this.active.add(work);
+    void work.then(
+      () => this.active.delete(work),
+      () => this.active.delete(work),
+    );
+    return work;
+  }
+
+  private async selectAccepted(
+    marker: AokanaBpPointer | null,
+    title: AokanaBpPointer | null,
+    message: AokanaBpPointer | null,
+    retry: number,
+  ): Promise<0 | 1> {
+    const selectedPath = await this.discover(required(marker), title, message, retry);
+    if (this.closed) return 0;
+    if (selectedPath !== null) {
       const config = this.resources.configuration,
-        encoded = this.resources.files.text.encodeWide(config.secondaryMediaPath, 1);
+        encoded = this.resources.files.text.encodeWide(selectedPath, 1);
       if (encoded.length > 784)
         throw new RangeError('Aokana secondary root exceeds native byte storage');
+      config.secondaryMediaPath = selectedPath;
       config.secondaryRoot = encoded;
       const titleBytes = textBytes(required(title), true);
       if (titleBytes.length > 784)
@@ -142,6 +164,12 @@ export class AokanaSecondaryMediaDiscovery {
         throw new RangeError('Aokana media retry message exceeds native byte storage');
       config.retryMessage = messageBytes.slice();
     }
-    return result;
+    return selectedPath === null ? 0 : 1;
+  }
+
+  /** Accepted discovery keeps the queued pump and borrowed BP strings live through settlement. */
+  closeAndJoin(): Promise<void> {
+    this.closed = true;
+    return Promise.allSettled([...this.active]).then(() => undefined);
   }
 }

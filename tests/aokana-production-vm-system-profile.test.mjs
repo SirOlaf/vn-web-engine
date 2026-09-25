@@ -96,16 +96,16 @@ test('mounted system callbacks share one explicit host and lazy version record',
   }
 });
 
-test('mounted partial catalog omits system callbacks without a selected host', async () => {
+test('mounted catalog selects the browser system profile host', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.systemProfileHost, null);
-    assert.equal(fixture.graph.systemProfile, null);
+    assert.ok(fixture.graph.systemProfileHost);
+    assert.equal(fixture.graph.systemProfile.host, fixture.graph.systemProfileHost);
     assert.deepEqual(
       fixture.definitions
         .filter((definition) => profileSlots.includes(slotKey(definition)))
         .map(slotKey),
-      [],
+      profileSlots,
     );
   } finally {
     await fixture.close();

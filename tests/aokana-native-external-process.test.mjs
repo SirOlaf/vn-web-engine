@@ -116,10 +116,14 @@ test('81 E0 uses native command, token fallback, wait/window and output order on
       events.push(['show-read']);
       return 7;
     },
-    setShowState(value) {
+    async setShowState(value) {
+      events.push(['show-set-start', value]);
+      await Promise.resolve();
       events.push(['show-set', value]);
     },
-    pumpMessages() {
+    async pumpMessages() {
+      events.push(['pump-start']);
+      await Promise.resolve();
       events.push(['pump']);
       return 0;
     },
@@ -231,15 +235,19 @@ test('81 E0 uses native command, token fallback, wait/window and output order on
     ['create-token', 'primary-token', 0, request],
     ['create', request],
     ['show-read'],
+    ['show-set-start', 0],
     ['show-set', 0],
     ['input-idle', 'child-process', 0xffffffff],
     ['wait', 'child-process', 8],
+    ['pump-start'],
     ['pump'],
     ['wait', 'child-process', 8],
+    ['pump-start'],
     ['pump'],
     ['exit-code', 'child-process'],
     ['close', 'child-thread'],
     ['close', 'child-process'],
+    ['show-set-start', 1],
     ['show-set', 1],
     ['close', 'primary-token'],
   ]);

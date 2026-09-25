@@ -1,4 +1,6 @@
 import type {AokanaNativeInput} from './input.js';
+import type {AokanaNativeTouchSample} from './touch-input.js';
+import type {WindowsKeyCharacterEvidence} from '../../../../../platform/windows-character-translation.js';
 
 /** Native HWND identity; numeric window tokens are independent of script-visible 0xf8 handles. */
 export type AokanaWindowTarget = 'main' | number;
@@ -48,6 +50,13 @@ function nativeParameter(value: number | bigint): number | bigint {
 
 /** The native GUI thread's FIFO, shared by real input and PostMessageW senders. */
 export class AokanaWindowMessages {
+  private readonly cdNotifications = new WeakMap<AokanaWindowMessage, number>();
+  private readonly touchBatches = new Map<
+    AokanaWindowMessage,
+    readonly AokanaNativeTouchSample[]
+  >();
+  private readonly touchMouseMessages = new WeakSet<AokanaWindowMessage>();
+  private nextTouchHandle = 0;
   private readonly queue: (QueuedMessage | QueuedQuit | QueuedInputReset)[] = [];
   private first = 0;
   private nextTarget = 0;
@@ -56,6 +65,7 @@ export class AokanaWindowMessages {
   private readonly paintInFlight = new Map<AokanaWindowTarget, AokanaWindowMessage>();
   private readonly generatedPaint = new WeakSet<AokanaWindowMessage>();
   private readonly physicalMessages = new WeakSet<AokanaWindowMessage>();
+  private readonly keyCharacterEvidence = new WeakMap<AokanaWindowMessage, WindowsKeyCharacterEvidence>();
   private readonly numericReceivers = new Map<number, AokanaQueuedNumericReceiver>();
   private mainReceiver: AokanaWindowMessageReceiver | null = null;
   constructor(readonly input: AokanaNativeInput) {}
@@ -119,6 +129,16 @@ export class AokanaWindowMessages {
     return this.physicalMessages.has(message);
   }
 
+  recordKeyCharacterEvidence(message: AokanaWindowMessage, evidence: WindowsKeyCharacterEvidence): void {
+    if (!this.physicalMessages.has(message))
+      throw new Error('Aokana character evidence requires an exact physical queued key message');
+    this.keyCharacterEvidence.set(message, {...evidence});
+  }
+
+  keyEvidence(message: AokanaWindowMessage): WindowsKeyCharacterEvidence | null {
+    return this.keyCharacterEvidence.get(message) ?? null;
+  }
+
   get pending(): number {
     return this.queue.length - this.first + this.invalidated.size;
   }
@@ -172,6 +192,10 @@ export class AokanaWindowMessages {
     this.invalidated.delete(target);
     this.paintInFlight.delete(target);
     this.targets.delete(target);
+    if (target === 'main') {
+      this.cancelPendingTouchBatches();
+      this.cancelPendingTouchMouse();
+    }
     if (typeof target === 'number') this.numericReceivers.delete(target);
   }
 
@@ -180,7 +204,7 @@ export class AokanaWindowMessages {
     physicalTransitions: QueuedMessage['physicalTransitions'],
     physical = false,
     priority = false,
-  ): void {
+  ): AokanaWindowMessage {
     const copy: AokanaWindowMessage = {
       target: message.target === 'main' ? 'main' : message.target >>> 0,
       message: message.message >>> 0,
@@ -197,11 +221,72 @@ export class AokanaWindowMessages {
     if (priority && !this.queue.slice(this.first).some((queued) => queued.kind === 'quit'))
       this.queue.splice(this.first, 0, entry);
     else this.queue.push(entry);
+    return copy;
+  }
+
+  /** Browser HTouchInput substitute: samples belong to this exact FIFO message, not its integer handle. */
+  enqueuePhysicalTouch(samples: readonly AokanaNativeTouchSample[]): boolean {
+    if (!this.targets.has('main')) return false;
+    if (samples.length === 0 || samples.length > 256)
+      throw new RangeError('Aokana WM_TOUCH requires 1 to 256 contacts per batch');
+    if (this.touchBatches.size >= 256) return false;
+    const batch = samples.map((sample) => ({...sample}));
+    this.nextTouchHandle = (this.nextTouchHandle + 1) >>> 0 || 1;
+    const message = this.append(
+      {target: 'main', message: 0x240, wParam: batch.length, lParam: this.nextTouchHandle},
+      [],
+      true,
+    );
+    this.touchBatches.set(message, batch);
+    return true;
+  }
+
+  /** Only a sidecar owned by this queue is a valid GetTouchInputInfo result. */
+  touchBatch(message: AokanaWindowMessage): readonly AokanaNativeTouchSample[] | null {
+    return this.touchBatches.get(message) ?? null;
+  }
+
+  /** Scoped deactivation invalidates queued contacts without changing FIFO or wait broadcasts. */
+  cancelPendingTouchBatches(): void {
+    this.touchBatches.clear();
+  }
+
+  /** Primary-touch mouse compatibility messages share FIFO order but can be withdrawn on contact loss. */
+  enqueueTouchMouse(
+    message: AokanaWindowMessage,
+    transitions: readonly {readonly key: number; readonly down: boolean}[] = [],
+  ): void {
+    if (!this.targets.has('main')) return;
+    for (const {key, down} of transitions) this.input.setPhysicalKey(key, down);
+    this.touchMouseMessages.add(this.append(message, transitions, true));
+  }
+
+  cancelPendingTouchMouse(): void {
+    for (let index = this.queue.length - 1; index >= this.first; index--) {
+      const entry = this.queue[index];
+      if (entry?.kind === 'window' && this.touchMouseMessages.has(entry.message))
+        this.queue.splice(index, 1);
+    }
+    if (this.first === this.queue.length) {
+      this.queue.length = 0;
+      this.first = 0;
+    }
   }
 
   /** A synthetic keyboard PostMessage does not change GetAsyncKeyState or GetKeyboardState. */
   post(message: AokanaWindowMessage): void {
     this.append(message, []);
+  }
+
+  /** An MCI completion keeps its playback token beside its exact posted FIFO message. */
+  postCdSuccessfulNotification(token: number): void {
+    if (!this.targets.has('main')) return;
+    const message = this.append({target: 'main', message: 0x3b9, wParam: 1, lParam: 1}, []);
+    this.cdNotifications.set(message, token);
+  }
+
+  cdSuccessfulNotificationToken(message: AokanaWindowMessage): number | null {
+    return this.cdNotifications.get(message) ?? null;
   }
 
   /** PostQuitMessage is a GUI-thread event after the existing FIFO tail, not a HWND message. */
@@ -227,9 +312,13 @@ export class AokanaWindowMessages {
 
   /** Both direct sends and the GUI dequeue path enter this same receiver synchronously. */
   dispatch(message: AokanaWindowMessage): number | bigint {
-    if (!this.targets.has(message.target)) return 0;
-    if (message.target === 'main') return this.mainReceiver?.receive(message) ?? 0;
-    return 0;
+    try {
+      if (!this.targets.has(message.target)) return 0;
+      if (message.target === 'main') return this.mainReceiver?.receive(message) ?? 0;
+      return 0;
+    } finally {
+      this.touchBatches.delete(message);
+    }
   }
 
   /** Host input changes asynchronous state at arrival and queued keyboard state at dequeue. */
@@ -248,9 +337,9 @@ export class AokanaWindowMessages {
     message: AokanaWindowMessage,
     transitions: readonly {readonly key: number; readonly down: boolean}[],
     priority = false,
-  ): void {
+  ): AokanaWindowMessage {
     for (const {key, down} of transitions) this.input.setPhysicalKey(key, down);
-    this.append(message, transitions, true, priority);
+    return this.append(message, transitions, true, priority);
   }
 
   /** PeekMessage-style mouse motion coalesces only with the unconsumed physical move at the FIFO tail. */

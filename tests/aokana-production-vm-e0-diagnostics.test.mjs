@@ -114,15 +114,15 @@ test('mounted E0 diagnostics use one selected engine caption with real captures 
   }
 });
 
-test('mounted partial catalog omits E0 diagnostics without a selected caption', async () => {
+test('mounted catalog selects the verified static engine caption for E0 diagnostics', async () => {
   const fixture = await createMountedVmFixture();
   try {
-    assert.equal(fixture.graph.engineCaption, null);
+    assert.deepEqual(fixture.graph.engineCaption, caption);
     assert.equal(
       fixture.definitions.some(
         ({primary, secondary}) => primary === 0xe0 && diagnosticSlots.includes(secondary),
       ),
-      false,
+      true,
     );
   } finally {
     await fixture.close();

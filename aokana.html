@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Aokana · Web player</title>
+    <script>
+      if (new URLSearchParams(location.search).get('no-canvas') === '1')
+        document.documentElement.classList.add('no-canvas');
+    </script>
+    <link rel="stylesheet" href="aokana.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <p class="eyebrow">Buriko web engine</p>
+        <h1>Aokana</h1>
+      </div>
+      <nav><a href="/">C;HN</a><a href="/aokana-assets.html">Asset laboratory</a></nav>
+    </header>
+    <main>
+      <div class="controls">
+        <button id="connect" type="button">Use local game files</button>
+        <label class="folder"
+          >Choose game folder <input id="files" type="file" webkitdirectory directory
+        /></label>
+        <label class="mode"><input id="no-canvas" type="checkbox" /> No canvas</label>
+        <button id="play" type="button" disabled>Play</button>
+        <span id="status" role="status">Connect the local installation or choose a folder.</span>
+      </div>
+      <section id="surface" aria-label="Game display">
+        <canvas id="game-canvas" tabindex="0"></canvas>
+      </section>
+      <pre id="diagnostics" aria-label="Launch diagnostics"></pre>
+    </main>
+    <script type="module" src="/dist/engines/buriko/games/aokana/browser-game.js"></script>
+  </body>
+</html>

@@ -201,7 +201,7 @@ test('mounted text selections draw and complete through one graph Window and sha
   }
 });
 
-test('mounted graph without a selected font provider retains only selection settings', async () => {
+test('mounted graph selects the complete browser font selection family', async () => {
   const fixture = await createMountedVmFixture();
   try {
     assert.deepEqual(
@@ -210,7 +210,7 @@ test('mounted graph without a selected font provider retains only selection sett
           ({primary, secondary}) => primary === 0x90 && secondary >= 0xa0 && secondary <= 0xa7,
         )
         .map(({secondary}) => secondary),
-      [0xa4, 0xa5, 0xa6, 0xa7],
+      [0xa0, 0xa4, 0xa5, 0xa6, 0xa1, 0xa7, 0xa2, 0xa3],
     );
   } finally {
     await fixture.close();

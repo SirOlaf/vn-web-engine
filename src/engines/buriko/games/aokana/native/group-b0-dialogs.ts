@@ -216,18 +216,3 @@ export function createGroupB0ModelessSettings(
   });
   return definitions;
 }
-
-/** Full standalone B0 dialog family, retaining the native secondary ordering. */
-export function createGroupB0Dialogs(
-  dialogs: AokanaEngineDialogs,
-  ansi: AokanaAnsiDialogs,
-  productKey: AokanaProductKeyDialog,
-  selection: AokanaSelectionDialog,
-  settings: AokanaModelessSettings,
-): AokanaNativeSlotDefinition[] {
-  return [
-    ...createGroupB0ModelessSettings(settings),
-    ...createGroupB0ModalDialogs(dialogs, selection),
-    ...createGroupB0FormDialogs(ansi, productKey),
-  ].sort((left, right) => left.secondary - right.secondary);
-}

@@ -58,6 +58,34 @@ function setup(pixelBudget = 8, external = false) {
   return {compositor, environment, allocator, manager, renderer, context};
 }
 
+test('selected pre-device budget initializes one shared renderer for ordinary traversal', () => {
+  const compositor = new AokanaBitmapCompositor();
+  const environment = new AokanaDisplayObjectEnvironment(
+    compositor,
+    new AokanaDisplayDamage(8, rect(0, 0, 3, 3)),
+  );
+  const allocator = new AokanaDistributedAllocator(2);
+  const surfaces = new AokanaSurfaces(
+    new AokanaNativeFonts(new AokanaNativeText()),
+    compositor,
+    allocator,
+  );
+  const manager = new AokanaDisplayManager(
+    environment,
+    surfaces,
+    new AokanaNativeDisplayState(1920, 1080),
+  );
+  assert.equal(environment.displayContext, null);
+  manager.setRenderPixelBudget(6406);
+  const renderer = manager.initializeObjectRenderer();
+  assert.equal(manager.initializeObjectRenderer(), renderer);
+  assert.equal(renderer.ownsProcessing, true);
+  assert.equal(manager.renderPixelBudget, 6406);
+  assert.deepEqual(manager.collectOrdinaryObjects(), [manager.backdrop]);
+  assert.equal(environment.displayContext, null);
+  manager.dispose();
+});
+
 test('full and partial traversals preserve native strip boundaries, recorded keys and notification order', () => {
   const {manager, renderer, environment} = setup();
   const calls = [];
