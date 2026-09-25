@@ -10,20 +10,33 @@ import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native
 import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
 import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
 import {aokanaPresentationTextureSample} from '../dist/engines/buriko/games/aokana/native/presentation-sampling.js';
+import {invalidateCanvasFrame} from '../dist/graphics/canvas-frame-presenter.js';
+import {AokanaBrowserMfController} from '../dist/engines/buriko/games/aokana/native/movie-mf-browser-session.js';
+import {AokanaFullscreenMovieState} from '../dist/engines/buriko/games/aokana/native/movie-fullscreen-state.js';
 
 /** No browser/DOM/image display: the canvas boundary is a byte-array commit and a queued clock callback. */
 function fixture() {
   let tick = 100;
   const commits = [],
+    uploads = [],
     callbacks = [],
     events = new Map();
+  let sink = new Uint8ClampedArray(0);
   const context = {
     createImageData: (width, height) => ({
       width,
       height,
       data: new Uint8ClampedArray(width * height * 4),
     }),
-    putImageData: (frame) => commits.push(frame.data.slice()),
+    putImageData(frame, _x, _y, x = 0, y = 0, width = frame.width, height = frame.height) {
+      if (sink.length !== frame.data.length) sink = new Uint8ClampedArray(frame.data.length);
+      for (let row = y; row < y + height; row++) {
+        const first = (row * frame.width + x) * 4;
+        sink.set(frame.data.subarray(first, first + width * 4), first);
+      }
+      uploads.push({x, y, width, height});
+      commits.push(sink.slice());
+    },
   };
   const canvas = {
     width: 0,
@@ -82,11 +95,76 @@ function fixture() {
     assert.equal(display.lastPresentMilliseconds, tick);
     return commits.at(-1);
   };
-  return {device, display, write, present, commits, canvas};
+  return {device, display, write, present, commits, canvas, events, uploads};
 }
 const pixel = (bytes, x, y, width = 8) => [
   ...bytes.subarray((y * width + x) * 4, (y * width + x) * 4 + 4),
 ];
+
+test('returning from a retained MF movie restores the unchanged ordinary frame', async () => {
+  const s = fixture();
+  s.device.setFilter(2);
+  s.write(Array(8).fill(0x123456));
+  s.device.prepare(1, null, 0, 0);
+  const ordinary = (await s.present()).slice();
+  // This exercises the movie/presenter handoff with byte arrays only, without browser assets.
+  class Video extends EventTarget {
+    videoWidth = 8;
+    videoHeight = 4;
+    readyState = 2;
+    currentTime = 0;
+    data = new Uint8ClampedArray(8 * 4 * 4).fill(213);
+    load() {
+      if (this.src) this.dispatchEvent(new Event('loadedmetadata'));
+    }
+    play() {
+      this.dispatchEvent(new Event('playing'));
+      return Promise.resolve();
+    }
+    pause() {}
+    removeAttribute() {
+      this.src = '';
+    }
+    requestVideoFrameCallback(callback) {
+      this.callback = callback;
+      return 1;
+    }
+    cancelVideoFrameCallback() {
+      this.callback = null;
+    }
+  }
+  const video = new Video();
+  const retained = {
+    width: 0,
+    height: 0,
+    data: new Uint8ClampedArray(video.data.length),
+    getContext: () => ({drawImage: (source) => retained.data.set(source.data)}),
+  };
+  const document = {createElement: (tag) => (tag === 'video' ? video : retained)};
+  const target = s.canvas.getContext('2d');
+  target.drawImage = (source) => target.putImageData(source);
+  const fullscreen = new AokanaFullscreenMovieState();
+  const controller = new AokanaBrowserMfController(
+    document,
+    {surface: s.canvas, presentationMode: 'canvas'},
+    fullscreen,
+  );
+  fullscreen.controller = controller;
+  try {
+    await controller.open(new Uint8Array(), new AbortController().signal);
+    video.callback();
+    assert.deepEqual(s.commits.at(-1), video.data);
+    video.data.fill(99);
+    fullscreen.displayControl.repaint();
+    assert.equal(s.commits.at(-1)[0], 213); // Repaint uses the retained decoded frame.
+  } finally {
+    controller.close();
+  }
+  const previous = s.commits.length;
+  assert.deepEqual(await s.present(), ordinary);
+  assert.equal(s.commits.length, previous + 1);
+  assert.deepEqual(s.uploads.at(-1), {x: 0, y: 0, width: 8, height: 4});
+});
 
 test('concrete software device uploads dirty texels, samples the quad and commits on its frame callback', async () => {
   const s = fixture();
@@ -152,6 +230,44 @@ test('repeated full uploads reuse identical sampled pixels and redraw after a so
   assert.equal(rasterizations, 3);
 });
 
+test('unchanged frames keep present timing and restore the canvas after other drawing and reset', async () => {
+  const s = fixture();
+  s.device.setFilter(2);
+  s.write(Array(8).fill(0x804020));
+  s.device.prepare(1, null, 0, 0);
+  const original = await s.present();
+  s.device.prepare(1, null, 0, 0);
+  await s.present();
+  assert.equal(s.commits.length, 1);
+  // The shared protocol is used by direct main-window GDI and other presenters.
+  invalidateCanvasFrame(s.canvas);
+  assert.deepEqual(await s.present(), original);
+  assert.equal(s.commits.length, 2);
+  s.write([0x204080]);
+  s.device.prepare(1, [{left: 0, top: 0, right: 0, bottom: 0}], 0, 0);
+  assert.deepEqual(pixel(await s.present(), 0, 0), [32, 64, 128, 255]);
+  assert.equal(s.commits.length, 3);
+  assert.deepEqual(s.uploads.at(-1), {x: 0, y: 0, width: 2, height: 2});
+  s.write([0x010203, 0x040506]);
+  s.device.prepare(1, [{left: 0, top: 0, right: 0, bottom: 0}], 0, 0);
+  s.device.prepare(1, [{left: 1, top: 0, right: 1, bottom: 0}], 0, 0);
+  assert.deepEqual(await s.present(), s.device.frame.data);
+  assert.deepEqual(s.uploads.at(-1), {x: 0, y: 0, width: 4, height: 2});
+  s.write([0x204080]);
+  s.device.prepare(1, [{left: 0, top: 0, right: 0, bottom: 0}], 0, 0);
+  invalidateCanvasFrame(s.canvas);
+  assert.deepEqual(await s.present(), s.device.frame.data);
+  assert.deepEqual(s.uploads.at(-1), {x: 0, y: 0, width: 8, height: 4});
+  s.events.get('contextlost')({preventDefault() {}});
+  assert.equal(await s.device.present({waitCount: 99}), 0x80000000);
+  s.events.get('contextrestored')();
+  assert.equal(s.device.cooperativeStatus(), 0x80000001);
+  s.write(Array(8).fill(0x804020));
+  s.device.prepare(1, null, 0, 0);
+  assert.deepEqual(await s.present(), original);
+  assert.equal(s.commits.length, 6);
+});
+
 test('optimized point and linear frames retain the reference quad sampling at shifted scale', () => {
   const s = fixture();
   s.display.requestedWidth = 11;
@@ -190,6 +306,14 @@ test('optimized point and linear frames retain the reference quad sampling at sh
           expected[offset + channel] = Math.fround(color[channel] * 255);
       }
     assert.deepEqual(actual, expected);
+    if (sampler === 'linear') {
+      assert.ok(s.device.linearRasterizer, 'the ordinary frame selected the shared SIMD kernel');
+      // An unavailable accelerator must preserve the same complete device frame.
+      s.device.linearRasterizer = null;
+      s.device.rasterValid = false;
+      s.device.prepare(1, null, 1, -1);
+      assert.deepEqual(s.device.frame.data, expected);
+    }
   }
 });
 

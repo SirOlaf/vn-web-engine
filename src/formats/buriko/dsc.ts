@@ -34,25 +34,92 @@ export function decodeDsc(bytes: Uint8Array, maxBytes = 0x4000000): Uint8Array {
     level = next;
   }
   if (!symbols.length && tokens) throw new Error('Empty DSC Huffman tree');
-  const bits = new Bits(bytes.subarray(0x220)),
-    output = new Uint8Array(size);
+  // Keep tree construction and scalar tails so incomplete trees and truncated
+  // streams retain the same errors. Most symbols fit in a single prefix lookup;
+  // longer codes continue from the node reached by those twelve bits. Tiny
+  // streams skip the table setup.
+  const prefixBits = 12,
+    prefixTable = tokens >= 128 ? new Int32Array(1 << prefixBits) : null;
+  function fillPrefixes(index: number, prefix: number, depth: number): void {
+    const node = nodes[index]!;
+    if (node.symbol >= 0) {
+      const suffixBits = prefixBits - depth;
+      prefixTable!.fill(
+        (node.symbol << 4) | depth,
+        prefix << suffixBits,
+        (prefix + 1) << suffixBits,
+      );
+    } else if (depth === prefixBits) {
+      prefixTable![prefix] = -index;
+    } else {
+      for (let bit = 0; bit < node.children.length; bit++)
+        fillPrefixes(node.children[bit]!, (prefix << 1) | bit, depth + 1);
+    }
+  }
+  if (prefixTable) fillPrefixes(0, 0, 0);
+  const input = bytes.subarray(0x220),
+    bits = new Bits(input),
+    bitLength = input.length * 8,
+    output = new Uint8Array(size),
+    outputView = view(output);
   let p = 0;
   for (let token = 0; token < tokens; token++) {
-    let node = nodes[0]!;
-    while (node.symbol < 0) {
-      const child = node.children[bits.read(1)];
-      if (child === undefined) throw new Error('Invalid DSC code');
-      node = nodes[child]!;
+    let node = nodes[0]!,
+      symbol = -1;
+    if (prefixTable && bits.position + prefixBits <= bitLength) {
+      const index = bits.position >>> 3,
+        shift = bits.position & 7,
+        prefix =
+          (((input[index]! << 16) | (input[index + 1]! << 8) | input[index + 2]!) >>>
+            (12 - shift)) &
+          4095,
+        entry = prefixTable[prefix]!;
+      if (entry > 0) {
+        bits.position += entry & 15;
+        symbol = entry >>> 4;
+      } else if (entry < 0) {
+        bits.position += prefixBits;
+        node = nodes[-entry]!;
+      }
     }
-    if (node.symbol < 256) {
-      checkRange(size, p, 1);
-      output[p++] = node.symbol;
+    if (symbol < 0) {
+      while (node.symbol < 0) {
+        const child = node.children[bits.read(1)];
+        if (child === undefined) throw new Error('Invalid DSC code');
+        node = nodes[child]!;
+      }
+      symbol = node.symbol;
+    }
+    if (symbol < 256) {
+      if (p >= size) checkRange(size, p, 1);
+      output[p++] = symbol;
     } else {
-      const count = (node.symbol & 255) + 2,
-        distance = bits.read(12) + 2;
+      const count = (symbol & 255) + 2;
+      if (bits.position + 12 > bitLength) bits.read(12);
+      const index = bits.position >>> 3,
+        shift = bits.position & 7,
+        distance =
+          ((((input[index]! << 16) | (input[index + 1]! << 8) | input[index + 2]!) >>>
+            (12 - shift)) &
+            4095) +
+          2;
+      bits.position += 12;
       if (distance > p) throw new Error('DSC backreference precedes output');
-      checkRange(size, p, count);
-      for (let i = 0; i < count; i++, p++) output[p] = output[p - distance]!;
+      if (p > size - count) checkRange(size, p, count);
+      const end = p + count;
+      if (count >= 16) {
+        // Read only already decoded bytes before each four-byte write. A
+        // distance of two repeats its pair; distance-three overlap stays scalar.
+        if (distance >= 4) {
+          for (; p + 4 <= end; p += 4)
+            outputView.setUint32(p, outputView.getUint32(p - distance, true), true);
+        } else if (distance === 2) {
+          const pair = output[p - 2]! | (output[p - 1]! << 8),
+            word = pair | (pair << 16);
+          for (; p + 4 <= end; p += 4) outputView.setUint32(p, word, true);
+        }
+      }
+      for (; p < end; p++) output[p] = output[p - distance]!;
     }
   }
   if (p !== size) throw new Error(`DSC size mismatch: ${p} != ${size}`);

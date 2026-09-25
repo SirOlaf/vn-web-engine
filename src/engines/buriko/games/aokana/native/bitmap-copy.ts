@@ -1,6 +1,7 @@
 import {
   bitmapStorage,
   cropAokanaBitmap,
+  initializedAokanaBitmapView,
   type AokanaBitmap,
   type AokanaBitmapRectangle,
 } from './bitmap.js';
@@ -41,16 +42,75 @@ export function copyBlock(
   output.written(destinationOffset, length);
 }
 
+/** Proven initialized spans may bypass per-block checks; overlapping copies keep native MOVQ order. */
+function copyInitializedRows(
+  destination: AokanaBitmap,
+  source: AokanaBitmap,
+  rowBytes: number,
+  height: number,
+): boolean {
+  const input = source.storage,
+    output = destination.storage;
+  if (input === null || output === null || rowBytes === 0 || height === 0) return false;
+  if (
+    !(input.bytes.buffer instanceof ArrayBuffer) ||
+    !(output.bytes.buffer instanceof ArrayBuffer) ||
+    !Number.isSafeInteger(source.offset) ||
+    !Number.isSafeInteger(destination.offset) ||
+    !Number.isSafeInteger(source.stride) ||
+    !Number.isSafeInteger(destination.stride)
+  )
+    return false;
+  const sourceLast = source.offset + (height - 1) * source.stride,
+    destinationLast = destination.offset + (height - 1) * destination.stride,
+    sourceBegin = Math.min(source.offset, sourceLast),
+    destinationBegin = Math.min(destination.offset, destinationLast),
+    sourceEnd = Math.max(source.offset, sourceLast) + rowBytes,
+    destinationEnd = Math.max(destination.offset, destinationLast) + rowBytes;
+  if (
+    input.initializedView(sourceBegin, sourceEnd - sourceBegin) === null ||
+    output.initializedView(destinationBegin, destinationEnd - destinationBegin) === null
+  )
+    return false;
+  if (input.bytes.buffer === output.bytes.buffer) {
+    const sourceBase = input.bytes.byteOffset,
+      destinationBase = output.bytes.byteOffset;
+    if (
+      sourceBase + source.offset === destinationBase + destination.offset &&
+      source.stride === destination.stride
+    )
+      return true;
+    if (
+      sourceBase + sourceBegin < destinationBase + destinationEnd &&
+      destinationBase + destinationBegin < sourceBase + sourceEnd
+    )
+      return false;
+  }
+  if (source.stride === rowBytes && destination.stride === rowBytes)
+    output.bytes.set(input.bytes.subarray(source.offset, sourceEnd), destination.offset);
+  else
+    for (let row = 0; row < height; row++) {
+      const offset = source.offset + row * source.stride;
+      output.bytes.set(
+        input.bytes.subarray(offset, offset + rowBytes),
+        destination.offset + row * destination.stride,
+      );
+    }
+  return true;
+}
+
 /**
  * 1400410c0/14003dd70 copy aligned 16-byte blocks, otherwise successive 8-byte blocks.
  * Only row lengths that are not divisible by four use the native overlap-safe memmove.
  */
 export function copyAokanaBitmapRows(destination: AokanaBitmap, source: AokanaBitmap): void {
   const rowBytes = Math.imul(source.bytesPerPixel, source.width) >>> 0;
+  const height = source.height >>> 0;
+  if (copyInitializedRows(destination, source, rowBytes, height)) return;
   const aligned =
     ((source.offset | destination.offset | source.stride | destination.stride) & 15) === 0;
   const block = (rowBytes & 15) === 0 && aligned ? 16 : 8;
-  for (let y = 0; y < source.height >>> 0; y++) {
+  for (let y = 0; y < height; y++) {
     const input = source.offset + y * source.stride;
     const output = destination.offset + y * destination.stride;
     if (
@@ -78,8 +138,54 @@ export function copyAokanaBitmapRows(destination: AokanaBitmap, source: AokanaBi
   }
 }
 
+/** Separate bounded spans can convert DWORDs without per-pair tuples or validity checks. */
+function copyInitializedRgbToAlpha(destination: AokanaBitmap, source: AokanaBitmap): boolean {
+  const width = source.width >>> 0,
+    height = source.height >>> 0,
+    rowBytes = width * 4,
+    output = destination.storage;
+  if (
+    width === 0 ||
+    height === 0 ||
+    output === null ||
+    !Number.isSafeInteger(destination.offset) ||
+    destination.offset < 0 ||
+    !Number.isSafeInteger(destination.stride) ||
+    destination.stride < rowBytes ||
+    source.stride < rowBytes
+  )
+    return false;
+  const input = initializedAokanaBitmapView(source, width, height),
+    destinationEnd = destination.offset + (height - 1) * destination.stride + rowBytes;
+  if (
+    input === null ||
+    !(input.buffer instanceof ArrayBuffer) ||
+    !(output.bytes.buffer instanceof ArrayBuffer) ||
+    input.buffer === output.bytes.buffer ||
+    !Number.isSafeInteger(destinationEnd) ||
+    destinationEnd > output.bytes.length ||
+    // A zero-length initialized span proves liveness without requiring old
+    // destination bytes to be initialized. Writes need only the bounds above.
+    output.initializedView(0, 0) === null
+  )
+    return false;
+  const view = output.view;
+  for (let row = 0; row < height; row++) {
+    const inputRow = source.offset + row * source.stride,
+      outputRow = destination.offset + row * destination.stride;
+    for (let column = 0; column < width; column++) {
+      const byte = column * 4;
+      view.setUint32(outputRow + byte, input.getUint32(inputRow + byte, true) | 0xff000000, true);
+    }
+    if (destination.stride !== rowBytes) output.written(outputRow, rowBytes);
+  }
+  if (destination.stride === rowBytes) output.written(destination.offset, rowBytes * height);
+  return true;
+}
+
 /** 14003dcc0 preserves source RGB and forces both pair and tail alpha bytes to 255. */
 export function copyAokanaRgbToAlpha(destination: AokanaBitmap, source: AokanaBitmap): void {
+  if (copyInitializedRgbToAlpha(destination, source)) return;
   writeAokanaMappedPairs(destination, source, (pixel) => pixel | 0xff000000);
 }
 

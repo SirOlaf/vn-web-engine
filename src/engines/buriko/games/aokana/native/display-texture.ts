@@ -33,6 +33,8 @@ export class AokanaDisplayTexture {
   private locked = false;
   private disposed = false;
   private dirty: AokanaBitmapRectangle[] = [];
+  /** Conservative union of texels changed by the last successful update. */
+  updateBounds: AokanaBitmapRectangle | null = null;
 
   constructor(
     readonly width: number,
@@ -92,7 +94,7 @@ export class AokanaDisplayTexture {
       this.format !== source.format
     )
       throw new Error('Aokana display textures have incompatible update descriptors');
-    let changed = false;
+    let bounds: AokanaBitmapRectangle | null = null;
     for (const rectangle of source.dirty)
       for (let y = rectangle.top; y <= rectangle.bottom; y++) {
         const offset = y * this.pitch + rectangle.left * 4;
@@ -100,19 +102,26 @@ export class AokanaDisplayTexture {
         source.storage.range(offset, length, true);
         const first = offset >>> 2;
         const last = (offset + length) >>> 2;
-        let different = false;
-        for (let index = first; index < last; index++)
-          if (this.words[index] !== source.words[index]) {
-            different = true;
-            break;
+        let begin = first;
+        while (begin < last && this.words[begin] === source.words[begin]) begin++;
+        if (begin < last) {
+          let end = last;
+          while (end > begin + 1 && this.words[end - 1] === source.words[end - 1]) end--;
+          this.storage.bytes.set(source.storage.bytes.subarray(begin * 4, end * 4), begin * 4);
+          const left = begin - y * this.width,
+            right = end - y * this.width - 1;
+          if (bounds === null) bounds = {left, top: y, right, bottom: y};
+          else {
+            bounds.left = Math.min(bounds.left, left);
+            bounds.top = Math.min(bounds.top, y);
+            bounds.right = Math.max(bounds.right, right);
+            bounds.bottom = Math.max(bounds.bottom, y);
           }
-        if (different) {
-          this.storage.bytes.set(source.storage.bytes.subarray(offset, offset + length), offset);
-          changed = true;
         }
       }
     source.dirty = [];
-    return changed;
+    this.updateBounds = bounds;
+    return bounds !== null;
   }
   dispose(): void {
     this.check();

@@ -52,6 +52,80 @@ interface SurfaceSlot extends AokanaSurfaceRecord {
   lockDepth: number;
 }
 
+/** RGB24 import fast path; false leaves every observable write/fault to the scalar path. */
+function importInitializedRgb24(
+  destination: AokanaBitmap,
+  source: AokanaBitmap,
+  initialized: Uint8Array | undefined,
+  requestedWidth: number,
+  requestedHeight: number,
+): boolean {
+  const input = source.storage,
+    output = destination.storage;
+  if (
+    input === null ||
+    output === null ||
+    source.width <= 0 ||
+    source.height <= 0 ||
+    requestedWidth !== source.width ||
+    requestedHeight !== source.height ||
+    source.format !== 1 ||
+    source.bytesPerPixel !== 3 ||
+    destination.format !== 1 ||
+    destination.width !== source.width ||
+    destination.height !== source.height ||
+    destination.offset !== 0 ||
+    !Number.isSafeInteger(source.offset) ||
+    !Number.isSafeInteger(source.stride) ||
+    !(input.bytes.buffer instanceof ArrayBuffer) ||
+    !(output.bytes.buffer instanceof ArrayBuffer) ||
+    input.bytes.buffer === output.bytes.buffer ||
+    (initialized !== undefined &&
+      (!(initialized.buffer instanceof ArrayBuffer) || initialized.length !== input.bytes.length))
+  )
+    return false;
+
+  const width = source.width,
+    height = source.height,
+    sourceRowBytes = width * 3,
+    destinationRowBytes = width * 4,
+    destinationLength = destinationRowBytes * height;
+  if (
+    !Number.isSafeInteger(destinationLength) ||
+    destinationLength !== output.bytes.length ||
+    destination.stride !== destinationRowBytes ||
+    source.stride < sourceRowBytes
+  )
+    return false;
+
+  // This preflight must never fault: if any row or validity byte is bad, the original
+  // scalar loop performs reads and commits prior pixels in native order before faulting.
+  for (let y = 0; y < height; y++) {
+    const offset = source.offset + y * source.stride;
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset + sourceRowBytes > input.bytes.length)
+      return false;
+    if (initialized !== undefined)
+      for (let byte = offset, end = offset + sourceRowBytes; byte < end; byte++)
+        if (initialized[byte] === 0) return false;
+  }
+
+  for (let y = 0; y < height; y++) {
+    let inputOffset = source.offset + y * source.stride;
+    const outputOffset = y * destinationRowBytes;
+    for (let x = 0; x < width; x++, inputOffset += 3) {
+      // The scalar native path reads G, R, B before writing the destination DWORD.
+      const green = input.bytes[inputOffset + 1]!,
+        red = input.bytes[inputOffset + 2]!,
+        blue = input.bytes[inputOffset]!;
+      output.view.setUint32(outputOffset + x * 4, blue | (green << 8) | (red << 16), true);
+    }
+  }
+  // All output pixels have now been committed, so marking the complete allocation
+  // initialized is equivalent to the scalar path's per-DWORD updates.
+  output.written(0, output.bytes.length);
+  return true;
+}
+
 /** Global 1401e8d58's fixed 0x4000-slot table and CMemoryDX ownership. */
 export class AokanaSurfaces {
   readonly capacity = 0x4000;
@@ -525,19 +599,20 @@ export class AokanaSurfaces {
       bytesPerPixel,
     };
     if (format === 1) {
-      for (let y = 0; y < height >>> 0; y++)
-        for (let x = 0; x < width >>> 0; x++) {
-          const offset = source.offset + y * source.stride + x * 3;
-          // Native reads G,R,B before committing the one destination DWORD.
-          const green = bitmapRead8(source, offset + 1),
-            red = bitmapRead8(source, offset + 2),
-            blue = bitmapRead8(source, offset);
-          bitmapWrite32(
-            destination,
-            destination.offset + (y * width + x) * 4,
-            blue | (green << 8) | (red << 16),
-          );
-        }
+      if (!importInitializedRgb24(destination, source, initialized, width, height))
+        for (let y = 0; y < height >>> 0; y++)
+          for (let x = 0; x < width >>> 0; x++) {
+            const offset = source.offset + y * source.stride + x * 3;
+            // Native reads G,R,B before committing the one destination DWORD.
+            const green = bitmapRead8(source, offset + 1),
+              red = bitmapRead8(source, offset + 2),
+              blue = bitmapRead8(source, offset);
+            bitmapWrite32(
+              destination,
+              destination.offset + (y * width + x) * 4,
+              blue | (green << 8) | (red << 16),
+            );
+          }
     } else copyAokanaBitmapRows(destination, source);
     removeAokanaBitmapMatte(destination, this.compositor.importMatteColor);
     if (metadata !== null) {

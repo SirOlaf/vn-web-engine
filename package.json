@@ -6,6 +6,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "build": "tsc -p tsconfig.json",
+    "build:wasm": "node tools/build-wasm.mjs",
     "test": "npm run build && node --test tests/*.test.mjs",
     "verify": "npm run build && node tools/verify.mjs",
     "start": "node tools/serve.mjs",

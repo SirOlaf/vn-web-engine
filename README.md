@@ -138,6 +138,12 @@ The boundary is documented in [`src/engines/mages/README.md`](src/engines/mages/
 
 The runtime has no production npm dependencies. TypeScript and Prettier are development dependencies.
 
+Aokana uses small, precompiled WebAssembly/SIMD kernels for linear presentation
+and selected bitmap operations, with JavaScript fallbacks. Normal builds still
+need only Node.js and npm. Contributors editing Rust can rebuild the embedded
+modules with `npm run build:wasm`; see the [linear sampler](wasm/linear-rgb/README.md)
+and [native bitmap kernel](wasm/aokana-bitmap/README.md) build instructions.
+
 ## Development
 
 Native reconstruction has a separate [tooling workflow](docs/tooling/README.md) for exact-address evidence, callback ownership, partial aggregation audits, reviewed validation boundaries, and experimental TypeScript lifting. For Aokana reconstruction, use its explicitly reviewed test boundaries instead of a broad suite.

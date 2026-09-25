@@ -6,6 +6,7 @@ import type {AokanaNativeDisplayState, AokanaNativeRectangle} from './display-st
 import type {AokanaNativeInput} from './input.js';
 import type {AokanaWindowMessages} from './window-messages.js';
 import type {AokanaMainDomInput} from './main-dom-input.js';
+import {invalidateCanvasFrame} from '../../../../../graphics/canvas-frame-presenter.js';
 
 export interface AokanaMainWindowCallbacks {
   /** Native live-window gate 1e8d00, set by WM_CREATE and cleared by WM_DESTROY. */
@@ -521,6 +522,7 @@ export class AokanaBrowserMainWindow {
     context.imageSmoothingQuality = 'high';
     context.globalAlpha = 1;
     context.globalCompositeOperation = 'source-over';
+    invalidateCanvasFrame(this.surface);
     context.drawImage(source, destinationX, destinationY, width, height);
     context.restore();
   }

@@ -83,11 +83,9 @@ export class AokanaStreamSpeaker extends AokanaStaticSpeaker {
       const finish = (): void => {
         if (complete) return;
         complete = true;
-        clearTimeout(timer);
         this.wake = null;
         resolve();
       };
-      const timer = setTimeout(finish, 100);
       this.wake = finish;
     });
     return take();

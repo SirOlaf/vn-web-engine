@@ -1,4 +1,10 @@
 import type {AokanaBitmapRectangle} from './bitmap.js';
+import {LinearRgbWasm} from '../../../../../graphics/linear-rgb-wasm.js';
+import type {Rect} from '../../../../../graphics/surface.js';
+import {
+  CanvasFramePresenter,
+  invalidateCanvasFrame,
+} from '../../../../../graphics/canvas-frame-presenter.js';
 import {AokanaNativeClock} from './clock.js';
 import type {AokanaDisplayCapabilities} from './display-capabilities.js';
 import {aokanaDisplayViewport} from './display-geometry.js';
@@ -9,7 +15,9 @@ import {AokanaScopedLock} from './scoped-lock.js';
 import {
   AOKANA_PRESENTATION_NUMERICAL_PROFILE,
   aokanaCubicPresentationSample,
+  aokanaPresentationLinearRgbBlendInto,
   aokanaPresentationLinearRgbInto,
+  aokanaPresentationLinearRgbRowInto,
   aokanaPresentationTextureSampleInto,
   type AokanaPresentationColor,
   type AokanaPresentationSampler,
@@ -88,6 +96,10 @@ export class AokanaDisplayDevice {
   private needsReset = false;
   private disposed = false;
   private logicalDeviceReady = false;
+  private linearRasterizer: LinearRgbWasm | null | undefined;
+  private canvasPresenter: CanvasFramePresenter | null = null;
+  private frameRevision = {};
+  private frameDamage: Rect | null | undefined; // Undefined: full upload; null: no pending writes.
   dialogBoxMode = false;
   textureAlpha = 0; // 1e6a5c.
   filterMode = 0; // 1e6a58.
@@ -109,6 +121,7 @@ export class AokanaDisplayDevice {
   }
   private readonly onContextLost = (event: Event): void => {
     event.preventDefault();
+    invalidateCanvasFrame(this.canvas);
     this.lost = true;
   };
   private readonly onContextRestored = (): void => {
@@ -215,10 +228,12 @@ export class AokanaDisplayDevice {
       this.fullscreen !== 0
         ? [this.display.desktopWidth, this.display.desktopHeight]
         : [this.display.requestedWidth, this.display.requestedHeight];
+    invalidateCanvasFrame(this.canvas);
     this.canvas.width = width;
     this.canvas.height = height;
     this.frame =
       this.presentationMode === 'canvas' ? this.context!.createImageData(width, height) : null;
+    this.frameDamage = undefined;
     this.rasterValid = false;
   }
   /** B1CE0's attempt; the controller supplies the one concrete interface owner.
@@ -312,6 +327,7 @@ export class AokanaDisplayDevice {
     context.globalAlpha = 1;
     context.globalCompositeOperation = 'copy';
     context.fillStyle = '#000000';
+    invalidateCanvasFrame(this.canvas);
     context.fillRect(0, 0, this.canvas.width, this.canvas.height);
     context.restore();
   }
@@ -388,11 +404,24 @@ export class AokanaDisplayDevice {
           }
       if (!changed && sameQuad && this.rasterCubic === cubic && this.rasterSampler === this.sampler)
         return;
+      const incremental =
+        sameQuad &&
+        !cubic &&
+        this.rasterCubic === cubic &&
+        this.rasterSampler === this.sampler &&
+        sampled.updateBounds !== null
+          ? this.changedOutputRectangle(sampled, sampled.updateBounds)
+          : undefined;
+      // A changed texel outside this quad's sample footprint leaves the frame intact.
+      if (incremental === null) return;
+      this.markFrameChanged(incremental);
       this.rasterValid = false;
       const pixels = this.frame.data;
-      pixels.fill(0);
-      for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255;
-      this.rasterizeQuad(sampled, cubic);
+      if (incremental === undefined) {
+        pixels.fill(0);
+        for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255;
+      }
+      this.rasterizeQuad(sampled, cubic, incremental);
       this.rasterVertices.set(vertices);
       this.rasterCubic = cubic;
       this.rasterSampler = this.sampler;
@@ -434,9 +463,88 @@ export class AokanaDisplayDevice {
     ])
       quad.setFloat32(offset!, value!, true);
     this.shifted = 1;
-    if (this.frame !== null) this.rasterizeQuad(texture, false);
+    if (this.frame !== null) {
+      this.markFrameChanged();
+      this.rasterizeQuad(texture, false);
+    }
   }
-  private rasterizeQuad(sampled: AokanaDisplayTexture, cubic: boolean): void {
+  private markFrameChanged(rectangle?: AokanaBitmapRectangle): void {
+    this.frameRevision = {};
+    if (rectangle === undefined) this.frameDamage = undefined;
+    else if (this.frameDamage !== undefined) {
+      const damage = this.frameDamage;
+      const left = Math.min(rectangle.left, damage?.x ?? rectangle.left),
+        top = Math.min(rectangle.top, damage?.y ?? rectangle.top),
+        right = Math.max(rectangle.right + 1, damage === null ? 0 : damage.x + damage.width),
+        bottom = Math.max(rectangle.bottom + 1, damage === null ? 0 : damage.y + damage.height);
+      this.frameDamage = {x: left, y: top, width: right - left, height: bottom - top};
+    }
+  }
+  /** Map changed texels using the same rounded coordinates as the actual sampler. */
+  private changedOutputRectangle(
+    sampled: AokanaDisplayTexture,
+    damage: AokanaBitmapRectangle,
+  ): AokanaBitmapRectangle | null | undefined {
+    const quad = new DataView(
+      this.vertices!.buffer,
+      this.vertices!.byteOffset,
+      this.vertices!.byteLength,
+    );
+    const axis = (
+      start: number,
+      end: number,
+      maximum: number,
+      textureSize: number,
+      outputSize: number,
+      dirtyStart: number,
+      dirtyEnd: number,
+    ): [number, number] | null | undefined => {
+      const extent = Math.fround(end - start),
+        first = Math.max(0, Math.ceil(start)),
+        last = Math.min(outputSize, Math.ceil(end));
+      if (![extent, first, last, maximum].every(Number.isFinite)) return undefined;
+      let lower = last,
+        upper = first - 1;
+      for (let coordinate = first; coordinate < last; coordinate++) {
+        const uv = Math.fround(Math.fround(Math.fround(coordinate - start) / extent) * maximum),
+          position = Math.fround(Math.fround(uv) * Math.fround(textureSize)),
+          sample = Math.floor(this.sampler === 'linear' ? Math.fround(position - 0.5) : position);
+        if (!Number.isFinite(sample)) return undefined;
+        if (sample <= dirtyEnd && sample + Number(this.sampler === 'linear') >= dirtyStart) {
+          lower = Math.min(lower, coordinate);
+          upper = coordinate;
+        }
+      }
+      return lower <= upper ? [lower, upper] : null;
+    };
+    const x = axis(
+      quad.getFloat32(0, true),
+      quad.getFloat32(28, true),
+      quad.getFloat32(48, true),
+      sampled.width,
+      this.frame!.width,
+      damage.left,
+      damage.right,
+    );
+    const y = axis(
+      quad.getFloat32(4, true),
+      quad.getFloat32(60, true),
+      quad.getFloat32(80, true),
+      sampled.height,
+      this.frame!.height,
+      damage.top,
+      damage.bottom,
+    );
+    if (x === undefined || y === undefined) return undefined;
+    if (x === null || y === null) return null;
+    return {left: x[0], top: y[0], right: x[1], bottom: y[1]};
+  }
+
+  private rasterizeQuad(
+    sampled: AokanaDisplayTexture,
+    cubic: boolean,
+    clip?: AokanaBitmapRectangle,
+  ): void {
     const frame = this.frame!;
     const pixels = frame.data;
     const quad = new DataView(
@@ -452,10 +560,10 @@ export class AokanaDisplayDevice {
       vMax = quad.getFloat32(80, true);
     const width = Math.fround(right - left),
       height = Math.fround(bottom - top);
-    const firstX = Math.max(0, Math.ceil(left)),
-      firstY = Math.max(0, Math.ceil(top));
-    const lastX = Math.min(frame.width, Math.ceil(right)),
-      lastY = Math.min(frame.height, Math.ceil(bottom));
+    const firstX = Math.max(clip?.left ?? 0, Math.ceil(left)),
+      firstY = Math.max(clip?.top ?? 0, Math.ceil(top));
+    const lastX = Math.min(clip === undefined ? frame.width : clip.right + 1, Math.ceil(right)),
+      lastY = Math.min(clip === undefined ? frame.height : clip.bottom + 1, Math.ceil(bottom));
     const frameWidth = frame.width;
     const logicalWidth = this.display.logicalWidth,
       logicalHeight = this.display.logicalHeight,
@@ -474,6 +582,7 @@ export class AokanaDisplayDevice {
       const fractionX = sampler === 'linear' ? new Float32Array(columns) : null;
       const textureWidth = Math.fround(sampled.width);
       const textureHeight = Math.fround(sampled.height);
+      let finiteColumns = true;
       for (let column = firstX; column < lastX; column++) {
         const u = Math.fround(Math.fround(Math.fround(column - left) / width) * uMax);
         const x = Math.fround(Math.fround(u) * textureWidth);
@@ -483,15 +592,101 @@ export class AokanaDisplayDevice {
           const nx = Math.floor(px);
           sourceX[column - firstX] = nx;
           fractionX[column - firstX] = Math.fround(px - nx);
+          if (!Number.isFinite(nx)) finiteColumns = false;
         }
       }
       const bytes = sampled.storage.bytes;
+      let topRow: Float32Array | undefined;
+      let bottomRow: Float32Array | undefined;
+      let topSourceY = NaN;
+      let bottomSourceY = NaN;
+      let acceleratorAttempted = false;
       for (let row = firstY; row < lastY; row++) {
         const v = Math.fround(Math.fround(Math.fround(row - top) / height) * vMax);
         const y = Math.fround(Math.fround(v) * textureHeight);
         const py = fractionX === null ? y : Math.fround(y - 0.5);
         const ny = Math.floor(py);
         const fy = Math.fround(py - ny);
+        if (fractionX !== null && finiteColumns && Number.isFinite(ny)) {
+          // Keep the first storage check and preceding pixel writes in native raster order.
+          // Once it succeeds, the synchronous pass may reuse its horizontal samples.
+          if (!frameRead.validated) {
+            for (let column = firstX; column < lastX && !frameRead.validated; column++) {
+              const index = column - firstX;
+              const offset = (row * frameWidth + column) * 4;
+              pixels[offset + 3] = 255;
+              aokanaPresentationLinearRgbInto(
+                sampled,
+                sourceX[index]!,
+                ny,
+                fractionX[index]!,
+                fy,
+                colorBuffer,
+                frameRead,
+              );
+              pixels[offset] = Math.fround(colorBuffer[0] * 255);
+              pixels[offset + 1] = Math.fround(colorBuffer[1] * 255);
+              pixels[offset + 2] = Math.fround(colorBuffer[2] * 255);
+            }
+            if (!frameRead.validated) continue;
+          }
+          if (!acceleratorAttempted) {
+            acceleratorAttempted = true;
+            if (this.linearRasterizer === undefined) this.linearRasterizer = LinearRgbWasm.create();
+            if (this.linearRasterizer !== null) {
+              const rows = lastY - row,
+                sourceY = new Float64Array(rows),
+                fractionY = new Float32Array(rows);
+              for (let next = row; next < lastY; next++) {
+                const v = Math.fround(Math.fround(Math.fround(next - top) / height) * vMax),
+                  y = Math.fround(Math.fround(v) * textureHeight),
+                  py = Math.fround(y - 0.5),
+                  ny = Math.floor(py);
+                sourceY[next - row] = ny;
+                fractionY[next - row] = Math.fround(py - ny);
+              }
+              if (
+                this.linearRasterizer.render(
+                  bytes,
+                  sampled.width,
+                  sampled.height,
+                  sampled.pitch,
+                  sourceX,
+                  fractionX,
+                  sourceY,
+                  fractionY,
+                  pixels,
+                  (row * frameWidth + firstX) * 4,
+                  frameWidth * 4,
+                )
+              )
+                return;
+            }
+          }
+          topRow ??= new Float32Array(columns * 3);
+          bottomRow ??= new Float32Array(columns * 3);
+          if (topSourceY !== ny) {
+            if (bottomSourceY === ny) {
+              [topRow, bottomRow] = [bottomRow, topRow];
+              [topSourceY, bottomSourceY] = [bottomSourceY, topSourceY];
+            } else {
+              aokanaPresentationLinearRgbRowInto(sampled, sourceX, fractionX, ny, topRow);
+              topSourceY = ny;
+            }
+          }
+          if (bottomSourceY !== ny + 1) {
+            aokanaPresentationLinearRgbRowInto(sampled, sourceX, fractionX, ny + 1, bottomRow);
+            bottomSourceY = ny + 1;
+          }
+          aokanaPresentationLinearRgbBlendInto(
+            topRow,
+            bottomRow,
+            fy,
+            pixels,
+            (row * frameWidth + firstX) * 4,
+          );
+          continue;
+        }
         for (let column = firstX; column < lastX; column++) {
           const index = column - firstX;
           const nx = sourceX[index]!;
@@ -577,13 +772,17 @@ export class AokanaDisplayDevice {
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     }
     if (this.lost || this.context === null || this.frame === null) return 0x80000000;
-    this.context.putImageData(this.frame, 0, 0);
+    this.canvasPresenter ??= new CanvasFramePresenter(this.canvas, this.context);
+    this.canvasPresenter.present(this.frame, this.frameRevision, this.frameDamage ?? undefined);
+    this.frameDamage = null;
     this.display.lastPresentMilliseconds = Number(BigInt.asUintN(32, this.clock.read()));
     output.waitCount = 0;
     return 0;
   }
   /** b11b0/b2040: shader, source, sampled, dynamic, quad, device. */
   release(): void {
+    this.canvasPresenter = null;
+    this.linearRasterizer = undefined;
     this.rasterValid = false;
     this.releaseShader();
     this.source?.dispose();

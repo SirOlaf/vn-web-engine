@@ -3,6 +3,7 @@ export class AokanaBitmapStorage {
   readonly bytes: Uint8Array;
   readonly view: DataView;
   private defined: Uint8Array | null;
+  private initializedPrefix = 0;
   private disposed = false;
   private nativeHeapReads = false;
   constructor(bytes: Uint8Array, initialized: boolean) {
@@ -38,7 +39,30 @@ export class AokanaBitmapStorage {
   written(offset: number, length: number): void {
     this.range(offset, length, false);
     if (offset === 0 && length === this.bytes.length) this.defined = null;
-    else this.defined?.fill(1, offset, offset + length);
+    else if (this.defined !== null) {
+      this.defined.fill(1, offset, offset + length);
+      // Sequential row/pair writes eventually initialize the entire allocation.
+      // Visit each newly initialized byte once, then retire its validity map.
+      if (offset <= this.initializedPrefix && offset + length > this.initializedPrefix) {
+        this.initializedPrefix = offset + length;
+        while (this.defined[this.initializedPrefix] === 1) this.initializedPrefix++;
+        if (this.initializedPrefix === this.bytes.length) this.defined = null;
+      }
+    }
+  }
+  /** Synchronous pixel kernels may bypass per-pixel checks only on initialized, bounded spans. */
+  initializedView(offset: number, length: number): DataView | null {
+    if (
+      this.disposed ||
+      !Number.isSafeInteger(offset) ||
+      !Number.isSafeInteger(length) ||
+      offset < 0 ||
+      length < 0 ||
+      offset + length > this.bytes.length ||
+      (this.defined !== null && offset + length > this.initializedPrefix)
+    )
+      return null;
+    return this.view;
   }
   /** Native callers may sample untouched _aligned_malloc bytes without a fault. */
   allowNativeHeapReads(): void {
@@ -181,6 +205,19 @@ export function bitmapStorage(
   if (storage === null) throw new TypeError('Aokana bitmap dereferences a null native pointer');
   storage.range(offset, length, read);
   return storage;
+}
+
+/** A checked envelope for fixed four-byte pixel traversal; unusual descriptors use scalar checks. */
+export function initializedAokanaBitmapView(
+  bitmap: AokanaBitmap,
+  width: number,
+  height: number,
+): DataView | null {
+  if (width === 0 || height === 0 || !Number.isSafeInteger(bitmap.stride)) return null;
+  const lastRow = bitmap.offset + (height - 1) * bitmap.stride;
+  const first = Math.min(bitmap.offset, lastRow);
+  const end = Math.max(bitmap.offset, lastRow) + width * 4;
+  return bitmap.storage?.initializedView(first, end - first) ?? null;
 }
 
 /** 14003e530 converts RGB888 to native 5:5:5 then fills exactly width pixels per row. */

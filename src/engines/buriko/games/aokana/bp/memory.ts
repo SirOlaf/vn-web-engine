@@ -1,4 +1,5 @@
 import type {AokanaBpThread} from './state.js';
+import {byteDataView} from '../../../../../core/binary.js';
 
 /** A native byte pointer: views of one backing buffer continue to overlap. */
 export interface AokanaBpPointer {
@@ -207,45 +208,61 @@ export class AokanaBpMemory {
     return pointer;
   }
 
-  private view(thread: AokanaBpThread, address: number, size: number): DataView {
-    return pointerView(this.pointer(thread, address, size), size);
+  private scalarPointer(thread: AokanaBpThread, address: number, size: number): AokanaBpPointer {
+    const pointer = this.pointer(thread, address, size);
+    // pointer() preserves native address faults; pointerView's integer guard follows it.
+    if (!Number.isInteger(pointer.offset))
+      throw new RangeError('Aokana pointer exceeds its byte view');
+    return pointer;
   }
 
   readU8(t: AokanaBpThread, a: number): number {
-    return this.view(t, a, 1).getUint8(0);
+    const p = this.scalarPointer(t, a, 1);
+    return byteDataView(p.bytes).getUint8(p.offset);
   }
   readI8(t: AokanaBpThread, a: number): number {
-    return this.view(t, a, 1).getInt8(0);
+    const p = this.scalarPointer(t, a, 1);
+    return byteDataView(p.bytes).getInt8(p.offset);
   }
   readU16(t: AokanaBpThread, a: number): number {
-    return this.view(t, a, 2).getUint16(0, true);
+    const p = this.scalarPointer(t, a, 2);
+    return byteDataView(p.bytes).getUint16(p.offset, true);
   }
   readI16(t: AokanaBpThread, a: number): number {
-    return this.view(t, a, 2).getInt16(0, true);
+    const p = this.scalarPointer(t, a, 2);
+    return byteDataView(p.bytes).getInt16(p.offset, true);
   }
   readU32(t: AokanaBpThread, a: number): number {
-    return this.view(t, a, 4).getUint32(0, true);
+    const p = this.scalarPointer(t, a, 4);
+    return byteDataView(p.bytes).getUint32(p.offset, true);
   }
   readI32(t: AokanaBpThread, a: number): number {
-    return this.view(t, a, 4).getInt32(0, true);
+    const p = this.scalarPointer(t, a, 4);
+    return byteDataView(p.bytes).getInt32(p.offset, true);
   }
   readU64(t: AokanaBpThread, a: number): bigint {
-    return this.view(t, a, 8).getBigUint64(0, true);
+    const p = this.scalarPointer(t, a, 8);
+    return byteDataView(p.bytes).getBigUint64(p.offset, true);
   }
   readI64(t: AokanaBpThread, a: number): bigint {
-    return this.view(t, a, 8).getBigInt64(0, true);
+    const p = this.scalarPointer(t, a, 8);
+    return byteDataView(p.bytes).getBigInt64(p.offset, true);
   }
   writeU8(t: AokanaBpThread, a: number, v: number): void {
-    this.view(t, a, 1).setUint8(0, v);
+    const p = this.scalarPointer(t, a, 1);
+    byteDataView(p.bytes).setUint8(p.offset, v);
   }
   writeU16(t: AokanaBpThread, a: number, v: number): void {
-    this.view(t, a, 2).setUint16(0, v, true);
+    const p = this.scalarPointer(t, a, 2);
+    byteDataView(p.bytes).setUint16(p.offset, v, true);
   }
   writeU32(t: AokanaBpThread, a: number, v: number): void {
-    this.view(t, a, 4).setUint32(0, v, true);
+    const p = this.scalarPointer(t, a, 4);
+    byteDataView(p.bytes).setUint32(p.offset, v, true);
   }
   writeU64(t: AokanaBpThread, a: number, v: bigint): void {
-    this.view(t, a, 8).setBigUint64(0, v, true);
+    const p = this.scalarPointer(t, a, 8);
+    byteDataView(p.bytes).setBigUint64(p.offset, v, true);
   }
 
   readCString(thread: AokanaBpThread, address: number): Uint8Array {

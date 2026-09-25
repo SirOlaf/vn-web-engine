@@ -1,4 +1,5 @@
 import {Surface} from './surface.js';
+import {invalidateCanvasFrame} from './canvas-frame-presenter.js';
 
 /** Canvas is only the presentation sink; off-screen buffers have no DOM dependency. */
 export class SurfacePresenter {
@@ -9,6 +10,7 @@ export class SurfacePresenter {
     this.context = context;
   }
   present(surface: Surface): void {
+    invalidateCanvasFrame(this.canvas);
     if (this.canvas.width !== surface.width) this.canvas.width = surface.width;
     if (this.canvas.height !== surface.height) this.canvas.height = surface.height;
     this.context.putImageData(

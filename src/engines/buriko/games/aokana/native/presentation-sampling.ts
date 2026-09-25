@@ -135,6 +135,76 @@ export function aokanaPresentationLinearRgbInto(
   }
 }
 
+/** Finite-coordinate horizontal half, after the raster pass validates its first texel read. */
+export function aokanaPresentationLinearRgbRowInto(
+  texture: AokanaDisplayTexture,
+  sourceX: Float64Array,
+  fractionX: Float32Array,
+  y: number,
+  output: Float32Array,
+): void {
+  if (y < 0 || y >= texture.height) {
+    output.fill(0);
+    return;
+  }
+  const bytes = texture.storage.bytes;
+  const row = y * texture.pitch;
+  for (let column = 0, offset = 0; column < sourceX.length; column++, offset += 3) {
+    const x = sourceX[column]!;
+    const a = x >= 0 && x < texture.width ? row + x * 4 : -1;
+    const b = x + 1 >= 0 && x + 1 < texture.width ? row + (x + 1) * 4 : -1;
+    const fx = fractionX[column]!;
+    // Normalized bytes and border zero are finite: the zero-weight MAD is an identity.
+    if (fx === 0) {
+      output[offset] = a < 0 ? 0 : normalizedByte[bytes[a + 2]!]!;
+      output[offset + 1] = a < 0 ? 0 : normalizedByte[bytes[a + 1]!]!;
+      output[offset + 2] = a < 0 ? 0 : normalizedByte[bytes[a]!]!;
+      continue;
+    }
+    const oneMinusX = f32(1 - fx);
+    const ar = a < 0 ? 0 : normalizedByte[bytes[a + 2]!]!;
+    const ag = a < 0 ? 0 : normalizedByte[bytes[a + 1]!]!;
+    const ab = a < 0 ? 0 : normalizedByte[bytes[a]!]!;
+    const br = b < 0 ? 0 : normalizedByte[bytes[b + 2]!]!;
+    const bg = b < 0 ? 0 : normalizedByte[bytes[b + 1]!]!;
+    const bb = b < 0 ? 0 : normalizedByte[bytes[b]!]!;
+    output[offset] = mad(br, fx, multiply(ar, oneMinusX));
+    output[offset + 1] = mad(bg, fx, multiply(ag, oneMinusX));
+    output[offset + 2] = mad(bb, fx, multiply(ab, oneMinusX));
+  }
+}
+
+/** Vertical half, with the same binary32 MAD and XRGB UNORM conversion as each sample. */
+export function aokanaPresentationLinearRgbBlendInto(
+  top: Float32Array,
+  bottom: Float32Array,
+  fy: number,
+  pixels: Uint8ClampedArray,
+  offset: number,
+): void {
+  // Horizontal rows contain finite binary32 values, including transparent-black borders.
+  if (fy === 0) {
+    for (let index = 0; index < top.length; index += 3, offset += 4) {
+      pixels[offset] = f32(top[index]! * 255);
+      pixels[offset + 1] = f32(top[index + 1]! * 255);
+      pixels[offset + 2] = f32(top[index + 2]! * 255);
+      pixels[offset + 3] = 255;
+    }
+    return;
+  }
+  const oneMinusY = f32(1 - fy);
+  for (let index = 0; index < top.length; index += 3, offset += 4) {
+    pixels[offset] = f32(mad(bottom[index]!, fy, multiply(top[index]!, oneMinusY)) * 255);
+    pixels[offset + 1] = f32(
+      mad(bottom[index + 1]!, fy, multiply(top[index + 1]!, oneMinusY)) * 255,
+    );
+    pixels[offset + 2] = f32(
+      mad(bottom[index + 2]!, fy, multiply(top[index + 2]!, oneMinusY)) * 255,
+    );
+    pixels[offset + 3] = 255;
+  }
+}
+
 /** Level zero, transparent-black border addressing, normalized BGRA8 texels. */
 export function aokanaPresentationTextureSample(
   texture: AokanaDisplayTexture,

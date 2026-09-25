@@ -1,5 +1,6 @@
-import type {AokanaBitmap} from './bitmap.js';
+import {initializedAokanaBitmapView, type AokanaBitmap} from './bitmap.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
+import {AOKANA_BITMAP_WASM_MIN_PIXELS, tryAokanaBitmapAlphaWasm} from './bitmap-alpha-wasm.js';
 import {
   aokanaAlphaHalfCoefficient,
   aokanaSignedProduct16,
@@ -136,6 +137,18 @@ export function blendAokanaAlphaWithTransparency(
 }
 
 function rgbDifference(source: number, destination: number, weight: number): number {
+  if (weight >= 0 && weight <= 128) {
+    // In this interval the signed 16-bit products cannot wrap, and the result
+    // cannot saturate. Two separated byte lanes fit in one 32-bit product.
+    const inverse = 128 - weight,
+      redBlue =
+        ((Math.imul(source & 0xff00ff, weight) + Math.imul(destination & 0xff00ff, inverse)) >>>
+          7) &
+        0xff00ff,
+      green =
+        ((((source >>> 8) & 255) * weight + ((destination >>> 8) & 255) * inverse) >>> 7) << 8;
+    return ((destination & 0xff000000) | redBlue | green) >>> 0;
+  }
   let pixel = destination & 0xff000000;
   for (let shift = 0; shift < 24; shift += 8) {
     const old = (destination >>> shift) & 255;
@@ -145,8 +158,83 @@ function rgbDifference(source: number, destination: number, weight: number): num
   return pixel >>> 0;
 }
 
+/** The common initialized surface path keeps MOVQ load/store order without tuple allocation. */
+function blendInitializedAlphaIntoRgb(
+  destination: AokanaBitmap,
+  source: AokanaBitmap,
+  transparency: number | null,
+): boolean {
+  const width = source.width >>> 0,
+    height = source.height >>> 0;
+  const input = initializedAokanaBitmapView(source, width, height),
+    output = initializedAokanaBitmapView(destination, width, height);
+  // No eager faults: partially initialized or invalid descriptors retain the
+  // checked path below, including stores completed before a later access faults.
+  if (input === null || output === null) return false;
+  if (
+    width * height >= AOKANA_BITMAP_WASM_MIN_PIXELS &&
+    tryAokanaBitmapAlphaWasm(destination, source, output, input, width, height, transparency)
+  )
+    return true;
+  const opacity = transparency === null ? 0 : 256 - transparency;
+  for (let row = 0; row < height; row++) {
+    const sourceRow = source.offset + row * source.stride,
+      destinationRow = destination.offset + row * destination.stride;
+    let column = 0;
+    for (; column + 1 < width; column += 2) {
+      const sourceOffset = sourceRow + column * 4,
+        offset = destinationRow + column * 4;
+      const first = input.getUint32(sourceOffset, true),
+        second = input.getUint32(sourceOffset + 4, true),
+        firstAlpha = first >>> 24,
+        secondAlpha = second >>> 24;
+      if (firstAlpha === 0 && secondAlpha === 0) continue;
+      if (transparency === null && firstAlpha >= 254 && secondAlpha >= 254) {
+        output.setUint32(offset, first, true);
+        output.setUint32(offset + 4, second, true);
+        continue;
+      }
+      const oldFirst = output.getUint32(offset, true),
+        oldSecond = output.getUint32(offset + 4, true);
+      const resultFirst = rgbDifference(
+          first,
+          oldFirst,
+          transparency === null
+            ? aokanaAlphaHalfCoefficient(firstAlpha)
+            : Math.imul(first >>> 25, opacity) >>> 8,
+        ),
+        resultSecond = rgbDifference(
+          second,
+          oldSecond,
+          transparency === null
+            ? aokanaAlphaHalfCoefficient(secondAlpha)
+            : Math.imul(second >>> 25, opacity) >>> 8,
+        );
+      output.setUint32(offset, resultFirst, true);
+      output.setUint32(offset + 4, resultSecond, true);
+    }
+    if (column < width) {
+      const pixel = input.getUint32(sourceRow + column * 4, true),
+        alpha = pixel >>> 24;
+      if (alpha < 2) continue;
+      const offset = destinationRow + column * 4;
+      const result =
+        transparency === null && alpha >= 254
+          ? pixel & 0xffffff
+          : rgbDifference(
+              pixel,
+              output.getUint32(offset, true),
+              transparency === null ? alpha >>> 1 : Math.imul(pixel >>> 25, opacity) >>> 8,
+            );
+      output.setUint32(offset, result, true);
+    }
+  }
+  return true;
+}
+
 /** 14003d950 has deliberately different alpha-byte handling in its opaque pair and tail. */
 export function blendAokanaAlphaIntoRgb(destination: AokanaBitmap, source: AokanaBitmap): void {
+  if (blendInitializedAlphaIntoRgb(destination, source, null)) return;
   visitAokanaPixelPairsReusingSource(
     destination,
     source,
@@ -182,6 +270,7 @@ export function blendAokanaAlphaIntoRgbWithTransparency(
   source: AokanaBitmap,
   transparency: number,
 ): void {
+  if (blendInitializedAlphaIntoRgb(destination, source, transparency)) return;
   const coefficient = (pixel: number): number => Math.imul(pixel >>> 25, 256 - transparency) >>> 8;
   visitAokanaPixelPairsReusingSource(
     destination,
@@ -213,6 +302,18 @@ export function mixAokanaAllChannels(
 ): void {
   const coefficient = transparency >>> 1;
   const mix = (pixel: number, old: number): number => {
+    if (coefficient <= 128) {
+      const inverse = 128 - coefficient,
+        redBlue =
+          ((Math.imul(pixel & 0xff00ff, inverse) + Math.imul(old & 0xff00ff, coefficient)) >>> 7) &
+          0xff00ff,
+        greenAlpha =
+          ((Math.imul((pixel >>> 8) & 0xff00ff, inverse) +
+            Math.imul((old >>> 8) & 0xff00ff, coefficient)) >>>
+            7) &
+          0xff00ff;
+      return (redBlue | (greenAlpha << 8)) >>> 0;
+    }
     let result = 0;
     for (let shift = 0; shift < 32; shift += 8) {
       const channel = (pixel >>> shift) & 255;
@@ -223,6 +324,52 @@ export function mixAokanaAllChannels(
     }
     return result >>> 0;
   };
+  const width = source.width >>> 0,
+    height = source.height >>> 0,
+    input = initializedAokanaBitmapView(source, width, height),
+    output = initializedAokanaBitmapView(destination, width, height);
+  if (input !== null && output !== null) {
+    if (
+      width * height >= AOKANA_BITMAP_WASM_MIN_PIXELS &&
+      tryAokanaBitmapAlphaWasm(
+        destination,
+        source,
+        output,
+        input,
+        width,
+        height,
+        transparency,
+        true,
+      )
+    )
+      return;
+    for (let row = 0; row < height; row++) {
+      const sourceRow = source.offset + row * source.stride,
+        destinationRow = destination.offset + row * destination.stride;
+      let column = 0;
+      for (; column + 1 < width; column += 2) {
+        const sourceOffset = sourceRow + column * 4,
+          offset = destinationRow + column * 4;
+        const first = input.getUint32(sourceOffset, true),
+          second = input.getUint32(sourceOffset + 4, true),
+          oldFirst = output.getUint32(offset, true),
+          oldSecond = output.getUint32(offset + 4, true),
+          resultFirst = mix(first, oldFirst),
+          resultSecond = mix(second, oldSecond);
+        output.setUint32(offset, resultFirst, true);
+        output.setUint32(offset + 4, resultSecond, true);
+      }
+      if (column < width) {
+        const offset = destinationRow + column * 4;
+        output.setUint32(
+          offset,
+          mix(input.getUint32(sourceRow + column * 4, true), output.getUint32(offset, true)),
+          true,
+        );
+      }
+    }
+    return;
+  }
   visitAokanaPixelPairsReusingSource(
     destination,
     source,

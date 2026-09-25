@@ -1,3 +1,4 @@
+import {invalidateCanvasFrame} from '../../../../../graphics/canvas-frame-presenter.js';
 import type {AokanaBpPointer} from '../bp/memory.js';
 import type {AokanaBrowserMainWindow} from './browser-main-window.js';
 import {
@@ -56,6 +57,7 @@ class AokanaBrowserMfDisplayControl implements AokanaMfMovieDisplayControl {
   repaint(): void {
     if (this.closed) throw new Error('Aokana MF display control was released');
     if (!this.frameReady || this.frame === null || this.targetContext === null) return;
+    invalidateCanvasFrame(this.window.surface);
     this.targetContext.drawImage(
       this.frame,
       0,

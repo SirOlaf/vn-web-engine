@@ -1,11 +1,8 @@
 import type {AokanaBpThread} from './state.js';
+import {byteDataView} from '../../../../../core/binary.js';
 
 function view(thread: AokanaBpThread): DataView {
-  return new DataView(
-    thread.moduleMemory.buffer,
-    thread.moduleMemory.byteOffset,
-    thread.moduleMemory.byteLength,
-  );
+  return byteDataView(thread.moduleMemory);
 }
 
 export function fetchOpcode(thread: AokanaBpThread): number {

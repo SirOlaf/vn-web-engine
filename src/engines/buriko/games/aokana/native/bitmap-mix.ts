@@ -1,4 +1,5 @@
-import type {AokanaBitmap} from './bitmap.js';
+import {initializedAokanaBitmapView, type AokanaBitmap} from './bitmap.js';
+import {AOKANA_BITMAP_WASM_MIN_PIXELS, tryAokanaBitmapFusedWasm} from './bitmap-alpha-wasm.js';
 import type {AokanaDistributedProcessing} from './distributed-processing.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
 import {
@@ -51,21 +52,16 @@ function fusedPremultipliedChannel(
   first: number,
   second: number,
   destination: number,
-  firstAlpha: number,
-  secondAlpha: number,
+  firstScaledAlpha: number,
+  secondScaledAlpha: number,
   factor: number,
-  transparency: number,
+  alpha: number,
 ): number {
-  const opacity = (256 - transparency) | 0,
-    firstScaledAlpha = Math.imul(firstAlpha, opacity) >>> 8,
-    secondScaledAlpha = Math.imul(secondAlpha, opacity) >>> 8,
-    firstPremultiplied = signedHighWord(first << 4, firstScaledAlpha << 4),
+  const firstPremultiplied = signedHighWord(first << 4, firstScaledAlpha << 4),
     secondPremultiplied = signedHighWord(second << 4, secondScaledAlpha << 4),
     mixed =
       firstPremultiplied +
       signedHighWord((secondPremultiplied - firstPremultiplied) << 4, factor << 4),
-    alpha =
-      firstScaledAlpha + signedHighWord((secondScaledAlpha - firstScaledAlpha) << 4, factor << 4),
     retained = signedHighWord(destination << 4, (256 - alpha) << 4);
   return saturateAokanaByte((mixed + retained) | 0);
 }
@@ -92,8 +88,11 @@ function fusedMixedPixel(
   factor: number,
   transparency: number,
 ): number {
-  const firstAlpha = firstPixel >>> 24,
-    secondAlpha = secondPixel >>> 24;
+  const opacity = (256 - transparency) | 0,
+    firstScaledAlpha = Math.imul(firstPixel >>> 24, opacity) >>> 8,
+    secondScaledAlpha = Math.imul(secondPixel >>> 24, opacity) >>> 8,
+    alpha =
+      firstScaledAlpha + signedHighWord((secondScaledAlpha - firstScaledAlpha) << 4, factor << 4);
   let output = 0;
   for (let shift = 0; shift < 24; shift += 8)
     output |=
@@ -101,12 +100,96 @@ function fusedMixedPixel(
         (firstPixel >>> shift) & 255,
         (secondPixel >>> shift) & 255,
         (destinationPixel >>> shift) & 255,
-        firstAlpha,
-        secondAlpha,
+        firstScaledAlpha,
+        secondScaledAlpha,
         factor,
-        transparency,
+        alpha,
       ) << shift;
   return output >>> 0;
+}
+
+/** Bounded coefficients make each signed word exact and each saturation an identity. */
+function blendInitializedMixedIntoRgb(
+  destination: AokanaBitmap,
+  first: AokanaBitmap,
+  second: AokanaBitmap,
+  destinationView: DataView,
+  firstView: DataView,
+  secondView: DataView,
+  width: number,
+  height: number,
+  factor: number,
+  transparency: number,
+): void {
+  const inverse = 256 - factor,
+    opacity = 256 - transparency;
+  const mix = (
+    firstPixel: number,
+    secondPixel: number,
+    destinationPixel: number,
+    firstAlpha: number,
+    secondAlpha: number,
+    alpha: number,
+  ): number => {
+    // Positive weighted sums preserve the native floor at every stage. The
+    // red/blue byte lanes never carry into one another, including the final
+    // sum: each mixed channel is <= alpha, and its retained part <= 255-alpha.
+    const retainedWeight = 256 - alpha,
+      firstRedBlue = (Math.imul(firstPixel & 0xff00ff, firstAlpha) >>> 8) & 0xff00ff,
+      secondRedBlue = (Math.imul(secondPixel & 0xff00ff, secondAlpha) >>> 8) & 0xff00ff,
+      mixedRedBlue =
+        ((Math.imul(firstRedBlue, inverse) + Math.imul(secondRedBlue, factor)) >>> 8) & 0xff00ff,
+      retainedRedBlue = (Math.imul(destinationPixel & 0xff00ff, retainedWeight) >>> 8) & 0xff00ff,
+      firstGreen = (((firstPixel >>> 8) & 255) * firstAlpha) >>> 8,
+      secondGreen = (((secondPixel >>> 8) & 255) * secondAlpha) >>> 8,
+      mixedGreen = (firstGreen * inverse + secondGreen * factor) >>> 8,
+      retainedGreen = (((destinationPixel >>> 8) & 255) * retainedWeight) >>> 8;
+    return (mixedRedBlue + retainedRedBlue + ((mixedGreen + retainedGreen) << 8)) >>> 0;
+  };
+  for (let row = 0; row < height; row++) {
+    const destinationRow = destination.offset + row * destination.stride,
+      firstRow = first.offset + row * first.stride,
+      secondRow = second.offset + row * second.stride;
+    let column = 0;
+    for (; column + 1 < width; column += 2) {
+      // As with the native MOVQs, load both source pairs before either store.
+      const firstOffset = firstRow + column * 4,
+        secondOffset = secondRow + column * 4,
+        first0 = firstView.getUint32(firstOffset, true),
+        first1 = firstView.getUint32(firstOffset + 4, true),
+        second0 = secondView.getUint32(secondOffset, true),
+        second1 = secondView.getUint32(secondOffset + 4, true),
+        firstAlpha0 = ((first0 >>> 24) * opacity) >>> 8,
+        firstAlpha1 = ((first1 >>> 24) * opacity) >>> 8,
+        secondAlpha0 = ((second0 >>> 24) * opacity) >>> 8,
+        secondAlpha1 = ((second1 >>> 24) * opacity) >>> 8,
+        alpha0 = (firstAlpha0 * inverse + secondAlpha0 * factor) >>> 8,
+        alpha1 = (firstAlpha1 * inverse + secondAlpha1 * factor) >>> 8;
+      if (alpha0 === 0 && alpha1 === 0) continue;
+      const offset = destinationRow + column * 4,
+        old0 = destinationView.getUint32(offset, true),
+        old1 = destinationView.getUint32(offset + 4, true),
+        output0 = mix(first0, second0, old0, firstAlpha0, secondAlpha0, alpha0),
+        output1 = mix(first1, second1, old1, firstAlpha1, secondAlpha1, alpha1);
+      destinationView.setUint32(offset, output0, true);
+      destinationView.setUint32(offset + 4, output1, true);
+    }
+    if (column < width) {
+      const firstPixel = firstView.getUint32(firstRow + column * 4, true),
+        secondPixel = secondView.getUint32(secondRow + column * 4, true),
+        firstAlpha = ((firstPixel >>> 24) * opacity) >>> 8,
+        secondAlpha = ((secondPixel >>> 24) * opacity) >>> 8,
+        alpha = (firstAlpha * inverse + secondAlpha * factor) >>> 8;
+      if (alpha === 0) continue;
+      const offset = destinationRow + column * 4,
+        old = destinationView.getUint32(offset, true);
+      destinationView.setUint32(
+        offset,
+        mix(firstPixel, secondPixel, old, firstAlpha, secondAlpha, alpha),
+        true,
+      );
+    }
+  }
 }
 
 /** 03C8B0/03C580 fuse RGBA crossfade, transparency and RGB destination blending. */
@@ -124,6 +207,46 @@ export function blendMixedAokanaBitmapsIntoRgb(
     height = Math.min(destination.height >>> 0, first.height >>> 0, second.height >>> 0);
   factor = signed16(factor);
   transparency |= 0;
+  const firstView = initializedAokanaBitmapView(first, width, height),
+    secondView = initializedAokanaBitmapView(second, width, height),
+    destinationView = initializedAokanaBitmapView(destination, width, height);
+  if (
+    firstView !== null &&
+    secondView !== null &&
+    destinationView !== null &&
+    factor >= 0 &&
+    factor <= 256
+  ) {
+    if (
+      width * height >= AOKANA_BITMAP_WASM_MIN_PIXELS &&
+      tryAokanaBitmapFusedWasm(
+        destination,
+        first,
+        second,
+        destinationView,
+        firstView,
+        secondView,
+        width,
+        height,
+        factor,
+        transparency,
+      )
+    )
+      return 0;
+    blendInitializedMixedIntoRgb(
+      destination,
+      first,
+      second,
+      destinationView,
+      firstView,
+      secondView,
+      width,
+      height,
+      factor,
+      transparency,
+    );
+    return 0;
+  }
   for (let row = 0; row < height; row++) {
     const destinationRow = destination.offset + row * destination.stride,
       firstRow = first.offset + row * first.stride,
@@ -131,32 +254,66 @@ export function blendMixedAokanaBitmapsIntoRgb(
     let column = 0;
     for (; column + 1 < width; column += 2) {
       // 03C700 loads both source pairs before either destination store.
-      const firstPixel0 = bitmapRead32(first, firstRow + column * 4),
-        firstPixel1 = bitmapRead32(first, firstRow + column * 4 + 4),
-        secondPixel0 = bitmapRead32(second, secondRow + column * 4),
-        secondPixel1 = bitmapRead32(second, secondRow + column * 4 + 4),
+      const firstOffset = firstRow + column * 4,
+        secondOffset = secondRow + column * 4;
+      const firstPixel0 =
+          firstView === null
+            ? bitmapRead32(first, firstOffset)
+            : firstView.getUint32(firstOffset, true),
+        firstPixel1 =
+          firstView === null
+            ? bitmapRead32(first, firstOffset + 4)
+            : firstView.getUint32(firstOffset + 4, true),
+        secondPixel0 =
+          secondView === null
+            ? bitmapRead32(second, secondOffset)
+            : secondView.getUint32(secondOffset, true),
+        secondPixel1 =
+          secondView === null
+            ? bitmapRead32(second, secondOffset + 4)
+            : secondView.getUint32(secondOffset + 4, true),
         alpha0 = fusedMixedAlpha(firstPixel0 >>> 24, secondPixel0 >>> 24, factor, transparency),
         alpha1 = fusedMixedAlpha(firstPixel1 >>> 24, secondPixel1 >>> 24, factor, transparency);
       if (alpha0 === 0 && alpha1 === 0) continue;
       const destinationOffset = destinationRow + column * 4,
-        old0 = bitmapRead32(destination, destinationOffset),
-        old1 = bitmapRead32(destination, destinationOffset + 4),
+        old0 =
+          destinationView === null
+            ? bitmapRead32(destination, destinationOffset)
+            : destinationView.getUint32(destinationOffset, true),
+        old1 =
+          destinationView === null
+            ? bitmapRead32(destination, destinationOffset + 4)
+            : destinationView.getUint32(destinationOffset + 4, true),
         output0 = fusedMixedPixel(firstPixel0, secondPixel0, old0, factor, transparency),
         output1 = fusedMixedPixel(firstPixel1, secondPixel1, old1, factor, transparency);
-      bitmapWrite32(destination, destinationOffset, output0);
-      bitmapWrite32(destination, destinationOffset + 4, output1);
+      if (destinationView === null) {
+        bitmapWrite32(destination, destinationOffset, output0);
+        bitmapWrite32(destination, destinationOffset + 4, output1);
+      } else {
+        destinationView.setUint32(destinationOffset, output0, true);
+        destinationView.setUint32(destinationOffset + 4, output1, true);
+      }
     }
     if (column < width) {
-      const firstPixel = bitmapRead32(first, firstRow + column * 4),
-        secondPixel = bitmapRead32(second, secondRow + column * 4);
+      const firstOffset = firstRow + column * 4,
+        secondOffset = secondRow + column * 4;
+      const firstPixel =
+          firstView === null
+            ? bitmapRead32(first, firstOffset)
+            : firstView.getUint32(firstOffset, true),
+        secondPixel =
+          secondView === null
+            ? bitmapRead32(second, secondOffset)
+            : secondView.getUint32(secondOffset, true);
       if (fusedMixedAlpha(firstPixel >>> 24, secondPixel >>> 24, factor, transparency) !== 0) {
         const destinationOffset = destinationRow + column * 4,
-          old = bitmapRead32(destination, destinationOffset);
-        bitmapWrite32(
-          destination,
-          destinationOffset,
-          fusedMixedPixel(firstPixel, secondPixel, old, factor, transparency),
-        );
+          old =
+            destinationView === null
+              ? bitmapRead32(destination, destinationOffset)
+              : destinationView.getUint32(destinationOffset, true),
+          output = fusedMixedPixel(firstPixel, secondPixel, old, factor, transparency);
+        if (destinationView === null) bitmapWrite32(destination, destinationOffset, output);
+        else destinationView.setUint32(destinationOffset, output, true);
       }
     }
   }

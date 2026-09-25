@@ -1,3 +1,25 @@
+interface CachedByteView {
+  buffer: ArrayBufferLike;
+  offset: number;
+  length: number;
+  view: DataView;
+}
+
+const byteViews = new WeakMap<Uint8Array, CachedByteView>();
+
+/** Reuse the wrapper, never the contents; resized and replaced byte views remain live. */
+export function byteDataView(bytes: Uint8Array): DataView {
+  const buffer = bytes.buffer,
+    offset = bytes.byteOffset,
+    length = bytes.byteLength,
+    cached = byteViews.get(bytes);
+  if (cached && cached.buffer === buffer && cached.offset === offset && cached.length === length)
+    return cached.view;
+  const view = new DataView(buffer, offset, length);
+  byteViews.set(bytes, {buffer, offset, length, view});
+  return view;
+}
+
 export function checkRange(size: number, offset: number, length: number): void {
   if (
     !Number.isSafeInteger(offset) ||
