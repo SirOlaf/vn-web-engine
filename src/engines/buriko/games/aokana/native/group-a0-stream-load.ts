@@ -19,7 +19,7 @@ const volume = [
 ];
 const suffix = [130, 170, 142, 119, 146, 232, 130, 179, 130, 234, 130, 220, 130, 181, 130, 189, 0];
 
-/** E5D00: synchronous music resource admission; the separate queued opcode11 is not declared here. */
+/** E5D00: synchronous one-name music admission; A0:11 has its own process owner. */
 export function createGroupA0StreamLoad(
   musicResources: AokanaAudioMusicResources,
   errors: AokanaEngineErrors,

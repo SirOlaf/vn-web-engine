@@ -11,7 +11,7 @@ function outputWord(pointer: AokanaBpPointer | null, value: number): void {
   pointerView(pointer, 4).setUint32(0, value, true);
 }
 
-/** 14008db10–14008de80: independently allocated byte records in a doubling slot table. */
+/** C03xx–C0640 record-set registry over the 08DB10–08DE80 doubling slot table. */
 export class AokanaNativeRecordBuffers {
   private nextId = 0;
   // Newest-first lookup preserves the native linked-list behavior even when DWORD ids wrap.
@@ -31,6 +31,12 @@ export class AokanaNativeRecordBuffers {
     if (index < 0) return 0x80000002;
     this.sets.splice(index, 1);
     return 0;
+  }
+
+  /** C0640 destroys the entire registry, then resets its ID counter for the next program. */
+  clear(): void {
+    this.sets.length = 0;
+    this.nextId = 0;
   }
 
   private find(id: number): RecordSet | undefined {

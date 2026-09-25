@@ -458,7 +458,7 @@ test('inline creation uses native font/geometry, visibility and wide-text read s
   s.inline.state.setColor(0x123456);
   assert.equal(await s.inline.create(10, 20, 120, 20, 0, 20, 16, 1), 0);
   const element = s.inline.element,
-    frame = s.parent.children[0];
+    frame = s.parent.children.find((child) => child !== s.surface);
   assert.equal(s.document.activeElement, element);
   assert.deepEqual(s.fontRequests[0], {
     face: 'Fixture Sans',
@@ -492,7 +492,7 @@ test('inline creation uses native font/geometry, visibility and wide-text read s
   s.display.displayFlag = 0;
   assert.equal(s.inline.close(), 0);
   assert.equal(s.calls.refreshed, 1);
-  assert.equal(s.parent.children.length, 0);
+  assert.deepEqual(s.parent.children, [s.surface]);
 });
 
 test('inline queued default editing performs selection, backspace, copy, cut and policy-vs-direct paste', async () => {

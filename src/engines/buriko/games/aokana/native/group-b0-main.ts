@@ -13,14 +13,55 @@ import type {
   AokanaNativeSlotDefinition,
 } from './types.js';
 
-/** B0's remaining main-window, cursor, shake and Unicode EDIT services share the real display owner. */
-export function createGroupB0Main(
-  host: AokanaBrowserMainWindow,
+/** Cursor callbacks share the graph's policy without constructing B0's unrelated host owners. */
+export function createGroupB0CursorPolicy(
   cursor: AokanaCursorPolicy,
+  errors: AokanaEngineErrors,
+): AokanaNativeSlotDefinition[] {
+  const fatal = (h: AokanaBpOpcodeContext, message: string): Promise<never> =>
+    errors.threadFatal(h.thread, h.diagnostics, errors.files.text.encodeWide(message, 0));
+  return [
+    {
+      primary: 0xb0,
+      secondary: 0x04,
+      nativeAddress: 0x1400d5f60,
+      name: 'SetCursorObject',
+      execute: (h) => {
+        // The first pop remains in R8D across the other two pops; the decompiler drops it.
+        const y = pop32(h.thread),
+          x = pop32(h.thread),
+          handle = pop32(h.thread);
+        return cursor.setCustom(handle, x, y) === -1
+          ? fatal(h, '無効なスプライトハンドルが指定されました')
+          : 0;
+      },
+    },
+    {
+      primary: 0xb0,
+      secondary: 0x05,
+      nativeAddress: 0x1400d5f40,
+      name: 'SetCursorAutoHide',
+      execute: (h) => {
+        cursor.setAutoHide(pop32(h.thread));
+        return 0;
+      },
+    },
+    {
+      primary: 0xb0,
+      secondary: 0x06,
+      nativeAddress: 0x1400d5f10,
+      name: 'QueryCursorVisibility',
+      execute: (h) => {
+        push32(h.thread, cursor.queryVisible());
+        return 0;
+      },
+    },
+  ];
+}
+
+/** The Unicode EDIT callbacks share one scoped control and selected font provider. */
+export function createGroupB0InlineText(
   inline: AokanaInlineTextControl,
-  scheduler: AokanaBpScheduler,
-  procedures: AokanaProcedureState,
-  random: AokanaCrtRandom,
   errors: AokanaEngineErrors,
 ): AokanaNativeSlotDefinition[] {
   const slots: AokanaNativeSlotDefinition[] = [];
@@ -34,87 +75,6 @@ export function createGroupB0Main(
   };
   const fatal = (h: AokanaBpOpcodeContext, message: string): Promise<never> =>
     errors.threadFatal(h.thread, h.diagnostics, errors.files.text.encodeWide(message, 0));
-  add(0x00, 0x1400d60b0, 'DrawSurfaceToWindow', (h) => {
-    const index = pop32(h.thread),
-      y = pop32(h.thread),
-      x = pop32(h.thread);
-    if (index >= 0x4000)
-      return fatal(h, `無効なビットマップ番号 [ ${index | 0} ] が指定されました`);
-    if (host.blitSurface(x, y, index) === 2)
-      return fatal(h, `指定されたビットマップ [ ${index | 0} ] は存在しません`);
-    return 0;
-  });
-  add(0x02, 0x1400d6080, 'CenterMainWindow', (h) => {
-    push32(h.thread, host.center());
-    return 0;
-  });
-  add(0x03, 0x1400d5fc0, 'MoveMainWindow', (h) => {
-    const y = pop32(h.thread),
-      x = pop32(h.thread);
-    push32(h.thread, host.move(x, y));
-    return 0;
-  });
-  add(0x04, 0x1400d5f60, 'SetCursorObject', (h) => {
-    // The first pop remains in R8D across the other two pops; the decompiler drops it.
-    const y = pop32(h.thread),
-      x = pop32(h.thread),
-      handle = pop32(h.thread);
-    return cursor.setCustom(handle, x, y) === -1
-      ? fatal(h, '無効なスプライトハンドルが指定されました')
-      : 0;
-  });
-  add(0x05, 0x1400d5f40, 'SetCursorAutoHide', (h) => {
-    cursor.setAutoHide(pop32(h.thread));
-    return 0;
-  });
-  add(0x06, 0x1400d5f10, 'QueryCursorVisibility', (h) => {
-    push32(h.thread, cursor.queryVisible());
-    return 0;
-  });
-  add(0x08, 0x1400d5d60, 'ShakeScreen', (h) => {
-    const capture = pop32(h.thread),
-      tickFrequency = pop32(h.thread),
-      decay = pop32(h.thread),
-      cycles = pop32(h.thread),
-      frequency = pop32(h.thread),
-      amplitude = pop32(h.thread),
-      mode = pop32(h.thread);
-    const process = new AokanaShakeProcess(
-      h.thread,
-      procedures,
-      cursor.clock,
-      cursor.input,
-      host.display,
-      random,
-      (x, y) => host.callbacks.presentTransient(x, y),
-    );
-    const result = process.initialize(
-      mode,
-      amplitude,
-      frequency,
-      cycles,
-      decay,
-      tickFrequency,
-      capture,
-    );
-    if (result === 0x80000001)
-      return fatal(h, `無効な振動パターン [ ${mode | 0} ] が指定されました`);
-    if (result === 0x80000002)
-      return fatal(h, `無効な周波数 [ ${frequency | 0} ] が指定されました`);
-    if (result === 0x80000003)
-      return fatal(h, `無効な繰り返し回数 [ ${cycles | 0} ] が指定されました`);
-    if (result === 0x80000004)
-      return fatal(
-        h,
-        `無効なフレームレート [ ${tickFrequency | 0} ] が指定されました${(tickFrequency | 0) > 0 ? '\n\nフレームレートは周波数より高くなければなりません' : ''}`,
-      );
-    const scheduled =
-      h.thread === scheduler.root.state ? scheduler.root : scheduler.findById(h.thread.id);
-    if (scheduled === null || scheduled.state !== h.thread)
-      throw new Error('Aokana shake thread is not linked to its scheduler');
-    scheduled.installProcess(process);
-    return 2;
-  });
   add(0x20, 0x1400d5190, 'CreateInlineText', async (h): Promise<0> => {
     const focus = pop32(h.thread),
       limit = pop32(h.thread),
@@ -172,5 +132,101 @@ export function createGroupB0Main(
     push32(h.thread, inline.state.setAlignment(pop32(h.thread)));
     return 0;
   });
+  return slots;
+}
+
+/** B0's remaining main-window, cursor, shake and Unicode EDIT services share the real display owner. */
+export function createGroupB0Main(
+  host: AokanaBrowserMainWindow,
+  cursor: AokanaCursorPolicy,
+  inline: AokanaInlineTextControl,
+  scheduler: AokanaBpScheduler,
+  procedures: AokanaProcedureState,
+  random: AokanaCrtRandom,
+  errors: AokanaEngineErrors,
+): AokanaNativeSlotDefinition[] {
+  const slots: AokanaNativeSlotDefinition[] = [];
+  const add = (
+    secondary: number,
+    nativeAddress: number,
+    name: string,
+    execute: AokanaBpOpcodeHandler,
+  ): void => {
+    slots.push({primary: 0xb0, secondary, nativeAddress, name, execute});
+  };
+  const fatal = (h: AokanaBpOpcodeContext, message: string): Promise<never> =>
+    errors.threadFatal(h.thread, h.diagnostics, errors.files.text.encodeWide(message, 0));
+  const [setCursorObject, setCursorAutoHide, queryCursorVisibility] = createGroupB0CursorPolicy(
+    cursor,
+    errors,
+  );
+  add(0x00, 0x1400d60b0, 'DrawSurfaceToWindow', (h) => {
+    const index = pop32(h.thread),
+      y = pop32(h.thread),
+      x = pop32(h.thread);
+    if (index >= 0x4000)
+      return fatal(h, `無効なビットマップ番号 [ ${index | 0} ] が指定されました`);
+    if (host.blitSurface(x, y, index) === 2)
+      return fatal(h, `指定されたビットマップ [ ${index | 0} ] は存在しません`);
+    return 0;
+  });
+  add(0x02, 0x1400d6080, 'CenterMainWindow', (h) => {
+    push32(h.thread, host.center());
+    return 0;
+  });
+  add(0x03, 0x1400d5fc0, 'MoveMainWindow', (h) => {
+    const y = pop32(h.thread),
+      x = pop32(h.thread);
+    push32(h.thread, host.move(x, y));
+    return 0;
+  });
+  add(0x04, 0x1400d5f60, 'SetCursorObject', setCursorObject!.execute);
+  add(0x05, 0x1400d5f40, 'SetCursorAutoHide', setCursorAutoHide!.execute);
+  add(0x06, 0x1400d5f10, 'QueryCursorVisibility', queryCursorVisibility!.execute);
+  add(0x08, 0x1400d5d60, 'ShakeScreen', (h) => {
+    const capture = pop32(h.thread),
+      tickFrequency = pop32(h.thread),
+      decay = pop32(h.thread),
+      cycles = pop32(h.thread),
+      frequency = pop32(h.thread),
+      amplitude = pop32(h.thread),
+      mode = pop32(h.thread);
+    const process = new AokanaShakeProcess(
+      h.thread,
+      procedures,
+      cursor.clock,
+      cursor.input,
+      host.display,
+      random,
+      (x, y) => host.callbacks.presentTransient(x, y),
+    );
+    const result = process.initialize(
+      mode,
+      amplitude,
+      frequency,
+      cycles,
+      decay,
+      tickFrequency,
+      capture,
+    );
+    if (result === 0x80000001)
+      return fatal(h, `無効な振動パターン [ ${mode | 0} ] が指定されました`);
+    if (result === 0x80000002)
+      return fatal(h, `無効な周波数 [ ${frequency | 0} ] が指定されました`);
+    if (result === 0x80000003)
+      return fatal(h, `無効な繰り返し回数 [ ${cycles | 0} ] が指定されました`);
+    if (result === 0x80000004)
+      return fatal(
+        h,
+        `無効なフレームレート [ ${tickFrequency | 0} ] が指定されました${(tickFrequency | 0) > 0 ? '\n\nフレームレートは周波数より高くなければなりません' : ''}`,
+      );
+    const scheduled =
+      h.thread === scheduler.root.state ? scheduler.root : scheduler.findById(h.thread.id);
+    if (scheduled === null || scheduled.state !== h.thread)
+      throw new Error('Aokana shake thread is not linked to its scheduler');
+    scheduled.installProcess(process);
+    return 2;
+  });
+  slots.push(...createGroupB0InlineText(inline, errors));
   return slots;
 }

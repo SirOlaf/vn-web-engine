@@ -33,10 +33,10 @@ function writableBytes(pointer: AokanaBpPointer | null, length: number): Uint8Ar
 /** BAF00's shared ANSI file picker with its narrower display/clock modal barriers. */
 export class AokanaFileSelectionService {
   constructor(
-    private readonly dialogs: AokanaEngineDialogs,
-    private readonly clock: AokanaNativeClock,
-    private readonly mainWindowIdentity: object,
-    private readonly host: AokanaFileDialogHost,
+    readonly dialogs: AokanaEngineDialogs,
+    readonly clock: AokanaNativeClock,
+    readonly mainWindowIdentity: object,
+    readonly host: AokanaFileDialogHost,
   ) {}
 
   private packFilters(

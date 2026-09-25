@@ -2,6 +2,7 @@ import {nativeCursorInterpolation} from '../bp/opcodes/native-math.js';
 import {pop32} from '../bp/state.js';
 import type {AokanaNativeClock} from './clock.js';
 import type {AokanaNativeInput} from './input.js';
+import type {AokanaCursorPolicy} from './cursor-policy.js';
 import type {AokanaNativeSlotDefinition} from './types.js';
 
 export interface AokanaNativeCursorPosition {
@@ -34,9 +35,9 @@ export class AokanaNativeCursorMotion {
   private cancelOnMotion = 0;
 
   constructor(
-    private readonly input: AokanaNativeInput,
-    private readonly clock: AokanaNativeClock,
-    private readonly platform: AokanaNativeCursorPosition,
+    readonly input: AokanaNativeInput,
+    readonly clock: AokanaNativeClock,
+    readonly platform: AokanaNativeCursorPosition,
   ) {}
 
   start(
@@ -112,6 +113,23 @@ export class AokanaNativeCursorMotion {
         this.platform.setClientPosition(clientX, clientY);
       }
     }
+  }
+}
+
+/** The cursor portion of ECB90, after sprite targets and before input capture. */
+export class AokanaCursorFrameLower {
+  constructor(
+    readonly motion: AokanaNativeCursorMotion,
+    readonly policy: AokanaCursorPolicy,
+  ) {
+    if (motion.input !== policy.input || motion.clock !== policy.clock)
+      throw new Error('Aokana cursor frame requires one input and clock owner');
+  }
+
+  step(): void {
+    this.motion.advance();
+    this.policy.advanceAutoHide();
+    this.policy.updateCustom();
   }
 }
 

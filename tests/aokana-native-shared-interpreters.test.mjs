@@ -86,9 +86,15 @@ test('81 48 runs one short result-four child per indexed global worker and resto
   compositor.processing = processing;
   const entryActor = allocator.currentActor,
     seen = [];
+  const shared = new AokanaSharedInterpreters(control, processing, compositor, locks, null, errors),
+    [definition] = createGroup81SharedInterpreters(shared);
   const interpreter = new AokanaBpInterpreter(
     {...directHandlers(), 0x17: controlOpcodes[0x17]},
-    new AokanaNativeBank(nativeDefinitions()),
+    new AokanaNativeBank(
+      nativeDefinitions().map((slot) =>
+        slot.primary === 0x81 && slot.secondary === 0x48 ? definition : slot,
+      ),
+    ),
     new AokanaBpModuleExtensions({readModule: () => null}),
     (thread) => {
       seen.push({
@@ -106,16 +112,8 @@ test('81 48 runs one short result-four child per indexed global worker and resto
       return {thread, memory, diagnostics};
     },
   );
-  const shared = new AokanaSharedInterpreters(
-      control,
-      processing,
-      compositor,
-      locks,
-      interpreter,
-      errors,
-    ),
-    [definition] = createGroup81SharedInterpreters(shared),
-    context = {thread: parent, memory, diagnostics};
+  shared.bindInterpreter(interpreter);
+  const context = {thread: parent, memory, diagnostics};
 
   assert.equal(definition.primary, 0x81);
   assert.equal(definition.secondary, 0x48);

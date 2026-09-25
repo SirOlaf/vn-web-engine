@@ -138,6 +138,13 @@ test('particle refresh schedule appends live nodes and retains deadlines across 
   particles.setRefreshInterval(a, 0);
   assert.equal(particles.scheduleHead, second);
   assert.equal(second.next, null);
+  particles.setRefreshInterval(a, 50);
+  particles.clearRefreshScheduleForProgram();
+  assert.equal(particles.scheduleHead, null);
+  assert.equal(particles.find(a) !== null, true);
+  assert.equal(particles.find(b) !== null, true);
+  particles.setRefreshInterval(b, 60);
+  assert.equal(particles.scheduleHead.handle, b);
 });
 
 test('particle image timing modes retain their three different native rate conversions', () => {

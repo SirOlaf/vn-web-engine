@@ -1,4 +1,5 @@
 import {AokanaMovieAudioTransport} from './movie-audio-transport.js';
+import {AokanaMovieVideoOnlyTimeline} from './movie-video-only-timeline.js';
 import {AokanaMovieReceivePin} from './movie-receive.js';
 import {AokanaMovieVideoSamples, type AokanaMovieVideoSample} from './movie-video-samples.js';
 import type {AokanaMovieVideoOutputLimits} from './movie-video-decoder.js';
@@ -11,10 +12,14 @@ import {
 } from './movie-iso-timeline.js';
 import type {AokanaMoviePcmStatus} from './movie-pcm-protocol.js';
 
-export interface AokanaMovieVideoPumpResult {
+interface AokanaMovieVideoPumpResultBase {
   readonly kind: 'running' | 'paused' | 'delivered' | 'submitted-video-eos' | 'empty-video-eos';
-  readonly audioGeneration: number;
 }
+export type AokanaMovieVideoPumpResult = AokanaMovieVideoPumpResultBase &
+  (
+    | {readonly mode: 'audio'; readonly audioGeneration: number}
+    | {readonly mode: 'video-only'; readonly videoGeneration: number}
+  );
 function sameType(left: AokanaMovieMediaType, right: AokanaMovieMediaType): boolean {
   return (
     left.majorType === right.majorType &&
@@ -30,6 +35,9 @@ function notify(listener: (error: unknown) => void, error: unknown): void {
   } catch {
     /* Observation cannot prevent mandatory cleanup. */
   }
+}
+function isAbort(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 /** Explicit ordered profile over actual decoded samples and native Receive ownership.
@@ -61,15 +69,28 @@ export class AokanaMovieVideoPump {
   private readonly aborted = new DOMException('Movie video pump canceled', 'AbortError');
 
   private constructor(
-    private readonly audio: AokanaMovieAudioTransport,
+    private readonly audio: AokanaMovieAudioTransport | null,
     readonly pin: AokanaMovieReceivePin,
     private readonly movie: AokanaIsoMovie,
     private readonly track: AokanaIsoTrack,
     private readonly limits: AokanaMovieVideoOutputLimits,
     private readonly maxRgb32Bytes: number,
-    private audioGeneration: number,
+    private generation: number,
     private seekPosition: AokanaIsoRational,
+    private readonly timeline: AokanaMovieVideoOnlyTimeline | null = null,
   ) {}
+
+  private static requireUntouchedPin(pin: AokanaMovieReceivePin): void {
+    if (
+      pin.state !== 0 ||
+      pin.connected ||
+      pin.flushing ||
+      pin.pendingSample !== null ||
+      pin.runtimeError ||
+      pin.aborted
+    )
+      throw new Error('Movie video pump requires an untouched stopped receive pin');
+  }
 
   static async create(
     audio: AokanaMovieAudioTransport,
@@ -86,15 +107,7 @@ export class AokanaMovieVideoPump {
       pin.clock !== audio.clock
     )
       throw new Error('Movie video pump requires the actual shared audio clock and receive pin');
-    if (
-      pin.state !== 0 ||
-      pin.connected ||
-      pin.flushing ||
-      pin.pendingSample !== null ||
-      pin.runtimeError ||
-      pin.aborted
-    )
-      throw new Error('Movie video pump requires an untouched stopped receive pin');
+    AokanaMovieVideoPump.requireUntouchedPin(pin);
     const status = audio.acknowledgedStatus;
     if (status === null) throw new Error('Movie video pump has no actual audio acknowledgment');
     const seek = time.fraction(status.position.numerator, status.position.denominator),
@@ -135,9 +148,67 @@ export class AokanaMovieVideoPump {
     }
   }
 
+  /** Explicit video-only path bound to the selected document/movie/track and real clock. */
+  static async createVideoOnly(
+    timeline: AokanaMovieVideoOnlyTimeline,
+    pin: AokanaMovieReceivePin,
+    limits: AokanaMovieVideoOutputLimits,
+    maxRgb32Bytes: number,
+    signal?: AbortSignal,
+  ): Promise<AokanaMovieVideoPump> {
+    if (
+      !(timeline instanceof AokanaMovieVideoOnlyTimeline) ||
+      !(pin instanceof AokanaMovieReceivePin) ||
+      pin.clock !== timeline.clock ||
+      timeline.tracks.audio !== null
+    )
+      throw new Error('Video-only pump requires the selected timeline and its receive clock');
+    AokanaMovieVideoPump.requireUntouchedPin(pin);
+    if (timeline.state !== 'paused' || timeline.graphStart !== null)
+      throw new Error('Video-only pump requires a paused selected timeline');
+    const seek = timeline.position;
+    const pump = new AokanaMovieVideoPump(
+      null,
+      pin,
+      timeline.tracks.movie,
+      timeline.tracks.video.track,
+      {...limits},
+      maxRgb32Bytes,
+      timeline.generation,
+      seek,
+      timeline,
+    );
+    pump.validateVideo(true);
+    const abort = (): void => {
+      pump.terminal = true;
+      pump.disposeSource();
+    };
+    signal?.addEventListener('abort', abort, {once: true});
+    if (signal?.aborted) abort();
+    try {
+      pump.check();
+      await pump.prepareSource();
+      pump.check();
+      pump.validateVideo(true);
+      pump.ownedPin = true;
+      return pump;
+    } catch (error) {
+      const first = pump.failure ?? error;
+      pump.disposeSource();
+      pump.releasePrepared();
+      throw first;
+    } finally {
+      signal?.removeEventListener('abort', abort);
+    }
+  }
+
   private check(): void {
     if (this.failure !== null) throw this.failure;
     if (this.terminal) throw this.aborted;
+  }
+  /** Identity check for the expected cancellation of this owner's joined work. */
+  isCancellation(error: unknown): boolean {
+    return error === this.aborted;
   }
   private checkEpoch(epoch: number): void {
     this.check();
@@ -182,10 +253,12 @@ export class AokanaMovieVideoPump {
       this.observers.delete(observer);
     };
   }
-  private validateAudio(fresh: boolean, generation = this.audioGeneration): AokanaMoviePcmStatus {
-    const status = this.audio.acknowledgedStatus;
+  private validateAudio(fresh: boolean, generation = this.generation): AokanaMoviePcmStatus {
+    const audio = this.audio;
+    if (audio === null) throw new Error('Movie video pump has no audio transport');
+    const status = audio.acknowledgedStatus;
     if (
-      this.pin.clock !== this.audio.clock ||
+      this.pin.clock !== audio.clock ||
       status === null ||
       status.result !== 'ok' ||
       status.generation !== generation
@@ -204,6 +277,30 @@ export class AokanaMovieVideoPump {
       throw new Error('Movie video preparation requires the actual fresh paused audio seek');
     return status;
   }
+  private validateVideo(fresh: boolean, generation = this.generation): void {
+    const timeline = this.timeline;
+    if (
+      timeline === null ||
+      this.pin.clock !== timeline.clock ||
+      timeline.tracks.movie !== this.movie ||
+      timeline.tracks.video.track !== this.track ||
+      timeline.tracks.audio !== null ||
+      timeline.state === 'closed' ||
+      timeline.generation !== generation
+    )
+      throw new Error('Movie video pump received a foreign video-only clock/generation');
+    if (
+      fresh &&
+      (timeline.state !== 'paused' ||
+        timeline.graphStart !== null ||
+        time.compare(timeline.position, this.seekPosition) !== 0)
+    )
+      throw new Error('Movie video preparation requires the selected paused video seek');
+  }
+  private validateSelected(fresh: boolean): void {
+    if (this.timeline === null) this.validateAudio(fresh);
+    else this.validateVideo(fresh);
+  }
   private startFlush(): Promise<number> {
     try {
       return Promise.resolve(this.pin.beginFlush());
@@ -216,7 +313,19 @@ export class AokanaMovieVideoPump {
       throw new Error(`Movie receive operation failed: 0x${(status >>> 0).toString(16)}`);
   }
   private result(kind: AokanaMovieVideoPumpResult['kind']): AokanaMovieVideoPumpResult {
-    return {kind, audioGeneration: this.audioGeneration};
+    return this.timeline === null
+      ? {kind, mode: 'audio', audioGeneration: this.generation}
+      : {kind, mode: 'video-only', videoGeneration: this.generation};
+  }
+  private supersededVideoSeek(intent: number): boolean {
+    return (
+      this.timeline !== null &&
+      this.phase === 'seeking' &&
+      intent !== this.intent &&
+      this.pin.flushing &&
+      !this.terminal &&
+      this.failure === null
+    );
   }
   private async prepareSource(): Promise<void> {
     this.check();
@@ -236,8 +345,12 @@ export class AokanaMovieVideoPump {
     }
     try {
       this.checkEpoch(epoch);
-      if (time.compare(source.timeline.exactDuration, this.audio.effectiveStop) > 0)
-        throw new Error('Movie video duration exceeds the actual audio common stop');
+      if (this.timeline === null) {
+        if (time.compare(source.timeline.exactDuration, this.audio!.effectiveStop) > 0)
+          throw new Error('Movie video duration exceeds the actual audio common stop');
+      } else if (time.compare(source.timeline.exactDuration, this.timeline.stop) !== 0) {
+        throw new Error('Movie video duration differs from the selected video-only track');
+      }
       source.seek(aokanaIsoReferenceTime(this.seekPosition));
       const sample = await source.next();
       try {
@@ -264,7 +377,10 @@ export class AokanaMovieVideoPump {
       this.hresult(this.pin.connect(this.prepared.type));
       this.mediaType = this.prepared.type;
     }
-    this.pin.sourceStopPosition = aokanaIsoReferenceTime(this.audio.effectiveStop);
+    this.pin.sourceStopPosition =
+      this.timeline === null
+        ? aokanaIsoReferenceTime(this.audio!.effectiveStop)
+        : this.timeline.stopTime;
   }
   private transition<T>(operation: () => Promise<T>): Promise<T> {
     this.transitionCount++;
@@ -285,16 +401,38 @@ export class AokanaMovieVideoPump {
     return finished;
   }
   run(): Promise<AokanaMovieVideoPumpResult> {
+    if (this.timeline !== null)
+      throw new Error('Video-only movie pump requires its explicit graph start');
+    return this.start(0n);
+  }
+  /** The transport first anchors its selected timeline, then supplies that exact offset. */
+  runVideoOnly(graphStart: bigint): Promise<AokanaMovieVideoPumpResult> {
+    if (this.timeline === null)
+      throw new Error('Audio movie pump uses its acknowledged PCM graph clock');
+    if (typeof graphStart !== 'bigint' || this.timeline.graphStart !== graphStart)
+      throw new Error('Video-only movie pump requires the selected running graph start');
+    return this.start(graphStart);
+  }
+  private start(graphStart: bigint): Promise<AokanaMovieVideoPumpResult> {
     this.check();
     this.desiredRunning = true;
     const intent = ++this.intent;
     return this.transition(async () => {
       if (intent !== this.intent) return this.result('paused');
       if (this.phase !== 'ready') throw new Error('Movie video seek is not acknowledged');
-      this.validateAudio(!this.started);
+      this.validateSelected(this.timeline === null && !this.started);
+      if (this.timeline !== null && this.timeline.graphStart !== graphStart)
+        throw new Error('Video-only movie graph start changed before Receive run');
       this.connectPrepared();
       this.check();
-      if (this.pin.connected) this.hresult(await this.pin.run(0n));
+      if (this.timeline !== null && intent !== this.intent) return this.result('paused');
+      try {
+        if (this.pin.connected) this.hresult(await this.pin.run(graphStart));
+      } catch (error) {
+        if (isAbort(error) && this.supersededVideoSeek(intent)) return this.result('paused');
+        throw error;
+      }
+      if (this.timeline !== null && intent !== this.intent) return this.result('paused');
       this.check();
       this.started = true;
       return this.result(!this.pin.connected && this.sourceEnded ? 'empty-video-eos' : 'running');
@@ -303,9 +441,11 @@ export class AokanaMovieVideoPump {
   pause(): Promise<void> {
     this.check();
     this.desiredRunning = false;
-    ++this.intent;
+    const intent = ++this.intent;
     return this.transition(async () => {
+      if (this.timeline !== null && intent !== this.intent) return;
       this.hresult(await this.pin.pause());
+      if (this.timeline !== null && intent !== this.intent) return;
       this.check();
       // A native pending Receive intentionally stays owned until run or flush.
     });
@@ -319,9 +459,8 @@ export class AokanaMovieVideoPump {
     const epoch = this.epoch;
     const work = this.performStep(epoch).catch((error: unknown) => {
       if (
-        (this.terminal || epoch !== this.epoch) &&
-        error instanceof DOMException &&
-        error.name === 'AbortError'
+        error === this.aborted ||
+        (this.timeline === null && (this.terminal || epoch !== this.epoch) && isAbort(error))
       )
         throw this.aborted;
       this.fail(error);
@@ -333,11 +472,25 @@ export class AokanaMovieVideoPump {
     });
   }
   private async performStep(epoch: number): Promise<AokanaMovieVideoPumpResult> {
-    this.validateAudio(false);
+    this.validateSelected(false);
+    if (this.timeline !== null && this.timeline.state !== 'running')
+      throw new Error('Video-only movie step requires the selected running timeline');
     if (this.prepared === null && !this.sourceEnded) {
       const source = this.source;
       if (source === null) throw new Error('Movie video pump has no live source');
-      const sample = await source.next();
+      let sample: AokanaMovieVideoSample | null;
+      try {
+        sample = await source.next();
+      } catch (error) {
+        if (
+          this.timeline !== null &&
+          (this.terminal || epoch !== this.epoch) &&
+          this.source !== source &&
+          isAbort(error)
+        )
+          throw this.aborted;
+        throw error;
+      }
       try {
         this.checkEpoch(epoch);
       } catch (error) {
@@ -370,11 +523,18 @@ export class AokanaMovieVideoPump {
         throw new Error('Movie video violates the selected nondecreasing mapped-start profile');
       this.previousStart = sampleTime.start;
       const changed = this.mediaType === null || !sameType(this.mediaType, sample.type);
-      this.hresult(
-        await this.pin.receive(
-          changed ? {...sample.sample, mediaType: sample.type} : sample.sample,
-        ),
+      const received = await this.pin.receive(
+        changed ? {...sample.sample, mediaType: sample.type} : sample.sample,
       );
+      if (
+        this.timeline !== null &&
+        epoch !== this.epoch &&
+        this.pin.flushing &&
+        !this.pin.runtimeError &&
+        (received === 0x8000ffff || received === 0x80004005)
+      )
+        throw this.aborted;
+      this.hresult(received);
       this.checkEpoch(epoch);
       this.mediaType = sample.type;
       return this.result('delivered');
@@ -389,12 +549,18 @@ export class AokanaMovieVideoPump {
 
   beginSeek(position: AokanaIsoRational): Promise<void> {
     this.check();
+    if (this.timeline !== null) {
+      this.validateVideo(false);
+      // The transport may signal flush while a prior run is still queued or
+      // entering Receive. It freezes the timeline only after that run joins.
+    }
     const seek = time.fraction(position.numerator, position.denominator);
     if (
       time.compare(seek, time.fraction(0n)) < 0 ||
-      time.compare(seek, this.audio.effectiveStop) > 0
+      time.compare(seek, this.timeline === null ? this.audio!.effectiveStop : this.timeline.stop) >
+        0
     )
-      throw new RangeError('Movie video seek exceeds actual common stop');
+      throw new RangeError('Movie video seek exceeds selected stop');
     if (this.phase === 'seeking') throw new Error('Movie video already has a pending seek');
     this.phase = 'seeking';
     this.desiredRunning = false;
@@ -424,18 +590,29 @@ export class AokanaMovieVideoPump {
     });
   }
   finishSeek(expectedAudioGeneration: number): Promise<void> {
+    if (this.timeline !== null)
+      throw new Error('Video-only movie seek requires its selected generation');
+    return this.finishSelectedSeek(expectedAudioGeneration);
+  }
+  finishVideoOnlySeek(expectedVideoGeneration: number): Promise<void> {
+    if (this.timeline === null)
+      throw new Error('Audio movie seek requires its acknowledged PCM generation');
+    return this.finishSelectedSeek(expectedVideoGeneration);
+  }
+  private finishSelectedSeek(expectedGeneration: number): Promise<void> {
     this.check();
     return this.transition(async () => {
       if (this.phase !== 'seeking') throw new Error('Movie video has no pending seek');
-      if (expectedAudioGeneration <= this.audioGeneration)
-        throw new Error('Movie video seek requires a new acknowledged audio generation');
-      this.validateAudio(true, expectedAudioGeneration);
-      this.audioGeneration = expectedAudioGeneration;
+      if (expectedGeneration <= this.generation)
+        throw new Error('Movie video seek requires a new selected generation');
+      if (this.timeline === null) this.validateAudio(true, expectedGeneration);
+      else this.validateVideo(true, expectedGeneration);
+      this.generation = expectedGeneration;
       this.connectPrepared();
       this.check();
       this.hresult(await this.pin.endFlush());
       this.check();
-      this.validateAudio(true);
+      this.validateSelected(true);
       this.phase = 'ready';
     });
   }

@@ -79,6 +79,7 @@ export abstract class AokanaLoadProcedure extends AokanaProcedure {
   override dispose(): void {
     this.loading.leaveProcedure();
     this.output.bytes = null;
+    this.output.initialized = undefined;
     super.dispose();
   }
 }

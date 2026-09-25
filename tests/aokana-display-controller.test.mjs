@@ -60,7 +60,7 @@ function fixture() {
       fillRect: (...rectangle) => calls.push(['clear', ...rectangle]),
     },
     document = {defaultView: {}, activeElement: null},
-    parent = {style: {}, setAttribute(name, value) {this[name] = value;}},
+    parent = {style: {}, children: [], append(child) {this.children.push(child);}, setAttribute(name, value) {this[name] = value;}},
     canvas = {
       width: 0, height: 0, style: {}, ownerDocument: document,
       addEventListener() {}, removeEventListener() {}, getContext: () => context,

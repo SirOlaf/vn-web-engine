@@ -15,7 +15,7 @@ interface MusicJob {
 interface StaticJob {
   readonly result: AokanaResourceResult;
   readonly channel: number;
-  readonly source: AokanaBpPointer;
+  readonly source: AokanaBpPointer | null;
   readonly fade: number;
   readonly gain: number;
   readonly speed: number;
@@ -81,7 +81,7 @@ export class AokanaAudioLoaderQueues {
   enqueueStatic(
     result: AokanaResourceResult,
     channel: number,
-    source: AokanaBpPointer,
+    source: AokanaBpPointer | null,
     fade: number,
     gain: number,
     speed: number,
@@ -92,7 +92,7 @@ export class AokanaAudioLoaderQueues {
     const job: StaticJob = {
       result,
       channel: channel >>> 0,
-      source: {bytes: source.bytes, offset: source.offset},
+      source: source === null ? null : {bytes: source.bytes, offset: source.offset},
       fade: fade | 0,
       gain,
       speed,
@@ -165,5 +165,14 @@ export class AokanaAudioLoaderQueues {
         this.staticPending = null;
       });
     return this.staticPending;
+  }
+
+  /** FDE10 removes remaining static nodes after join, but leaves music nodes linked. */
+  discardPendingStatic(actor = this.metadata.allocator.currentActor): void {
+    if (this.staticPending !== null)
+      throw new Error('Aokana static loader worker must join before queue shutdown');
+    this.metadata.run(actor, () => {
+      this.staticJobs.length = 0;
+    });
   }
 }

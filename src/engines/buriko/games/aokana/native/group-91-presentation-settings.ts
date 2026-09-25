@@ -3,10 +3,9 @@ import type {AokanaNativeDisplayState} from './display-state.js';
 import type {AokanaMovieImageConfiguration} from './movie-image.js';
 import type {AokanaNativeSlotDefinition} from './types.js';
 
-/** Both arguments are the shared instances consumed by frame and movie renderers. */
-export function createGroup91PresentationSettings(
+/** The shared display state is consumed by AokanaDisplayFrames. */
+export function createGroup91ContinuousPresentation(
   display: AokanaNativeDisplayState,
-  movies: AokanaMovieImageConfiguration,
 ): AokanaNativeSlotDefinition[] {
   return [
     {
@@ -19,6 +18,16 @@ export function createGroup91PresentationSettings(
         return 0;
       },
     },
+  ];
+}
+
+/** Both arguments are the shared instances consumed by frame and movie renderers. */
+export function createGroup91PresentationSettings(
+  display: AokanaNativeDisplayState,
+  movies: AokanaMovieImageConfiguration,
+): AokanaNativeSlotDefinition[] {
+  return [
+    ...createGroup91ContinuousPresentation(display),
     {
       primary: 0x91,
       secondary: 0x09,

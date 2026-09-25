@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -175,6 +176,46 @@ test('dynamic and nested factory syntax stays unresolved without executing code'
   );
   assert.equal(factories[0].unresolved.length, 2);
   assert.deepEqual(factories[1].unresolved, []);
+});
+
+test('unknown spread leaves adjacent literal slots observable and records the gap', () => {
+  const files = {
+    'src/partial.ts': `
+      export function partial(): SlotDefinition[] {
+        return [
+          {primary: 0x80, secondary: 0, nativeAddress: 0x140000010, execute: () => 0},
+          ...loadAtRuntime(),
+          {primary: 0x80, secondary: 2, nativeAddress: 0x140000030, execute: () => 0},
+        ];
+      }
+    `,
+  };
+  const factories = discoverFactories(parseSources(files), files, config, imageBase);
+  assert.deepEqual(
+    factories[0].entries.map((entry) => entry.slot),
+    ['80:00', '80:02'],
+  );
+  assert.equal(factories[0].unresolved.length, 1);
+});
+
+test('simple slot ordering preserves direct metadata beside a dynamic factory spread', () => {
+  const files = {
+    'src/sorted.ts': `
+      export function sorted(): SlotDefinition[] {
+        const definitions: SlotDefinition[] = [];
+        const add = (secondary: number, nativeAddress: number, execute: unknown) => {
+          definitions.push({primary: 0x80, secondary, nativeAddress, execute});
+        };
+        add(0x02, 0x140000030, () => 0);
+        return [...definitions, ...otherFactory()].sort((left, right) => left.secondary - right.secondary);
+      }
+    `,
+  };
+  const [factory] = discoverFactories(parseSources(files), files, config, imageBase);
+  assert.deepEqual(factory.entries.map((entry) => entry.slot), ['80:02']);
+  assert.deepEqual(factory.unresolved.map((entry) => entry.reason), [
+    'Unresolved returned slot metadata',
+  ]);
 });
 
 test('exported static arrays and single slots retain provider kinds separate from factories', () => {
@@ -463,40 +504,43 @@ test('symlinked source entries and configured roots are rejected instead of sile
   }
 });
 
-test('tracked Aokana manifest proves all 840 slots against every native table hash and explicit owner partition', async () => {
-  const manifest = validateManifest(
-    JSON.parse(await readFile(path.join(root, 'tools/native-audit/aokana-slots.json'), 'utf8')),
-  );
-  const source = await readFile(path.join(root, manifest.universe.path), 'utf8');
-  const inventory = extractInventory(
-    parseSources({[manifest.universe.path]: source}).get(manifest.universe.path),
-    manifest.universe.export,
-    manifest.binary.imageBase,
-  );
-  assert.equal(
-    manifest.binary.sha256,
-    'f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a',
-  );
-  assert.equal(inventory.rows.length, 840);
-  assert.equal(inventory.banks.length, 11);
-  assert.equal(inventory.canonicalSha256, manifest.universe.canonicalSha256);
-  assert.equal(sha256(source), manifest.universe.sha256);
-  assert.deepEqual(
-    inventory.rows,
-    manifest.slots.map(({id, rva}) => ({id, rva})),
-  );
-  for (const bank of inventory.banks)
-    assert.equal(
-      bank.tableSha256,
-      manifest.universe.banks.find((expected) => expected.id === bank.id).tableSha256,
+const localAokanaManifest = path.join(root, 'tools/native-audit/workspace/aokana-slots.json');
+test(
+  'local Aokana manifest proves all 840 slots against every native table hash and explicit owner partition',
+  {skip: !existsSync(localAokanaManifest)},
+  async () => {
+    const manifest = validateManifest(JSON.parse(await readFile(localAokanaManifest, 'utf8')));
+    const source = await readFile(path.join(root, manifest.universe.path), 'utf8');
+    const inventory = extractInventory(
+      parseSources({[manifest.universe.path]: source}).get(manifest.universe.path),
+      manifest.universe.export,
+      manifest.binary.imageBase,
     );
-  assert.deepEqual(
-    Object.fromEntries(
-      manifest.owners.map((owner) => [
-        owner,
-        manifest.slots.filter((row) => row.ownership.owner === owner).length,
-      ]),
-    ),
-    {runtime: 208, storage: 321, opcodes: 311},
-  );
-});
+    assert.equal(
+      manifest.binary.sha256,
+      'f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a',
+    );
+    assert.equal(inventory.rows.length, 840);
+    assert.equal(inventory.banks.length, 11);
+    assert.equal(inventory.canonicalSha256, manifest.universe.canonicalSha256);
+    assert.equal(sha256(source), manifest.universe.sha256);
+    assert.deepEqual(
+      inventory.rows,
+      manifest.slots.map(({id, rva}) => ({id, rva})),
+    );
+    for (const bank of inventory.banks)
+      assert.equal(
+        bank.tableSha256,
+        manifest.universe.banks.find((expected) => expected.id === bank.id).tableSha256,
+      );
+    assert.deepEqual(
+      Object.fromEntries(
+        manifest.owners.map((owner) => [
+          owner,
+          manifest.slots.filter((row) => row.ownership.owner === owner).length,
+        ]),
+      ),
+      {runtime: 208, storage: 321, opcodes: 311},
+    );
+  },
+);

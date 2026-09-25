@@ -1007,14 +1007,15 @@ export async function buildAokanaHorizontalTextLayout(
         const remaining = state.text.encodeWide(text.slice(index), 1),
           match = options.annotations.matchPrefix({bytes: remaining, offset: 0}, true);
         if (match !== null && match.wide !== null) {
+          const wide = match.wide;
           const measured = runAsActor(() =>
-            measureWideText(state, match.wide, current, options.proportional),
+            measureWideText(state, wide, current, options.proportional),
           );
           openingNeedsOwnExtent = false;
           groupExtent = Math.max(groupExtent, measured.withoutLastBearing);
           annotationKey = match.key.slice();
           annotationBaseExtent = measured.withoutFirstBearing;
-          rubyCountdown = Math.max(0, match.wide.length - decoded.length);
+          rubyCountdown = Math.max(0, wide.length - decoded.length);
         }
       } else {
         rubyCountdown--;

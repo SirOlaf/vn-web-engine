@@ -50,9 +50,9 @@ Each child command uses fixed argument arrays without a shell. Node preload/sear
 ```sh
 node tools/native-audit/snapshot.mjs
 node tools/native-audit/snapshot.mjs /path/to/manifest.json /path/to/receipt.json /path/to/snapshot.json
-node tools/native-audit/snapshot.mjs --slots tools/native-audit/aokana-slots.json
+node tools/native-audit/snapshot.mjs --slots tools/native-audit/workspace/aokana-slots.json
 ```
 
 The snapshot reads the current Git branch, HEAD, tracked/untracked changes and ignored investigation-document count. It validates an optional receipt against its exact manifest, input digest, commands and expected test results, then checks whether the source and compiled-output hashes still match the checkout. Historical acceptance and acceptance for the current checkout are separate: a later source or build-output change leaves the receipt historical and validation stale. Snapshot output uses the same canonical-path and source-root exclusions as the boundary runner.
 
-Without a receipt, the snapshot records pending validation rather than inferring acceptance from prose. Append `--slots tools/native-audit/aokana-slots.json` to include a fresh static slot audit with missing source/aggregate slots, test-only factory counts, construction candidates and any observation drift. Without that option, integration is explicitly unassessed. Passing selected tests does not establish a complete native bank or playable startup. Snapshot generation neither stages nor commits files and never changes the Git checkout.
+Without a receipt, the snapshot records pending validation rather than inferring acceptance from prose. Append `--slots tools/native-audit/workspace/aokana-slots.json` to include a fresh static slot audit with missing source/aggregate slots, test-only factory counts, construction candidates and any observation drift. The slot manifest lives in the ignored local workspace and is not pushed. Without that option, integration is explicitly unassessed. Passing selected tests does not establish a complete native bank or playable startup. Snapshot generation neither stages nor commits files and never changes the Git checkout.

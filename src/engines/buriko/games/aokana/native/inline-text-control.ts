@@ -274,6 +274,7 @@ export class AokanaInlineTextControl {
       viewText: '',
       multiline: spec.multiline,
     };
+    this.messages.bindQueuedNumericTarget(target, (message) => this.handleMessage(message));
     this.show(1);
     const [left, top, right, bottom] = aokanaDisplayTransformRectangle(this.host.display, [
       x,

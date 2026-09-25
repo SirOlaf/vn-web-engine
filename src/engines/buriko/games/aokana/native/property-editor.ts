@@ -154,6 +154,7 @@ export class AokanaPropertyEditors {
       uiSelected: -1,
     };
     this.records.set(id, record);
+    this.messages.bindQueuedNumericTarget(record.target, (message) => this.handleMessage(message));
     // These native templates have no WS_SYSMENU; no additional browser close button is inserted.
     return 0;
   }
@@ -168,6 +169,12 @@ export class AokanaPropertyEditors {
     record.tabs.length = 0;
     this.records.delete(id >>> 0);
     return 0;
+  }
+
+  /** Release every retained window and queued target when the owning graph closes. */
+  dispose(): void {
+    for (const id of [...this.records.keys()]) this.destroy(id);
+    this.notifications.clear();
   }
 
   getPosition(output: AokanaBpPointer | null, id: number): number {

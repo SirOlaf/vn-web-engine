@@ -1,5 +1,5 @@
 import {AokanaBitmapStorage} from './bitmap.js';
-import type {AokanaBrowserFontFace} from './font-browser.js';
+import type {AokanaFontFace} from './font-browser.js';
 import type {AokanaNativeFonts} from './fonts.js';
 import {aokanaWideCharacter} from './font-raster.js';
 
@@ -32,7 +32,7 @@ export class AokanaMonochromeFont {
   private head: CacheRecord | undefined;
   private fixedCount: number | undefined;
   private readonly fixedRecords: AokanaMonochromeGlyph[] = [];
-  private face: AokanaBrowserFontFace | undefined;
+  private face: AokanaFontFace | undefined;
   private dib: AokanaBitmapStorage | undefined;
   private dibStride: number | undefined;
 

@@ -240,6 +240,21 @@ export class AokanaLogicalSpatialManagers {
     return 0;
   }
 
+  /** Final registry cleanup through D0:41 semantics; referenced handles stay live. */
+  disposeAll(): void {
+    const referenced: number[] = [];
+    for (const handle of [...this.handles]) {
+      const status = this.destroy(handle.id);
+      if (status === 0x17) referenced.push(handle.id);
+      else if (status !== 0)
+        throw new Error(`Aokana logical-space final disposal lost handle ${handle.id}`);
+    }
+    if (referenced.length !== 0)
+      throw new Error(
+        `Aokana logical-space final disposal retained referenced handles: ${referenced.join(', ')}`,
+      );
+  }
+
   use(id: number, operation: (manager: AokanaLogicalSpatialManager) => number): number {
     const handle = this.handles.find((handle) => handle.id === id >>> 0);
     if (handle === undefined) return 0xa0000000;

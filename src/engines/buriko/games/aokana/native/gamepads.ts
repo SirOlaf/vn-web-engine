@@ -131,12 +131,26 @@ export class AokanaNativeGamepads {
   private readonly mappings = new Uint32Array(36);
   private readonly axisCache = new Int32Array(4); // X, Y, Z, RZ.
   private readonly nodes: GamepadNode[] = [];
+  private readonly pendingDeviceCloses: AokanaNativeGamepadDevice[] = [];
 
   constructor(
-    private readonly host: AokanaNativeGamepadHost,
-    private readonly input: AokanaNativeInput,
-    private readonly notifications: AokanaNativeNotifications,
+    readonly host: AokanaNativeGamepadHost,
+    readonly input: AokanaNativeInput,
+    readonly notifications: AokanaNativeNotifications,
   ) {}
+
+  get pendingDeviceCloseCount(): number {
+    return this.pendingDeviceCloses.length;
+  }
+
+  private closeDevice(device: AokanaNativeGamepadDevice): void {
+    try {
+      device.close();
+    } catch (error) {
+      this.pendingDeviceCloses.push(device);
+      throw error;
+    }
+  }
 
   /** B38C0 writes every DWORD mapping verbatim and preserves the table across shutdown. */
   setMapping(index: number, value: number): number {
@@ -171,41 +185,66 @@ export class AokanaNativeGamepads {
   /** B3D60: replace the DirectInput owner, enumerate/configure, then enable it. */
   initialize(): number {
     this.shutdown();
-    if (this.host.open() && this.refresh() !== 0) {
-      this.enabled = 1;
-      return 1;
+    try {
+      if (this.host.open() && this.refresh() !== 0) {
+        this.enabled = 1;
+        return 1;
+      }
+      this.shutdown();
+      return 0;
+    } catch (error) {
+      try {
+        this.shutdown();
+      } catch {
+        // Preserve the host-open or refresh failure after attempting all owned closes.
+      }
+      throw error;
     }
-    this.shutdown();
-    return 0;
   }
 
   /** B3DD0/B3FE0: skip GUID duplicates, prepend accepted devices and configure all nodes. */
   refresh(): number {
     const enumeration = this.host.enumerateAttached();
     if (failed(enumeration.status)) return 0;
-    for (const device of enumeration.devices) {
-      if (this.nodes.some((node) => node.instanceGuid === device.instanceGuid)) continue;
-      const result = device.readCapabilities(),
-        capabilities = result.capabilities;
-      if (
-        failed(result.status) ||
-        capabilities === undefined ||
-        ((capabilities.deviceType & 0xff) - 20) >>> 0 >= 2 ||
-        capabilities.axes >>> 0 <= 1 ||
-        capabilities.buttons >>> 0 === 0
-      ) {
-        device.close();
-        continue;
+    const unlinked = new Set(enumeration.devices);
+    try {
+      for (const device of enumeration.devices) {
+        if (this.nodes.some((node) => node.instanceGuid === device.instanceGuid)) {
+          unlinked.delete(device);
+          continue;
+        }
+        const result = device.readCapabilities(),
+          capabilities = result.capabilities;
+        if (
+          failed(result.status) ||
+          capabilities === undefined ||
+          ((capabilities.deviceType & 0xff) - 20) >>> 0 >= 2 ||
+          capabilities.axes >>> 0 <= 1 ||
+          capabilities.buttons >>> 0 === 0
+        ) {
+          unlinked.delete(device);
+          this.closeDevice(device);
+          continue;
+        }
+        this.counter = (this.counter + 1) >>> 0;
+        this.nodes.unshift({
+          id: this.counter,
+          instanceGuid: device.instanceGuid,
+          device,
+          capabilities: copyCapabilities(capabilities),
+          needsPoll: 0,
+          configured: 0,
+        });
+        unlinked.delete(device);
       }
-      this.counter = (this.counter + 1) >>> 0;
-      this.nodes.unshift({
-        id: this.counter,
-        instanceGuid: device.instanceGuid,
-        device,
-        capabilities: copyCapabilities(capabilities),
-        needsPoll: 0,
-        configured: 0,
-      });
+    } catch (error) {
+      for (const device of unlinked)
+        try {
+          this.closeDevice(device);
+        } catch {
+          // Preserve the enumeration/capability failure; shutdown can retry close.
+        }
+      throw error;
     }
     for (let index = 0; index < this.nodes.length;) {
       const node = this.nodes[index]!;
@@ -228,8 +267,38 @@ export class AokanaNativeGamepads {
   /** B41C0 preserves the monotonic counter, 36 mappings and four shared axis caches. */
   shutdown(): void {
     this.enabled = 0;
-    while (this.nodes.length !== 0) this.removeAt(0);
-    this.host.close();
+    let failed = false;
+    let firstError: unknown;
+    while (this.nodes.length !== 0) {
+      try {
+        this.removeAt(0);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstError = error;
+        }
+      }
+    }
+    const pending = this.pendingDeviceCloses.splice(0);
+    for (const device of pending) {
+      try {
+        this.closeDevice(device);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstError = error;
+        }
+      }
+    }
+    try {
+      this.host.close();
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        firstError = error;
+      }
+    }
+    if (failed) throw firstError;
   }
 
   remove(id: number): number {
@@ -241,7 +310,7 @@ export class AokanaNativeGamepads {
 
   private removeAt(index: number): void {
     const [node] = this.nodes.splice(index, 1);
-    node!.device.close();
+    this.closeDevice(node!.device);
   }
 
   /** B35F0: query one ID or merge all present nodes without consulting enabled. */

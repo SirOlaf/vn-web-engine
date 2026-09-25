@@ -341,6 +341,16 @@ export class AokanaProgramFiles {
     return this.media.isAvailable(this.path(bytes));
   }
 
+  /** One GetFileAttributesW-shaped observation for a caller that branches on both success and directory bit. */
+  async pathKindWide(path: string): Promise<'file' | 'directory' | null> {
+    try {
+      return (await this.files.stat(this.mountedPath(path))).kind;
+    } catch (error) {
+      if (error instanceof FileError || error instanceof DOMException) return null;
+      throw error;
+    }
+  }
+
   /** GetFileAttributesW success accepts either an actual file or directory. */
   async hasPathWide(path: string): Promise<boolean> {
     try {

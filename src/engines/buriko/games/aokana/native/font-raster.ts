@@ -1,4 +1,4 @@
-import {AokanaBrowserFontFace} from './font-browser.js';
+import type {AokanaFontFace} from './font-browser.js';
 import {nativeSineFirstQuadrant} from '../bp/opcodes/native-math.js';
 
 export type AokanaFontTransform = readonly [number, number, number, number, number];
@@ -184,7 +184,7 @@ export class AokanaFontRaster {
   extraPixels: number;
   constructor(
     readonly geometry: AokanaFontGeometry,
-    readonly face: AokanaBrowserFontFace,
+    readonly face: AokanaFontFace,
     readonly settings: AokanaFontRasterSettings,
     readonly cacheCapacity: number,
   ) {

@@ -226,6 +226,29 @@ test('native modeless setting values retain radio inversion and redundant visibi
   assert.equal(host.parent.children.length, 0);
 });
 
+test('host final close removes a visible modeless panel and its pending event', () => {
+  const host = document(),
+    transitions = [];
+  const settings = new AokanaModelessSettings(host, host.parent, {
+    transition(value) {
+      transitions.push(value);
+    },
+  });
+  const {id, result} = settings.create(0, initial());
+  assert.equal(result, 0);
+  assert.equal(settings.show(id, 1), 0);
+  const slider = controls(host.parent, 'range')[0];
+  slider.value = '37';
+  slider.fire('input');
+  assert.equal(host.parent.children.length, 1);
+
+  settings.disposeAll();
+  settings.disposeAll();
+  assert.equal(host.parent.children.length, 0);
+  assert.deepEqual(transitions, [true, false]);
+  assert.equal(settings.poll(id, null), 0x80000000);
+});
+
 test('settings poll writes its two DWORDs before the indivisible NULL-pointer store', () => {
   const host = document();
   const settings = new AokanaModelessSettings(host, host.parent, {transition() {}});

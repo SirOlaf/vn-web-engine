@@ -20,7 +20,12 @@ export class AokanaIndependentProcedure {
     readonly object: AokanaDisplayObject,
   ) {
     object.attachOwnerIfEmpty(this);
-    this.id = shared.allocateId();
+    try {
+      this.id = shared.allocateId();
+    } catch (error) {
+      object.removeOwnerIfMatches(this);
+      throw error;
+    }
   }
 
   protected check(): void {
@@ -142,6 +147,16 @@ export class AokanaIndependentProcedures {
   private first: Entry | null = null;
   private registrations = 0; // 1e9110 is reset only by c2b10, not decremented by c2b50.
   private phase = 0; // 1e90ac, independent-procedure polling phase.
+  private activePoll = false;
+  private frameLaneToken: object | null = null;
+  private finalAdmissionClosed = false;
+  private finalDisposed = false;
+  private finalDisposalError: {error: unknown} | null = null;
+  private pendingNativeCallbacks: (() => boolean) | null = null;
+  private pollDrainWaiters: Array<() => void> = [];
+  private pollFailure: {error: unknown} | null = null;
+  private frameLaneDrainWaiters: Array<() => void> = [];
+  private frameLaneFailure: {error: unknown} | null = null;
 
   constructor(readonly manager: AokanaDisplayManager) {}
 
@@ -154,8 +169,101 @@ export class AokanaIndependentProcedures {
   get pollingPhase(): number {
     return this.phase;
   }
+  get hasActivePoll(): boolean {
+    return this.activePoll;
+  }
+  get hasActiveFrameLane(): boolean {
+    return this.frameLaneToken !== null;
+  }
+  get admissionClosed(): boolean {
+    return this.finalAdmissionClosed;
+  }
+
+  /** The VM core assigns its callback counter once, before either ingress can run. */
+  bindNativeCallbackGuard(pending: () => boolean): void {
+    if (this.pendingNativeCallbacks !== null || this.finalAdmissionClosed)
+      throw new Error('Aokana independent procedure callback guard is already bound');
+    this.pendingNativeCallbacks = pending;
+  }
+
+  beginFinalClose(): void {
+    this.finalAdmissionClosed = true;
+  }
+
+  private assertMutationAdmission(): void {
+    if (this.finalAdmissionClosed)
+      throw new Error('Aokana independent procedure admission is closed');
+    if (this.activePoll) throw new Error('Aokana independent procedure registry is being polled');
+    if (this.frameLaneToken !== null)
+      throw new Error('Aokana independent procedure frame lane is active');
+  }
+
+  private beginPoll(frameLaneToken: object | null = null): void {
+    if (frameLaneToken !== null) {
+      if (this.frameLaneToken !== frameLaneToken)
+        throw new Error('Aokana independent procedure frame lane token is stale');
+      if (this.activePoll) throw new Error('Aokana independent procedure registry is being polled');
+    } else this.assertMutationAdmission();
+    if (this.pendingNativeCallbacks?.())
+      throw new Error('Aokana independent procedure poll overlaps a native callback');
+    this.activePoll = true;
+  }
+
+  private endPoll(): void {
+    this.activePoll = false;
+    const waiters = this.pollDrainWaiters.splice(0);
+    for (const resolve of waiters) resolve();
+  }
+
+  async joinPendingPoll(): Promise<void> {
+    if (this.activePoll) await new Promise<void>((resolve) => this.pollDrainWaiters.push(resolve));
+    if (this.pollFailure !== null) throw this.pollFailure.error;
+  }
+  /** ECB90 prefix admission spans its awaited poll and synchronous input suffix. */
+  withFrameLane<T>(
+    operation: (poll: {enabled: () => Promise<0 | 1>; reset: () => Promise<void>}) => Promise<T>,
+  ): Promise<T> {
+    this.assertMutationAdmission();
+    if (this.pendingNativeCallbacks?.())
+      throw new Error('Aokana independent frame lane overlaps a native callback');
+    const token = {};
+    this.frameLaneToken = token;
+    let pollUsed = false;
+    const takePoll = (): void => {
+      if (pollUsed) throw new Error('Aokana independent frame lane already polled');
+      pollUsed = true;
+    };
+    return (async () => {
+      try {
+        return await operation({
+          enabled: () => {
+            takePoll();
+            return this.pollEnabledInternal(token);
+          },
+          reset: () => {
+            takePoll();
+            return this.resetEnabledInternal(token);
+          },
+        });
+      } catch (error) {
+        this.frameLaneFailure ??= {error};
+        throw error;
+      } finally {
+        this.frameLaneToken = null;
+        const waiters = this.frameLaneDrainWaiters.splice(0);
+        for (const resolve of waiters) resolve();
+      }
+    })();
+  }
+
+  async joinPendingFrameLane(): Promise<void> {
+    if (this.frameLaneToken !== null)
+      await new Promise<void>((resolve) => this.frameLaneDrainWaiters.push(resolve));
+    if (this.frameLaneFailure !== null) throw this.frameLaneFailure.error;
+  }
   /** c2c60 accepts only zero and one; the controller reads this before each phase. */
   setPollingPhase(value: number): 0 | 1 {
+    this.assertMutationAdmission();
     value >>>= 0;
     if (value > 1) return 0;
     this.phase = value;
@@ -164,11 +272,13 @@ export class AokanaIndependentProcedures {
 
   /** ID assignment belongs to construction, which can precede registry insertion. */
   allocateId(): number {
+    this.assertMutationAdmission();
     this.lastId = (this.lastId + 1) >>> 0;
     return this.lastId;
   }
 
   register(procedure: AokanaIndependentProcedure): number {
+    this.assertMutationAdmission();
     if (procedure.shared !== this)
       throw new Error('Aokana DCIndProc belongs to another native registry owner');
     const id = procedure.id >>> 0;
@@ -187,14 +297,22 @@ export class AokanaIndependentProcedures {
 
   /** c2b50 unlinks before disposal; it intentionally retains the registration counter. */
   remove(id: number): 0 | 1 {
+    this.assertMutationAdmission();
+    return this.removeInternal(id);
+  }
+
+  private removeInternal(id: number): 0 | 1 {
     id >>>= 0;
     let previous: Entry | null = null;
     for (let entry = this.first; entry !== null; entry = entry.next) {
       if (entry.id === id) {
         if (previous === null) this.first = entry.next;
         else previous.next = entry.next;
-        entry.procedure.dispose();
-        entry.release();
+        try {
+          entry.procedure.dispose();
+        } finally {
+          entry.release();
+        }
         return 1;
       }
       previous = entry;
@@ -203,33 +321,91 @@ export class AokanaIndependentProcedures {
   }
 
   clear(): void {
-    while (this.first !== null) this.remove(this.first.id);
+    this.assertMutationAdmission();
+    while (this.first !== null) this.removeInternal(this.first.id);
     this.registrations = 0;
+  }
+
+  private clearFinalInternal(): void {
+    let firstError: {error: unknown} | null = null;
+    while (this.first !== null) {
+      const id = this.first.id;
+      try {
+        this.removeInternal(id);
+      } catch (error) {
+        firstError ??= {error};
+      }
+    }
+    this.registrations = 0;
+    if (firstError !== null) throw firstError.error;
+  }
+
+  /** Final host disposal is separate from native program-reset clear(). */
+  disposeFinal(): void {
+    if (!this.finalAdmissionClosed)
+      throw new Error('Aokana independent procedure final disposal requires closed admission');
+    if (this.activePoll || this.frameLaneToken !== null)
+      throw new Error('Aokana independent procedure final disposal requires joined frame polls');
+    if (this.finalDisposed) {
+      if (this.finalDisposalError !== null) throw this.finalDisposalError.error;
+      return;
+    }
+    this.finalDisposed = true;
+    try {
+      this.clearFinalInternal();
+    } catch (error) {
+      this.finalDisposalError = {error};
+      throw error;
+    }
   }
 
   /** c2a80 deliberately calls the base poll, while message dispatch remains virtual. */
   async resetEnabled(): Promise<void> {
-    const operationAllocator = this.surfaces.allocator,
-      operationActor = operationAllocator.currentActor;
-    const runAsActor = <T>(operation: () => T): T =>
-      operationAllocator.withActor(operationActor, operation);
+    return this.resetEnabledInternal(null);
+  }
 
-    for (let entry = this.first; entry !== null; entry = entry.next)
-      if (runAsActor(() => entry!.procedure.getEnabled()) !== 0)
-        await runAsActor(() => AokanaIndependentProcedure.prototype.poll.call(entry!.procedure));
+  private async resetEnabledInternal(frameLaneToken: object | null): Promise<void> {
+    this.beginPoll(frameLaneToken);
+    try {
+      const operationAllocator = this.surfaces.allocator,
+        operationActor = operationAllocator.currentActor;
+      const runAsActor = <T>(operation: () => T): T =>
+        operationAllocator.withActor(operationActor, operation);
+
+      for (let entry = this.first; entry !== null; entry = entry.next)
+        if (runAsActor(() => entry!.procedure.getEnabled()) !== 0)
+          await runAsActor(() => AokanaIndependentProcedure.prototype.poll.call(entry!.procedure));
+    } catch (error) {
+      this.pollFailure ??= {error};
+      throw error;
+    } finally {
+      this.endPoll();
+    }
   }
 
   /** c2ac0 visits enabled entries newest first and stops at the first nonzero poll result. */
   async pollEnabled(): Promise<0 | 1> {
-    const operationAllocator = this.surfaces.allocator,
-      operationActor = operationAllocator.currentActor;
-    const runAsActor = <T>(operation: () => T): T =>
-      operationAllocator.withActor(operationActor, operation);
+    return this.pollEnabledInternal(null);
+  }
 
-    let result: 0 | 1 = 1;
-    for (let entry = this.first; entry !== null && result !== 0; entry = entry.next)
-      if (runAsActor(() => entry!.procedure.getEnabled()) !== 0)
-        result = (await runAsActor(() => entry!.procedure.poll())) === 0 ? 1 : 0;
-    return result;
+  private async pollEnabledInternal(frameLaneToken: object | null): Promise<0 | 1> {
+    this.beginPoll(frameLaneToken);
+    try {
+      const operationAllocator = this.surfaces.allocator,
+        operationActor = operationAllocator.currentActor;
+      const runAsActor = <T>(operation: () => T): T =>
+        operationAllocator.withActor(operationActor, operation);
+
+      let result: 0 | 1 = 1;
+      for (let entry = this.first; entry !== null && result !== 0; entry = entry.next)
+        if (runAsActor(() => entry!.procedure.getEnabled()) !== 0)
+          result = (await runAsActor(() => entry!.procedure.poll())) === 0 ? 1 : 0;
+      return result;
+    } catch (error) {
+      this.pollFailure ??= {error};
+      throw error;
+    } finally {
+      this.endPoll();
+    }
   }
 }

@@ -172,6 +172,13 @@ export class AokanaAudioChannels {
       await this.restoreMasters(actor);
     });
   }
+  /** F52B0 clears the separate 128×64 static header BSS under engine lock 2. */
+  async clearStaticHeaders(actor = this.actors.currentActor): Promise<void> {
+    await this.engine(actor, () => {
+      this.staticHeaders.fill(0);
+      this.staticHeadersInitialized.fill(1);
+    });
+  }
   async mute(actor = this.actors.currentActor): Promise<void> {
     await this.engine(actor, async () => {
       if (this.muted !== 0) return;

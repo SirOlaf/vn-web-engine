@@ -7,6 +7,7 @@ import {
   AokanaDistributedProcessing,
 } from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
 import {AokanaExternalProcesses} from '../dist/engines/buriko/games/aokana/native/external-process.js';
+import {AokanaExternalMutexName} from '../dist/engines/buriko/games/aokana/native/external-mutex-name.js';
 import {createGroup81ExternalProcess} from '../dist/engines/buriko/games/aokana/native/group-81-external-process.js';
 import {
   AokanaProgramFiles,
@@ -100,7 +101,7 @@ test('81 E0 uses native command, token fallback, wait/window and output order on
       events.push(['exit-code', process.name]);
       return 0x89abcdef;
     },
-    async openMutexW() {
+    async openMutexA() {
       assert.fail('81 E0 must not use the common lower mutex wait');
     },
     async sleep() {
@@ -163,7 +164,7 @@ test('81 E0 uses native command, token fallback, wait/window and output order on
       {lookup: unavailable},
       host,
       window,
-      unavailable,
+      new AokanaExternalMutexName(),
     ),
     [definition] = createGroup81ExternalProcess(processes),
     memoryBytes = new Uint8Array(320).fill(0xa5),

@@ -32,6 +32,7 @@ export function createGroup80ResourceRead(
           textBytes(required(name)),
           true,
           output(destination),
+          h.actor,
         );
         push32(h.thread, result.result);
         return 0;
@@ -54,6 +55,7 @@ export function createGroup80ResourceRead(
           offset,
           length,
           output(destination),
+          h.actor,
         );
         push32(h.thread, result.result);
         return 0;

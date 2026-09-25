@@ -23,7 +23,13 @@ export interface AokanaDataCodecWorker {
 export class AokanaDataCodecWorkers {
   private readonly pending = new Set<AokanaDataCodecWorker>();
   private failure: {error: unknown} | null = null;
+  private closed = false;
+  private closing: Promise<void> | null = null;
   constructor(readonly readSystemTime: () => Date = () => new Date()) {}
+
+  get admissionClosed(): boolean {
+    return this.closed;
+  }
 
   checkFailure(): void {
     if (this.failure !== null) throw this.failure.error;
@@ -31,6 +37,19 @@ export class AokanaDataCodecWorkers {
   hasPendingWork(): boolean {
     this.checkFailure();
     return this.pending.size !== 0;
+  }
+
+  /** The caller closes BP admission first, then joins borrowed pointers before child storage retires. */
+  async joinPending(): Promise<void> {
+    while (this.pending.size !== 0)
+      await Promise.all([...this.pending].map((worker) => worker.completion));
+    this.checkFailure();
+  }
+
+  /** Final owner shutdown closes worker admission synchronously, before its first await. */
+  closeAndJoin(): Promise<void> {
+    this.closed = true;
+    return (this.closing ??= this.joinPending());
   }
 
   startEncode(
@@ -142,6 +161,7 @@ export class AokanaDataCodecWorkers {
     operation: (worker: AokanaDataCodecWorker) => void | Promise<void>,
   ): AokanaDataCodecWorker | null {
     this.checkFailure();
+    if (this.closed) throw new Error('Aokana data codec workers are closed');
     let notify!: () => void;
     const worker: AokanaDataCodecWorker = {
       destination,

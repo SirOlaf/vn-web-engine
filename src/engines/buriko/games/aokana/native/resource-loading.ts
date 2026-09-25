@@ -8,6 +8,8 @@ import {AokanaLoaderMetadata} from './loader-metadata.js';
 
 export interface AokanaResourceBuffer {
   bytes: Uint8Array | null;
+  /** Owned-private publication retains the native decoder's defined-byte mask. */
+  initialized?: Uint8Array;
 }
 export interface AokanaResourceResult {
   value: number;
@@ -114,14 +116,32 @@ export class AokanaResourceLoadingState {
     return this.pending;
   }
 
+  /** FDE10 removes remaining resource nodes after the loader worker has joined. */
+  discardPendingResources(actor = this.metadata.allocator.currentActor): void {
+    if (this.pending !== null)
+      throw new Error('Aokana resource loader worker must join before queue shutdown');
+    this.metadata.run(actor, () => {
+      this.jobs.length = 0;
+    });
+  }
+
   private async process(job: ResourceJob, actor: object): Promise<void> {
     let length = job.length;
     if (length === 0 && job.metadata === null) {
       let count = 0;
       if (job.output !== null || job.direct !== null) {
-        const read = await this.resources.load(job.archive, job.name, true, undefined, actor);
+        const read = await this.resources.load(
+          job.archive,
+          job.name,
+          true,
+          job.output === null ? undefined : null,
+          actor,
+        );
         count = read.result;
-        if (count !== 0 && job.output !== null) job.output.bytes = read.bytes;
+        if (count !== 0 && job.output !== null) {
+          job.output.bytes = read.bytes;
+          job.output.initialized = read.initialized;
+        }
         // With only a direct buffer, native BD C30 replaces the job's local pointer.
         // That pointer is not an output cell and is not copied into the old direct buffer.
       }

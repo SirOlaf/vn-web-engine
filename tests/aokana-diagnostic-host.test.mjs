@@ -17,6 +17,7 @@ test('engine modal freezes title clock, updates native cursor, and restores inpu
   const events = [], text = new AokanaNativeText(), clock = new AokanaNativeClock(() => tick);
   const display = new AokanaNativeDisplayState(1920, 1080), input = new AokanaNativeInput(display, clock);
   display.fullscreen = 1;
+  display.displayFlag = 0;
   clock.suspensionEnabled = true;
   const element = {style: {cursor: ''}}, cursor = new AokanaNativeCursor(element);
   cursor.setVisible(0);

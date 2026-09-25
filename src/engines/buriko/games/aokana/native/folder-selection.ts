@@ -28,9 +28,9 @@ export interface AokanaFolderDialogHost {
 /** C9850's shared Shell folder chooser, without the engine modal wrapper's extra state. */
 export class AokanaFolderSelectionService {
   constructor(
-    private readonly localized: AokanaLocalizedMessages,
-    private readonly mainWindowIdentity: object,
-    private readonly host: AokanaFolderDialogHost,
+    readonly localized: AokanaLocalizedMessages,
+    readonly mainWindowIdentity: object,
+    readonly host: AokanaFolderDialogHost,
   ) {}
 
   async select(

@@ -13,6 +13,7 @@ interface SettingsRecord {
   visible: number;
   head: SettingsEvent | null;
   tail: SettingsEvent | null;
+  retired: boolean;
 }
 
 function word(pointer: AokanaBpPointer, offset: number): number {
@@ -39,6 +40,7 @@ function writeWord(pointer: AokanaBpPointer, offset: number, value: number): voi
 /** Native settings-dialog records, including 1400ae830's non-advancing tail pointer. */
 export class AokanaModelessSettings {
   private nextId = 0;
+  private closed = false;
   private readonly records: SettingsRecord[] = [];
   // A node overwritten in the native tail link is leaked, not implicitly deallocated.
   private readonly allocations = new Set<SettingsEvent>();
@@ -50,6 +52,7 @@ export class AokanaModelessSettings {
 
   /** 1400ae1c0 supports only template kind zero. Initial values contain nine DWORDs. */
   create(kind: number, initial: AokanaBpPointer | null): {result: number; id?: number} {
+    if (this.closed) throw new Error('Aokana settings owner is closed');
     if ((kind | 0) !== 0) return {result: 0x80000001};
     const panel = this.document.createElement('section');
     panel.hidden = true;
@@ -94,6 +97,7 @@ export class AokanaModelessSettings {
       visible: 0,
       head: null,
       tail: null,
+      retired: false,
     };
     for (const [index, choices] of groups.entries()) {
       const group = this.document.createElement('fieldset');
@@ -129,6 +133,7 @@ export class AokanaModelessSettings {
 
   /** 1400ae830 never updates +20 on a nonempty append. */
   private enqueue(record: SettingsRecord, kind: number, value: number): void {
+    if (this.closed || record.retired) return;
     const event: SettingsEvent = {kind: kind | 0, value: value | 0, next: null, alive: true};
     this.allocations.add(event);
     if (record.tail === null) record.head = record.tail = event;
@@ -200,5 +205,42 @@ export class AokanaModelessSettings {
     }
     this.records.splice(index, 1);
     return 0;
+  }
+
+  /** Host final close discards every event without emitting a native close notification. */
+  disposeAll(): void {
+    if (this.closed) return;
+    this.closed = true;
+    const records = this.records.splice(0);
+    let firstError: unknown;
+    let failed = false;
+    const attempt = (operation: () => void): void => {
+      try {
+        operation();
+      } catch (error) {
+        if (!failed) {
+          firstError = error;
+          failed = true;
+        }
+      }
+    };
+    for (const record of records) {
+      record.retired = true;
+      const panel = record.window;
+      record.window = null;
+      const wasVisible = record.visible !== 0;
+      record.visible = 0;
+      record.head = null;
+      record.tail = null;
+      if (wasVisible) attempt(() => this.dialogs.transition(false));
+      if (panel !== null) attempt(() => panel.remove());
+    }
+    // The fixed native tail link can orphan allocations that a head walk cannot find.
+    for (const event of this.allocations) {
+      event.alive = false;
+      event.next = null;
+    }
+    this.allocations.clear();
+    if (failed) throw firstError;
   }
 }

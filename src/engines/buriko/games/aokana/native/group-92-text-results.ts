@@ -2,8 +2,44 @@ import {pop32, push32} from '../bp/state.js';
 import type {AokanaWindowDisplayState} from './display-window-state.js';
 import {AokanaWindowDisplayObject} from './display-window.js';
 import type {AokanaEngineErrors} from './engine-errors.js';
+import type {AokanaTextLayoutState} from './text-layout-state.js';
 import {collectAokanaRegisteredTextAbc} from './text-abc.js';
 import type {AokanaBpOpcodeContext, AokanaNativeSlotDefinition} from './types.js';
+
+/** Registered link-font selection needs only the shared text layout and its font-name registry. */
+export function createGroup92RegisteredLinkFont(
+  state: AokanaTextLayoutState,
+): AokanaNativeSlotDefinition[] {
+  return [
+    {
+      primary: 0x92,
+      secondary: 0x9d,
+      nativeAddress: 0x1400e3170,
+      name: 'SetRegisteredLinkFont',
+      execute: (context) => {
+        const italic = pop32(context.thread),
+          bold = pop32(context.thread),
+          width = pop32(context.thread),
+          size = pop32(context.thread),
+          index = pop32(context.thread),
+          status = state.setRegisteredAlternateFont(index, size, width, bold, italic);
+        push32(
+          context.thread,
+          status === 0
+            ? 0
+            : status === 0x80000004
+              ? 1
+              : status === 0x80000005
+                ? 2
+                : status === 0x80000006
+                  ? 3
+                  : 0xffffffff,
+        );
+        return 0;
+      },
+    },
+  ];
+}
 
 /** Actual line-height/link registries, window extent, glyph ABC and layout-result services. */
 export function createGroup92TextResults(
@@ -15,6 +51,7 @@ export function createGroup92TextResults(
     context.memory.resolve(context.thread, pop32(context.thread));
   const fatal = (context: AokanaBpOpcodeContext, message: string): Promise<never> =>
     errors.threadFatal(context.thread, context.diagnostics, state.text.encodeWide(message, 0));
+  const registeredLinkFont = createGroup92RegisteredLinkFont(state)[0]!;
   return [
     {
       primary: 0x92,
@@ -90,27 +127,7 @@ export function createGroup92TextResults(
       secondary: 0x9d,
       nativeAddress: 0x1400e3170,
       name: 'SetRegisteredLinkFont',
-      execute: (context) => {
-        const italic = pop32(context.thread),
-          bold = pop32(context.thread),
-          width = pop32(context.thread),
-          size = pop32(context.thread),
-          index = pop32(context.thread),
-          status = state.setRegisteredAlternateFont(index, size, width, bold, italic);
-        push32(
-          context.thread,
-          status === 0
-            ? 0
-            : status === 0x80000004
-              ? 1
-              : status === 0x80000005
-                ? 2
-                : status === 0x80000006
-                  ? 3
-                  : 0xffffffff,
-        );
-        return 0;
-      },
+      execute: registeredLinkFont.execute,
     },
     {
       primary: 0x92,

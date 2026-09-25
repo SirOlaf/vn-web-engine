@@ -295,6 +295,11 @@ export class AokanaBpMemory {
     return false;
   }
 
+  /** EE4C0 frees and zeros the six initialized pooled allocation tables. */
+  clearPooled(): void {
+    for (const table of this.pools) table.fill(null);
+  }
+
   private indirect(address: number, selector: number): IndirectRecord | null {
     address >>>= 0;
     if (

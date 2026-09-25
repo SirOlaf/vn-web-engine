@@ -596,4 +596,21 @@ export class AokanaLogicalGridManagers {
     entry.manager.dispose();
     return 1;
   }
+
+  /** Final registry cleanup through the same manager destructor as D0:01. */
+  disposeAll(): void {
+    let firstError: unknown;
+    let failed = false;
+    while (this.entries.length !== 0) {
+      try {
+        this.destroy(this.entries[0]!.id);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstError = error;
+        }
+      }
+    }
+    if (failed) throw firstError;
+  }
 }

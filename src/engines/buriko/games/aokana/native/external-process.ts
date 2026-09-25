@@ -4,6 +4,7 @@ import type {AokanaProgramResources} from './program-resources.js';
 import type {AokanaSystemProfile} from './system-profile.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {textBytes} from './text.js';
+import {AokanaExternalMutexName} from './external-mutex-name.js';
 
 type AokanaHostResult<T> = T | Promise<T>;
 
@@ -93,10 +94,10 @@ export interface AokanaExternalProcessHost {
     milliseconds: number,
   ): AokanaHostResult<number>;
   readExitCodeProcess(process: AokanaExternalProcessHandle): AokanaHostResult<number | null>;
-  openMutexW(
+  openMutexA(
     desiredAccess: number,
     inheritHandle: boolean,
-    name: string,
+    name: Uint8Array,
   ): AokanaHostResult<AokanaExternalProcessHandle | null>;
   sleep(milliseconds: number): AokanaHostResult<void>;
   closeHandle(handle: AokanaExternalProcessHandle): void;
@@ -188,8 +189,8 @@ export class AokanaExternalProcesses {
     private readonly localized: Pick<AokanaLocalizedMessages, 'lookup'>,
     private readonly host: AokanaExternalProcessHost,
     private readonly window: AokanaExternalProcessWindowHost,
-    /** DAT_1401eaa50 is read afresh on each optional OpenMutexW attempt. */
-    private readonly readGlobalMutexName: () => string,
+    /** EA and E2 share DAT_1401eaa50; each OpenMutexA attempt takes a fresh snapshot. */
+    readonly mutexName: AokanaExternalMutexName,
   ) {}
 
   private version(): {major: number; platform: number} {
@@ -280,9 +281,10 @@ export class AokanaExternalProcesses {
     );
   }
 
-  private async waitForGlobalMutex(): Promise<void> {
+  /** C71F0 waits for the actual named mutex to disappear after its child exits. */
+  async waitForGlobalMutex(): Promise<void> {
     for (;;) {
-      const handle = await this.host.openMutexW(0x1f0001, false, this.readGlobalMutexName());
+      const handle = await this.host.openMutexA(0x1f0001, false, this.mutexName.readAnsiName());
       if (handle === null) return;
       this.host.closeHandle(handle);
       await this.host.sleep(100);

@@ -18,6 +18,7 @@ import {AokanaDisplayObject, AokanaDisplayObjectEnvironment} from './display-obj
 import {AokanaDisplayRedraw} from './display-redraw.js';
 import {AokanaNativeDisplayState} from './display-state.js';
 import {AokanaSurfaces} from './surfaces.js';
+import type {AokanaWindowDisplayState} from './display-window-state.js';
 import {allocateAokanaBitmap, aokanaBitmapPixelSize, type AokanaBitmapRectangle} from './bitmap.js';
 import type {AokanaNativeInput} from './input.js';
 import type {AokanaDisplayContext} from './display-object.js';
@@ -1348,6 +1349,34 @@ export class AokanaDisplayManager extends AokanaObjectManager {
     this.check();
     this.minimumKey = (layer << 16) >>> 0;
     this.environment.damage.force();
+  }
+  /** 0802B0 keeps this manager and its backdrop alive across an ECB90 program reset.
+   * Rain is deliberately absent from the native pool-clear call sequence. */
+  resetForProgram(windows: AokanaWindowDisplayState): void {
+    this.check();
+    if (windows.manager !== this)
+      throw new Error('Aokana display restart requires its shared Window state');
+    this.clearDamage();
+    this.clearObjectLists();
+    this.lists.insert(this.backdrop);
+    this.setBackdropActivation(1, 0);
+    for (const family of [
+      'sprite',
+      'filter',
+      'effector',
+      'map',
+      'landscape',
+      'window',
+      'particle',
+      'knob',
+      'group',
+    ] as const)
+      this.clearPool(family);
+    windows.set(0, 0);
+    this.invalidateScene();
+    this.setReferencePoint(-1, -1);
+    this.setOrigin(0, 0);
+    this.setMinimumLayer(0);
   }
   /** 0803a0 clears the CObjectManager before deleting backdrop, groups, knobs, then draw pools. */
   override dispose(): void {

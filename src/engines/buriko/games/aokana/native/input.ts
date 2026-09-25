@@ -86,6 +86,10 @@ export class AokanaNativeInput {
     private readonly clock: AokanaNativeClock,
   ) {}
 
+  usesClock(clock: AokanaNativeClock): boolean {
+    return this.clock === clock;
+  }
+
   private keyIndex(key: number): number {
     key >>>= 0;
     if (key >= 256) throw new RangeError('Aokana native virtual-key index outside 0..255');
@@ -106,6 +110,23 @@ export class AokanaNativeInput {
     let toggle = this.keyboardState[key]! & 1;
     if (down && !wasDown && (key === 0x14 || key === 0x90 || key === 0x91)) toggle ^= 1;
     this.keyboardState[key] = (down ? 0x80 : 0) | toggle;
+  }
+
+  /** Browser deactivation drops physical holds without changing native press counts/options. */
+  releasePhysicalKeys(keys: readonly number[]): void {
+    for (const key of keys) {
+      this.keyIndex(key);
+      this.rawKeys[key] = 0;
+    }
+  }
+
+  /** Applied now and again at the FIFO reset boundary after older physical keydowns. */
+  releaseDequeuedKeys(keys: readonly number[]): void {
+    for (const key of keys) {
+      const index = this.keyIndex(key);
+      this.keyboardState[key] = this.keyboardState[key]! & 1;
+      this.keyRecords[index] = 0;
+    }
   }
 
   private rawKey(key: number): number {

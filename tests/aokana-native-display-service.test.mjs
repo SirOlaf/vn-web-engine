@@ -95,6 +95,10 @@ function fixture() {
     },
     parent = {
       style: {},
+      children: [],
+      append(child) {
+        this.children.push(child);
+      },
       setAttribute(name, value) {
         this[name] = value;
       },

@@ -1,0 +1,122 @@
+import type {AokanaBitmap, AokanaBitmapStorage} from './bitmap.js';
+import {AokanaSurfaces} from './surfaces.js';
+
+export type AokanaGdiInputPixelFormat = 0x21808 | 0x26200a | 0x30803;
+export type AokanaGdiLockPixelFormat = 0x26200a | 0x30803;
+
+export interface AokanaDiskImportSelection {
+  readonly mode: 1 | 2 | 3;
+  readonly inputPixelFormat: AokanaGdiInputPixelFormat;
+  readonly lockPixelFormat: AokanaGdiLockPixelFormat;
+  readonly surfaceFormat: 2 | 3;
+  readonly finalFormat: 1 | 2 | 3;
+}
+
+/** A codec host's synchronous LockBits result. Stride is signed as in GDI+; this
+ * lower currently accepts only positive packed or DWORD-aligned rows. Negative
+ * stride needs the codec's orientation and Scan0 semantics before import. */
+export interface AokanaGdiLockedPixels {
+  readonly bytes: Uint8Array;
+  readonly scan0Offset: number;
+  readonly stride: number;
+  readonly width: number;
+  readonly height: number;
+  readonly pixelFormat: AokanaGdiLockPixelFormat;
+}
+
+/** Borrowed Scan0 view. The caller must finish using it before its surface can change. */
+export interface AokanaGdiScan0Pixels {
+  readonly descriptor: AokanaBitmap;
+  readonly storage: AokanaBitmapStorage;
+  readonly scan0Offset: number;
+  readonly scan0Stride: number;
+  readonly pixelFormat: 0x22009 | 0x26200a;
+}
+
+/** Pixel transfer only; file codecs, GDI+ status, and 90:C4/C5 admission remain separate. */
+export class AokanaDiskImagePixels {
+  constructor(readonly surfaces: AokanaSurfaces) {}
+
+  /** C0240 selects the source format before C0040 requests LockBits. */
+  selectImport(rawMode: number, sourcePixelFormat: number): AokanaDiskImportSelection | null {
+    let mode = rawMode | 0;
+    if (mode === -1) {
+      if (sourcePixelFormat === 0x21808) mode = 1;
+      else if (sourcePixelFormat === 0x26200a) mode = 2;
+      else if (sourcePixelFormat === 0x30803) mode = 3;
+      else return null;
+    }
+    if (mode !== 1 && mode !== 2 && mode !== 3)
+      throw new RangeError('Aokana disk image mode has no defined pixel format');
+    const inputPixelFormat = [0, 0x21808, 0x26200a, 0x30803][mode] as AokanaGdiInputPixelFormat;
+    return {
+      mode,
+      inputPixelFormat,
+      lockPixelFormat: mode === 3 ? 0x30803 : 0x26200a,
+      surfaceFormat: mode === 3 ? 3 : 2,
+      finalFormat: mode,
+    };
+  }
+
+  /** 036D80 imports positive packed or DWORD-aligned rows, then mode 1 applies 036A80. */
+  importLocked(
+    index: number,
+    selection: AokanaDiskImportSelection,
+    frame: AokanaGdiLockedPixels,
+  ): 0 | 1 {
+    const pixelSize = selection.lockPixelFormat === 0x30803 ? 1 : 4;
+    if (
+      frame.pixelFormat !== selection.lockPixelFormat ||
+      !Number.isSafeInteger(frame.width) ||
+      !Number.isSafeInteger(frame.height) ||
+      frame.width <= 0 ||
+      frame.height <= 0 ||
+      frame.width > Math.floor(0x7ffffffc / pixelSize) ||
+      !Number.isSafeInteger(frame.scan0Offset) ||
+      frame.scan0Offset < 0 ||
+      !Number.isSafeInteger(frame.stride) ||
+      frame.stride <= 0
+    )
+      throw new RangeError('Aokana disk image LockBits layout is unsupported');
+    const packedStride = frame.width * pixelSize;
+    const alignedStride = (packedStride + 3) & ~3;
+    if (
+      (frame.stride !== packedStride && frame.stride !== alignedStride) ||
+      frame.scan0Offset + frame.stride * frame.height > frame.bytes.length
+    )
+      throw new RangeError('Aokana disk image LockBits layout is unsupported');
+    const imported = this.surfaces.importRaw(
+      index,
+      frame.width,
+      frame.height,
+      selection.surfaceFormat,
+      {bytes: frame.bytes, offset: frame.scan0Offset},
+      null,
+      frame.stride === alignedStride ? 1 : 0,
+    );
+    if (imported === 0 || selection.mode !== 1) return imported;
+    return this.surfaces.convertFormat(index, 1) === 0 ? 1 : 0;
+  }
+
+  /** BFD40 snapshots the descriptor but passes the original backing to BitmapFromScan0. */
+  prepareScan0(index: number): AokanaGdiScan0Pixels | null {
+    const descriptor = this.surfaces.snapshot(index);
+    if (descriptor === null || descriptor.storage === null) return null;
+    const pixelFormat =
+      descriptor.format === 1 || descriptor.format === 7
+        ? 0x22009
+        : descriptor.format === 2
+          ? 0x26200a
+          : null;
+    if (pixelFormat === null) return null;
+    const scan0Stride = descriptor.bytesPerPixel * descriptor.width;
+    descriptor.storage.range(descriptor.offset, scan0Stride * descriptor.height, true);
+    return {
+      descriptor,
+      storage: descriptor.storage,
+      scan0Offset: descriptor.offset,
+      scan0Stride,
+      pixelFormat,
+    };
+  }
+}

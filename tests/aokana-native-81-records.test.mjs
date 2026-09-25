@@ -95,6 +95,33 @@ test('record wrappers use the native five-argument write ABI and unchanged statu
   assert.equal(call(0xd1, id), 0);
 });
 
+test('C0640 clears the same Bank 81 record-set owner before the next program', () => {
+  const {bytes, records, pointer, view} = fixture();
+  const thread = new AokanaBpThread({
+    id: 1,
+    operandCapacity: 64,
+    moduleCapacity: 64,
+    frameCapacity: 64,
+  });
+  const definitions = createGroup81Records(records);
+  const h = {thread, memory: new AokanaBpMemory(bytes)};
+  const call = (secondary, ...args) => {
+    for (const arg of args) push32(thread, arg);
+    assert.equal(definitions.find((entry) => entry.secondary === secondary).execute(h), 0);
+    return pop32(thread);
+  };
+  assert.equal(call(0xd0, 16, 2), 0);
+  const oldId = view.getUint32(16, true);
+  bytes.set([41, 42], 100);
+  assert.equal(call(0xd2, 20, oldId, 0, 100, 2), 0);
+  records.clear();
+  assert.equal(call(0xd4, 200, 24, oldId, 0), 0x80000002);
+  assert.equal(call(0xd0, 16, 2), 0);
+  assert.equal(view.getUint32(16, true), oldId);
+  assert.equal(call(0xd5, 200, 24, oldId), 0);
+  assert.equal(view.getUint32(24, true), 0);
+});
+
 test('four disabled native services still pop and resolve arguments before returning one', () => {
   const thread = new AokanaBpThread({
     id: 1,

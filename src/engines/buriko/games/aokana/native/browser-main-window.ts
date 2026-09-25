@@ -3,6 +3,9 @@ import type {AokanaBitmap} from './bitmap.js';
 import {aokanaChildDibPixels} from './child-bitmap.js';
 import {aokanaDisplayScaleSize, aokanaDisplayViewport} from './display-geometry.js';
 import type {AokanaNativeDisplayState, AokanaNativeRectangle} from './display-state.js';
+import type {AokanaNativeInput} from './input.js';
+import type {AokanaWindowMessages} from './window-messages.js';
+import type {AokanaMainDomInput} from './main-dom-input.js';
 
 export interface AokanaMainWindowCallbacks {
   /** Native live-window gate 1e8d00, set by WM_CREATE and cleared by WM_DESTROY. */
@@ -13,6 +16,22 @@ export interface AokanaMainWindowCallbacks {
   inlinePaintSuppressed(): boolean;
   /** b6d90 receives EDX=Y from B0 03's immediate-position branch (0d6038). */
   geometryChanged(y: number): void;
+}
+
+/** A live host mapping from viewport CSS pixels to the native monitor coordinate space. */
+export interface AokanaViewportScreenMapping {
+  /** Native screen coordinate of the viewport's CSS (0, 0). */
+  readonly originX: number;
+  readonly originY: number;
+  readonly nativePixelsPerCssX: number;
+  readonly nativePixelsPerCssY: number;
+}
+
+function nativeScreenEdge(value: number): number {
+  const rounded = Math.round(value);
+  if (!Number.isFinite(rounded) || rounded < -0x80000000 || rounded > 0x7fffffff)
+    throw new RangeError('Aokana window rectangle exceeds signed native screen coordinates');
+  return rounded;
 }
 
 /** Exact DWORD monitor containment in 1400c6700. Monitor right/bottom remain exclusive OS edges. */
@@ -54,16 +73,262 @@ export function aokanaWindowCenteredPosition(
 /** The concrete scoped browser window/DC for B0. The runtime retains descriptor/device/frame ownership.
  * It is constructed around that owner's existing canvas, never a second presentation surface. */
 export class AokanaBrowserMainWindow {
+  closePolicy = 1; // 1c945c: the executable's initialized DWORD is 1.
+  closeMenuEnabled = true;
+  private closeInput: AokanaNativeInput | null = null;
+  private closeMessages: AokanaWindowMessages | null = null;
+  private closeButton: HTMLButtonElement | null = null;
+  private detached = false;
+  private readScreenMapping: (() => AokanaViewportScreenMapping) | null = null;
+  private lastRestoredOuterRectangle: AokanaNativeRectangle | null = null;
+  private outerRectangleMinimized = false;
+  private inputIngress: AokanaMainDomInput | null = null;
+
   constructor(
     readonly document: Document,
     readonly parent: HTMLElement,
     readonly surface: HTMLCanvasElement,
     readonly manager: AokanaDisplayManager,
     readonly callbacks: AokanaMainWindowCallbacks,
-  ) {}
+  ) {
+    // The supplied canvas is the sole main client surface, even when the host
+    // provides it detached. Keep an existing nested attachment in place.
+    const owned =
+      typeof parent.contains === 'function'
+        ? parent.contains(surface)
+        : Array.isArray(parent.children) && parent.children.includes(surface);
+    if (!owned) parent.append(surface);
+  }
 
   get display(): AokanaNativeDisplayState {
     return this.manager.displayState;
+  }
+
+  /** B2FD0's host primitive reads the actual scoped outer border box in screen coordinates. */
+  bindViewportScreenMapping(read: () => AokanaViewportScreenMapping): void {
+    if (this.readScreenMapping !== null)
+      throw new Error('Aokana main window screen mapping is already bound');
+    this.readScreenMapping = read;
+  }
+
+  /** Browser viewport position through the supplied live native-screen profile and canvas client edge. */
+  mapCanvasViewportPoint(
+    x: number,
+    y: number,
+  ): {
+    readonly clientX: number;
+    readonly clientY: number;
+    readonly screenX: number;
+    readonly screenY: number;
+  } {
+    if (this.detached || this.readScreenMapping === null)
+      throw new Error('Aokana canvas pointer requires a live screen mapping');
+    const mapping = this.readScreenMapping(),
+      rect = this.surface.getBoundingClientRect();
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(mapping.originX) ||
+      !Number.isFinite(mapping.originY) ||
+      !Number.isFinite(mapping.nativePixelsPerCssX) ||
+      !Number.isFinite(mapping.nativePixelsPerCssY) ||
+      mapping.nativePixelsPerCssX <= 0 ||
+      mapping.nativePixelsPerCssY <= 0 ||
+      !Number.isFinite(rect.left) ||
+      !Number.isFinite(rect.top) ||
+      !Number.isFinite(rect.right) ||
+      !Number.isFinite(rect.bottom) ||
+      rect.right <= rect.left ||
+      rect.bottom <= rect.top
+    )
+      throw new RangeError('Aokana canvas pointer requires measured geometry and screen mapping');
+    const screenX = nativeScreenEdge(mapping.originX + x * mapping.nativePixelsPerCssX),
+      screenY = nativeScreenEdge(mapping.originY + y * mapping.nativePixelsPerCssY),
+      left = nativeScreenEdge(mapping.originX + rect.left * mapping.nativePixelsPerCssX),
+      top = nativeScreenEdge(mapping.originY + rect.top * mapping.nativePixelsPerCssY);
+    return {
+      clientX: nativeScreenEdge(screenX - left),
+      clientY: nativeScreenEdge(screenY - top),
+      screenX,
+      screenY,
+    };
+  }
+
+  private measureOuterScreenRectangle(): AokanaNativeRectangle {
+    if (this.detached) throw new Error('Aokana main window has been detached');
+    if (this.readScreenMapping === null)
+      throw new Error('Aokana main window requires a viewport-to-screen mapping');
+    const mapping = this.readScreenMapping(),
+      measured = this.parent.getBoundingClientRect();
+    if (
+      !Number.isFinite(mapping.originX) ||
+      !Number.isFinite(mapping.originY) ||
+      !Number.isFinite(mapping.nativePixelsPerCssX) ||
+      !Number.isFinite(mapping.nativePixelsPerCssY) ||
+      mapping.nativePixelsPerCssX <= 0 ||
+      mapping.nativePixelsPerCssY <= 0 ||
+      !Number.isFinite(measured.left) ||
+      !Number.isFinite(measured.top) ||
+      !Number.isFinite(measured.right) ||
+      !Number.isFinite(measured.bottom) ||
+      measured.right <= measured.left ||
+      measured.bottom <= measured.top
+    )
+      throw new RangeError(
+        'Aokana main window requires a measured outer border box and screen mapping',
+      );
+    const left = nativeScreenEdge(mapping.originX + measured.left * mapping.nativePixelsPerCssX),
+      top = nativeScreenEdge(mapping.originY + measured.top * mapping.nativePixelsPerCssY),
+      right = nativeScreenEdge(mapping.originX + measured.right * mapping.nativePixelsPerCssX),
+      bottom = nativeScreenEdge(mapping.originY + measured.bottom * mapping.nativePixelsPerCssY);
+    if (right <= left || bottom <= top)
+      throw new RangeError('Aokana main window outer rectangle collapses in native screen pixels');
+    return [left, top, right, bottom];
+  }
+
+  /** MonitorFromWindow uses the last restored outer rectangle while iconic. */
+  readRestoredOuterScreenRectangle(): AokanaNativeRectangle {
+    if (this.detached) throw new Error('Aokana main window has been detached');
+    if (this.outerRectangleMinimized) {
+      if (this.lastRestoredOuterRectangle === null)
+        throw new Error('Aokana minimized main window has no restored outer rectangle');
+      return [...this.lastRestoredOuterRectangle];
+    }
+    const rectangle = this.measureOuterScreenRectangle();
+    this.lastRestoredOuterRectangle = rectangle;
+    return [...rectangle];
+  }
+
+  /** Call immediately before a later host minimize operation changes the scoped DOM layout. */
+  captureOuterRectangleBeforeMinimize(): void {
+    if (this.outerRectangleMinimized) return;
+    this.lastRestoredOuterRectangle = this.measureOuterScreenRectangle();
+    this.outerRectangleMinimized = true;
+  }
+
+  /** Call after a later host restore operation makes the scoped outer bounds measurable again. */
+  refreshOuterRectangleAfterRestore(): void {
+    const rectangle = this.measureOuterScreenRectangle();
+    this.lastRestoredOuterRectangle = rectangle;
+    this.outerRectangleMinimized = false;
+  }
+
+  /** Mount the one scoped main-window Close command against the actual HWND/message owners. */
+  bindCloseControl(input: AokanaNativeInput, messages: AokanaWindowMessages): HTMLButtonElement {
+    if (
+      input.display !== this.display ||
+      messages.input !== input ||
+      messages.mainTarget() === null
+    )
+      throw new Error('Aokana main Close control requires the shared live main-window owners');
+    if (this.closeButton !== null) {
+      if (this.closeInput !== input || this.closeMessages !== messages)
+        throw new Error('Aokana main Close control is already bound to another owner');
+      return this.closeButton;
+    }
+    const button = this.document.createElement('button');
+    button.type = 'button';
+    button.textContent = '×';
+    button.setAttribute('aria-label', 'Close');
+    button.style.cssText = 'position:absolute;right:0;top:0;z-index:1';
+    button.disabled = !this.closeMenuEnabled;
+    button.addEventListener('click', () => {
+      if (this.closeMenuEnabled) this.postClose();
+    });
+    this.parent.append(button);
+    this.closeInput = input;
+    this.closeMessages = messages;
+    this.closeButton = button;
+    return button;
+  }
+
+  /** FF520 stores the raw DWORD even when inputActive suppresses its menu update. */
+  setClosePolicy(value: number): void {
+    if (this.closeInput === null)
+      throw new Error('Aokana main Close policy has no live menu owner');
+    this.closePolicy = value >>> 0;
+    if (!this.closeInput.inputActive) this.setCloseMenuEnabled(this.closePolicy !== 0);
+  }
+
+  /** WM_SIZE restore/minimize may set the visual menu independently of the raw policy. */
+  setCloseMenuEnabled(enabled: boolean): void {
+    if (this.closeButton === null) throw new Error('Aokana main Close menu has no live control');
+    this.closeMenuEnabled = enabled;
+    this.closeButton.disabled = !enabled;
+  }
+
+  /** FF770 WM_SIZE's menu/input tail, after separately owned initialized-engine effects. */
+  applySizeMenuTail(fullWParam: number | bigint, input: AokanaNativeInput): void {
+    if (
+      this.closeInput !== input ||
+      this.closeMessages === null ||
+      this.closeMessages.input !== input ||
+      this.closeMessages.mainTarget() === null ||
+      this.closeButton === null ||
+      this.detached
+    )
+      throw new Error('Aokana size menu tail requires the shared live main-window owners');
+    if (fullWParam === 0 || fullWParam === 0n) {
+      this.setCloseMenuEnabled(true);
+      input.inputActive = true;
+    } else if (fullWParam === 1 || fullWParam === 1n) {
+      if (this.closePolicy === 0) this.setCloseMenuEnabled(false);
+      input.inputActive = false;
+    }
+  }
+
+  /** Script and host close producers enqueue WM_CLOSE regardless of the displayed menu state. */
+  postClose(): void {
+    const messages = this.closeMessages;
+    if (messages === null) return;
+    const target = messages.mainTarget();
+    if (target !== null) messages.post({target, message: 0x10, wParam: 0, lParam: 0});
+  }
+
+  private hasLiveMainWindow(): boolean {
+    return (
+      !this.detached && this.callbacks.isReady() && this.closeMessages?.mainTarget() === 'main'
+    );
+  }
+
+  /** FF690's scoped ShowWindow host primitive; UpdateWindow belongs to the awaited paint owner. */
+  showWindow(visible: boolean): boolean {
+    if (!this.hasLiveMainWindow()) return false;
+    this.parent.style.visibility = visible ? 'visible' : 'hidden';
+    this.inputIngress?.refreshForeground();
+    return true;
+  }
+
+  /** GetForegroundWindow equals the live main HWND only while focus belongs to its DOM subtree. */
+  isForegroundWindow(): boolean {
+    if (
+      !this.hasLiveMainWindow() ||
+      this.parent.style.visibility === 'hidden' ||
+      this.document.visibilityState === 'hidden' ||
+      !this.document.hasFocus()
+    )
+      return false;
+    const active = this.document.activeElement;
+    return active !== null && this.parent.contains(active);
+  }
+
+  /** Default WM_CLOSE removes only this title's scoped DOM after nested WM_DESTROY returns. */
+  detachScopedWindow(): void {
+    if (this.detached) return;
+    this.inputIngress?.dispose();
+    this.inputIngress = null;
+    this.detached = true;
+    this.parent.remove();
+  }
+
+  bindInputIngress(ingress: AokanaMainDomInput): void {
+    if (this.detached || this.inputIngress !== null || ingress.host !== this)
+      throw new Error('Aokana main input ingress requires the live scoped host');
+    this.inputIngress = ingress;
+  }
+
+  isCloseControl(target: EventTarget | null): boolean {
+    return this.closeButton !== null && target === this.closeButton;
   }
 
   /** The window-message owner calls this after its native display/monitor selection. */
@@ -142,6 +407,7 @@ export class AokanaBrowserMainWindow {
     this.parent.style.width = `${(width + insetWidth) | 0}px`;
     this.parent.style.height = `${(height + insetHeight) | 0}px`;
     this.parent.style.visibility = (styleValue & 0x10000000) !== 0 ? 'visible' : 'hidden';
+    this.inputIngress?.refreshForeground();
     this.surface.style.width = `${width | 0}px`;
     this.surface.style.height = `${height | 0}px`;
   }

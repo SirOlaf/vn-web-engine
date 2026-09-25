@@ -6,6 +6,7 @@ import type {
   AokanaNativeSlotDefinition,
 } from './types.js';
 import {AokanaFontResources} from './font-resources.js';
+import type {AokanaNativeFonts} from './fonts.js';
 import {AokanaNativeLanguage} from './group-81-language.js';
 import {copyText, textBytes} from './text.js';
 import {writePropertyWord} from './property-values.js';
@@ -19,6 +20,34 @@ function required(value: AokanaBpPointer | null): AokanaBpPointer {
 }
 function nullableBytes(value: AokanaBpPointer | null): Uint8Array | null {
   return value === null ? null : textBytes(value);
+}
+
+/** Name registration uses the graph font registry without loading host font resources. */
+export function createGroupB0FontNames(fonts: AokanaNativeFonts): AokanaNativeSlotDefinition[] {
+  return [
+    {
+      primary: 0xb0,
+      secondary: 0xc0,
+      nativeAddress: 0x1400d41c0,
+      name: 'RegisterFontName',
+      execute: (h) => {
+        push32(h.thread, fonts.registerName(textBytes(required(pointer(h))), -1));
+        return 0;
+      },
+    },
+    {
+      primary: 0xb0,
+      secondary: 0xc1,
+      nativeAddress: 0x1400d4170,
+      name: 'RegisterFontNameWithCharset',
+      execute: (h) => {
+        const charset = pop32(h.thread),
+          name = pointer(h);
+        push32(h.thread, fonts.registerName(textBytes(required(name)), charset));
+        return 0;
+      },
+    },
+  ];
 }
 
 /** B0 C0–C8/CF own font-name registration, resource loading and host enumeration. */
@@ -51,16 +80,9 @@ export function createGroupB0Fonts(
     }
     return 0;
   };
-  add(0xc0, 0x1400d41c0, 'RegisterFontName', (h) => {
-    push32(h.thread, fonts.registerName(textBytes(required(pointer(h))), -1));
-    return 0;
-  });
-  add(0xc1, 0x1400d4170, 'RegisterFontNameWithCharset', (h) => {
-    const charset = pop32(h.thread),
-      name = pointer(h);
-    push32(h.thread, fonts.registerName(textBytes(required(name)), charset));
-    return 0;
-  });
+  const nameDefinitions = createGroupB0FontNames(fonts);
+  add(0xc0, 0x1400d41c0, 'RegisterFontName', nameDefinitions[0]!.execute);
+  add(0xc1, 0x1400d4170, 'RegisterFontNameWithCharset', nameDefinitions[1]!.execute);
   add(0xc2, 0x1400d4130, 'LoadFontFile', async (h): Promise<0> => {
     push32(
       h.thread,

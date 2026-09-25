@@ -256,6 +256,10 @@ export class AokanaSurfaces {
       throw new Error('Aokana surface movie registry is already attached');
     this.movies = movies;
   }
+  /** Read-only identity check for lowers that borrow the one attached movie registry. */
+  usesMovieRegistry(movies: AokanaMovieRegistry): boolean {
+    return this.movies === movies;
+  }
   private slot(index: number): SurfaceSlot | null {
     index |= 0;
     return index >= 0 && index < this.capacity ? this.slots[index]! : null;
@@ -439,6 +443,14 @@ export class AokanaSurfaces {
     slot.metadataX = -1;
     slot.metadataY = -1;
     return 1;
+  }
+
+  /** 0405C0 visits every fixed slot in ascending order after 0802B0.
+   * Attached movie retirement begins synchronously; its owner joins completion later. */
+  releaseAllForProgram(actor: object = this.allocator.currentActor): void {
+    this.allocator.withActor(actor, () => {
+      for (let index = 0; index < this.capacity; index++) this.release(index);
+    });
   }
 
   /** 140042440/14003e5a0: nonzero colors dispatch by native bitmap format. */

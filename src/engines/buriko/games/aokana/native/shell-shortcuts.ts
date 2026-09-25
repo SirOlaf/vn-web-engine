@@ -33,9 +33,9 @@ const pointer = (bytes: Uint8Array): AokanaBpPointer => ({bytes, offset: 0});
 /** C8650/C8790: special-folder destination selection and strict-S_OK ShellLink writer. */
 export class AokanaShellShortcuts {
   constructor(
-    private readonly files: AokanaProgramFiles,
-    private readonly folders: AokanaSpecialFolders,
-    private readonly host: AokanaShellShortcutHost,
+    readonly files: AokanaProgramFiles,
+    readonly folders: AokanaSpecialFolders,
+    readonly host: AokanaShellShortcutHost,
   ) {}
 
   /** C8790 releases each acquired interface at its exact failure/success boundary. */

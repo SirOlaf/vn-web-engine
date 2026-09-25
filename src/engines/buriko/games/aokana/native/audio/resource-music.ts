@@ -12,6 +12,12 @@ const missing = literal(
 const missingArchive = literal(
   '8e7792e882b382ea82bd837483408343838b205b202573203a202573205d2082cd91b68ddd82b582dc82b982f100',
 );
+const missingPair = literal(
+  '8e7792e882b382ea82bd837483408343838b205b202573202f202573205d2082cd91b68ddd82b582dc82b982f100',
+);
+const missingPairArchive = literal(
+  '8e7792e882b382ea82bd837483408343838b205b202573203a202573202f202573205d2082cd91b68ddd82b582dc82b982f100',
+);
 export const aokanaMissingWaveDiagnostic = literal(
   '8e7792e882b382ea82bd4257837483408343838b205b202573205d2082cd91b68ddd82b582dc82b982f100',
 );
@@ -44,7 +50,7 @@ export function formatAokanaAudioNames(
   return Uint8Array.from(output);
 }
 
-/**F5910/F5070/F5A80: actual shared roots/media/archives/dialogs, without an async-job substitute. */
+/**F5910/F5070/F5A80/F4E10/F5420: actual shared roots/media/archives/dialogs. */
 export class AokanaAudioMusicResources {
   constructor(
     readonly resources: AokanaProgramResources,
@@ -118,6 +124,55 @@ export class AokanaAudioMusicResources {
       return status;
     });
   }
+  /**F4E10: two composed wide paths, with the same root media gate and ordered directory search. */
+  private searchPair(
+    index: number,
+    root: AokanaAudioResourceName,
+    first: AokanaAudioResourceName,
+    second: AokanaAudioResourceName,
+    rawMode: number,
+    volume: number,
+    pan: number,
+    actor: object,
+  ): Promise<number> {
+    return this.engine(actor, async () => {
+      if (!this.media(root())) return 12;
+      let pathA = this.wide(this.resources.loosePath(root(), first()));
+      let pathB = this.wide(this.resources.loosePath(root(), second()));
+      let status = await this.streams.loadPairLoose(
+        index,
+        pathA,
+        pathB,
+        rawMode,
+        volume,
+        pan,
+        1,
+        actor,
+      );
+      const config = this.resources.configuration;
+      const directories = config.searchDirectoriesEnabled === 0 ? null : config.searchDirectories;
+      if (directories !== null)
+        for (const directory of directories) {
+          if (status !== 12) break;
+          if (this.media(root())) {
+            const intermediate = this.resources.loosePath(root(), directory);
+            pathA = this.wide(this.resources.loosePath(intermediate, first(), true));
+            pathB = this.wide(this.resources.loosePath(intermediate, second(), true));
+            status = await this.streams.loadPairLoose(
+              index,
+              pathA,
+              pathB,
+              rawMode,
+              volume,
+              pan,
+              1,
+              actor,
+            );
+          }
+        }
+      return status;
+    });
+  }
   /**F5A80: completed real music lower for the future shared worker and A0:11. */
   async loadMusic(
     index: number,
@@ -157,6 +212,71 @@ export class AokanaAudioMusicResources {
       }
       await this.resources.requestMediaRetry(
         formatAokanaAudioNames(missingArchive, [archive(), name()], 784),
+      );
+    }
+  }
+  /**F5420: synchronous paired music route over the actual loose and archive audio owners. */
+  async loadPairMusic(
+    index: number,
+    archive: AokanaAudioResourceName | null,
+    first: AokanaAudioResourceName,
+    second: AokanaAudioResourceName,
+    rawMode: number,
+    volume: number,
+    pan: number,
+    actor = this.streams.channels.actors.currentActor,
+  ): Promise<number> {
+    await this.stop(index, actor);
+    const config = this.resources.configuration;
+    let status = await this.searchPair(
+      index,
+      () => config.primaryRoot,
+      first,
+      second,
+      rawMode,
+      volume,
+      pan,
+      actor,
+    );
+    if (status !== 12) return status;
+    if (archive === null) {
+      for (;;) {
+        status = await this.searchPair(
+          index,
+          () => config.secondaryRoot,
+          first,
+          second,
+          rawMode,
+          volume,
+          pan,
+          actor,
+        );
+        if (status !== 12) return status;
+        await this.resources.requestMediaRetry(
+          formatAokanaAudioNames(missingPair, [first(), second()], 784),
+        );
+      }
+    }
+    const memberA = this.wide(first());
+    const memberB = this.wide(second());
+    const attempt = async (root: Uint8Array): Promise<number> => {
+      const combined = this.resources.loosePath(root, archive());
+      const physical = await this.resources.archives.entryPath(combined, first());
+      if (physical === null) return 12;
+      const path = this.wide(physical);
+      return this.engine(actor, () =>
+        this.streams.loadPairArchive(index, path, memberA, memberB, rawMode, volume, pan, 1, actor),
+      );
+    };
+    status = await attempt(config.primaryRoot);
+    if (status !== 12) return status;
+    for (;;) {
+      if (this.resources.files.media.isAvailable(config.secondaryMediaPath)) {
+        status = await attempt(config.secondaryRoot);
+        if (status !== 12) return status;
+      }
+      await this.resources.requestMediaRetry(
+        formatAokanaAudioNames(missingPairArchive, [archive(), first(), second()], 784),
       );
     }
   }

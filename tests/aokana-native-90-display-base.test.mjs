@@ -11,13 +11,23 @@ import {AokanaDisplayRenderer} from '../dist/engines/buriko/games/aokana/native/
 import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
 import {AokanaDisplayTexture} from '../dist/engines/buriko/games/aokana/native/display-texture.js';
 import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {
+  AokanaDistributedAllocator,
+  AokanaDistributedProcessing,
+} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
 import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
 import {createGroup90DisplayBase} from '../dist/engines/buriko/games/aokana/native/group-90-display-base.js';
 import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {
+  AokanaProgramFiles,
+  AokanaProgramMedia,
+} from '../dist/engines/buriko/games/aokana/native/program-files.js';
+import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
 import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
 import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
 import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {SourceFileSystem} from '../dist/platform/filesystem.js';
+import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
 
 const pixels = (bitmap) =>
   Array.from({length: bitmap.width * bitmap.height}, (_, index) =>
@@ -38,7 +48,35 @@ function fixture() {
     texture = new AokanaDisplayTexture(2, 2, 22),
     windows = new AokanaWindowDisplayState(manager),
     frames = new AokanaDisplayFrames(manager, null, null, null, null, null, null, null, null),
-    loading = new AokanaResourceLoadingState({files: {text}}),
+    media = new AokanaProgramMedia(),
+    files = new AokanaProgramFiles(
+      new WindowsFileSystem(new SourceFileSystem(windowsFileKey), {
+        cwd: 'C:\\game',
+        mounts: [{windows: 'C:\\', virtual: '/'}],
+      }),
+      text,
+      media,
+    ),
+    fatal = () => assert.fail('ordinary display-base operations should succeed'),
+    bytes = (value) => new TextEncoder().encode(value),
+    resources = new AokanaProgramResources(
+      files,
+      {
+        nativeFileRoot: 'C:\\game\\',
+        primaryRoot: bytes('C:\\game\\'),
+        secondaryRoot: bytes('C:\\disc\\'),
+        secondaryMediaPath: 'C:\\disc\\',
+        searchDirectoriesEnabled: 0,
+        searchDirectories: [],
+        retryTitle: bytes('Media'),
+        retryMessage: bytes('Insert'),
+        quitConfirmation: bytes('Quit?'),
+      },
+      {show: fatal},
+      {fatal, threadFatal: fatal},
+      new AokanaDistributedProcessing(allocator, 1),
+    ),
+    loading = new AokanaResourceLoadingState(resources),
     slots = createGroup90DisplayBase(manager, frames, loading, windows, {
       files: {text: {encodeWide: (message) => message}},
       threadFatal() {

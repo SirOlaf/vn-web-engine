@@ -26,6 +26,32 @@ export interface AokanaFontDib {
   readonly stride: number;
 }
 
+/** Font host surface consumed by the native cache and text controls. */
+export interface AokanaFontFace {
+  readonly faceName: string;
+  readonly familyName: string;
+  readonly cssFamily: string;
+  readonly averageWidth: number;
+  readonly ascent: number;
+  readonly emSize: number;
+  readonly horizontalScale: number;
+  abc(character: number): readonly [number, number, number];
+  extent(character: number): number;
+  rasterText(text: string, width: number, height: number): AokanaFontDib;
+  rasterMonochrome(text: string, width: number, height: number): AokanaFontDib;
+  outline(character: number, bits: 2 | 4 | 6): AokanaFontOutline;
+}
+
+export interface AokanaFontProvider {
+  queryPitch(name: string): Promise<1 | 2 | null>;
+  queryCharset(name: string): Promise<number>;
+  enumerate(charset: number, japanese: boolean): Promise<string[]>;
+  loadResource(bytes: Uint8Array, enumerable: boolean): Promise<number | null>;
+  unloadResource(token: number): boolean;
+  create(parameters: AokanaBrowserFontParameters): Promise<AokanaFontFace>;
+  dispose(): void;
+}
+
 interface LoadedFace {
   /** AddFontMemResourceEx fonts cannot be discovered by EnumFontFamiliesEx. */
   readonly enumerable: boolean;
@@ -105,7 +131,7 @@ function selectName(data: AokanaFontData, id: number): string | null {
 }
 
 /** Concrete replacement for GDI font handles. Browser rasterization is a platform boundary. */
-export class AokanaBrowserFontFace {
+export class AokanaBrowserFontFace implements AokanaFontFace {
   readonly ascent: number;
   readonly descent: number;
   readonly averageWidth: number;
@@ -230,7 +256,7 @@ export class AokanaBrowserFontFace {
   }
 }
 
-export class AokanaBrowserFonts {
+export class AokanaBrowserFonts implements AokanaFontProvider {
   private readonly resources = new Map<number, readonly LoadedFace[]>();
   private readonly localFaces = new Map<string, FontFace | null>();
   private nextResource = 1;

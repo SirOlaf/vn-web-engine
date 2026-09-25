@@ -19,8 +19,8 @@ export async function loadAokanaImmediateBmp(
   if (name === null) throw new Error('Aokana immediate BMP load dereferences a null filename');
   const loaded = await runAsActor(() => resources.partialLoose(null, textBytes(name, true), 0, 0));
   if (loaded.result !== 0) return 0xffffffff;
-  if (loaded.bytes === null)
-    throw new Error('Aokana successful BMP resource lacks its output bytes');
-  if (loaded.bytes.length === 0) return 0xffffffff;
-  return runAsActor(() => importAokanaWindowsBitmap(surfaces, surface, loaded.bytes));
+  const bytes = loaded.bytes;
+  if (bytes === null) throw new Error('Aokana successful BMP resource lacks its output bytes');
+  if (bytes.length === 0) return 0xffffffff;
+  return runAsActor(() => importAokanaWindowsBitmap(surfaces, surface, bytes));
 }

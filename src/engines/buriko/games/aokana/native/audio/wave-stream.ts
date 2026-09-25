@@ -8,9 +8,10 @@ import {
 } from './wavebox-codecs.js';
 import {parseAokanaWaveBoxHeader} from './wavebox-header.js';
 import {createAokanaWaveBoxOggDecoder, type AokanaWaveBoxOggDecoder} from './wavebox-ogg.js';
+import type {AokanaOggExchangeDecoder} from './ogg-exchange-stream.js';
 
 export type AokanaWaveDecoder =
-  AokanaWaveBoxDecoder | AokanaWaveBoxOggDecoder | AokanaLiveWaveBoxDecoder;
+  AokanaWaveBoxDecoder | AokanaWaveBoxOggDecoder | AokanaLiveWaveBoxDecoder | AokanaOggExchangeDecoder;
 
 /** CRotateBuffer/CRotateBufferSecurity: independently wrapping read/write positions and byte fill count. */
 export class AokanaWaveFifo {
@@ -121,9 +122,12 @@ export class AokanaWaveStream {
     return this.actors?.currentActor;
   }
   private restartProducerLoop(actor?: object): void | Promise<void> {
-    const now = this.rawMilliseconds() >>> 0;
-    this.loopCount = (this.loopCount + 1) >>> 0;
-    this.loopDeadline = (now + 4000) >>> 0;
+    // Exchange source0's completion selects source1 without counting a repeat.
+    if (!('countsLoopRestart' in this.decoder) || this.decoder.countsLoopRestart()) {
+      const now = this.rawMilliseconds() >>> 0;
+      this.loopCount = (this.loopCount + 1) >>> 0;
+      this.loopDeadline = (now + 4000) >>> 0;
+    }
     return this.decoder.restartLoop(actor);
   }
   private fillFrames(count: number, stopAtEof = false, actor?: object): void | Promise<void> {

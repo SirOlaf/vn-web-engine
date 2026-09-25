@@ -38,7 +38,7 @@ export class AokanaVolumeLabelProfile implements AokanaVolumeLabelHost {
 }
 
 export class AokanaVolumeLabels {
-  constructor(private readonly host: AokanaVolumeLabelHost) {}
+  constructor(readonly host: AokanaVolumeLabelHost) {}
 
   /** B9A70 uses only the first input byte and formats exactly "%c:\\". */
   read(output: AokanaBpPointer | null, drive: AokanaBpPointer): number {

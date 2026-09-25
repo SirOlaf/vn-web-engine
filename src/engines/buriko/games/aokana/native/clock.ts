@@ -1,6 +1,9 @@
+import type {AokanaNativeInput} from './input.js';
+
 /** Aokana's millisecond clock, including native rollover and long-gap exclusion. */
 export class AokanaNativeClock {
-  suspensionEnabled = false;
+  private standaloneSuspensionEnabled = false;
+  private suspensionInput: AokanaNativeInput | null = null;
   private suspended = false;
   private pauseOption = 0;
   private frozen = 0n;
@@ -11,6 +14,26 @@ export class AokanaNativeClock {
   private gapLimit = 500n;
 
   constructor(private readonly readRawTick32: () => number) {}
+
+  /** FE670/FE6D0 read the live 1e8b7c input bit in a composed engine. */
+  bindSuspensionInput(input: AokanaNativeInput): void {
+    if (this.suspensionInput !== null)
+      throw new Error('Aokana clock suspension input is already bound');
+    if (!input.usesClock(this))
+      throw new Error('Aokana clock suspension requires its shared input owner');
+    this.suspensionInput = input;
+  }
+
+  get suspensionEnabled(): boolean {
+    return this.suspensionInput?.inputActive ?? this.standaloneSuspensionEnabled;
+  }
+
+  /** Standalone fixtures retain their explicit native-bit setup. */
+  set suspensionEnabled(value: boolean) {
+    if (this.suspensionInput !== null)
+      throw new Error('Aokana bound clock reads the live input-active bit');
+    this.standaloneSuspensionEnabled = value;
+  }
 
   /** 0x1400fe730 uses an unsigned raw clock and returns a signed 64-bit elapsed value. */
   read(): bigint {

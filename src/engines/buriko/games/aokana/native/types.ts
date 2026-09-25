@@ -28,6 +28,10 @@ export interface AokanaBpWaitProcess {
   poll(): number | Promise<number>;
   enqueueMessage(message: AokanaBpProcessMessage): void;
   dispose(): void;
+  /** A detached host completion may still write borrowed BP storage after poll returns. */
+  hasOutstandingExternalBorrow?(): boolean;
+  /** Its synchronous dispose publishes a result to the thread's operand storage. */
+  needsLiveOperandStorageOnDispose?(): boolean;
 }
 
 /** Resource names retain native byte identity until the title's archive lookup boundary. */

@@ -57,6 +57,13 @@ export class AokanaProgramResources implements AokanaBpModuleResourceSource {
     this.archives = new AokanaProgramArchives(files, errors, mainProcessing);
   }
 
+  /** ECB90 BC240(1) then BC1E0: restore search policy and clear the same
+   * directory list used by 80:36/37 and loose resource lookups. */
+  resetDirectorySearchForProgram(): void {
+    this.configuration.searchDirectoriesEnabled = 1;
+    this.configuration.searchDirectories.length = 0;
+  }
+
   /** E8F80 updates both shared primary-root globals after the actual directory check. */
   async setPrimaryRoot(path: AokanaBpPointer): Promise<0 | 1> {
     const wide = this.files.text.decodeAuto(path);

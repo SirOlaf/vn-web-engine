@@ -157,7 +157,7 @@ function resourceSetup() {
 
 test('resource search wrappers copy newest-first names and affect actual size lookup without pushing setter results', async () => {
   const state = resourceSetup();
-  assert.equal(state.slots.length, 5);
+  assert.equal(state.slots.length, 6);
   state.mount('/drive/game/first/item', Uint8Array.of(1, 2, 3));
   state.mount('/drive/game/second/item', Uint8Array.of(4, 5, 6, 7, 8));
   await state.call(0x37, [state.text('first')], false);

@@ -250,7 +250,7 @@ export class AokanaMovieCombinedTransport {
     }
   }
   private acceptResult(result: AokanaMovieVideoPumpResult): void {
-    if (result.audioGeneration !== this.generation)
+    if (result.mode !== 'audio' || result.audioGeneration !== this.generation)
       throw new Error('Combined movie received a foreign video epoch');
     if (result.kind === 'submitted-video-eos') this.videoEnded = true;
     if (result.kind === 'empty-video-eos' && !this.videoEnded) {

@@ -51,8 +51,19 @@ export class AokanaDisplayFrames {
     this.display.inlinePaintSuppression = 1;
     this.inline.messages.invalidate(target);
     const paint = this.inline.messages.takePaint(target);
-    if (paint !== null) await this.inline.handleMessage(paint);
-    this.display.inlinePaintSuppression = 0;
+    let validated = false;
+    try {
+      if (paint !== null) {
+        this.inline.messages.validatePaint(paint);
+        validated = true;
+        await this.inline.handleMessage(paint);
+      }
+    } catch (error) {
+      if (paint !== null && !validated) this.inline.messages.releasePaint(paint);
+      throw error;
+    } finally {
+      this.display.inlinePaintSuppression = 0;
+    }
   }
   /** b7320 deliberately ignores prepare/Present status and returns only the initialized wait count. */
   async present(

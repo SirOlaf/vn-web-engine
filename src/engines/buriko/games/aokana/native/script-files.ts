@@ -26,6 +26,8 @@ interface ScriptFileJob {
 export class AokanaScriptFiles {
   readonly section = new AokanaAsyncCriticalSection();
   private enabled = 0;
+  private sectionLive = false;
+  private closing = false;
   private counter = 0;
   private first: AokanaScriptFileRecord | null = null;
   private firstJob: ScriptFileJob | null = null;
@@ -38,7 +40,12 @@ export class AokanaScriptFiles {
   /** 031C70 does not reset the ID counter or replace either live list. */
   initialize(): void {
     this.section.initialize();
+    this.sectionLive = true;
     this.enabled = 1;
+    this.closing = false;
+  }
+  get hasLiveSection(): boolean {
+    return this.sectionLive;
   }
   get hasPending(): boolean {
     return this.firstJob !== null;
@@ -61,6 +68,7 @@ export class AokanaScriptFiles {
     if (mode > 2) return 0x80000001;
     await this.section.enter(actor);
     try {
+      if (this.closing) throw new Error('Aokana script files are closing');
       const normalized = {bytes: new Uint8Array(784), offset: 0};
       copyText(normalized, path!);
       this.files.text.lowercase(normalized);
@@ -113,9 +121,11 @@ export class AokanaScriptFiles {
     count: number,
     close: number,
     actor: object,
+    shutdownClose = false,
   ): Promise<number> {
     await this.section.enter(actor);
     try {
+      if (this.closing && !shutdownClose) throw new Error('Aokana script files are closing');
       if (this.find(id) === null) return 0x80000004;
       const job: ScriptFileJob = {
         output,
@@ -209,16 +219,64 @@ export class AokanaScriptFiles {
   }
 
   /** 031BB0 queues real closes recursively, then yields while the shared worker drains them. */
-  async shutdown(actor = this.actors.currentActor): Promise<void> {
+  async shutdown(
+    actor = this.actors.currentActor,
+    workerRunning?: () => boolean,
+    beforeDispose?: () => Promise<void>,
+  ): Promise<void> {
     await this.section.enter(actor);
     try {
+      if (this.closing) throw new Error('Aokana script files are already closing');
+      this.closing = true;
       for (let record = this.first; record !== null; record = record.next)
-        await this.queueClose(null, record.id, actor);
+        await this.enqueue(null, record.id, null, 0, 1, actor, true);
     } finally {
       this.section.leave(actor);
     }
-    while (this.first !== null) await this.sleep(1);
+    while (this.first !== null) {
+      if (workerRunning !== undefined && !workerRunning())
+        throw new Error('Aokana script close worker stopped before draining queued files');
+      await this.sleep(1);
+    }
+    // Host recovery may empty the list while this close is asleep. That is not
+    // successful FD8D0 consumption, even though the list is now empty.
+    if (workerRunning !== undefined && !workerRunning())
+      throw new Error('Aokana script close worker stopped before draining queued files');
     this.enabled = 0;
+    if (beforeDispose !== undefined) await beforeDispose();
     this.section.dispose();
+    this.sectionLive = false;
+  }
+
+  /** Host recovery after a failed shared worker has fully stopped and joined.
+   * Native shutdown instead queues closes through the still-running worker. */
+  async recoverAfterWorkerStop(actor = this.actors.currentActor): Promise<void> {
+    if (!this.sectionLive) return;
+    await this.section.enter(actor);
+    let failed = false;
+    let firstError: unknown;
+    try {
+      this.closing = true;
+      this.firstJob = null; // No consumer remains for queued transfers or closes.
+      while (this.first !== null) {
+        const record = this.first;
+        this.first = record.next;
+        record.next = null;
+        try {
+          record.file.dispose();
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            firstError = error;
+          }
+        }
+      }
+      this.enabled = 0;
+    } finally {
+      this.section.leave(actor);
+      this.section.dispose();
+      this.sectionLive = false;
+    }
+    if (failed) throw firstError;
   }
 }

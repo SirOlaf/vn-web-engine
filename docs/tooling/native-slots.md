@@ -1,7 +1,9 @@
 # Native slot manifest and partial assembly audit
 
-`tools/native-audit/aokana-slots.json` is the tracked, binary-qualified accounting
-manifest for Aokana's 840 extension-bank slots. `tools/native-audit/slots.mjs` is a
+`tools/native-audit/workspace/aokana-slots.json` is the local, ignored,
+binary-qualified accounting manifest for Aokana's 840 extension-bank slots.
+Keep this work log in `tools/native-audit/workspace/`; it is not pushed with source.
+`tools/native-audit/slots.mjs` is a
 reusable static auditor. It parses source through the existing TypeScript 7 AST
 API; it never imports or calls a game service factory, constructs a native bank,
 runs a native probe, or runs tests. No dependency was added.
@@ -47,7 +49,7 @@ The imported provenance is preserved in the manifest:
 
 Those investigation files are ignored in this repository. Their imported hashes,
 section names, excerpts, counts, and complete ownership rules are embedded in the
-tracked manifest. Audits do not need the ignored files or a Ghidra connection.
+local manifest. Audits do not need the ignored files or a Ghidra connection.
 The import does not claim a fresh read from the executable or current Ghidra state.
 
 ## Commands
@@ -55,9 +57,9 @@ The import does not claim a fresh read from the executable or current Ghidra sta
 Run from the repository root:
 
 ```sh
-node tools/native-audit/slots.mjs audit tools/native-audit/aokana-slots.json --out /tmp/aokana-slot-audit.json
-node tools/native-audit/slots.mjs audit tools/native-audit/aokana-slots.json --require-integrated
-node tools/native-audit/slots.mjs docs tools/native-audit/aokana-slots.json --out docs/tooling/native-slots.md
+node tools/native-audit/slots.mjs audit tools/native-audit/workspace/aokana-slots.json --out /tmp/aokana-slot-audit.json
+node tools/native-audit/slots.mjs audit tools/native-audit/workspace/aokana-slots.json --require-integrated
+node tools/native-audit/slots.mjs docs tools/native-audit/workspace/aokana-slots.json --out docs/tooling/native-slots.md
 node --test tests/tooling-native-slots.test.mjs
 ```
 
@@ -82,10 +84,10 @@ containment is checked against the canonical repository path.
 After reviewing a source change, refresh the observed declarations and references:
 
 ```sh
-node tools/native-audit/slots.mjs refresh tools/native-audit/aokana-slots.json --out /tmp/aokana-slots-next.json
+node tools/native-audit/slots.mjs refresh tools/native-audit/workspace/aokana-slots.json --out /tmp/aokana-slots-next.json
 ```
 
-Review that JSON diff before replacing the tracked manifest. Refresh does not
+Review that JSON diff before replacing the local manifest. Refresh does not
 update ownership rules, native table evidence, or review/acceptance states. It
 refuses inventory/address mismatches. A missing factory is recorded as missing
 source in the new observations; refreshing is not acceptance of its removal.
@@ -133,6 +135,9 @@ literal arrays and spreads, local `const` tuple arrays with a one-parameter arro
 helpers. Runtime handler expressions remain opaque. Other syntax is reported as
 unresolved when encountered in a recognized factory; it is never executed to
 obtain a count. Conditional behavior and handler bodies are not proven.
+When a returned array contains an unknown spread, directly written neighboring
+slot objects remain observable, while the spread is recorded as unresolved.
+Nothing is inferred about slots inside that spread.
 
 Reference discovery records syntactic named imports, namespace/module imports and
 direct re-exports. The Aokana configuration maps test imports from `dist` to `src`
@@ -151,7 +156,8 @@ behavior.
 
 The focused tooling tests are deterministic parser and accounting tests. They use
 synthetic TypeScript text and JSON in temporary directories and read the tracked
-pointer inventory. They check table holes/hashes, supported/unsupported syntax,
+pointer inventory. The full 840-slot check also reads the ignored local manifest
+when it is present. They check table holes/hashes, supported/unsupported syntax,
 references, source drift, omitted/duplicated slots, owner/address/factory mismatch,
 and the refusal to turn a complete plan into integration success.
 
@@ -163,18 +169,18 @@ The manifest contains **840 native slots**. Ownership: runtime 208, storage 321,
 | Bank | Native slots | Source declarations observed | Provider referenced by tests | Accepted focused tests | Verified aggregate slots |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 7F | 12 | 12 | 12 | 0 | 0 |
-| 80 | 182 | 159 | 152 | 0 | 0 |
+| 80 | 182 | 167 | 160 | 0 | 0 |
 | 81 | 92 | 92 | 88 | 0 | 0 |
-| 90 | 187 | 181 | 181 | 0 | 0 |
-| 91 | 109 | 100 | 100 | 0 | 0 |
+| 90 | 187 | 181 | 180 | 0 | 0 |
+| 91 | 109 | 100 | 99 | 0 | 0 |
 | 92 | 46 | 41 | 41 | 0 | 0 |
-| A0 | 30 | 19 | 19 | 0 | 0 |
-| B0 | 68 | 68 | 68 | 0 | 0 |
+| A0 | 30 | 29 | 29 | 0 | 0 |
+| B0 | 68 | 68 | 43 | 0 | 0 |
 | C0 | 45 | 45 | 45 | 0 | 0 |
 | D0 | 58 | 58 | 58 | 0 | 0 |
 | E0 | 11 | 11 | 11 | 0 | 0 |
 
-209 exported factories and 3 static declaration providers were found; 206 factories and 3 static providers have references only in tests. 54 slots have no recognized source declaration. 0 slots have multiple source declarations.
+230 exported factories and 3 static declaration providers were found; 16 factories and 0 static providers have references only in tests. 36 slots have no recognized source declaration. 7 slots have multiple source declarations.
 
 Aggregate state: `no-aggregate-supplied`; production construction candidates: 0. Body-review, focused-test acceptance, and runtime integration are unreviewed in this manifest. These zero acceptance counts describe imported evidence, not a denial of historical test receipts.
 <!-- END GENERATED NATIVE SLOT COUNTS -->

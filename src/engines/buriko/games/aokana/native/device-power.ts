@@ -64,9 +64,9 @@ export class AokanaDevicePowerProfile implements AokanaDevicePowerHost {
 
 export class AokanaDevicePower {
   constructor(
-    private readonly system: AokanaSystemProfile,
-    private readonly files: AokanaProgramFiles,
-    private readonly host: AokanaDevicePowerHost,
+    readonly system: AokanaSystemProfile,
+    readonly files: AokanaProgramFiles,
+    readonly host: AokanaDevicePowerHost,
   ) {}
 
   /** BCB20 reports the open result; a failed power query after open still returns one. */
@@ -79,9 +79,12 @@ export class AokanaDevicePower {
     const widePath = this.files.text.decodeAuto(path);
     const handle = this.host.openDevice(widePath, 0x80000000, 1, 3, 0x80);
     if (handle === null) return 0;
-    const powered = this.host.queryDevicePowerState(handle);
-    if (powered !== null && output !== null) pointerView(output, 4).setUint32(0, powered, true);
-    this.host.closeDevice(handle);
+    try {
+      const powered = this.host.queryDevicePowerState(handle);
+      if (powered !== null && output !== null) pointerView(output, 4).setUint32(0, powered, true);
+    } finally {
+      this.host.closeDevice(handle);
+    }
     return 1;
   }
 }

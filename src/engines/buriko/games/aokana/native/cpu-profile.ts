@@ -93,7 +93,7 @@ export class AokanaCpuProfile {
 
   constructor(
     readonly host: AokanaCpuHost,
-    private readonly clock: AokanaNativeClock,
+    readonly clock: AokanaNativeClock,
   ) {}
 
   /** 0c65c0 leaves the destination unchanged when the requested leaf is unsupported. */

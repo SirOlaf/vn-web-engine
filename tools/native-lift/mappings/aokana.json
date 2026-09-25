@@ -26,7 +26,7 @@
         "export": "AokanaBitmap",
         "source": {
           "path": "src/engines/buriko/games/aokana/native/bitmap.ts",
-          "sha256": "427de4bc80b81d480702af354578f065292aa0765e5522f5749699add9b0ce51"
+          "sha256": "3672bc640254c1b92ad7018ef0e1e94616045d603ba83e7ac29fea8fcfb33921"
         }
       },
       "nativeBits": 64,
@@ -129,7 +129,7 @@
       "export": "nativeVectorAngle",
       "source": {
         "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-        "sha256": "b6f2780266b4ea6fc59956454ec70d2b3b4797ca2d5760d56ee009cad5e24e37"
+        "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b"
       },
       "signature": {
         "parameters": [
@@ -149,7 +149,7 @@
         "references": [
           {
             "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "b6f2780266b4ea6fc59956454ec70d2b3b4797ca2d5760d56ee009cad5e24e37",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           }
         ],
@@ -165,7 +165,7 @@
       "export": "nativeCursorInterpolation",
       "source": {
         "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-        "sha256": "b6f2780266b4ea6fc59956454ec70d2b3b4797ca2d5760d56ee009cad5e24e37"
+        "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b"
       },
       "signature": {
         "parameters": [
@@ -193,7 +193,7 @@
         "references": [
           {
             "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "b6f2780266b4ea6fc59956454ec70d2b3b4797ca2d5760d56ee009cad5e24e37",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           }
         ],
@@ -323,7 +323,7 @@
         "references": [
           {
             "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "b6f2780266b4ea6fc59956454ec70d2b3b4797ca2d5760d56ee009cad5e24e37",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           },
           {
@@ -388,7 +388,7 @@
         "references": [
           {
             "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "b6f2780266b4ea6fc59956454ec70d2b3b4797ca2d5760d56ee009cad5e24e37",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           },
           {
@@ -483,7 +483,7 @@
         "references": [
           {
             "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "b6f2780266b4ea6fc59956454ec70d2b3b4797ca2d5760d56ee009cad5e24e37",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           }
         ],

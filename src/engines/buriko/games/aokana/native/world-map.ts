@@ -79,6 +79,11 @@ export class AokanaNativeWorldMaps {
     return this.maps.delete(id >>> 0) ? 0 : 0x80000007;
   }
 
+  /** Final owner disposal. Keep nextId monotonic across the owner's lifetime. */
+  disposeAll(): void {
+    this.maps.clear();
+  }
+
   clear(id: number): number {
     const map = this.maps.get(id >>> 0);
     if (map === undefined) return 0x80000007;

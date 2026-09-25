@@ -127,6 +127,14 @@ export class AokanaParticleDisplays {
     }
     return true;
   }
+  /** F1F30 removes each current head through the same F2380 path as Bank C0. */
+  clearRefreshScheduleForProgram(): void {
+    while (this.scheduleHead !== null) {
+      const head = this.scheduleHead;
+      if (!this.setRefreshInterval(head.handle, 0) || this.scheduleHead === head)
+        throw new Error('Aokana particle refresh schedule has no live display for its head');
+    }
+  }
   configureCamera(handle: number, values: readonly number[]): number {
     const object = this.find(handle);
     return object === null ? 0xffffffff : object.configureCamera(values) ? 0 : 3;

@@ -2,6 +2,7 @@ import {BlobSource} from '../../../../../core/source.js';
 import {filePath, MountedFileSystem, SourceFileSystem} from '../../../../../platform/filesystem.js';
 import type {AokanaBpPointer} from '../bp/memory.js';
 import type {AokanaProgramFiles} from './program-files.js';
+import {AokanaMountedFileMetadata} from './file-metadata.js';
 import {copyText, textLength, writeText} from './text.js';
 import type {AokanaWindowMessages} from './window-messages.js';
 
@@ -29,7 +30,14 @@ export class AokanaDroppedFiles {
       native = `${this.nativeRoot}\\${id}\\${file.name}`;
     if (this.files.mountedPath(native) !== this.mountedRoot + relative)
       throw new Error('Aokana dropped file escaped its dedicated path mount');
-    this.sources.attach(relative, new BlobSource(file));
+    // Metadata canonicalizes the full path before delegating to this private source.
+    // Its relative key must match that lookup while the reported native spelling stays intact.
+    const canonical = this.files.metadata?.canonical(this.mountedRoot + relative) ?? null;
+    if (canonical !== null && !canonical.startsWith(this.mountedRoot + '/'))
+      throw new Error('Aokana dropped file canonical path escaped its dedicated mount');
+    const sourcePath =
+      canonical === null ? relative : filePath(canonical.slice(this.mountedRoot.length));
+    this.sources.attach(sourcePath, new BlobSource(file));
     this.handles.set(id, {count: files.length, first: native});
     this.messages.send(target, 0x233, id, 0);
   };
@@ -38,7 +46,7 @@ export class AokanaDroppedFiles {
     readonly surface: HTMLElement,
     readonly messages: AokanaWindowMessages,
     readonly files: AokanaProgramFiles,
-    filesystem: MountedFileSystem,
+    filesystem: MountedFileSystem | AokanaMountedFileMetadata,
     readonly mountedRoot: string,
     readonly nativeRoot: string,
   ) {
@@ -49,7 +57,9 @@ export class AokanaDroppedFiles {
     )
       throw new Error('Aokana dropped files require the actual declared native path mount');
     // mount rejects a pre-existing namespace; the source owner is private and initially empty.
-    filesystem.mount(mountedRoot, this.sources);
+    if (filesystem instanceof AokanaMountedFileMetadata)
+      filesystem.mountSource(mountedRoot, this.sources);
+    else filesystem.mount(mountedRoot, this.sources);
     surface.addEventListener('dragover', this.drag);
     surface.addEventListener('drop', this.drop);
   }

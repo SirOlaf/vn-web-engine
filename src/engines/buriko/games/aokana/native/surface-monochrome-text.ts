@@ -103,7 +103,9 @@ export class AokanaMonochromeSurfaceText {
       this.size = size;
       this.bold = bold;
     }
-    return {status: 0, metric: runAsActor(() => this.render(destination, args, this.font))};
+    const font = this.font;
+    if (font === null) throw new Error('Aokana monochrome font was not initialized');
+    return {status: 0, metric: runAsActor(() => this.render(destination, args, font))};
   }
 
   private render(

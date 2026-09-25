@@ -36,6 +36,7 @@ export class AokanaReadBinaryProcess extends AokanaLoadProcedure {
     offset: number,
     length: number,
   ): Promise<AokanaReadBinaryProcess> {
+    const actor = context.actor ?? loading.metadata.allocator.currentActor;
     const process = new AokanaReadBinaryProcess(
       context,
       procedures,
@@ -67,6 +68,7 @@ export class AokanaReadBinaryProcess extends AokanaLoadProcedure {
       process.name,
       offset,
       queuedLength,
+      actor,
     );
     return process;
   }
@@ -95,6 +97,7 @@ export class AokanaExamineFileHealthProcess extends AokanaLoadProcedure {
     loading: AokanaResourceLoadingState,
     archive: Uint8Array,
     name: Uint8Array,
+    actor: object,
   ) {
     super(context, procedures, clock, loading, archive, name, {
       cacheEligible: false,
@@ -110,6 +113,7 @@ export class AokanaExamineFileHealthProcess extends AokanaLoadProcedure {
       this.name,
       0,
       0,
+      actor,
     );
   }
 

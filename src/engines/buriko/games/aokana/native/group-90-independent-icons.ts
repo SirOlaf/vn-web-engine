@@ -4,6 +4,7 @@ import type {AokanaNativeClock} from './clock.js';
 import type {AokanaCursorPolicy} from './cursor-policy.js';
 import {AokanaWindowDisplayObject} from './display-window.js';
 import type {AokanaEngineErrors} from './engine-errors.js';
+import type {AokanaDisplayManager} from './display-manager.js';
 import {copyAokanaIconDescription, iconPointerWord} from './icon-description.js';
 import {
   AokanaIndependentIcon,
@@ -15,6 +16,47 @@ import type {AokanaNativeInput} from './input.js';
 import type {AokanaProcedureState} from './procedure.js';
 import type {AokanaBpOpcodeContext, AokanaNativeSlotDefinition} from './types.js';
 
+function windowFor(
+  manager: AokanaDisplayManager,
+  handle: number,
+): AokanaWindowDisplayObject | null {
+  const found = manager.find('window', handle);
+  if (found === null) return null;
+  if (!(found instanceof AokanaWindowDisplayObject))
+    throw new Error('Aokana Icon requires the actual Window owner');
+  return found;
+}
+
+export function createGroup90ImmediateIconDescription(
+  manager: AokanaDisplayManager,
+): AokanaNativeSlotDefinition[] {
+  return [
+    {
+      primary: 0x90,
+      secondary: 0xb6,
+      nativeAddress: 0x1400d7d40,
+      name: 'DrawIconDescription',
+      execute: (h) => {
+        const source = h.memory.resolve(h.thread, pop32(h.thread)),
+          handle = pop32(h.thread),
+          window = windowFor(manager, handle);
+        if (window === null) {
+          push32(h.thread, 1);
+          return 0;
+        }
+        const copied = copyAokanaIconDescription(h.memory, h.thread, source);
+        let status: number = copied.status;
+        if (copied.status === 0) {
+          const result = drawAokanaIconDescription(window, copied.description);
+          status = result === 0x80000001 ? 2 : result === 0x80000002 ? 3 : 0;
+        }
+        push32(h.thread, status);
+        return 0;
+      },
+    },
+  ];
+}
+
 export function createGroup90IndependentIcons(
   shared: AokanaIndependentProcedures,
   input: AokanaNativeInput,
@@ -24,13 +66,8 @@ export function createGroup90IndependentIcons(
   settings: AokanaIndependentIconState,
   errors: AokanaEngineErrors,
 ): AokanaNativeSlotDefinition[] {
-  const windowFor = (handle: number): AokanaWindowDisplayObject | null => {
-    const found = shared.manager.find('window', handle);
-    if (found === null) return null;
-    if (!(found instanceof AokanaWindowDisplayObject))
-      throw new Error('Aokana Icon requires the actual Window owner');
-    return found;
-  };
+  const findWindow = (handle: number): AokanaWindowDisplayObject | null =>
+    windowFor(shared.manager, handle);
   const iconFor = (id: number): AokanaIndependentIcon | null => {
     const found = shared.find(id);
     if (found === null || found.category !== 0x80) return null;
@@ -52,27 +89,12 @@ export function createGroup90IndependentIcons(
   };
   return [
     {
+      // Keep the complete standalone catalog visible to the static slot audit.
       primary: 0x90,
       secondary: 0xb6,
       nativeAddress: 0x1400d7d40,
       name: 'DrawIconDescription',
-      execute: (h) => {
-        const source = h.memory.resolve(h.thread, pop32(h.thread)),
-          handle = pop32(h.thread),
-          window = windowFor(handle);
-        if (window === null) {
-          push32(h.thread, 1);
-          return 0;
-        }
-        const copied = copyAokanaIconDescription(h.memory, h.thread, source);
-        let status: number = copied.status;
-        if (copied.status === 0) {
-          const result = drawAokanaIconDescription(window, copied.description);
-          status = result === 0x80000001 ? 2 : result === 0x80000002 ? 3 : 0;
-        }
-        push32(h.thread, status);
-        return 0;
-      },
+      execute: createGroup90ImmediateIconDescription(shared.manager)[0]!.execute,
     },
     {
       primary: 0x90,
@@ -81,7 +103,7 @@ export function createGroup90IndependentIcons(
       name: 'CreateIndependentIcon',
       execute: (h) => {
         const handle = pop32(h.thread),
-          window = windowFor(handle);
+          window = findWindow(handle);
         if (window === null)
           return errors.threadFatal(
             h.thread,

@@ -5,7 +5,7 @@ import {AokanaRainDisplays} from './rain-displays.js';
 export class AokanaRainFrames {
   constructor(
     readonly rain: AokanaRainDisplays,
-    private readonly clock: AokanaNativeClock,
+    readonly clock: AokanaNativeClock,
   ) {}
 
   /** 081c20 updates every existing slot, independent of visibility and the global draw gate. */

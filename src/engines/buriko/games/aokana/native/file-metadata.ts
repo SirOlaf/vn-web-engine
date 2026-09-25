@@ -1,6 +1,7 @@
 import type {ByteSource} from '../../../../../core/source.js';
 import {
   FileError,
+  MountedFileSystem,
   filePath,
   type FileChange,
   type FileInfo,
@@ -101,6 +102,21 @@ export class AokanaMountedFileMetadata implements FileSystem {
   }
   canonical(path: string): string {
     return filePath(this.profile.canonical(filePath(path)));
+  }
+  /** Mount a private browser source into this metadata owner's actual byte namespace. */
+  mountSource(root: string, source: FileSystem): void {
+    if (
+      !(this.backing instanceof MountedFileSystem) ||
+      root !== this.canonical(root) ||
+      root === '/' ||
+      root.indexOf('/', 1) !== -1 ||
+      this.removed(root) ||
+      [...this.records.keys()].some((path) => below(path, root)) ||
+      [...this.names.keys()].some((path) => below(path, root)) ||
+      [...this.removedDirectories].some((path) => below(path, root))
+    )
+      throw new FileError('INVALID_PATH', root);
+    this.backing.mount(root, source);
   }
   volume(path: string): AokanaFileMetadataVolume | null {
     path = this.canonical(path);

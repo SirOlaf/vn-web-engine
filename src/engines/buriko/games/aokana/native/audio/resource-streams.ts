@@ -5,8 +5,10 @@ import type {AokanaAudioChannels} from './channel-registry.js';
 import {AokanaFileStorage} from './file-storage.js';
 import type {AokanaLiveAudioStorage} from './live-storage.js';
 import {createAokanaLiveOggWaveStream} from './live-ogg-stream.js';
+import {createAokanaLiveOggExchangeWaveStream} from './ogg-exchange-stream.js';
 import {AokanaWaveBoxError} from './wavebox-header.js';
 import {createAokanaLiveWaveStream} from './wave-stream.js';
+import {audioPathTerminated} from './wide-path.js';
 
 /**115280/115310 actual resource admission over the same27CC70/27CCD0 owners. */
 export class AokanaAudioResourceStreams {
@@ -63,6 +65,185 @@ export class AokanaAudioResourceStreams {
     return this.section(actor, () =>
       this.archiveRaw(index, path, member, volume, pan, gain, actor),
     );
+  }
+  /**1153B0: two wide loose names share one model only when they compare equal. */
+  loadPairLoose(
+    index: number,
+    pathA: string,
+    pathB: string,
+    rawMode: number,
+    volume: number,
+    pan: number,
+    gain: number,
+    actor = this.channels.actors.currentActor,
+  ): Promise<number> {
+    return this.section(actor, () =>
+      this.pairLooseRaw(index, pathA, pathB, rawMode, volume, pan, gain, actor),
+    );
+  }
+  /**115450: the same cached DCArchive owns both independent member cursors. */
+  loadPairArchive(
+    index: number,
+    path: string,
+    memberA: string,
+    memberB: string,
+    rawMode: number,
+    volume: number,
+    pan: number,
+    gain: number,
+    actor = this.channels.actors.currentActor,
+  ): Promise<number> {
+    return this.section(actor, () =>
+      this.pairArchiveRaw(index, path, memberA, memberB, rawMode, volume, pan, gain, actor),
+    );
+  }
+  private async publishPair(
+    index: number,
+    first: AokanaLiveAudioStorage,
+    second: AokanaLiveAudioStorage | undefined,
+    rawMode: number,
+    volume: number,
+    pan: number,
+    gain: number,
+    actor: object,
+  ): Promise<number> {
+    if (second === undefined)
+      return this.initializeRaw(index, first, volume, pan, gain, actor, rawMode === 0 ? 1 : 3);
+    const wave = await createAokanaLiveOggExchangeWaveStream(
+      first,
+      second,
+      rawMode,
+      {gain, prefer24Bit: this.channels.output.prefer24Bit},
+      () => this.channels.ticks.getTickCount(),
+      this.channels.actors,
+      actor,
+      this.channels.output.offlineContext,
+    );
+    const status = await this.channels.publishInitializedStream(index, wave, volume, pan);
+    if (status !== 0)
+      throw new AokanaWaveBoxError(22, 'Aokana paired stream speaker attachment failed');
+    return 0;
+  }
+  private async pairLooseRaw(
+    index: number,
+    pathA: string,
+    pathB: string,
+    rawMode: number,
+    volume: number,
+    pan: number,
+    gain: number,
+    actor: object,
+  ): Promise<number> {
+    const status = this.validate(index, actor);
+    if (status !== 0) return status;
+    pathA = audioPathTerminated(pathA);
+    pathB = audioPathTerminated(pathB);
+    const sameName = pathA === pathB;
+    let first: AokanaLiveAudioStorage | undefined,
+      second: AokanaLiveAudioStorage | undefined,
+      handedOff = false;
+    try {
+      const firstPath = await this.cache.resolveLoosePath(pathA, actor),
+        firstInput = new AokanaFileStorage(this.files);
+      if (!(await firstInput.open(firstPath))) {
+        firstInput.dispose();
+        throw new AokanaWaveBoxError(12, 'Aokana paired stream could not open first loose file');
+      }
+      first = firstInput;
+      if (!sameName) {
+        const secondPath = await this.cache.resolveLoosePath(pathB, actor),
+          secondInput = new AokanaFileStorage(this.files);
+        if (!(await secondInput.open(secondPath))) {
+          secondInput.dispose();
+          throw new AokanaWaveBoxError(12, 'Aokana paired stream could not open second loose file');
+        }
+        second = secondInput;
+      }
+      handedOff = true;
+      return await this.publishPair(index, first, second, rawMode, volume, pan, gain, actor);
+    } catch (error) {
+      if (!handedOff) {
+        try {
+          await first?.dispose();
+        } catch {
+          // Preserve the acquisition or typed model failure.
+        }
+        try {
+          await second?.dispose();
+        } catch {
+          // Preserve the acquisition or typed model failure.
+        }
+      }
+      return this.nativeFailure(index, error);
+    }
+  }
+  private async pairArchiveRaw(
+    index: number,
+    path: string,
+    memberA: string,
+    memberB: string,
+    rawMode: number,
+    volume: number,
+    pan: number,
+    gain: number,
+    actor: object,
+  ): Promise<number> {
+    const status = this.validate(index, actor);
+    if (status !== 0) return status;
+    memberA = audioPathTerminated(memberA);
+    memberB = audioPathTerminated(memberB);
+    const sameName = memberA === memberB;
+    let first: AokanaLiveAudioStorage | undefined,
+      second: AokanaLiveAudioStorage | undefined,
+      handedOff = false;
+    try {
+      if (
+        this.cache.searchDirectories !== null &&
+        (await this.pairLooseRaw(index, memberA, memberB, rawMode, volume, pan, gain, actor)) === 0
+      )
+        return 0;
+      const found = await this.cache.find(path, memberA, actor);
+      if (found.status !== 0)
+        throw new AokanaWaveBoxError(12, 'Aokana paired stream archive lookup failed');
+      if (found.archive === undefined)
+        throw new Error('Aokana successful paired audio cache result has no actual archive');
+      const secondFound = sameName ? undefined : await this.cache.find(path, memberB, actor);
+      if (secondFound !== undefined && secondFound.status !== 0)
+        throw new AokanaWaveBoxError(12, 'Aokana paired stream second member lookup failed');
+      const secondArchive = secondFound?.archive;
+      if (secondFound !== undefined && secondArchive === undefined)
+        throw new Error('Aokana successful second audio cache result has no actual archive');
+      const firstInput = new AokanaArchiveFileStorage();
+      if (!(await firstInput.open(found.archive, memberA, actor))) {
+        firstInput.dispose();
+        throw new AokanaWaveBoxError(12, 'Aokana paired stream could not open first member');
+      }
+      first = firstInput;
+      if (secondArchive !== undefined) {
+        const secondInput = new AokanaArchiveFileStorage();
+        if (!(await secondInput.open(secondArchive, memberB, actor))) {
+          secondInput.dispose();
+          throw new AokanaWaveBoxError(12, 'Aokana paired stream could not open second member');
+        }
+        second = secondInput;
+      }
+      handedOff = true;
+      return await this.publishPair(index, first, second, rawMode, volume, pan, gain, actor);
+    } catch (error) {
+      if (!handedOff) {
+        try {
+          await first?.dispose();
+        } catch {
+          // Preserve the acquisition or typed model failure.
+        }
+        try {
+          await second?.dispose();
+        } catch {
+          // Preserve the acquisition or typed model failure.
+        }
+      }
+      return this.nativeFailure(index, error);
+    }
   }
   /**1144F0. */
   private async looseRaw(
@@ -128,6 +309,7 @@ export class AokanaAudioResourceStreams {
     pan: number,
     gain: number,
     actor: object,
+    loopFlags = 0,
   ): Promise<number> {
     let inputHandedOff = false;
     try {
@@ -163,7 +345,13 @@ export class AokanaAudioResourceStreams {
               this.channels.actors,
               actor,
             );
-      const status = await this.channels.publishInitializedStream(index, wave, volume, pan);
+      const status = await this.channels.publishInitializedStream(
+        index,
+        wave,
+        volume,
+        pan,
+        loopFlags,
+      );
       if (status !== 0) throw new AokanaWaveBoxError(22, 'Aokana stream speaker attachment failed');
       return 0;
     } catch (error) {

@@ -62,6 +62,27 @@ export class AokanaEngineDialogs {
     public fallbackTitle: Uint8Array,
   ) {}
 
+  /** Composition check for VM dialogs sharing the actual graph modal and input owners. */
+  usesOwners(
+    presenter: AokanaDiagnosticDialogs,
+    text: AokanaNativeText,
+    clock: AokanaNativeClock,
+    input: AokanaNativeInput,
+    cursor: AokanaNativeCursor,
+    device: AokanaModalDisplayDevice,
+    display: AokanaNativeDisplayState,
+  ): boolean {
+    return (
+      this.presenter === presenter &&
+      this.text === text &&
+      this.clock === clock &&
+      this.input === input &&
+      this.cursor === cursor &&
+      this.device === device &&
+      this.display === display
+    );
+  }
+
   /** 1400b34f0, also used by persistent native child/settings windows without clock suspension. */
   transition(enter: boolean): void {
     if (!this.device.isPresent()) return;

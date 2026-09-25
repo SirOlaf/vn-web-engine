@@ -64,6 +64,13 @@ test('actual resource FIFO decodes initialized loose and archive CBG with a capt
     assert.equal(second.bytes, null);
     assert.equal(await loading.processNext(workerActor), true);
     assert.equal(secondResult.value, 272);
+    for (const output of [first, second]) {
+      assert.equal(output.initialized.length, output.bytes.length);
+      assert.equal(
+        output.initialized.every((value) => value === 1),
+        true,
+      );
+    }
     for (const output of [first.bytes, second.bytes]) {
       const header = new DataView(output.buffer, output.byteOffset, output.byteLength);
       assert.equal(header.getUint16(0, true), 8);

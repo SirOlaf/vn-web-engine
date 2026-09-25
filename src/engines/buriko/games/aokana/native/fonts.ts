@@ -1,4 +1,4 @@
-import {AokanaBrowserFonts} from './font-browser.js';
+import {AokanaBrowserFonts, type AokanaFontProvider} from './font-browser.js';
 import {
   AokanaFontRaster,
   AokanaFontRasterSettings,
@@ -77,7 +77,7 @@ export class AokanaNativeFonts {
   private defaultFallback: Uint8Array | null = null;
   constructor(
     readonly text: AokanaNativeText,
-    readonly browser = new AokanaBrowserFonts(),
+    readonly browser: AokanaFontProvider = new AokanaBrowserFonts(),
   ) {}
 
   private decode(bytes: Uint8Array): string {

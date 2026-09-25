@@ -69,7 +69,7 @@ export class AokanaTemporaryFileProfile implements AokanaTemporaryFileHost {
 
 export class AokanaTemporaryDirectoryProbe {
   constructor(
-    private readonly files: AokanaProgramFiles,
+    readonly files: AokanaProgramFiles,
     private readonly host: AokanaTemporaryFileHost,
   ) {}
 

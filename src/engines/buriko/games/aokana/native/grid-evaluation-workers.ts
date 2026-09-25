@@ -28,6 +28,7 @@ class GridEvaluationThread {
   started = false;
   terminated = false;
   taskPending = false;
+  timer: ReturnType<typeof setTimeout> | null = null;
   job: EvaluationJob | null = null;
   failure: unknown = undefined;
   readonly changed = new Set<() => void>();
@@ -49,33 +50,127 @@ export class AokanaGridEvaluationWorkers {
   private nextId = 0;
   private readonly threads: GridEvaluationThread[] = [];
   private backgroundFailure: unknown = undefined;
+  private finalAdmissionClosed = false;
+  private finalClosing: Promise<void> | null = null;
+  private finalQuiesced = false;
   constructor(
-    private readonly allocator: AokanaDistributedAllocator,
-    private readonly mainProcessing: AokanaDistributedProcessing,
-    private readonly grids: AokanaLogicalGridManagers,
+    readonly allocator: AokanaDistributedAllocator,
+    readonly mainProcessing: AokanaDistributedProcessing,
+    readonly grids: AokanaLogicalGridManagers,
   ) {}
+
+  get admissionClosed(): boolean {
+    return this.finalAdmissionClosed;
+  }
+
+  get quiesced(): boolean {
+    return this.finalQuiesced;
+  }
+
+  private retire(thread: GridEvaluationThread): void {
+    if (thread.eventClosed) return;
+    thread.job = null;
+    thread.busy = 0;
+    thread.evaluator.dispose();
+    thread.eventClosed = true;
+    const index = this.threads.indexOf(thread);
+    if (index >= 0) this.threads.splice(index, 1);
+  }
+
+  /** Stop host admission before the VM waits for an already admitted D0:81. */
+  beginFinalClose(): void {
+    if (this.finalAdmissionClosed) return;
+    this.finalAdmissionClosed = true;
+    for (const thread of this.threads) {
+      // Native D0:81 can stop a queued worker before it accepts its job, leaving
+      // busy=1 forever. Only final close drops that unaccepted, stopped job.
+      if (thread.stop && thread.busy === 1) {
+        thread.job = null;
+        thread.busy = 0;
+        thread.notify();
+      }
+    }
+  }
+
+  /** Drain valid work, join startup/retirement timers, then release grid/BP borrowers. */
+  closeAndJoin(): Promise<void> {
+    if (this.finalClosing !== null) return this.finalClosing;
+    this.beginFinalClose();
+    this.finalClosing = (async () => {
+      let firstError = this.backgroundFailure;
+      let failed = firstError !== undefined;
+      let allRetired = true;
+      for (const thread of [...this.threads]) {
+        try {
+          while (thread.busy !== 0 && !thread.terminated) await thread.waitForChange();
+          thread.stop = true;
+          thread.eventSignaled = true;
+          this.schedule(thread);
+          while (!thread.terminated || thread.taskPending || thread.timer !== null)
+            await thread.waitForChange();
+          this.retire(thread);
+        } catch (error) {
+          allRetired = false;
+          if (!failed) {
+            firstError = error;
+            failed = true;
+          }
+        }
+      }
+      if (this.backgroundFailure !== undefined && !failed) {
+        firstError = this.backgroundFailure;
+        failed = true;
+      }
+      this.finalQuiesced = allRetired && this.threads.length === 0;
+      if (!this.finalQuiesced && !failed) {
+        firstError = new Error('Aokana grid evaluator workers did not quiesce');
+        failed = true;
+      }
+      if (failed) throw firstError;
+    })();
+    return this.finalClosing;
+  }
 
   hasPendingWork(): boolean {
     this.checkFailure();
     return this.threads.some((thread) => !thread.terminated && thread.busy !== 0);
   }
+
+  /** Observe accepted jobs without changing worker admission or consuming status. */
+  async joinPendingWork(): Promise<void> {
+    this.checkFailure();
+    await Promise.all(
+      this.threads.map(async (thread) => {
+        while (thread.busy !== 0 && !thread.terminated) await thread.waitForChange();
+      }),
+    );
+    this.checkFailure();
+  }
   private checkFailure(): void {
     if (this.backgroundFailure !== undefined) throw this.backgroundFailure;
   }
-  private find(id: number): GridEvaluationThread | undefined {
+  private checkAdmission(): void {
+    if (this.finalAdmissionClosed)
+      throw new Error('Aokana grid evaluator worker admission is closed');
     this.checkFailure();
+  }
+  private find(id: number): GridEvaluationThread | undefined {
+    this.checkAdmission();
     return this.threads.find((thread) => thread.id === id >>> 0);
   }
   private schedule(thread: GridEvaluationThread): void {
     if (thread.taskPending || thread.terminated || thread.eventClosed) return;
     thread.taskPending = true;
-    setTimeout(() => {
+    thread.timer = setTimeout(() => {
+      thread.timer = null;
       thread.taskPending = false;
       try {
         this.runThread(thread);
       } catch (error) {
-        thread.failure = this.backgroundFailure = error;
+        thread.failure = error;
+        if (this.backgroundFailure === undefined) this.backgroundFailure = error;
         thread.terminated = true;
+      } finally {
         thread.notify();
       }
     }, 0);
@@ -114,7 +209,7 @@ export class AokanaGridEvaluationWorkers {
     this.schedule(thread);
   }
   create(output: AokanaBpPointer | null): number {
-    this.checkFailure();
+    this.checkAdmission();
     this.nextId = (this.nextId + 1) >>> 0;
     const thread = new GridEvaluationThread(
       this.nextId,
@@ -141,10 +236,7 @@ export class AokanaGridEvaluationWorkers {
       await thread.waitForChange();
       this.checkFailure();
     }
-    thread.evaluator.dispose();
-    thread.eventClosed = true;
-    const index = this.threads.indexOf(thread);
-    if (index >= 0) this.threads.splice(index, 1);
+    this.retire(thread);
     return 0;
   }
   setTypeCount(id: number, value: number): number {

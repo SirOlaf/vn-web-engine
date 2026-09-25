@@ -28,6 +28,7 @@ interface NamedMutexNode {
 export class AokanaNamedMutexes {
   private counter = 0;
   private readonly nodes: NamedMutexNode[] = [];
+  private readonly pendingCloses: unknown[] = [];
 
   constructor(readonly host: AokanaNamedMutexHost) {}
 
@@ -37,6 +38,19 @@ export class AokanaNamedMutexes {
 
   get ids(): readonly number[] {
     return this.nodes.map((node) => node.id);
+  }
+
+  get pendingCloseCount(): number {
+    return this.pendingCloses.length;
+  }
+
+  private closeHandle(handle: unknown): void {
+    try {
+      this.host.close(handle);
+    } catch (error) {
+      this.pendingCloses.push(handle);
+      throw error;
+    }
   }
 
   name(id: number): Uint8Array | null {
@@ -49,12 +63,21 @@ export class AokanaNamedMutexes {
     const result = this.host.createOwned(name);
     if (result === null) return 0;
     if (result.lastError >>> 0 !== 0) {
-      this.host.close(result.handle);
+      this.closeHandle(result.handle);
       return 0;
     }
     this.counter = (this.counter + 1) >>> 0;
-    const copy = textBytes(name!, true).slice();
-    this.nodes.unshift({id: this.counter, name: copy, handle: result.handle});
+    try {
+      const copy = textBytes(name!, true).slice();
+      this.nodes.unshift({id: this.counter, name: copy, handle: result.handle});
+    } catch (error) {
+      try {
+        this.closeHandle(result.handle);
+      } catch {
+        // Preserve the name-copy failure; the handle remains available for clear().
+      }
+      throw error;
+    }
     return this.counter;
   }
 
@@ -63,13 +86,51 @@ export class AokanaNamedMutexes {
     const index = this.nodes.findIndex((node) => node.id === id >>> 0);
     if (index < 0) return 0;
     const [node] = this.nodes.splice(index, 1);
-    this.host.release(node!.handle);
-    this.host.close(node!.handle);
+    let firstError: unknown;
+    let failed = false;
+    try {
+      this.host.release(node!.handle);
+    } catch (error) {
+      failed = true;
+      firstError = error;
+    }
+    try {
+      this.closeHandle(node!.handle);
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        firstError = error;
+      }
+    }
+    if (failed) throw firstError;
     return 1;
   }
 
   /** F0CF0 repeatedly removes the current head and preserves the ID counter. */
   clear(): void {
-    while (this.nodes.length !== 0) this.release(this.nodes[0]!.id);
+    let firstError: unknown;
+    let failed = false;
+    while (this.nodes.length !== 0) {
+      try {
+        this.release(this.nodes[0]!.id);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstError = error;
+        }
+      }
+    }
+    const pending = this.pendingCloses.splice(0);
+    for (const handle of pending) {
+      try {
+        this.closeHandle(handle);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstError = error;
+        }
+      }
+    }
+    if (failed) throw firstError;
   }
 }

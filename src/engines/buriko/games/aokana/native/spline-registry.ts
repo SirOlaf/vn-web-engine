@@ -28,6 +28,12 @@ export class AokanaNativeSplines {
     return 0;
   }
 
+  /** Final owner disposal; do not reuse signed-bank IDs. */
+  disposeAll(): void {
+    for (const entry of this.entries) entry.spline.clear();
+    this.entries.length = 0;
+  }
+
   initialize(id: number, count: number, points: AokanaBpPointer | null, duration: number): number {
     count >>>= 0;
     duration >>>= 0;

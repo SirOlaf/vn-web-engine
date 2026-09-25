@@ -5,7 +5,7 @@ import {AokanaParticleDisplays, type AokanaParticleRefreshNode} from './particle
 export class AokanaParticleFrames {
   constructor(
     readonly particles: AokanaParticleDisplays,
-    private readonly clock: AokanaNativeClock,
+    readonly clock: AokanaNativeClock,
   ) {}
 
   /** 082660 runs every current controller, independent of visibility and refresh scheduling. */

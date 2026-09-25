@@ -23,6 +23,14 @@ import {
 
 const bytes = (value) => new TextEncoder().encode(value + '\0');
 const pointer = (value) => ({bytes: bytes(value), offset: 0});
+const mainProcessing = () => ({
+  allocator: {
+    currentActor: 0,
+    withActor(_actor, operation) {
+      return operation();
+    },
+  },
+});
 
 test('reachable native CRT case handling folds only ASCII UTF-16 units', () => {
   assert.equal(aokanaCrtWideLower('FONTÄİΣＡ\ud800'), 'fontÄİΣＡ\ud800');
@@ -70,6 +78,7 @@ test('font B0 bindings preserve NULL enumeration queries, outputs and cached arc
   const text = new AokanaNativeText(),
     fonts = new AokanaNativeFonts(text, browser);
   const resources = new AokanaFontResources(fonts, {
+    mainProcessing: mainProcessing(),
     configuration: {nativeFileRoot: ''},
     files: {
       async openWide() {
@@ -137,6 +146,7 @@ test('font file cache excludes archive identity and preserves wide-root path ide
   };
   const fonts = new AokanaNativeFonts(new AokanaNativeText(), browser);
   const native = {
+    mainProcessing: mainProcessing(),
     configuration: {nativeFileRoot: 'root\ud800/'},
     files: {
       async openWide(path) {
@@ -188,6 +198,7 @@ test('font resource status distinguishes absent, changed, and invalid native res
   let measured = 0,
     count = 2;
   const native = {
+    mainProcessing: mainProcessing(),
     configuration: {nativeFileRoot: ''},
     files: {
       async openWide() {
@@ -352,7 +363,7 @@ test('native modal restoration occurs after operation, in cursor/input/clock/dis
         events.push(['display']);
       },
     },
-    {fullscreen: 1, displayFlag: 0},
+    {fullscreen: 1, displayFlag: 0, modalDepth: 0},
     null,
     bytes('Title'),
   );

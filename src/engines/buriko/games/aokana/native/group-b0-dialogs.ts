@@ -17,13 +17,10 @@ function pointer(h: AokanaBpOpcodeContext): AokanaBpPointer | null {
   return h.memory.resolve(h.thread, pop32(h.thread));
 }
 
-/** Native B0 modal and persistent settings calls with their actual blocking browser presenters. */
-export function createGroupB0Dialogs(
+/** The graph-owned message and list modals need no ANSI form or settings-window host. */
+export function createGroupB0ModalDialogs(
   dialogs: AokanaEngineDialogs,
-  ansi: AokanaAnsiDialogs,
-  productKey: AokanaProductKeyDialog,
   selection: AokanaSelectionDialog,
-  settings: AokanaModelessSettings,
 ): AokanaNativeSlotDefinition[] {
   const definitions: AokanaNativeSlotDefinition[] = [];
   const add = (
@@ -66,6 +63,31 @@ export function createGroupB0Dialogs(
     if (title !== null) dialogs.preferredTitle = textBytes(title, true).slice();
     return 0;
   });
+  add(0x8c, 0x1400d4410, 'SelectFromList', async (h): Promise<0> => {
+    const list = pointer(h),
+      prompt = pointer(h),
+      title = pointer(h),
+      output = pointer(h);
+    push32(h.thread, await selection.select(output, title, prompt, list));
+    return 0;
+  });
+  return definitions;
+}
+
+/** The five browser forms share one ANSI host and one persistent product-key edit state. */
+export function createGroupB0FormDialogs(
+  ansi: AokanaAnsiDialogs,
+  productKey: AokanaProductKeyDialog,
+): AokanaNativeSlotDefinition[] {
+  const definitions: AokanaNativeSlotDefinition[] = [];
+  const add = (
+    secondary: number,
+    nativeAddress: number,
+    name: string,
+    execute: AokanaBpOpcodeHandler,
+  ): void => {
+    definitions.push({primary: 0xb0, secondary, nativeAddress, name, execute});
+  };
   add(0x84, 0x1400d4730, 'EditSingleText', async (h): Promise<0> => {
     const limit = pop32(h.thread),
       initial = pointer(h),
@@ -128,14 +150,6 @@ export function createGroupB0Dialogs(
     );
     return 0;
   });
-  add(0x8c, 0x1400d4410, 'SelectFromList', async (h): Promise<0> => {
-    const list = pointer(h),
-      prompt = pointer(h),
-      title = pointer(h),
-      output = pointer(h);
-    push32(h.thread, await selection.select(output, title, prompt, list));
-    return 0;
-  });
   add(0x8f, 0x1400d4370, 'EditNameAndBirthday', async (h): Promise<0> => {
     const day = pointer(h),
       month = pointer(h),
@@ -146,6 +160,22 @@ export function createGroupB0Dialogs(
     push32(h.thread, await ansi.nameAndBirthday(last, first, nickname, firstPerson, month, day));
     return 0;
   });
+  return definitions;
+}
+
+/** The persistent settings window has its own graph lifetime and event queue. */
+export function createGroupB0ModelessSettings(
+  settings: AokanaModelessSettings,
+): AokanaNativeSlotDefinition[] {
+  const definitions: AokanaNativeSlotDefinition[] = [];
+  const add = (
+    secondary: number,
+    nativeAddress: number,
+    name: string,
+    execute: AokanaBpOpcodeHandler,
+  ): void => {
+    definitions.push({primary: 0xb0, secondary, nativeAddress, name, execute});
+  };
   add(0xa0, 0x1400d4310, 'CreateSettingsWindow', (h) => {
     const initial = pointer(h),
       kind = pop32(h.thread),
@@ -185,4 +215,19 @@ export function createGroupB0Dialogs(
     return 0;
   });
   return definitions;
+}
+
+/** Full standalone B0 dialog family, retaining the native secondary ordering. */
+export function createGroupB0Dialogs(
+  dialogs: AokanaEngineDialogs,
+  ansi: AokanaAnsiDialogs,
+  productKey: AokanaProductKeyDialog,
+  selection: AokanaSelectionDialog,
+  settings: AokanaModelessSettings,
+): AokanaNativeSlotDefinition[] {
+  return [
+    ...createGroupB0ModelessSettings(settings),
+    ...createGroupB0ModalDialogs(dialogs, selection),
+    ...createGroupB0FormDialogs(ansi, productKey),
+  ].sort((left, right) => left.secondary - right.secondary);
 }

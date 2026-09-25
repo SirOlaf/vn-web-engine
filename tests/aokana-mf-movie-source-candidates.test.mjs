@@ -1,0 +1,97 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {StoredFileSystem} from '../dist/platform/filesystem.js';
+import {MemoryStore} from '../dist/platform/store.js';
+import {
+  AokanaProgramFiles,
+  AokanaProgramMedia,
+} from '../dist/engines/buriko/games/aokana/native/program-files.js';
+import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
+import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
+import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {
+  AokanaDistributedAllocator,
+  AokanaDistributedProcessing,
+} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
+import {AokanaMfMovieSourceCandidates} from '../dist/engines/buriko/games/aokana/native/movie-mf-source-candidates.js';
+
+function arc(name, data) {
+  const bytes = new Uint8Array(16 + 128 + data.length);
+  const view = new DataView(bytes.buffer);
+  bytes.set(new TextEncoder().encode('BURIKO ARC20'));
+  view.setUint32(12, 1, true);
+  bytes.set(new TextEncoder().encode(name), 16);
+  view.setUint32(16 + 100, data.length, true);
+  bytes.set(data, 144);
+  return bytes;
+}
+
+test('MF movie candidates keep qualified/direct/search order and physical archive identity', async () => {
+  const fs = new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase());
+  await fs.commit([
+    {kind: 'write', path: '/game/primary.bin', data: Uint8Array.of(1)},
+    {kind: 'write', path: '/game/video/secondary.bin', data: Uint8Array.of(2)},
+    {kind: 'write', path: '/media/secondary.bin', data: Uint8Array.of(3)},
+    {kind: 'write', path: '/game/video/search.bin', data: Uint8Array.of(4)},
+    {kind: 'write', path: '/game/movie.arc', data: arc('member.bin', Uint8Array.of(5, 6, 7))},
+  ]);
+  const text = new AokanaNativeText();
+  const encode = (value) => text.encodeWide(value, 1);
+  const pointer = (value) => ({bytes: encode(value), offset: 0});
+  const media = new AokanaProgramMedia();
+  media.setDriveType(2, 3);
+  const files = new AokanaProgramFiles(
+    fs,
+    text,
+    media,
+    new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+  );
+  const dialogs = new AokanaEngineDialogs();
+  const resources = new AokanaProgramResources(
+    files,
+    {
+      nativeFileRoot: 'C:\\game\\',
+      primaryRoot: encode('C:\\game\\'),
+      secondaryRoot: encode('C:\\media\\'),
+      secondaryMediaPath: 'C:\\media\\',
+      searchDirectoriesEnabled: 1,
+      searchDirectories: [encode('video')],
+      retryTitle: Uint8Array.of(0),
+      retryMessage: Uint8Array.of(0),
+      quitConfirmation: Uint8Array.of(0),
+    },
+    dialogs,
+    new AokanaEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
+    new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+  );
+  const candidates = new AokanaMfMovieSourceCandidates(resources);
+
+  assert.equal(
+    files.path((await candidates.direct(pointer('primary.bin'))).path),
+    'C:\\game\\primary.bin',
+  );
+  // BB2A0's secondary direct check precedes BB3C0's primary search-directory check.
+  assert.equal(
+    files.path((await candidates.direct(pointer('secondary.bin'))).path),
+    'C:\\media\\secondary.bin',
+  );
+  assert.equal(
+    files.path((await candidates.direct(pointer('search.bin'))).path),
+    'C:\\game\\video\\search.bin',
+  );
+  assert.equal(files.path((await candidates.direct(pointer('video'))).path), 'C:\\game\\video');
+
+  // A failed direct 10FC70 attempt may request this separate, lazy BA330 candidate.
+  const archive = await candidates.archive(pointer('movie.arc'), pointer('member.bin'));
+  assert.equal(archive.kind, 'archive');
+  assert.equal(files.path(archive.path), 'c:\\game\\movie.arc');
+  assert.equal(files.path(archive.member), 'member.bin');
+  assert.deepEqual([archive.offset, archive.length], [144, 3]);
+  const opened = await files.open(archive.path);
+  assert.deepEqual(
+    Array.from(await files.read(opened.source, archive.offset, archive.length)),
+    [5, 6, 7],
+  );
+});

@@ -72,6 +72,7 @@ export function createGroup81ResourceServices(
       nativeAddress: 0x1400ebad0,
       name: 'ExamineFileHealth',
       execute: async (h): Promise<0 | 2> => {
+        const actor = h.actor ?? loading.metadata.allocator.currentActor;
         const namePointer = h.memory.resolve(h.thread, pop32(h.thread)),
           archivePointer = h.memory.resolve(h.thread, pop32(h.thread));
         if (archivePointer === null) {
@@ -94,6 +95,7 @@ export function createGroup81ResourceServices(
             loading,
             archive,
             name,
+            actor,
           );
         owner.installProcess(process);
         return 2;

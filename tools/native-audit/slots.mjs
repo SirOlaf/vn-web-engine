@@ -126,8 +126,10 @@ function literal(node, env = new Map(), depth = 0) {
     for (const item of node.elements) {
       if (ts.isSpreadElement(item)) {
         const spread = read(item.expression);
-        if (!Array.isArray(spread)) return UNKNOWN;
-        values.push(...spread);
+        // Preserve direct elements even when an adjacent spread is dynamic.
+        // The spread itself remains unresolved; no slot is inferred from it.
+        if (Array.isArray(spread)) values.push(...spread);
+        else values.push(UNKNOWN);
       } else values.push(read(item));
     }
     return values;
@@ -144,6 +146,28 @@ function literal(node, env = new Map(), depth = 0) {
       else return UNKNOWN;
     }
     return result;
+  }
+  if (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'sort' &&
+    node.arguments.length === 1
+  ) {
+    const callback = unwrap(node.arguments[0]),
+      body = callback && ts.isArrowFunction(callback) ? unwrap(callback.body) : undefined;
+    if (
+      body &&
+      ts.isBinaryExpression(body) &&
+      body.operatorToken.kind === ts.SyntaxKind.MinusToken &&
+      ts.isPropertyAccessExpression(body.left) &&
+      ts.isPropertyAccessExpression(body.right) &&
+      body.left.name.text === body.right.name.text &&
+      ts.isIdentifier(body.left.expression) &&
+      ts.isIdentifier(body.right.expression) &&
+      body.left.expression.text === nameOf(callback.parameters[0]?.name) &&
+      body.right.expression.text === nameOf(callback.parameters[1]?.name)
+    )
+      return read(node.expression.expression);
   }
   if (
     ts.isCallExpression(node) &&

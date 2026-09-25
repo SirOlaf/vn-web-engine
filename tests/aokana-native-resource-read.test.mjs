@@ -67,10 +67,22 @@ test('80:30/31 decode into actual BP caller bytes through loose and archive owne
       frameCapacity: 16,
     }),
     slots = createGroup80ResourceRead(resources);
+  const actor = {},
+    observedActors = [],
+    load = resources.load.bind(resources),
+    loadPartial = resources.loadPartial.bind(resources);
+  resources.load = (...args) => {
+    observedActors.push(args[4]);
+    return load(...args);
+  };
+  resources.loadPartial = (...args) => {
+    observedActors.push(args[5]);
+    return loadPartial(...args);
+  };
   const put = (offset, value) => bytes.set(text.encodeWide(value, 1), offset);
   const invoke = async (slot, ...args) => {
     for (const value of args) push32(thread, value);
-    assert.equal(await slots.find((s) => s.secondary === slot).execute({thread, memory}), 0);
+    assert.equal(await slots.find((s) => s.secondary === slot).execute({thread, memory, actor}), 0);
     const result = pop32(thread);
     assert.equal(thread.stackIndex, 0);
     return result;
@@ -94,6 +106,8 @@ test('80:30/31 decode into actual BP caller bytes through loose and archive owne
   put(32, 'Raw.bin');
   assert.equal(await invoke(0x31, 2600, 0, 32, 1, 2), 0);
   assert.deepEqual(Array.from(bytes.subarray(2600, 2602)), [9, 10]);
+  assert.equal(observedActors.length, 5);
+  assert.ok(observedActors.every((value) => value === actor));
   assert.equal(
     await resources.size(text.encodeWide('Pack.arc', 1), text.encodeWide('Legacy', 1)),
     24,

@@ -40,7 +40,7 @@ export class AokanaAudioStaticResources {
   }
   register(
     index: number,
-    source: AokanaBpPointer,
+    source: AokanaBpPointer | null,
     fadeMilliseconds: number,
     gain: number,
     speed: number,
@@ -49,6 +49,8 @@ export class AokanaAudioStaticResources {
   ): Promise<number> {
     index >>>= 0;
     return this.channels.withEngineControl(async (actor) => {
+      // F4D50 copies the pointer; its first source read occurs in engine2 here.
+      if (source === null) throw new Error('Aokana static header dereferences null storage');
       const offset = index * 64;
       for (let block = 0; block < 64; block += 16)
         this.copyBlock(

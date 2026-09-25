@@ -97,6 +97,27 @@ test('real stream resource admission replaces a loose PCM model with a live arch
     assert.equal(await channels.stream[0].speaker.start(0), 0);
     assert.deepEqual([...backend.buffers[1].render(8)[0]], Array(8).fill(-0.25));
     assert.deepEqual([...backend.buffers[1].render(8)[1]], Array(8).fill(-0.25));
+    assert.equal(await resources.loadPairLoose(0, 'loose.bw', 'loose.bw', 1, 128, 64, 1, actor), 0);
+    assert.equal(channels.stream[0].model.wave.loopEnabled, 2);
+    assert.equal(await channels.stream[0].speaker.start(0), 0);
+    assert.deepEqual([...backend.buffers[2].render(8)[0]], Array(8).fill(0.5));
+    assert.equal(
+      await resources.loadPairArchive(
+        0,
+        'second.arc',
+        'VOICE.BW',
+        'VOICE.BW',
+        0,
+        128,
+        64,
+        1,
+        actor,
+      ),
+      0,
+    );
+    assert.equal(channels.stream[0].model.wave.loopEnabled, 0);
+    assert.equal(await channels.stream[0].speaker.start(0), 0);
+    assert.deepEqual([...backend.buffers[3].render(8)[0]], Array(8).fill(-0.25));
     await channels.stream[0].speaker.stop(actor);
     assert.equal(channels.stream[0].model.wave.framePosition, 0);
     channels.stream[0].speaker.checkWorker();

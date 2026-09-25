@@ -16,6 +16,29 @@ import type {AokanaBitmapSelectionState} from './selection-bitmap-state.js';
 import type {AokanaSelectionState} from './selection-state.js';
 import type {AokanaBpOpcodeContext, AokanaNativeSlotDefinition} from './types.js';
 
+/** The standalone 90:AF definition shares the three states used by selection processes and B4590. */
+export function createGroup90SelectionForegroundOnly(
+  settings: AokanaBitmapSelectionState,
+  textSettings: AokanaSelectionState,
+  iconSettings: AokanaIndependentIconState,
+): AokanaNativeSlotDefinition[] {
+  return [
+    {
+      primary: 0x90,
+      secondary: 0xaf,
+      nativeAddress: 0x1400d81a0,
+      name: 'SetSelectionForegroundOnly',
+      execute: (h) => {
+        const value = pop32(h.thread);
+        settings.foregroundOnly = value;
+        textSettings.foregroundOnly = value;
+        iconSettings.foregroundOnly = value;
+        return 0;
+      },
+    },
+  ];
+}
+
 export function createGroup90SelectionBitmapProcess(
   manager: AokanaDisplayManager,
   scheduler: AokanaBpScheduler,
@@ -69,19 +92,7 @@ export function createGroup90SelectionBitmapProcess(
     return 2;
   };
   return [
-    {
-      primary: 0x90,
-      secondary: 0xaf,
-      nativeAddress: 0x1400d81a0,
-      name: 'SetSelectionForegroundOnly',
-      execute: (h) => {
-        const value = pop32(h.thread);
-        settings.foregroundOnly = value;
-        textSettings.foregroundOnly = value;
-        iconSettings.foregroundOnly = value;
-        return 0;
-      },
-    },
+    ...createGroup90SelectionForegroundOnly(settings, textSettings, iconSettings),
     {
       primary: 0x90,
       secondary: 0xb0,

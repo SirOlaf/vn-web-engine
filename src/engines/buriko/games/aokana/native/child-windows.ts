@@ -203,6 +203,7 @@ export class AokanaChildWindows {
       record.scroll = scroll;
       record.field4c = 1;
       this.ownedTargets.add(target);
+      this.messages.bindQueuedNumericTarget(target, (message) => this.handleMessage(message));
       this.movePanel(record, x, y, true);
       close.addEventListener('click', () =>
         this.messages.post({target, message: 0x10, wParam: 0, lParam: 0}),

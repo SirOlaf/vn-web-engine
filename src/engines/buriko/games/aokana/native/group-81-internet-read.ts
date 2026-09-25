@@ -45,18 +45,20 @@ export function createGroup81InternetRead(
           push32(h.thread, await reads.read(destination, url, offset, length));
           return 0;
         }
-        const owner = scheduled(h),
-          process = new AokanaInternetReadProcess(
-            h.thread,
-            procedures,
-            clock,
-            loading,
-            reads,
-            destination,
-            url,
-            offset,
-            length,
-          );
+        const owner = scheduled(h);
+        if (owner.process?.hasOutstandingExternalBorrow?.())
+          throw new Error('Aokana internet read would replace a process borrowing BP storage');
+        const process = new AokanaInternetReadProcess(
+          h.thread,
+          procedures,
+          clock,
+          loading,
+          reads,
+          destination,
+          url,
+          offset,
+          length,
+        );
         owner.installProcess(process);
         control.asynchronousResourceLoads = 0;
         return 2;

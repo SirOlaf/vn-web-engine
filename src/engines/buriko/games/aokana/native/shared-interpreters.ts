@@ -1,4 +1,4 @@
-import type {AokanaBpInterpreter} from '../bp/interpreter.js';
+import {AokanaBpInterpreter} from '../bp/interpreter.js';
 import {AokanaBpSharedThread, validCodeAddress, type AokanaBpThread} from '../bp/state.js';
 import type {AokanaBitmapCompositor} from './bitmap-compositor.js';
 import type {AokanaBpDiagnostics} from './diagnostics.js';
@@ -21,9 +21,21 @@ export class AokanaSharedInterpreters {
     private readonly processing: AokanaDistributedProcessing,
     private readonly compositor: AokanaBitmapCompositor,
     private readonly locks: AokanaNativeLocks,
-    private readonly interpreter: AokanaBpInterpreter,
+    private interpreter: AokanaBpInterpreter | null,
     readonly errors: AokanaEngineErrors,
-  ) {}
+  ) {
+    if (interpreter !== null && !(interpreter instanceof AokanaBpInterpreter))
+      throw new TypeError('Aokana shared interpreters require an actual BP interpreter');
+  }
+
+  /** The full native bank includes 81:48, so its interpreter is bound once after bank construction. */
+  bindInterpreter(interpreter: AokanaBpInterpreter): void {
+    if (this.interpreter !== null)
+      throw new Error('Aokana shared interpreters already have an interpreter');
+    if (!(interpreter instanceof AokanaBpInterpreter))
+      throw new TypeError('Aokana shared interpreters require an actual BP interpreter');
+    this.interpreter = interpreter;
+  }
 
   private message(value: string): Uint8Array {
     return this.errors.files.text.encodeWide(value, 0);
@@ -34,6 +46,9 @@ export class AokanaSharedInterpreters {
     worker: number,
     actor: object,
   ): Promise<0> {
+    const interpreter = this.interpreter;
+    if (interpreter === null)
+      throw new Error('Aokana shared interpreters have no bound interpreter');
     const record = records[worker >>> 0];
     if (record === undefined)
       throw new RangeError('Aokana shared-interpreter worker index exceeds its record array');
@@ -47,7 +62,7 @@ export class AokanaSharedInterpreters {
     try {
       while (count < 0x10000000) {
         const dispatched = this.processing.allocator.withActor(actor, () =>
-          this.interpreter.dispatchNext(child, actor),
+          interpreter.dispatchNext(child, actor),
         );
         opcode = dispatched.opcode;
         if (!dispatched.defined) {
@@ -90,6 +105,8 @@ export class AokanaSharedInterpreters {
     initialIp: number,
     actor = this.processing.allocator.currentActor,
   ): Promise<AokanaSharedInterpreterResult> {
+    if (this.interpreter === null)
+      throw new Error('Aokana shared interpreters have no bound interpreter');
     operandCapacity >>>= 0;
     moduleSize >>>= 0;
     frameSize >>>= 0;

@@ -90,6 +90,8 @@ function setup() {
     context = {thread, memory, diagnostics: {}};
   let nextText = 32;
   return {
+    sources,
+    allocator,
     loading,
     thread,
     memory,
@@ -111,6 +113,71 @@ function setup() {
     },
   };
 }
+
+test('async resource service enqueues retain the invoking actor across mounted read suspension', async () => {
+  for (const secondary of [0x30, 0x34]) {
+    const state = setup(),
+      payload = Uint8Array.of(61, 67, 71, 73),
+      selected = archive(payload, checksumMetadata(payload)),
+      source = new BlobSource(new Blob([selected]));
+    let releaseRead;
+    const readGate = new Promise((resolve) => {
+      releaseRead = resolve;
+    });
+    let enteredRead;
+    const readEntered = new Promise((resolve) => {
+      enteredRead = resolve;
+    });
+    let held = false;
+    state.sources.attach('/game/data.arc', {
+      size: source.size,
+      async read(offset, length) {
+        if (!held) {
+          held = true;
+          enteredRead();
+          await readGate;
+        }
+        return source.read(offset, length);
+      },
+    });
+    const actor = {},
+      ordinaryActor = state.allocator.currentActor;
+    let enqueuedActor;
+    if (secondary === 0x30) {
+      const enqueue = state.loading.enqueueOwned.bind(state.loading);
+      state.loading.enqueueOwned = (...args) => {
+        enqueuedActor = args[6];
+        return enqueue(...args);
+      };
+    } else {
+      const enqueue = state.loading.enqueue.bind(state.loading);
+      state.loading.enqueue = (...args) => {
+        enqueuedActor = args[8];
+        return enqueue(...args);
+      };
+    }
+    const archiveName = state.name('data.arc'),
+      resourceName = state.name('entry');
+    if (secondary === 0x30) state.control.asynchronousResourceLoads = 1;
+    const operation = state.allocator.withActor(actor, () =>
+      secondary === 0x30
+        ? state.call(0x30, 512, archiveName, resourceName, 0, 0)
+        : state.call(0x34, archiveName, resourceName),
+    );
+    assert.equal(state.allocator.currentActor, ordinaryActor);
+    await readEntered;
+    releaseRead();
+    assert.equal(await operation, 2);
+    assert.equal(enqueuedActor, actor);
+    assert.equal(await state.loading.processNext(), true);
+    assert.equal(await state.scheduler.root.pollProcess(false), 1);
+    assert.equal(state.loading.activeProcedures, 0);
+    assert.equal(
+      secondary === 0x30 ? state.memory.globalMemory[512] : pop32(state.thread),
+      secondary === 0x30 ? 61 : 0,
+    );
+  }
+});
 
 test('81 30 synchronous branch reads one explicit stored range and pushes its raw status', async () => {
   const state = setup(),

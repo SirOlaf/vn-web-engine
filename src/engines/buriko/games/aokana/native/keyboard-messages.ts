@@ -143,10 +143,27 @@ export interface AokanaKeyboardHotkeys {
 export class AokanaKeyboardMessages {
   hotkeys: AokanaKeyboardHotkeys | null = null;
   private readonly held = new Set<string>();
+  private readonly heldKeys = new Map<string, Set<number>>();
   private altMenuPending = false;
   private syntheticAltGraphControl = false;
 
   constructor(readonly messages: AokanaWindowMessages) {}
+
+  /** The scoped DOM bridge can discard a late keyup after focus-loss cleanup. */
+  isHeld(code: string, keyCode: number): boolean {
+    return this.held.has(code || `virtual:${keyCode}`);
+  }
+
+  /** Browser focus loss has no guaranteed keyup event; release held state without a WM_KEYUP. */
+  deactivate(): void {
+    const keys = new Set<number>();
+    for (const held of this.heldKeys.values()) for (const key of held) keys.add(key);
+    this.held.clear();
+    this.heldKeys.clear();
+    this.altMenuPending = false;
+    this.syntheticAltGraphControl = false;
+    this.messages.releasePhysicalKeys([...keys]);
+  }
 
   post(target: AokanaWindowTarget, event: AokanaKeyboardEvent): void {
     if (event.type !== 'keydown' && event.type !== 'keyup')
@@ -219,6 +236,11 @@ export class AokanaKeyboardMessages {
             {key: modifier.side, down},
             {key, down: down || this.held.has(modifier.other)},
           ];
+    if (down) {
+      const keys = this.heldKeys.get(identity) ?? new Set<number>();
+      for (const transition of transitions) keys.add(transition.key);
+      this.heldKeys.set(identity, keys);
+    } else this.heldKeys.delete(identity);
     const scan = aokanaWindowsScanCode(code);
     const altContext = this.held.has('AltLeft') || this.held.has('AltRight');
     const lParam =

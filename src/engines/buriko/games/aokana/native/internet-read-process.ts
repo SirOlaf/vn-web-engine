@@ -10,6 +10,8 @@ import type {AokanaResourceLoadingState} from './resource-loading.js';
 export class AokanaInternetReadProcess extends AokanaProcedure {
   private readonly url: Uint8Array;
   private operation: AokanaInternetReadOperation | null = null;
+  private operationSettlement: Promise<void> | null = null;
+  private outstandingBorrow = false;
   private firstPoll = true;
   private completed = false;
   private failed = false;
@@ -32,26 +34,38 @@ export class AokanaInternetReadProcess extends AokanaProcedure {
     loading.enterProcedure();
   }
 
+  /** The scheduler must retain this process and its thread storage through the BP write. */
+  hasOutstandingExternalBorrow(): boolean {
+    return this.outstandingBorrow;
+  }
+
+  needsLiveOperandStorageOnDispose(): boolean {
+    return true;
+  }
+
+  /** Settlement includes the process's result publication, after the owner's BP write. */
+  joinOperation(): Promise<void> {
+    return this.operationSettlement ?? Promise.resolve();
+  }
+
   poll(): number {
     this.consumeMessages();
     if (this.firstPoll) {
-      this.operation = this.reads.start(
-        this.destination,
-        this.url,
-        this.offset,
-        this.length,
-      );
+      this.operation = this.reads.start(this.destination, this.url, this.offset, this.length);
       this.firstPoll = false;
       if (this.operation === null) return 0xffffffff;
-      void this.operation.completion.then(
+      this.outstandingBorrow = true;
+      this.operationSettlement = this.operation.completion.then(
         (result) => {
           this.result = result >>> 0;
           this.completed = true;
+          this.outstandingBorrow = false;
         },
         (error: unknown) => {
           this.failure = error;
           this.failed = true;
           this.completed = true;
+          this.outstandingBorrow = false;
         },
       );
       return 0;

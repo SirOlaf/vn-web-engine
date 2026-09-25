@@ -17,6 +17,7 @@ export class AokanaMovieFileStream {
   private readonly createdAt: number;
   /** Constructor's rate is FFFFFFFF bytes/ms; no setter has been established in this executable. */
   private readonly bytesPerMillisecond = 0xffffffff;
+  private lastPhysicalReadCount = 0;
   private owner: object | null = null;
   private lockDepth = 0;
   private readonly waiters: Array<{actor: object; resume: () => void}> = [];
@@ -112,6 +113,16 @@ export class AokanaMovieFileStream {
     this.check();
     return this.path;
   }
+  /** Actual selected physical file size for a browser document's region admission. */
+  get physicalSize(): number | null {
+    this.check();
+    return this.source?.size ?? null;
+  }
+  /** Actual backing read count; native stream status deliberately discards it. */
+  get physicalReadCount(): number {
+    this.check();
+    return this.lastPhysicalReadCount;
+  }
   size(): {total: bigint; available: bigint} {
     this.check();
     this.milliseconds();
@@ -154,6 +165,7 @@ export class AokanaMovieFileStream {
         );
       if (this.base === null) throw new Error('Aokana movie reads an unwritten native region base');
       const bytes = await this.readFile(this.base + this.position, count);
+      this.lastPhysicalReadCount = bytes.length;
       const scratch = this.scratch,
         defined = this.scratchDefined;
       if (scratch === null || defined === null)

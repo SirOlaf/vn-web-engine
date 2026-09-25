@@ -7,6 +7,9 @@ export class AokanaStructCodecScratch {
   readonly capacity = 0x6000000;
   private reserved = true;
   private committed: AokanaCodecPointer | null = null;
+  get reservationActive(): boolean {
+    return this.reserved;
+  }
   constructor(readonly pageSize = 4096) {
     if (!Number.isInteger(pageSize) || pageSize <= 0 || this.capacity % pageSize !== 0)
       throw new RangeError('Aokana codec scratch requires an explicit compatible page size');
