@@ -9,7 +9,7 @@ export function readAokanaPixelPair(bitmap: AokanaBitmap, offset: number): Aokan
   return [view.getUint32(offset, true), view.getUint32(offset + 4, true)];
 }
 
-function readAokanaPixelPairInto(
+export function readAokanaPixelPairInto(
   bitmap: AokanaBitmap,
   offset: number,
   pixels: [number, number],
@@ -24,9 +24,19 @@ export function writeAokanaPixelPair(
   offset: number,
   pixels: AokanaPixelPair,
 ): void {
+  writeAokanaPixelPairValues(bitmap, offset, pixels[0], pixels[1]);
+}
+
+/** Internal scalar-store form for hot loops that already hold both pixel values. */
+export function writeAokanaPixelPairValues(
+  bitmap: AokanaBitmap,
+  offset: number,
+  first: number,
+  second: number,
+): void {
   const storage = bitmapStorage(bitmap, offset, 8, false);
-  storage.view.setUint32(offset, pixels[0], true);
-  storage.view.setUint32(offset + 4, pixels[1], true);
+  storage.view.setUint32(offset, first, true);
+  storage.view.setUint32(offset + 4, second, true);
   storage.written(offset, 8);
 }
 

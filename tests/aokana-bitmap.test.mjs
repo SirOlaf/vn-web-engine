@@ -109,6 +109,27 @@ test('native block copies preserve overlapping 8-byte store order', () => {
   assert.deepEqual(words(source), [1, 1, 2, 2, 4, 6]);
 });
 
+test('alpha blend snapshots each overlapping pair before writing it', () => {
+  const shared = bitmap([0xff000001, 0xff000002, 0xff000003, 0xff000004]);
+  const destination = {...shared, offset: 4};
+  const source = {...shared, width: 3};
+  blendAokanaAlpha(destination, source);
+  // The odd tail observes the second word written by the preceding MOVQ pair.
+  assert.deepEqual(words(shared), [0xff000001, 0xff000001, 0xff000002, 0xff000002]);
+});
+
+test('alpha blend retains native range and unwritten-source faults', () => {
+  const destination = bitmap([0xff010203, 0xff040506]);
+  const source = bitmap([0xffaabbcc, 0xffddeeff]);
+  source.storage = new AokanaBitmapStorage(source.storage.bytes, false);
+  source.storage.written(0, 4);
+  assert.throws(() => blendAokanaAlpha(destination, source), /unwritten native allocation/);
+  assert.deepEqual(words(destination), [0xff010203, 0xff040506]);
+
+  const shortSource = {...bitmap([0xffaabbcc]), width: 2};
+  assert.throws(() => blendAokanaAlpha(destination, shortSource), /outside native allocation/);
+});
+
 test('native block copies keep earlier stores when a later source block is unwritten', () => {
   const source = bitmap([1, 2, 3, 4, 5, 6]);
   source.storage = new AokanaBitmapStorage(source.storage.bytes, false);

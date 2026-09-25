@@ -95,6 +95,46 @@ export function aokanaPresentationTextureSampleInto(
   return output;
 }
 
+/** Raster-only RGB path: the X/Y coordinate split is shared by an entire output column/row. */
+export function aokanaPresentationLinearRgbInto(
+  texture: AokanaDisplayTexture,
+  nx: number,
+  ny: number,
+  fx: number,
+  fy: number,
+  output: AokanaPresentationColor,
+  frameRead: AokanaPresentationFrameRead,
+): void {
+  const left = nx >= 0 && nx < texture.width;
+  const right = nx + 1 >= 0 && nx + 1 < texture.width;
+  const top = ny >= 0 && ny < texture.height;
+  const bottom = ny + 1 >= 0 && ny + 1 < texture.height;
+  const a = left && top ? ny * texture.pitch + nx * 4 : -1;
+  const b = right && top ? ny * texture.pitch + (nx + 1) * 4 : -1;
+  const c = left && bottom ? (ny + 1) * texture.pitch + nx * 4 : -1;
+  const d = right && bottom ? (ny + 1) * texture.pitch + (nx + 1) * 4 : -1;
+  if (!frameRead.validated) {
+    const first = a >= 0 ? a : b >= 0 ? b : c >= 0 ? c : d;
+    if (first >= 0) {
+      texture.storage.range(first, 4, true);
+      frameRead.validated = true;
+    }
+  }
+  const bytes = texture.storage.bytes;
+  const oneMinusX = f32(1 - fx);
+  const oneMinusY = f32(1 - fy);
+  for (let channel = 0; channel < 3; channel++) {
+    const byte = 2 - channel;
+    const av = a < 0 ? 0 : normalizedByte[bytes[a + byte]!]!;
+    const bv = b < 0 ? 0 : normalizedByte[bytes[b + byte]!]!;
+    const cv = c < 0 ? 0 : normalizedByte[bytes[c + byte]!]!;
+    const dv = d < 0 ? 0 : normalizedByte[bytes[d + byte]!]!;
+    const topColor = mad(bv, fx, multiply(av, oneMinusX));
+    const bottomColor = mad(dv, fx, multiply(cv, oneMinusX));
+    output[channel] = mad(bottomColor, fy, multiply(topColor, oneMinusY));
+  }
+}
+
 /** Level zero, transparent-black border addressing, normalized BGRA8 texels. */
 export function aokanaPresentationTextureSample(
   texture: AokanaDisplayTexture,

@@ -9,6 +9,7 @@ import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/cloc
 import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
 import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
 import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {aokanaPresentationTextureSample} from '../dist/engines/buriko/games/aokana/native/presentation-sampling.js';
 
 /** No browser/DOM/image display: the canvas boundary is a byte-array commit and a queued clock callback. */
 function fixture() {
@@ -125,6 +126,71 @@ test('concrete filter selection preserves shader-mode window fallback and normal
   assert.deepEqual(pixel(result, 3, 2), [128, 64, 32, 255]);
   assert.equal(s.device.readRasterScanline({}), 0x81000000);
   assert.equal(s.device.rasterStatusAvailable, false);
+});
+
+test('repeated full uploads reuse identical sampled pixels and redraw after a source change', () => {
+  const s = fixture();
+  s.device.setFilter(2);
+  const rasterize = s.device.rasterizeQuad.bind(s.device);
+  let rasterizations = 0;
+  s.device.rasterizeQuad = (...args) => {
+    rasterizations++;
+    return rasterize(...args);
+  };
+  s.write(Array(8).fill(0x804020));
+  s.device.prepare(1, null, 0, 0);
+  s.device.prepare(1, null, 0, 0);
+  assert.equal(rasterizations, 1);
+  s.write(Array(8).fill(0x804020));
+  s.device.prepare(1, null, 0, 0);
+  assert.equal(rasterizations, 1);
+  s.write(Array(8).fill(0x204080));
+  s.device.prepare(1, null, 0, 0);
+  assert.equal(rasterizations, 2);
+  s.device.setFilter(0);
+  s.device.prepare(1, null, 0, 0);
+  assert.equal(rasterizations, 3);
+});
+
+test('optimized point and linear frames retain the reference quad sampling at shifted scale', () => {
+  const s = fixture();
+  s.display.requestedWidth = 11;
+  s.display.requestedHeight = 7;
+  assert.equal(s.device.reset(1, 0), 0);
+  s.write([0x184276, 0x41a3c7, 0x962417, 0xe89b53, 0x352fe4, 0xc66419, 0x4088ab, 0xf12091]);
+  for (const [mode, sampler] of [
+    [2, 'point'],
+    [0, 'linear'],
+  ]) {
+    s.device.setFilter(mode);
+    s.device.prepare(1, null, 1, -1);
+    const actual = s.device.frame.data;
+    const expected = new Uint8ClampedArray(actual.length);
+    for (let offset = 3; offset < expected.length; offset += 4) expected[offset] = 255;
+    const quad = new DataView(s.device.vertices.buffer);
+    const left = quad.getFloat32(0, true),
+      top = quad.getFloat32(4, true);
+    const right = quad.getFloat32(28, true),
+      bottom = quad.getFloat32(60, true);
+    const uMax = quad.getFloat32(48, true),
+      vMax = quad.getFloat32(80, true);
+    const width = Math.fround(right - left),
+      height = Math.fround(bottom - top);
+    for (let row = Math.max(0, Math.ceil(top)); row < Math.min(7, Math.ceil(bottom)); row++)
+      for (
+        let column = Math.max(0, Math.ceil(left));
+        column < Math.min(11, Math.ceil(right));
+        column++
+      ) {
+        const u = Math.fround(Math.fround(Math.fround(column - left) / width) * uMax);
+        const v = Math.fround(Math.fround(Math.fround(row - top) / height) * vMax);
+        const color = aokanaPresentationTextureSample(s.device.sampled, u, v, sampler);
+        const offset = (row * 11 + column) * 4;
+        for (let channel = 0; channel < 3; channel++)
+          expected[offset + channel] = Math.fround(color[channel] * 255);
+      }
+    assert.deepEqual(actual, expected);
+  }
 });
 
 test('fullscreen keeps the raw desktop backbuffer and the native adjusted viewport distinct', async () => {

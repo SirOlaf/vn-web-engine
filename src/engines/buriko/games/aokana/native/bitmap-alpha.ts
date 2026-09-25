@@ -4,9 +4,11 @@ import {
   aokanaAlphaHalfCoefficient,
   aokanaSignedProduct16,
   readAokanaPixelPair,
+  readAokanaPixelPairInto,
   saturateAokanaByte,
   visitAokanaPixelPairsReusingSource,
   writeAokanaPixelPair,
+  writeAokanaPixelPairValues,
 } from './bitmap-pairs.js';
 
 import {aokanaRosettaSseReciprocal} from './cpu-numerical-profile.js';
@@ -72,6 +74,9 @@ export function aokanaAlphaTailPixel(
 
 /** 14003d690: normal format-2 over format-2, with native pair shortcuts and integer tail. */
 export function blendAokanaAlpha(destination: AokanaBitmap, source: AokanaBitmap): void {
+  // One scratch tuple per operation avoids allocating a destination pair for
+  // every pixel pair. Read both values before writing to preserve MOVQ overlap.
+  const oldPixels: [number, number] = [0, 0];
   visitAokanaPixelPairsReusingSource(
     destination,
     source,
@@ -81,11 +86,13 @@ export function blendAokanaAlpha(destination: AokanaBitmap, source: AokanaBitmap
         writeAokanaPixelPair(destination, offset, pixels);
         return;
       }
-      const old = readAokanaPixelPair(destination, offset);
-      writeAokanaPixelPair(destination, offset, [
-        aokanaAlphaPairPixel(pixels[0], old[0], 0),
-        aokanaAlphaPairPixel(pixels[1], old[1], 0),
-      ]);
+      readAokanaPixelPairInto(destination, offset, oldPixels);
+      writeAokanaPixelPairValues(
+        destination,
+        offset,
+        aokanaAlphaPairPixel(pixels[0], oldPixels[0], 0),
+        aokanaAlphaPairPixel(pixels[1], oldPixels[1], 0),
+      );
     },
     (pixel, offset) => {
       if (pixel >>> 24 === 0) return;

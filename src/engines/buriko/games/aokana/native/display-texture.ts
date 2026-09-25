@@ -29,6 +29,7 @@ export function aokanaDisplayTextureSize(width: number, height: number): readonl
 export class AokanaDisplayTexture {
   readonly storage: AokanaBitmapStorage;
   readonly pitch: number;
+  private readonly words: Uint32Array;
   private locked = false;
   private disposed = false;
   private dirty: AokanaBitmapRectangle[] = [];
@@ -42,6 +43,7 @@ export class AokanaDisplayTexture {
       throw new RangeError('Aokana display texture dimensions must be positive integers');
     this.pitch = width * 4;
     this.storage = new AokanaBitmapStorage(new Uint8Array(this.pitch * height), true);
+    this.words = new Uint32Array(this.storage.bytes.buffer);
     this.addDirtyRectangle({left: 0, top: 0, right: width - 1, bottom: height - 1});
   }
   private check(): void {
@@ -80,8 +82,8 @@ export class AokanaDisplayTexture {
     };
     if (clipped.left <= clipped.right && clipped.top <= clipped.bottom) this.dirty.push(clipped);
   }
-  /** UpdateTexture copies current dirty rows and clears the source's dirty region. */
-  updateFrom(source: AokanaDisplayTexture): void {
+  /** UpdateTexture copies changed dirty rows, clears source dirtiness and reports pixel changes. */
+  updateFrom(source: AokanaDisplayTexture): boolean {
     this.check();
     source.check();
     if (
@@ -90,14 +92,27 @@ export class AokanaDisplayTexture {
       this.format !== source.format
     )
       throw new Error('Aokana display textures have incompatible update descriptors');
+    let changed = false;
     for (const rectangle of source.dirty)
       for (let y = rectangle.top; y <= rectangle.bottom; y++) {
         const offset = y * this.pitch + rectangle.left * 4;
         const length = (rectangle.right - rectangle.left + 1) * 4;
         source.storage.range(offset, length, true);
-        this.storage.bytes.set(source.storage.bytes.subarray(offset, offset + length), offset);
+        const first = offset >>> 2;
+        const last = (offset + length) >>> 2;
+        let different = false;
+        for (let index = first; index < last; index++)
+          if (this.words[index] !== source.words[index]) {
+            different = true;
+            break;
+          }
+        if (different) {
+          this.storage.bytes.set(source.storage.bytes.subarray(offset, offset + length), offset);
+          changed = true;
+        }
       }
     source.dirty = [];
+    return changed;
   }
   dispose(): void {
     this.check();

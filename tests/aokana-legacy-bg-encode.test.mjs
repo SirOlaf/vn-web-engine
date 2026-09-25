@@ -85,6 +85,17 @@ test('legacy BG encoder emits independently specified entropy for exported RGB a
   assert.deepEqual(table, frequencies);
   const decoded = decodeCompressedBgLegacy(output.subarray(0, length));
   assert.equal(decoded.bitDepth, 32);
+  const destinationBytes = new Uint8Array(16 + decoded.pixels.length),
+    destinationInitialized = new Uint8Array(destinationBytes.length),
+    decodedInPlace = decodeCompressedBgLegacy(output.subarray(0, length), {
+      bytes: destinationBytes,
+      initialized: destinationInitialized,
+    });
+  assert.deepEqual(decodedInPlace.pixels, decoded.pixels);
+  assert.deepEqual(destinationBytes.subarray(16), decoded.pixels);
+  assert.ok(
+    destinationInitialized.subarray(0, 16 + decoded.pixels.length).every((value) => value === 1),
+  );
   assert.equal(
     surfaces.importRaw(1, decoded.width, decoded.height, 2, {bytes: decoded.pixels, offset: 0}),
     1,

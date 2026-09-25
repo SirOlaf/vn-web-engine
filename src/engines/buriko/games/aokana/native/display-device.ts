@@ -9,6 +9,7 @@ import {AokanaScopedLock} from './scoped-lock.js';
 import {
   AOKANA_PRESENTATION_NUMERICAL_PROFILE,
   aokanaCubicPresentationSample,
+  aokanaPresentationLinearRgbInto,
   aokanaPresentationTextureSampleInto,
   type AokanaPresentationColor,
   type AokanaPresentationSampler,
@@ -78,6 +79,10 @@ export class AokanaDisplayDevice {
   private vertices: Uint8Array | null = null;
   private shader: {readonly profile: typeof AOKANA_PRESENTATION_NUMERICAL_PROFILE} | null = null;
   private sampler: AokanaPresentationSampler = 'point';
+  private rasterValid = false;
+  private rasterCubic = false;
+  private rasterSampler: AokanaPresentationSampler = 'point';
+  private readonly rasterVertices = new Uint8Array(112);
   private shifted = 0;
   private lost = false;
   private needsReset = false;
@@ -214,6 +219,7 @@ export class AokanaDisplayDevice {
     this.canvas.height = height;
     this.frame =
       this.presentationMode === 'canvas' ? this.context!.createImageData(width, height) : null;
+    this.rasterValid = false;
   }
   /** B1CE0's attempt; the controller supplies the one concrete interface owner.
    * Direct device-level callers can exercise the software device without that outer interface. */
@@ -349,11 +355,6 @@ export class AokanaDisplayDevice {
       sampled = this.sampled;
     if (source === null || sampled === null || this.vertices === null)
       throw new Error('Aokana display resources are absent');
-    if (this.frame !== null) {
-      const pixels = this.frame.data;
-      pixels.fill(0);
-      for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255;
-    }
     if (rectangles === null)
       source.addDirtyRectangle({
         left: 0,
@@ -368,14 +369,35 @@ export class AokanaDisplayDevice {
           throw new RangeError('Aokana display damage count exceeds its supplied rectangles');
         source.addDirtyRectangle(rectangle);
       }
-    sampled.updateFrom(source);
+    const changed = sampled.updateFrom(source);
     let mode = this.filterMode;
     if (mode === 3 || mode === 4) mode = this.fullscreen === 0 ? 2 : mode === 3 ? 0 : 1;
     if (mode === 0 || mode === 2) this.sampler = mode === 0 ? 'linear' : 'point';
     if (mode === 1 && this.shader === null)
       throw new Error('Aokana presentation shader has not been created');
     this.moveQuad(x, y);
-    if (this.frame !== null) this.rasterizeQuad(sampled, mode === 1);
+    if (this.frame !== null) {
+      const cubic = mode === 1;
+      const vertices = this.vertices!;
+      let sameQuad = this.rasterValid;
+      if (sameQuad)
+        for (let index = 0; index < vertices.length; index++)
+          if (vertices[index] !== this.rasterVertices[index]) {
+            sameQuad = false;
+            break;
+          }
+      if (!changed && sameQuad && this.rasterCubic === cubic && this.rasterSampler === this.sampler)
+        return;
+      this.rasterValid = false;
+      const pixels = this.frame.data;
+      pixels.fill(0);
+      for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255;
+      this.rasterizeQuad(sampled, cubic);
+      this.rasterVertices.set(vertices);
+      this.rasterCubic = cubic;
+      this.rasterSampler = this.sampler;
+      this.rasterValid = true;
+    }
   }
   /** B31A0 draws the real movie texture without clearing or uploading ordinary display pixels. */
   drawMovieTexture(
@@ -386,6 +408,7 @@ export class AokanaDisplayDevice {
     if (this.lost || !this.isPresent()) return;
     if (this.vertices === null || this.baseVertices === null)
       throw new Error('Aokana movie draw uses an absent display quad');
+    this.rasterValid = false;
     this.sampler = 'linear';
     const [width, height] = aokanaDisplayTextureSize(
       this.display.logicalWidth,
@@ -445,6 +468,76 @@ export class AokanaDisplayDevice {
       d: [0, 0, 0, 0] as AokanaPresentationColor,
     };
     const frameRead = {validated: false};
+    if (!cubic && lastX > firstX && lastY > firstY) {
+      const columns = lastX - firstX;
+      const sourceX = new Float64Array(columns);
+      const fractionX = sampler === 'linear' ? new Float32Array(columns) : null;
+      const textureWidth = Math.fround(sampled.width);
+      const textureHeight = Math.fround(sampled.height);
+      for (let column = firstX; column < lastX; column++) {
+        const u = Math.fround(Math.fround(Math.fround(column - left) / width) * uMax);
+        const x = Math.fround(Math.fround(u) * textureWidth);
+        if (fractionX === null) sourceX[column - firstX] = Math.floor(x);
+        else {
+          const px = Math.fround(x - 0.5);
+          const nx = Math.floor(px);
+          sourceX[column - firstX] = nx;
+          fractionX[column - firstX] = Math.fround(px - nx);
+        }
+      }
+      const bytes = sampled.storage.bytes;
+      for (let row = firstY; row < lastY; row++) {
+        const v = Math.fround(Math.fround(Math.fround(row - top) / height) * vMax);
+        const y = Math.fround(Math.fround(v) * textureHeight);
+        const py = fractionX === null ? y : Math.fround(y - 0.5);
+        const ny = Math.floor(py);
+        const fy = Math.fround(py - ny);
+        for (let column = firstX; column < lastX; column++) {
+          const index = column - firstX;
+          const nx = sourceX[index]!;
+          const offset = (row * frameWidth + column) * 4;
+          pixels[offset + 3] = 255;
+          if (!Number.isFinite(nx) || !Number.isFinite(ny)) {
+            const u = Math.fround(Math.fround(Math.fround(column - left) / width) * uMax);
+            aokanaPresentationTextureSampleInto(
+              sampled,
+              u,
+              v,
+              sampler,
+              colorBuffer,
+              sampleScratch,
+              frameRead,
+            );
+            pixels[offset] = Math.fround(colorBuffer[0] * 255);
+            pixels[offset + 1] = Math.fround(colorBuffer[1] * 255);
+            pixels[offset + 2] = Math.fround(colorBuffer[2] * 255);
+          } else if (fractionX !== null) {
+            aokanaPresentationLinearRgbInto(
+              sampled,
+              nx,
+              ny,
+              fractionX[index]!,
+              fy,
+              colorBuffer,
+              frameRead,
+            );
+            pixels[offset] = Math.fround(colorBuffer[0] * 255);
+            pixels[offset + 1] = Math.fround(colorBuffer[1] * 255);
+            pixels[offset + 2] = Math.fround(colorBuffer[2] * 255);
+          } else if (nx >= 0 && ny >= 0 && nx < sampled.width && ny < sampled.height) {
+            const sourceOffset = ny * sampled.pitch + nx * 4;
+            if (!frameRead.validated) {
+              sampled.storage.range(sourceOffset, 4, true);
+              frameRead.validated = true;
+            }
+            pixels[offset] = bytes[sourceOffset + 2]!;
+            pixels[offset + 1] = bytes[sourceOffset + 1]!;
+            pixels[offset + 2] = bytes[sourceOffset]!;
+          }
+        }
+      }
+      return;
+    }
     for (let row = firstY; row < lastY; row++) {
       const v = Math.fround(Math.fround(Math.fround(row - top) / height) * vMax);
       for (let column = firstX; column < lastX; column++) {
@@ -491,6 +584,7 @@ export class AokanaDisplayDevice {
   }
   /** b11b0/b2040: shader, source, sampled, dynamic, quad, device. */
   release(): void {
+    this.rasterValid = false;
     this.releaseShader();
     this.source?.dispose();
     this.source = null;

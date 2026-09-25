@@ -159,6 +159,24 @@ test('CompressedBG tree ties, zero runs and 24-bit native expansion', () => {
   b[44] ^= 1;
   assert.throws(() => decodeCompressedBgV1(b), /checksum/);
 });
+test('CompressedBG fast Huffman prefixes preserve invalid singleton branches', () => {
+  const weights = new Uint8Array(256),
+    b = new Uint8Array(48 + 256 + 1);
+  weights[0] = 1;
+  text(b, 'CompressedBG___\0');
+  const d = new DataView(b.buffer);
+  d.setUint16(16, 1, true);
+  d.setUint16(18, 1, true);
+  d.setUint16(20, 8, true);
+  put(b, 32, 1);
+  put(b, 36, 1);
+  put(b, 40, 256);
+  b[44] = b[45] = 1;
+  d.setUint16(46, 1, true);
+  b.set(encrypted(weights, 1), 48);
+  b[304] = 0x80;
+  assert.throws(() => decodeCompressedBgV1(b), /Invalid CompressedBG code/);
+});
 function frame(depth, changed, alphaMode = 1) {
   const frequencies = new Array(192).fill(0);
   frequencies[0] = frequencies[16] = 1;
