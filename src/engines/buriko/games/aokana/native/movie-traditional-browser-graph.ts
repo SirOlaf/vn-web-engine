@@ -37,6 +37,7 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
   private readonly deliveries = new Set<Promise<number>>();
   private deliveryTail: Promise<void> = Promise.resolve();
   private closed = false;
+  private finishedEarly = false;
 
   constructor(
     readonly video: HTMLVideoElement,
@@ -53,7 +54,7 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
   }
 
   get currentTime(): number {
-    return this.video.currentTime;
+    return this.finishedEarly ? this.video.duration : this.video.currentTime;
   }
 
   get stopTime(): number {
@@ -75,7 +76,7 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
     const receive = (): void => {
       this.callback = null;
       this.timer = null;
-      if (this.closed) return;
+      if (this.closed || this.finishedEarly) return;
       try {
         if (
           this.video.readyState >= 2 &&
@@ -95,7 +96,9 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
             bgra[i + 3] = 255;
           }
           const sample = {storage: new AokanaBitmapStorage(bgra, true), offset: 0};
-          const delivery = this.deliveryTail.then(() => this.renderer.deliver(sample));
+          const delivery = this.deliveryTail.then(() =>
+            this.closed || this.finishedEarly ? 0 : this.renderer.deliver(sample),
+          );
           this.deliveryTail = delivery.then(
             () => {},
             () => {
@@ -123,6 +126,17 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
     void this.video.play().catch(() => {});
   }
 
+  /** Complete the native clock poll while retaining the graph for the script's stop opcode. */
+  finishEarly(): void {
+    if (this.closed || this.finishedEarly) return;
+    this.finishedEarly = true;
+    if (this.callback !== null) this.video.cancelVideoFrameCallback(this.callback);
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.callback = null;
+    this.timer = null;
+    this.video.pause();
+  }
+
   async closeAndJoin(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -146,6 +160,7 @@ export class AokanaBrowserTraditionalMovieSession {
   private generation = 0;
   private resetting = false;
   private closed = false;
+  private autoSkip = false;
   private readonly aborts = new Set<AbortController>();
   private readonly pending = new Set<Promise<number | null>>();
 
@@ -160,6 +175,18 @@ export class AokanaBrowserTraditionalMovieSession {
   ) {
     if (documents.files !== resources.files || documents.candidates.resources !== resources)
       throw new Error('Aokana traditional movie needs the selected source/file identities');
+  }
+
+  /** Advance the current presentation without releasing native graph ownership. */
+  skipCurrent(): boolean {
+    if (this.graph === null || this.closed || this.resetting) return false;
+    this.graph.finishEarly();
+    return true;
+  }
+
+  setAutoSkip(enabled: boolean): void {
+    this.autoSkip = enabled;
+    if (enabled) this.skipCurrent();
   }
 
   async start(archive: AokanaBpPointer | null, name: AokanaBpPointer): Promise<number | null> {
@@ -314,6 +341,7 @@ export class AokanaBrowserTraditionalMovieSession {
     graph.putVolume(this.audio.savedDecibels);
     this.fullscreen.presentationFlag = 1;
     graph.start();
+    if (this.autoSkip) graph.finishEarly();
     return duration | 0;
   }
 

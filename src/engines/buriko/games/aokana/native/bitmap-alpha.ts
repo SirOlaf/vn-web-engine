@@ -5,7 +5,7 @@ import {
   aokanaSignedProduct16,
   readAokanaPixelPair,
   saturateAokanaByte,
-  visitAokanaPixelPairs,
+  visitAokanaPixelPairsReusingSource,
   writeAokanaPixelPair,
 } from './bitmap-pairs.js';
 
@@ -72,7 +72,7 @@ export function aokanaAlphaTailPixel(
 
 /** 14003d690: normal format-2 over format-2, with native pair shortcuts and integer tail. */
 export function blendAokanaAlpha(destination: AokanaBitmap, source: AokanaBitmap): void {
-  visitAokanaPixelPairs(
+  visitAokanaPixelPairsReusingSource(
     destination,
     source,
     (pixels, offset) => {
@@ -106,7 +106,7 @@ export function blendAokanaAlphaWithTransparency(
   source: AokanaBitmap,
   destinationWeight: number,
 ): void {
-  visitAokanaPixelPairs(
+  visitAokanaPixelPairsReusingSource(
     destination,
     source,
     (pixels, offset) => {
@@ -140,7 +140,7 @@ function rgbDifference(source: number, destination: number, weight: number): num
 
 /** 14003d950 has deliberately different alpha-byte handling in its opaque pair and tail. */
 export function blendAokanaAlphaIntoRgb(destination: AokanaBitmap, source: AokanaBitmap): void {
-  visitAokanaPixelPairs(
+  visitAokanaPixelPairsReusingSource(
     destination,
     source,
     (pixels, offset) => {
@@ -176,7 +176,7 @@ export function blendAokanaAlphaIntoRgbWithTransparency(
   transparency: number,
 ): void {
   const coefficient = (pixel: number): number => Math.imul(pixel >>> 25, 256 - transparency) >>> 8;
-  visitAokanaPixelPairs(
+  visitAokanaPixelPairsReusingSource(
     destination,
     source,
     (pixels, offset) => {
@@ -216,7 +216,7 @@ export function mixAokanaAllChannels(
     }
     return result >>> 0;
   };
-  visitAokanaPixelPairs(
+  visitAokanaPixelPairsReusingSource(
     destination,
     source,
     (pixels, offset) => {

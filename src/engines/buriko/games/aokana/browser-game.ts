@@ -16,7 +16,10 @@ import {
 } from './native/audio/speaker-backend.js';
 import {AokanaBpDiagnostics} from './native/diagnostics.js';
 import {readAokanaCursorResource} from './native/cursor-shapes.js';
-import {AokanaMountedFileMetadata} from './native/file-metadata.js';
+import {
+  AokanaMountedFileMetadata,
+  type AokanaFileMetadataRecord,
+} from './native/file-metadata.js';
 import {AokanaMountedProgramPaths} from './native/program-paths.js';
 import {AokanaProgramMedia} from './native/program-files.js';
 import {AokanaProductionBootRunner} from './native/production-boot-runner.js';
@@ -29,11 +32,13 @@ import {AokanaNativeText} from './native/text.js';
 interface ServedFile {
   name: string;
   size: number;
+  lastModifiedMs: number;
   url: string;
 }
 
 interface Installation {
   files: SourceFileSystem;
+  modifiedFiles: {path: string; lastModifiedMs: number}[];
   cursor: Uint8Array;
   executableName: string;
 }
@@ -41,6 +46,7 @@ interface Installation {
 const connect = document.querySelector<HTMLButtonElement>('#connect')!;
 const choose = document.querySelector<HTMLInputElement>('#files')!;
 const play = document.querySelector<HTMLButtonElement>('#play')!;
+const skipStartup = document.querySelector<HTMLButtonElement>('#skip-startup')!;
 const noCanvas = document.querySelector<HTMLInputElement>('#no-canvas')!;
 const status = document.querySelector<HTMLElement>('#status')!;
 const diagnosticLog = document.querySelector<HTMLElement>('#diagnostics')!;
@@ -81,12 +87,15 @@ async function servedFiles(): Promise<Installation> {
   const manifest: unknown = await response.json();
   if (!Array.isArray(manifest)) throw new Error('The local game file manifest is invalid.');
   const files = source();
+  const modifiedFiles: Installation['modifiedFiles'] = [];
   for (const value of manifest) {
     const entry = value as Partial<ServedFile>;
     if (
       typeof entry.name !== 'string' ||
       !Number.isSafeInteger(entry.size) ||
       (entry.size ?? -1) < 0 ||
+      typeof entry.lastModifiedMs !== 'number' ||
+      !Number.isFinite(entry.lastModifiedMs) ||
       typeof entry.url !== 'string'
     )
       throw new Error('The local game file manifest has an invalid entry.');
@@ -95,6 +104,7 @@ async function servedFiles(): Promise<Installation> {
     if (url.origin !== location.origin || !url.pathname.startsWith('/aokana-data/'))
       throw new Error('The local game file manifest points outside the game server.');
     files.attach(path, new HttpSource(url.href, entry.size!));
+    modifiedFiles.push({path, lastModifiedMs: entry.lastModifiedMs!});
   }
   await requireBootArchive(files);
   const cursorResponse = await fetch('/api/aokana/cursor');
@@ -117,17 +127,20 @@ async function servedFiles(): Promise<Installation> {
   const cursor = new Uint8Array(await cursorResponse.arrayBuffer());
   if (cursor.length === 0 || cursor.length > 16 * 1024 * 1024)
     throw new Error('The game cursor resource has an invalid length.');
-  return {files, cursor, executableName};
+  return {files, modifiedFiles, cursor, executableName};
 }
 
 async function chosenFiles(selection: FileList): Promise<Installation> {
   const files = source();
+  const modifiedFiles: Installation['modifiedFiles'] = [];
   const executables: File[] = [];
   for (const file of Array.from(selection)) {
     const segments = file.webkitRelativePath.split('/');
     const relative = segments.length > 1 ? segments.slice(1).join('/') : file.name;
     if (!relative || relative === '.DS_Store' || relative.endsWith('/.DS_Store')) continue;
-    files.attach(filePath('/' + relative), new BlobSource(file));
+    const path = filePath('/' + relative);
+    files.attach(path, new BlobSource(file));
+    modifiedFiles.push({path, lastModifiedMs: file.lastModified});
     if (!relative.includes('/') && relative.toLowerCase().endsWith('.exe')) executables.push(file);
   }
   await requireBootArchive(files);
@@ -135,7 +148,7 @@ async function chosenFiles(selection: FileList): Promise<Installation> {
     throw new Error('Select a game folder containing exactly one Aokana executable.');
   const cursor = readAokanaCursorResource(new Uint8Array(await executables[0]!.arrayBuffer()));
   if (cursor === null) throw new Error('The selected executable has no static cursor group 106.');
-  return {files, cursor, executableName: executables[0]!.name};
+  return {files, modifiedFiles, cursor, executableName: executables[0]!.name};
 }
 
 function fileTime(): bigint {
@@ -156,6 +169,17 @@ async function launch(
   let graph: AokanaProductionDisplayResourceGraph | null = null;
   let core: AokanaProductionVmCore | null = null;
   let booted = false;
+  let skipping = false;
+  const requestSkip = (): void => {
+    if (graph === null) return;
+    skipping = !skipping;
+    graph.input.skipForced = Number(skipping);
+    graph.mfMovieSession.setAutoSkip(skipping);
+    graph.traditionalMovieSession.setAutoSkip(skipping);
+    skipStartup.textContent = skipping ? 'Stop skipping' : 'Skip startup sequence';
+    skipStartup.setAttribute('aria-pressed', String(skipping));
+    report(skipping ? 'Skipping startup sequence…' : 'Startup skip stopped.');
+  };
   try {
     report('Opening persistent storage…');
     const gameStore = await openStore('game');
@@ -171,14 +195,24 @@ async function launch(
     backing.mount('/user', new StoredFileSystem(userStore, aokanaRegistryFold));
     backing.mount('/temp', new StoredFileSystem(temporaryStore, aokanaRegistryFold));
     const mounted = new AokanaMountedFileMetadata(backing, {
-      records: ['Desktop', 'Programs', 'Documents'].map((name) => ({
-        path: `/user/${name}`,
-        kind: 'directory' as const,
-        attributes: 0x10,
-        creationTime: null,
-        accessTime: null,
-        writeTime: null,
-      })),
+      records: [
+        ...installation.modifiedFiles.map(({path, lastModifiedMs}): AokanaFileMetadataRecord => ({
+          path: '/game' + path,
+          kind: 'file',
+          attributes: null,
+          creationTime: null,
+          accessTime: null,
+          writeTime: (BigInt(Math.trunc(lastModifiedMs)) + 11644473600000n) * 10000n,
+        })),
+        ...['Desktop', 'Programs', 'Documents'].map((name): AokanaFileMetadataRecord => ({
+          path: `/user/${name}`,
+          kind: 'directory',
+          attributes: 0x10,
+          creationTime: null,
+          accessTime: null,
+          writeTime: null,
+        })),
+      ],
       volumes: [
         {path: '/game', identity: gameStore, writable: true},
         {path: '/user', identity: userStore, writable: true},
@@ -299,6 +333,11 @@ async function launch(
         sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
       },
     });
+    skipStartup.hidden = false;
+    skipStartup.disabled = false;
+    skipStartup.textContent = 'Skip startup sequence';
+    skipStartup.setAttribute('aria-pressed', 'false');
+    skipStartup.addEventListener('click', requestSkip);
     graph.display.requestedWidth = 800;
     graph.display.requestedHeight = 600;
     const memory = new AokanaBpMemory(new Uint8Array(0x10000));
@@ -314,6 +353,14 @@ async function launch(
     await runner.run();
     report('Aokana closed.');
   } finally {
+    skipStartup.removeEventListener('click', requestSkip);
+    skipStartup.disabled = true;
+    skipStartup.hidden = true;
+    if (graph !== null) {
+      graph.input.skipForced = 0;
+      graph.mfMovieSession.setAutoSkip(false);
+      graph.traditionalMovieSession.setAutoSkip(false);
+    }
     if (!booted) {
       try {
         await core?.close();

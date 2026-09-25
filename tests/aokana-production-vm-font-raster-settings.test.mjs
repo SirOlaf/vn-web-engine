@@ -87,7 +87,7 @@ test('mounted font raster settings change ordinary upright and italic glyph layo
     memory.globalMemory.set(graph.text.encodeWide('<i>AA</i>', 1), 0x1c0);
     await call(0xb0, 0xc1, [0x100, 0], 1);
     const font = pop32(child.state);
-    assert.equal(font, 0);
+    assert.equal(font, 2);
     for (const surface of [1, 2]) {
       await call(0x90, 0x11, [surface, 32, 16, 2]);
       await call(0x90, 0x13, [surface, 0]);

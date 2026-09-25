@@ -1027,6 +1027,9 @@ export class AokanaProductionDisplayResourceGraph {
         this.fonts.resetManager();
         this.fontResources.clear();
       });
+      // Native engine startup (0x1400c3900) calls BGI_FontResource_Reset(0),
+      // registering the two built-in font names before any script callback.
+      this.fontResources.reset(false, (this.localized.language.value & 0x3ff) === 0x11);
       this.bitmapLoading = new AokanaBitmapLoading(
         this.surfaces,
         this.resource.loading,

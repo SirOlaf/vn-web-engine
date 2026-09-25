@@ -102,7 +102,7 @@ test('mounted text producers feed shared result callbacks and local pixels', asy
     memory.globalMemory.set(graph.text.encodeWide('AB', 1), 0x280);
     await call(0xb0, 0xc1, [0x100, 1], 1);
     const registeredFont = pop32(child.state);
-    assert.equal(registeredFont, 0);
+    assert.equal(registeredFont, 2);
     await call(0x91, 0x9a, [0x80000009, 1]);
     await call(0x92, 0x9f, [0x112233]);
     await call(0x91, 0x9c, [7, 1, 2, 0x200, 0, 0, registeredFont, 8, 100, 0, 0, 0, 0, 0xabcdef], 1);

@@ -9,6 +9,16 @@ export function readAokanaPixelPair(bitmap: AokanaBitmap, offset: number): Aokan
   return [view.getUint32(offset, true), view.getUint32(offset + 4, true)];
 }
 
+function readAokanaPixelPairInto(
+  bitmap: AokanaBitmap,
+  offset: number,
+  pixels: [number, number],
+): void {
+  const view = bitmapStorage(bitmap, offset, 8, true).view;
+  pixels[0] = view.getUint32(offset, true);
+  pixels[1] = view.getUint32(offset + 4, true);
+}
+
 export function writeAokanaPixelPair(
   bitmap: AokanaBitmap,
   offset: number,
@@ -21,21 +31,49 @@ export function writeAokanaPixelPair(
 }
 
 /** Row traversal shared by native MOVQ pairs followed by one optional MOVD. */
+function visitPixelPairs(
+  destination: AokanaBitmap,
+  source: AokanaBitmap,
+  pair: (source: AokanaPixelPair, destinationOffset: number) => void,
+  tail: (source: number, destinationOffset: number) => void,
+  reuseSourcePair: boolean,
+): void {
+  const width = source.width >>> 0;
+  // The native MOVQ loads both pixels before invoking the operation. Reuse one
+  // scratch pair per traversal to avoid allocating a tuple for every pair.
+  const pixels: [number, number] = [0, 0];
+  for (let y = 0; y < source.height >>> 0; y++) {
+    const sourceRow = source.offset + y * source.stride;
+    const destinationRow = destination.offset + y * destination.stride;
+    let x = 0;
+    for (; x + 1 < width; x += 2) {
+      if (reuseSourcePair) {
+        readAokanaPixelPairInto(source, sourceRow + x * 4, pixels);
+        pair(pixels, destinationRow + x * 4);
+      } else pair(readAokanaPixelPair(source, sourceRow + x * 4), destinationRow + x * 4);
+    }
+    if (x < width) tail(bitmapRead32(source, sourceRow + x * 4), destinationRow + x * 4);
+  }
+}
+
+/** Row traversal shared by native MOVQ pairs followed by one optional MOVD. */
 export function visitAokanaPixelPairs(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   pair: (source: AokanaPixelPair, destinationOffset: number) => void,
   tail: (source: number, destinationOffset: number) => void,
 ): void {
-  const width = source.width >>> 0;
-  for (let y = 0; y < source.height >>> 0; y++) {
-    const sourceRow = source.offset + y * source.stride;
-    const destinationRow = destination.offset + y * destination.stride;
-    let x = 0;
-    for (; x + 1 < width; x += 2)
-      pair(readAokanaPixelPair(source, sourceRow + x * 4), destinationRow + x * 4);
-    if (x < width) tail(bitmapRead32(source, sourceRow + x * 4), destinationRow + x * 4);
-  }
+  visitPixelPairs(destination, source, pair, tail, false);
+}
+
+/** Internal hot path for synchronous operations whose pair callback does not retain source. */
+export function visitAokanaPixelPairsReusingSource(
+  destination: AokanaBitmap,
+  source: AokanaBitmap,
+  pair: (source: AokanaPixelPair, destinationOffset: number) => void,
+  tail: (source: number, destinationOffset: number) => void,
+): void {
+  visitPixelPairs(destination, source, pair, tail, true);
 }
 
 export function saturateAokanaByte(value: number): number {

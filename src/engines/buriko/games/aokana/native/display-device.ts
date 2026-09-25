@@ -9,7 +9,8 @@ import {AokanaScopedLock} from './scoped-lock.js';
 import {
   AOKANA_PRESENTATION_NUMERICAL_PROFILE,
   aokanaCubicPresentationSample,
-  aokanaPresentationTextureSample,
+  aokanaPresentationTextureSampleInto,
+  type AokanaPresentationColor,
   type AokanaPresentationSampler,
 } from './presentation-sampling.js';
 
@@ -413,7 +414,8 @@ export class AokanaDisplayDevice {
     if (this.frame !== null) this.rasterizeQuad(texture, false);
   }
   private rasterizeQuad(sampled: AokanaDisplayTexture, cubic: boolean): void {
-    const pixels = this.frame!.data;
+    const frame = this.frame!;
+    const pixels = frame.data;
     const quad = new DataView(
       this.vertices!.buffer,
       this.vertices!.byteOffset,
@@ -429,27 +431,41 @@ export class AokanaDisplayDevice {
       height = Math.fround(bottom - top);
     const firstX = Math.max(0, Math.ceil(left)),
       firstY = Math.max(0, Math.ceil(top));
-    const lastX = Math.min(this.frame!.width, Math.ceil(right)),
-      lastY = Math.min(this.frame!.height, Math.ceil(bottom));
+    const lastX = Math.min(frame.width, Math.ceil(right)),
+      lastY = Math.min(frame.height, Math.ceil(bottom));
+    const frameWidth = frame.width;
+    const logicalWidth = this.display.logicalWidth,
+      logicalHeight = this.display.logicalHeight,
+      sampler = this.sampler;
+    const colorBuffer: AokanaPresentationColor = [0, 0, 0, 0];
+    const sampleScratch = {
+      a: [0, 0, 0, 0] as AokanaPresentationColor,
+      b: [0, 0, 0, 0] as AokanaPresentationColor,
+      c: [0, 0, 0, 0] as AokanaPresentationColor,
+      d: [0, 0, 0, 0] as AokanaPresentationColor,
+    };
+    const frameRead = {validated: false};
     for (let row = firstY; row < lastY; row++) {
       const v = Math.fround(Math.fround(Math.fround(row - top) / height) * vMax);
       for (let column = firstX; column < lastX; column++) {
         const u = Math.fround(Math.fround(Math.fround(column - left) / width) * uMax);
         const color = cubic
-          ? aokanaCubicPresentationSample(
+          ? aokanaCubicPresentationSample(sampled, logicalWidth, logicalHeight, u, v, sampler)
+          : aokanaPresentationTextureSampleInto(
               sampled,
-              this.display.logicalWidth,
-              this.display.logicalHeight,
               u,
               v,
-              this.sampler,
-            )
-          : aokanaPresentationTextureSample(sampled, u, v, this.sampler);
-        const offset = (row * this.frame!.width + column) * 4;
+              sampler,
+              colorBuffer,
+              sampleScratch,
+              frameRead,
+            );
+        const offset = (row * frameWidth + column) * 4;
         pixels[offset + 3] = 255;
         // XRGB target discards output alpha; Uint8ClampedArray defines UNORM rounding.
-        for (let channel = 0; channel < 3; channel++)
-          pixels[offset + channel] = Math.fround(color[channel]! * 255);
+        pixels[offset] = Math.fround(color[0] * 255);
+        pixels[offset + 1] = Math.fround(color[1] * 255);
+        pixels[offset + 2] = Math.fround(color[2] * 255);
       }
     }
   }

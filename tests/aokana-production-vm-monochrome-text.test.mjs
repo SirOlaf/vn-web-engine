@@ -65,7 +65,7 @@ test('mounted monochrome text draws packed glyphs through the graph surface and 
     memory.globalMemory.set(graph.text.encodeWide('A\x03\x32\n漢\x04AA', 1), 0x180);
     await call(0xb0, 0xc1, [0x100, 0], 1);
     const font = pop32(child.state);
-    assert.equal(font, 0);
+    assert.equal(font, 2);
     await call(0x90, 0x11, [1, 16, 16, 1]);
     await call(0x90, 0x13, [1, 0]);
     await call(0x92, 0x1e, [1, 0, 0, 0x180, font, 8, 1, 1, 0x203040], 1);

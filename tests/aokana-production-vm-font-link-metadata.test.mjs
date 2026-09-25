@@ -28,23 +28,33 @@ test('mounted font-name callbacks feed the shared registered link font', async (
         )
         .map(({primary, secondary}) => [primary, secondary]),
       [
+        [0x91, 0x99],
+        [0x91, 0x9b],
         [0xb0, 0xc0],
         [0xb0, 0xc1],
+        [0xb0, 0xc2],
+        [0xb0, 0xc6],
         [0x92, 0x9d],
+        [0x92, 0x94],
+        [0x92, 0x95],
+        [0x92, 0x99],
+        [0x92, 0x9b],
+        [0x92, 0x9e],
+        [0x92, 0x9f],
       ],
     );
 
     memory.globalMemory.set(new TextEncoder().encode('Shared\0'), 0x100);
     memory.globalMemory.set(new TextEncoder().encode('Alternate\0'), 0x140);
-    assert.equal(await call(0xb0, 0xc0, [0x100]), 0);
-    assert.equal(await call(0xb0, 0xc1, [0x140, 2]), 1);
-    assert.equal(await call(0xb0, 0xc1, [0x100, 1]), 0);
-    assert.equal(graph.fonts.registeredNames.length, 2);
-    assert.deepEqual([...graph.fonts.name(1)], [...new TextEncoder().encode('Alternate')]);
+    assert.equal(await call(0xb0, 0xc0, [0x100]), 2);
+    assert.equal(await call(0xb0, 0xc1, [0x140, 2]), 3);
+    assert.equal(await call(0xb0, 0xc1, [0x100, 1]), 2);
+    assert.equal(graph.fonts.registeredNames.length, 4);
+    assert.deepEqual([...graph.fonts.name(3)], [...new TextEncoder().encode('Alternate')]);
     assert.equal(await graph.fonts.charset(new TextEncoder().encode('Alternate')), 134);
     assert.equal(await graph.fonts.charset(new TextEncoder().encode('Shared')), 0);
 
-    assert.equal(await call(0x92, 0x9d, [1, 12, 100, 1, 1]), 0);
+    assert.equal(await call(0x92, 0x9d, [3, 12, 100, 1, 1]), 0);
     const expected = new Uint8Array(120);
     expected.set(new TextEncoder().encode('Alternate\0'));
     const fields = new DataView(expected.buffer);

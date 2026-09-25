@@ -80,13 +80,14 @@ test('mounted font enumeration registers the selected face for measurement and p
       [...new TextEncoder().encode('Synthetic\0')],
     );
     assert.deepEqual(enumerationCalls, [[1, false]]);
-    assert.equal(await call(0xb0, 0xc0, [0x100]), 0);
-    assert.deepEqual([...graph.fonts.name(0)], [...new TextEncoder().encode('Synthetic')]);
+    assert.deepEqual(graph.fonts.registeredNames.map(({wide}) => wide), ['MS Gothic', 'MS Mincho']);
+    assert.equal(await call(0xb0, 0xc0, [0x100]), 2);
+    assert.deepEqual([...graph.fonts.name(2)], [...new TextEncoder().encode('Synthetic')]);
 
     assert.equal(await invoke(0x90, 0x0d, [0xffffffff], 0), 0);
     assert.equal(child.process, null);
     bytes.set(new TextEncoder().encode('A\0'), 0x180);
-    assert.equal(await call(0x91, 0x9b, [0x240, 0x180, 0, 8, 100, 0, 0]), 0);
+    assert.equal(await call(0x91, 0x9b, [0x240, 0x180, 2, 8, 100, 0, 0]), 0);
     assert.equal(view.getInt32(0x240, true), 4);
     assert.equal(created.length, 1);
     assert.equal(created[0].face, 'Synthetic');

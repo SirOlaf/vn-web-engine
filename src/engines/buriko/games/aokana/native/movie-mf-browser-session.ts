@@ -101,6 +101,7 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
   private closed = false;
   private url: string | null = null;
   private video: HTMLVideoElement | null = null;
+  private finishedEarly = false;
 
   constructor(
     private readonly document: Document,
@@ -160,6 +161,11 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
       });
       if (signal.aborted || this.closed)
         throw new DOMException('MF movie session was retired', 'AbortError');
+      if (this.finishedEarly) {
+        this.nativeState84 = 0;
+        this.nativeStateB8 = 0;
+        return;
+      }
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         const display = new AokanaBrowserMfDisplayControl(this.document, video, this.window);
         this.display = display;
@@ -167,7 +173,7 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
         this.startFrameDelivery(video, display);
       }
       const playing = (): void => {
-        if (this.closed) return;
+        if (this.closed || this.finishedEarly) return;
         this.nativeState84 = 3;
         this.nativeStateB8 = 1;
       };
@@ -204,7 +210,7 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
     const receive = (): void => {
       this.callback = null;
       this.timer = null;
-      if (this.closed) return;
+      if (this.closed || this.finishedEarly) return;
       try {
         if (
           video.readyState >= 2 &&
@@ -232,6 +238,23 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
     if (this.closed) return;
     this.closed = true;
     this.releaseMedia();
+  }
+
+  /** Host diagnostic skip completes this current controller without releasing its native owner. */
+  finishEarly(): void {
+    if (this.closed) return;
+    this.finishedEarly = true;
+    if (this.callback !== null) this.video?.cancelVideoFrameCallback(this.callback);
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.callback = null;
+    this.timer = null;
+    this.video?.pause();
+    this.nativeState84 = 0;
+    this.nativeStateB8 = 0;
+  }
+
+  get finishedByHost(): boolean {
+    return this.finishedEarly;
   }
 
   private releaseMedia(): void {
@@ -267,8 +290,22 @@ export class AokanaBrowserMfMovieSession {
   private generation = 0;
   private resetting = false;
   private closed = false;
+  private autoSkip = false;
   private readonly aborts = new Set<AbortController>();
   private readonly pending = new Set<Promise<number>>();
+
+  /** Advance only the current movie; the script still observes and closes the retained session. */
+  skipCurrent(): boolean {
+    if (this.current === null || this.closed || this.resetting) return false;
+    this.current.finishEarly();
+    return true;
+  }
+
+  /** Explicit host diagnostic control; native F8 still completes through its normal poll. */
+  setAutoSkip(enabled: boolean): void {
+    this.autoSkip = enabled;
+    if (enabled) this.skipCurrent();
+  }
 
   constructor(
     readonly documents: AokanaMfMovieDocuments,
@@ -315,12 +352,14 @@ export class AokanaBrowserMfMovieSession {
     this.fullscreen.controller = controller;
     this.volume.bindBorrowedController(controller);
     this.volume.initializeForNewController(rawVolume);
+    if (this.autoSkip) controller.finishEarly();
     const live = (): boolean =>
       !this.closed &&
       !this.resetting &&
       this.generation === generation &&
       !signal.aborted &&
       this.current === controller;
+    let started = false;
     try {
       const direct = await this.documents.direct(name);
       if (!live()) return 0x80000001;
@@ -330,6 +369,7 @@ export class AokanaBrowserMfMovieSession {
           if (!live()) return 0x80000001;
           await controller.open(source.bytes, signal);
           if (!live()) return 0x80000001;
+          started = true;
           return 0;
         } catch {
           if (!live()) return 0x80000001;
@@ -344,6 +384,7 @@ export class AokanaBrowserMfMovieSession {
         if (!live()) return 0x80000001;
         await controller.open(source.bytes, signal);
         if (!live()) return 0x80000001;
+        started = true;
         return 0;
       } catch {
         return 0x80000004;
@@ -351,7 +392,11 @@ export class AokanaBrowserMfMovieSession {
     } catch {
       return 0x80000001;
     } finally {
-      if (this.current === controller && controller.nativeState84 === 0) this.releaseCurrent();
+      if (
+        this.current === controller &&
+        (!started || (controller.nativeState84 === 0 && !controller.finishedByHost))
+      )
+        this.releaseCurrent();
     }
   }
 

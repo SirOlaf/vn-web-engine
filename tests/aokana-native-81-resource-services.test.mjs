@@ -172,10 +172,8 @@ test('async resource service enqueues retain the invoking actor across mounted r
     assert.equal(await state.loading.processNext(), true);
     assert.equal(await state.scheduler.root.pollProcess(false), 1);
     assert.equal(state.loading.activeProcedures, 0);
-    assert.equal(
-      secondary === 0x30 ? state.memory.globalMemory[512] : pop32(state.thread),
-      secondary === 0x30 ? 61 : 0,
-    );
+    assert.equal(pop32(state.thread), 0);
+    if (secondary === 0x30) assert.equal(state.memory.globalMemory[512], 61);
   }
 });
 
@@ -215,7 +213,8 @@ test('81 30 asynchronous whole stored read uses one-shot scheduling and the shar
   assert.equal(await state.scheduler.root.pollProcess(false), 1);
   assert.equal(state.scheduler.root.process, null);
   assert.equal(state.loading.activeProcedures, 0);
-  assert.equal(state.thread.stackIndex, 0);
+  assert.equal(state.thread.stackIndex, 1);
+  assert.equal(pop32(state.thread), 0);
   assert.deepEqual(
     state.memory.globalMemory.slice(destination, destination + payload.length),
     payload,
@@ -230,11 +229,21 @@ test('81 30 asynchronous whole stored read uses one-shot scheduling and the shar
   assert.equal(state.loading.activeProcedures, 1);
   assert.equal(await state.scheduler.root.pollProcess(false), 1);
   assert.equal(state.loading.activeProcedures, 0);
-  assert.equal(state.thread.stackIndex, 0);
+  assert.equal(state.thread.stackIndex, 1);
+  assert.equal(pop32(state.thread), 0);
   assert.deepEqual(
     state.memory.globalMemory.slice(destination, destination + payload.length),
     payload,
   );
+});
+
+test('81 30 asynchronous missing resource publishes failure when its process retires', async () => {
+  const state = setup();
+  state.control.asynchronousResourceLoads = 1;
+  assert.equal(await state.call(0x30, 512, state.name('data.arc'), state.name('missing'), 0, 0), 2);
+  assert.equal(state.thread.stackIndex, 0);
+  assert.equal(await state.scheduler.root.pollProcess(false), 1);
+  assert.equal(pop32(state.thread), 1);
 });
 
 test('81 34 reads stored bytes and archive metadata through the shared FIFO before pushing health zero', async () => {

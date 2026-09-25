@@ -109,6 +109,15 @@ test('native block copies preserve overlapping 8-byte store order', () => {
   assert.deepEqual(words(source), [1, 1, 2, 2, 4, 6]);
 });
 
+test('native block copies keep earlier stores when a later source block is unwritten', () => {
+  const source = bitmap([1, 2, 3, 4, 5, 6]);
+  source.storage = new AokanaBitmapStorage(source.storage.bytes, false);
+  source.storage.written(0, 8);
+  const destination = bitmap([0, 0, 0, 0, 0, 0]);
+  assert.throws(() => copyAokanaBitmapRows(destination, source), /unwritten native allocation/);
+  assert.deepEqual(words(destination), [1, 2, 0, 0, 0, 0]);
+});
+
 test('failed optional clear cropping clears the original bitmap and retains row padding', () => {
   const target = bitmap([1, 2, 0x12345678, 3, 4, 0xabcdef00], 2, 2);
   target.stride = 12;

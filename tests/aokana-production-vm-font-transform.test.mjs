@@ -103,7 +103,7 @@ test('mounted named font transform changes shared cached draw and measurement sp
     );
     await call(0xb0, 0xc1, [0x100, 0], 1);
     const font = pop32(child.state);
-    assert.equal(font, 0);
+    assert.equal(font, 2);
     for (const surface of [1, 2]) {
       await call(0x90, 0x11, [surface, 32, 16, 2]);
       await call(0x90, 0x13, [surface, 0]);

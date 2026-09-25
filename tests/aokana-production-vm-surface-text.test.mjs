@@ -83,7 +83,7 @@ test('mounted registered surface text draws and reports multiline metrics throug
     memory.globalMemory.set(graph.text.encodeWide('ABCDE', 1), 0x200);
     await call(0xb0, 0xc1, [0x100, 0], 1);
     const font = pop32(child.state);
-    assert.equal(font, 0);
+    assert.equal(font, 2);
     for (const [id, width, height] of [
       [1, 24, 24],
       [2, 16, 32],

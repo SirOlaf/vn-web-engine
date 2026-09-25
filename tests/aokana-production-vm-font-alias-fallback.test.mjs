@@ -75,15 +75,15 @@ test('mounted font alias mismatch selects the bound fallback for shared text mea
     await call(0xb0, 0xc8, [0x100, 0x140]);
     await call(0xb0, 0xc7, [0x100, 0x180]);
     await call(0xb0, 0xc0, [0x100], 1);
-    assert.equal(pop32(child.state), 0);
+    assert.equal(pop32(child.state), 2);
     await call(0xb0, 0xc1, [0x180, 1], 1);
-    assert.equal(pop32(child.state), 1);
+    assert.equal(pop32(child.state), 3);
     assert.equal(child.state.stackIndex, 0);
 
     await call(0x90, 0x0d, [0xffffffff]);
     await call(0x91, 0x99, [0], 1);
     assert.equal(pop32(child.state), 1);
-    await call(0x91, 0x9b, [0x240, 0x1c0, 0, 8, 100, 0, 1], 1);
+    await call(0x91, 0x9b, [0x240, 0x1c0, 2, 8, 100, 0, 1], 1);
     assert.equal(pop32(child.state), 0);
     assert.deepEqual(created, ['Primary', 'Secondary']);
     assert.equal(view.getInt32(0x240, true), 7);

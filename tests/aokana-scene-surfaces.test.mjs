@@ -91,6 +91,13 @@ test('clipped region copy keeps its destination origin and flagged extraction cl
   assert.equal(surfaces.extractRegion(0x80000003, 1, -1, -1, 4, 3), 0);
   assert.deepEqual(words(3), [0, 0, 0, 0, 0, 1, 2, 3, 0, 4, 5, 6]);
   assert.deepEqual(words(1), [1, 2, 3, 4, 5, 6]);
+  assert.equal(surfaces.extractRegion(4, 1, 0, 0, 3, 3), 0);
+  assert.deepEqual(words(4), [1, 2, 3, 4, 5, 6, 0, 0, 0]);
+  assert.deepEqual(
+    surfaces.snapshot(4).storage.initializedRange(0, 3 * 3 * 4),
+    Uint8Array.from({length: 3 * 3 * 4}, (_, byte) => Number(byte < 3 * 2 * 4)),
+  );
+  assert.equal(surfaces.reduceSurfaceHalf(5, 4), 0);
 });
 
 test('surface drawing uses the complete existing compositor with source clipping and exact integer RGB blend', () => {

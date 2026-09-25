@@ -559,17 +559,17 @@ export class AokanaIndependentIcon extends AokanaIndependentProcedure {
     return 1;
   }
   writeResult(write: (index: number, value: number) => void): void {
-    const flag = this.defined(this.resultFlag);
+    // 090A20 reads these three words even before a selection writes them. The
+    // native constructor leaves them in readable operator_new storage.
+    const row = this.resultRow ?? 0,
+      column = this.resultColumn ?? 0,
+      flag = this.resultFlag ?? 0;
     let point: readonly [number, number] = [0, 0];
-    if (flag !== 0) {
-      const column = this.defined(this.resultColumn),
-        row = this.defined(this.resultRow);
-      point = this.clickPoint(row, column);
-    }
+    if (flag !== 0) point = this.clickPoint(row, column);
     write(0, this.running);
-    write(1, this.defined(this.resultRow));
-    write(2, this.defined(this.resultColumn));
-    write(3, this.defined(this.resultFlag));
+    write(1, row);
+    write(2, column);
+    write(3, flag);
     write(4, point[0]);
     write(5, point[1]);
   }
@@ -781,8 +781,8 @@ export class AokanaIndependentIcon extends AokanaIndependentProcedure {
     const pressedHover = this.hit(relative, 1, 1);
     if (pressedHover !== this.pressedHover) {
       this.pressedHover = pressedHover;
-      if (relative.point === undefined)
-        throw new Error('Aokana Icon copies unwritten hit-position scratch');
+      // 08F990 copies the stack scratch even when 08F790 misses and leaves it unwritten.
+      // Preserve that indeterminate value rather than treating a normal miss as fatal.
       this.relative = relative.point;
     }
     if (this.inputEnabled !== 0) {

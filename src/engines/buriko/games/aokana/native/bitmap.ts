@@ -4,6 +4,7 @@ export class AokanaBitmapStorage {
   readonly view: DataView;
   private defined: Uint8Array | null;
   private disposed = false;
+  private nativeHeapReads = false;
   constructor(bytes: Uint8Array, initialized: boolean) {
     this.bytes = bytes;
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -29,7 +30,7 @@ export class AokanaBitmapStorage {
       offset + length > this.bytes.length
     )
       throw new RangeError('Aokana bitmap accesses outside native allocation');
-    if (read && this.defined !== null)
+    if (read && this.defined !== null && !this.nativeHeapReads)
       for (let index = offset; index < offset + length; index++)
         if (this.defined[index] === 0)
           throw new Error('Aokana bitmap reads unwritten native allocation');
@@ -38,6 +39,10 @@ export class AokanaBitmapStorage {
     this.range(offset, length, false);
     if (offset === 0 && length === this.bytes.length) this.defined = null;
     else this.defined?.fill(1, offset, offset + length);
+  }
+  /** Native callers may sample untouched _aligned_malloc bytes without a fault. */
+  allowNativeHeapReads(): void {
+    this.nativeHeapReads = true;
   }
   /** Copy native initialization state without reading the stored pixel values. */
   initializedRange(offset: number, length: number): Uint8Array {
@@ -54,6 +59,7 @@ export class AokanaBitmapStorage {
       this.defined === null,
     );
     if (this.defined !== null) clone.defined = this.defined.slice(offset, offset + length);
+    clone.nativeHeapReads = this.nativeHeapReads;
     return clone;
   }
   release(): void {

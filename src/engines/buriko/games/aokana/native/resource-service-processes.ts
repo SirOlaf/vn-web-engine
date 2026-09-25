@@ -53,7 +53,7 @@ export class AokanaReadBinaryProcess extends AokanaLoadProcedure {
     if (wholeStoredResource)
       queuedLength = await loading.ranges.size(process.archiveName, process.name);
     if (!(await loading.ranges.isAvailable(process.archiveName, process.name))) {
-      process.result.value = 0xffffffff;
+      process.failure = 1;
       return process;
     }
     if (offset !== 0 && length === 0) {
@@ -83,6 +83,16 @@ export class AokanaReadBinaryProcess extends AokanaLoadProcedure {
     this.destination.bytes.set(bytes.subarray(0, count), this.destination.offset);
     this.failure = 0;
     return 1;
+  }
+
+  override async poll(): Promise<number> {
+    if (this.failure === 1) return 1;
+    return super.poll();
+  }
+
+  override dispose(): void {
+    push32(this.thread, this.failure ?? 0);
+    super.dispose();
   }
 }
 

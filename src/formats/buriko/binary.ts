@@ -22,6 +22,10 @@ export class Bits {
   read(count: number): number {
     if (count < 0 || count > 32 || this.position + count > this.bytes.length * 8)
       throw new Error('Truncated BURIKO bitstream');
+    if (count === 1) {
+      const position = this.position++;
+      return (this.bytes[position >>> 3]! >>> (7 - (position & 7))) & 1;
+    }
     let value = 0;
     for (let i = 0; i < count; i++, this.position++)
       value = value * 2 + ((this.bytes[this.position >>> 3]! >>> (7 - (this.position & 7))) & 1);

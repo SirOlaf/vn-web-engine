@@ -8,6 +8,7 @@ export const AOKANA_PRESENTATION_NUMERICAL_PROFILE = 'binary32-unfused-mad' as c
 const f32 = Math.fround;
 const multiply = (a: number, b: number): number => f32(a * b);
 const mad = (a: number, b: number, c: number): number => f32(multiply(a, b) + c);
+const normalizedByte = Float32Array.from({length: 256}, (_, value) => f32(value / 255));
 
 /** The SHADER/129 resource's a=-1 cubic, retaining its two distinct MAD chains. */
 export function aokanaPresentationCubicWeight(distance: number): number {
@@ -19,16 +20,79 @@ export function aokanaPresentationCubicWeight(distance: number): number {
 }
 
 function texel(texture: AokanaDisplayTexture, x: number, y: number): AokanaPresentationColor {
-  if (x < 0 || y < 0 || x >= texture.width || y >= texture.height) return [0, 0, 0, 0];
+  const output: AokanaPresentationColor = [0, 0, 0, 0];
+  texelInto(texture, x, y, output);
+  return output;
+}
+
+/** Reuse color vectors while rasterizing one frame; standalone samples retain read checks. */
+export interface AokanaPresentationSampleScratch {
+  readonly a: AokanaPresentationColor;
+  readonly b: AokanaPresentationColor;
+  readonly c: AokanaPresentationColor;
+  readonly d: AokanaPresentationColor;
+}
+
+/** One synchronous raster pass over a display texture whose backing is fully initialized. */
+export interface AokanaPresentationFrameRead {
+  validated: boolean;
+}
+
+function texelInto(
+  texture: AokanaDisplayTexture,
+  x: number,
+  y: number,
+  output: AokanaPresentationColor,
+  frameRead?: AokanaPresentationFrameRead,
+): void {
+  if (x < 0 || y < 0 || x >= texture.width || y >= texture.height) {
+    output[0] = output[1] = output[2] = output[3] = 0;
+    return;
+  }
   const offset = y * texture.pitch + x * 4;
-  texture.storage.range(offset, 4, true);
+  if (!frameRead?.validated) {
+    texture.storage.range(offset, 4, true);
+    if (frameRead) frameRead.validated = true;
+  }
   const bytes = texture.storage.bytes;
-  return [
-    f32(bytes[offset + 2]! / 255),
-    f32(bytes[offset + 1]! / 255),
-    f32(bytes[offset]! / 255),
-    texture.format === 22 ? 1 : f32(bytes[offset + 3]! / 255),
-  ];
+  output[0] = normalizedByte[bytes[offset + 2]!]!;
+  output[1] = normalizedByte[bytes[offset + 1]!]!;
+  output[2] = normalizedByte[bytes[offset]!]!;
+  output[3] = texture.format === 22 ? 1 : normalizedByte[bytes[offset + 3]!]!;
+}
+
+/** The frame path supplies reusable vectors; standalone callers still receive owned colors. */
+export function aokanaPresentationTextureSampleInto(
+  texture: AokanaDisplayTexture,
+  u: number,
+  v: number,
+  sampler: AokanaPresentationSampler,
+  output: AokanaPresentationColor,
+  scratch: AokanaPresentationSampleScratch,
+  frameRead?: AokanaPresentationFrameRead,
+): AokanaPresentationColor {
+  const x = multiply(f32(u), f32(texture.width)),
+    y = multiply(f32(v), f32(texture.height));
+  if (sampler === 'point') {
+    texelInto(texture, Math.floor(x), Math.floor(y), output, frameRead);
+    return output;
+  }
+  const px = f32(x - 0.5),
+    py = f32(y - 0.5),
+    nx = Math.floor(px),
+    ny = Math.floor(py);
+  const fx = f32(px - nx),
+    fy = f32(py - ny);
+  texelInto(texture, nx, ny, scratch.a, frameRead);
+  texelInto(texture, nx + 1, ny, scratch.b, frameRead);
+  texelInto(texture, nx, ny + 1, scratch.c, frameRead);
+  texelInto(texture, nx + 1, ny + 1, scratch.d, frameRead);
+  for (let channel = 0; channel < 4; channel++) {
+    const top = mad(scratch.b[channel]!, fx, multiply(scratch.a[channel]!, f32(1 - fx)));
+    const bottom = mad(scratch.d[channel]!, fx, multiply(scratch.c[channel]!, f32(1 - fx)));
+    output[channel] = mad(bottom, fy, multiply(top, f32(1 - fy)));
+  }
+  return output;
 }
 
 /** Level zero, transparent-black border addressing, normalized BGRA8 texels. */

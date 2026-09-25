@@ -130,6 +130,11 @@ test('independent Icon owns actual Window children, VM records, capture, selecti
   assert.equal([...window.children()].length, 3);
   assert.deepEqual([pixel(2, 2), pixel(8, 2)], [0x002200, 0x110000]);
   const actual = shared.find(id);
+  assert.equal(invoke(0xbc, [544, id]), 1);
+  assert.deepEqual(
+    Array.from({length: 6}, (_, i) => view.getInt32(544 + i * 4, true)),
+    [1, 0, 0, 0, 0, 0],
+  );
   assert.equal(actual.enqueue(Uint32Array.of(0x10000002, 0, 1)), 1);
   assert.equal(await shared.pollEnabled(), 1);
   // Selected bitmap wins over hover initially. After changing column, old hovered icon
@@ -144,6 +149,13 @@ test('independent Icon owns actual Window children, VM records, capture, selecti
     [0, 1, 2].map((i) => view.getUint32(528 + i * 4, true)),
     [0x10000002, 0, 1],
   );
+  // Native 08F790 leaves its output scratch unwritten on a miss. 08F990 still
+  // copies it when the pressed hover changes, so leaving an icon must not fault.
+  input.pointerClientX = 40;
+  input.pointerClientY = 20;
+  assert.equal(await shared.pollEnabled(), 1);
+  assert.equal(actual.pressedHover, -1);
+  assert.equal(actual.relative, undefined);
   assert.equal(actual.enqueue(Uint32Array.of(0x10000000, 1, 0)), 1);
   assert.equal(await shared.pollEnabled(), 1);
   assert.equal(invoke(0xbc, [544, id]), 1);

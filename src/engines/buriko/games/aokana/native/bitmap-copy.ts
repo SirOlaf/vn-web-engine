@@ -31,11 +31,12 @@ export function copyBlock(
   sourceOffset: number,
   length: number,
 ): void {
-  const input = bitmapStorage(source, sourceOffset, length, true).bytes.slice(
+  const input = bitmapStorage(source, sourceOffset, length, true).bytes.subarray(
     sourceOffset,
     sourceOffset + length,
   );
   const output = bitmapStorage(destination, destinationOffset, length, false);
+  // TypedArray#set snapshots an overlapping source range before writing it.
   output.bytes.set(input, destinationOffset);
   output.written(destinationOffset, length);
 }
@@ -52,6 +53,20 @@ export function copyAokanaBitmapRows(destination: AokanaBitmap, source: AokanaBi
   for (let y = 0; y < source.height >>> 0; y++) {
     const input = source.offset + y * source.stride;
     const output = destination.offset + y * destination.stride;
+    if (
+      (rowBytes & 3) === 0 &&
+      rowBytes > block &&
+      source.storage !== null &&
+      destination.storage !== null &&
+      source.storage.bytes.buffer !== destination.storage.bytes.buffer
+    ) {
+      try {
+        copyBlock(destination, output, source, input, rowBytes);
+        continue;
+      } catch {
+        // Re-run the native block order so a later invalid block leaves earlier stores intact.
+      }
+    }
     if ((rowBytes & 3) !== 0) {
       copyBlock(destination, output, source, input, rowBytes);
       continue;

@@ -25,9 +25,11 @@ async function aokanaRuntimeFiles() {
   for (const entry of (await readdir(aokana, {withFileTypes: true}))
     .filter((entry) => entry.isFile() && aokanaRuntimeName(entry.name))
     .sort((left, right) => left.name.localeCompare(right.name))) {
+    const details = await stat(path.join(aokana, entry.name));
     files.push({
       name: entry.name,
-      size: (await stat(path.join(aokana, entry.name))).size,
+      size: details.size,
+      lastModifiedMs: details.mtimeMs,
       url: `/aokana-data/${encodeURIComponent(entry.name)}`,
     });
   }

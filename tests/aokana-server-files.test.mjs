@@ -45,6 +45,7 @@ test('Aokana data manifest and ranged file route expose only runtime inputs', as
       ['BGI.gdb', 'system.arc'],
     );
     assert.ok(files.every((file) => Number.isSafeInteger(file.size) && file.size >= 0));
+    assert.ok(files.every((file) => Number.isFinite(file.lastModifiedMs)));
     assert.ok(files.every((file) => file.url === `/aokana-data/${encodeURIComponent(file.name)}`));
     assert.deepEqual(await (await fetch(`${origin}/api/aokana/archives`)).json(), files);
 

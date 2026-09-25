@@ -57,6 +57,8 @@ The separate Aokana page is an experimental browser runtime. The server lists on
 
 For nonvisual startup and VM diagnostics, open [`/aokana.html?no-canvas=1`](http://127.0.0.1:8000/aokana.html?no-canvas=1) or select **No canvas** before pressing Play. This mode initializes the logical display without acquiring the main canvas context or presenting pixels. It also keeps audio output in memory, mutes browser movie elements, and shows launch stages and errors below the display. The game canvas remains in the page for window geometry and input, with media elements visually suppressed. Use a fresh page load to switch modes after Play.
 
+While Aokana is running, use **Skip startup sequence** to request the game's native transition skip and finish fullscreen movies as they start. Select **Stop skipping** when the title is reached.
+
 ## Game page
 
 After the files are loaded, select **Play** to replace the launcher with the game canvas. The 1920×1080 output scales to the browser viewport while preserving its native aspect ratio.

@@ -732,6 +732,7 @@ export class AokanaSurfaces {
     if (this.allocate(index, width, height, source.format) === 0) return 1;
     if ((destinationFlags | 0) < 0) this.fill(index, 0);
     const destination = this.snapshot(index)!;
+    if ((destinationFlags | 0) >= 0) destination.storage!.allowNativeHeapReads();
     this.compositor.draw(destination, -x | 0, -y | 0, source, 0x80, 0);
     return 0;
   }
