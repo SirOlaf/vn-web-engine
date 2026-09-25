@@ -3,51 +3,78 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Aokana · Web player</title>
+    <meta name="theme-color" content="#090b0e" />
+    <title>Aokana · Game viewer</title>
     <script>
       if (new URLSearchParams(location.search).get('no-canvas') === '1')
         document.documentElement.classList.add('no-canvas');
     </script>
+    <link rel="stylesheet" href="game.css" />
     <link rel="stylesheet" href="aokana.css" />
   </head>
   <body>
-    <header>
-      <div>
-        <p class="eyebrow">Buriko web engine</p>
-        <h1>Aokana</h1>
-      </div>
-      <nav><a href="/">C;HN</a><a href="/aokana-assets.html">Asset laboratory</a></nav>
-    </header>
-    <main>
-      <div class="controls">
-        <button id="connect" type="button">Use local game files</button>
-        <label class="folder"
-          >Choose game folder <input id="files" type="file" webkitdirectory directory
-        /></label>
-        <label class="mode"><input id="no-canvas" type="checkbox" /> No canvas</label>
-        <button id="play" type="button" disabled>Play</button>
-        <button id="skip-startup" type="button" aria-pressed="false" disabled hidden>
-          Skip startup sequence
-        </button>
-        <span id="status" role="status">Connect the local installation or choose a folder.</span>
-      </div>
-      <section id="display" aria-label="Game display">
-        <div class="display-controls">
-          <label for="fullscreen-mode">Fullscreen behavior</label>
-          <select id="fullscreen-mode">
-            <option value="page">Fill browser page</option>
-            <option value="screen">True fullscreen</option>
-          </select>
-          <button id="fullscreen" type="button" aria-pressed="false">Fill page</button>
-          <button id="leave-fullscreen" type="button" hidden>Return to player</button>
-          <span id="fullscreen-help" role="status" hidden></span>
-        </div>
+    <main id="game" aria-label="Game">
+      <section id="display" aria-label="Aokana display">
         <div id="display-viewport">
           <div id="surface"><canvas id="game-canvas" tabindex="0"></canvas></div>
           <div id="window-layer"></div>
         </div>
+        <div id="welcome">
+          <span class="eyebrow">VN / WEB ENGINE</span>
+          <h1>Aokana</h1>
+          <p id="prompt">Open your installed game or choose its installation folder.</p>
+          <p id="fatal-error" role="alert" hidden></p>
+          <button id="play" type="button" disabled>Play</button>
+        </div>
+        <aside id="sidebar" aria-label="Game options">
+          <button
+            id="sidebar-toggle"
+            aria-expanded="true"
+            aria-controls="sidebar-body"
+            aria-label="Toggle game options"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" />
+              <path d="M8 4v12" stroke="currentColor" /></svg
+            ><span>Game options</span>
+          </button>
+          <div id="sidebar-body">
+            <section>
+              <h2>Game</h2>
+              <label for="viewer-game">Select game</label>
+              <select id="viewer-game">
+                <option value="noah">CHAOS;HEAD NOAH</option>
+                <option value="aokana">Aokana</option>
+              </select>
+            </section>
+            <section>
+              <h2>Display</h2>
+              <label for="fullscreen-mode">Fullscreen behavior</label>
+              <select id="fullscreen-mode">
+                <option value="page">Fill browser page</option>
+                <option value="screen">True fullscreen</option>
+              </select>
+              <button id="fullscreen" type="button" aria-pressed="false">Fill page</button>
+              <p id="fullscreen-help" role="status" hidden></p>
+            </section>
+            <section>
+              <h2>Game files</h2>
+              <button id="connect" type="button">Open installed game</button>
+              <button id="choose" type="button">Choose game folder</button>
+              <input id="files" type="file" webkitdirectory directory hidden />
+              <p>Read from your device. Never uploaded.</p>
+            </section>
+            <section id="playback-options" hidden>
+              <h2>Playback</h2>
+              <button id="skip-startup" type="button" aria-pressed="false" disabled hidden>
+                Skip startup sequence
+              </button>
+            </section>
+            <p id="status" role="status">No game loaded.</p>
+          </div>
+        </aside>
+        <div id="runtime-advisories" class="runtime-advisories" aria-live="polite"></div>
       </section>
-      <pre id="diagnostics" aria-label="Launch diagnostics"></pre>
     </main>
     <script type="module" src="/dist/engines/buriko/games/aokana/browser-game.js"></script>
   </body>

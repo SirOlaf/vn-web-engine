@@ -3,12 +3,14 @@ import {lstat, readFile, readdir, stat, realpath} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
-const root = fileURLToPath(new URL('../', import.meta.url)),
-  data = fileURLToPath(new URL('../../Data/', import.meta.url));
+const root = fileURLToPath(new URL('../', import.meta.url));
+const noah = path.resolve(
+  process.env.NOAH_DATA_ROOT ?? path.join(root, 'targetgame', 'chaos-head-noah'),
+);
+const data = path.join(noah, 'Data');
 const aokana = path.resolve(
   process.env.AOKANA_DATA_ROOT ?? path.join(root, 'targetgame', 'aokana'),
 );
-const installation = fileURLToPath(new URL('../../', import.meta.url));
 const host = process.env.HOST ?? '127.0.0.1',
   port = Number(process.env.PORT ?? 8000);
 const mime = {
@@ -141,7 +143,12 @@ createServer(async (req, res) => {
       return;
     }
     if (pathname === '/api/executable') {
-      const info = await stat(path.join(installation, 'Game.exe'));
+      const executable = path.join(noah, 'Game.exe');
+      if (!(await lstat(executable)).isFile()) {
+        res.writeHead(404).end();
+        return;
+      }
+      const info = await stat(executable);
       res
         .writeHead(200, {'Content-Type': 'application/json'})
         .end(
@@ -152,8 +159,15 @@ createServer(async (req, res) => {
       return;
     }
     if (pathname === '/api/archives') {
+      if (!(await lstat(data)).isDirectory()) {
+        res.writeHead(404).end();
+        return;
+      }
       const files = [];
-      for (const name of (await readdir(data)).filter((n) => n.endsWith('.cpk')).sort())
+      for (const name of (await readdir(data, {withFileTypes: true}))
+        .filter((entry) => entry.isFile() && /^[\w-]+\.cpk$/i.test(entry.name))
+        .map((entry) => entry.name)
+        .sort())
         files.push({
           name,
           size: (await stat(path.join(data, name))).size,
@@ -180,13 +194,24 @@ createServer(async (req, res) => {
     } else if (pathname.startsWith('/data/')) {
       base = data;
       relative = pathname.slice(6);
-      if (!/^[\w-]+\.cpk$/.test(relative)) {
+      if (!/^[\w-]+\.cpk$/i.test(relative)) {
+        res.writeHead(404).end();
+        return;
+      }
+      if (
+        !(await lstat(data)).isDirectory() ||
+        !(await lstat(path.join(data, relative))).isFile()
+      ) {
         res.writeHead(404).end();
         return;
       }
     } else if (pathname === '/game/Game.exe') {
-      base = installation;
+      base = noah;
       relative = 'Game.exe';
+      if (!(await lstat(path.join(base, relative))).isFile()) {
+        res.writeHead(404).end();
+        return;
+      }
     } else if (!(
       relative === 'index.html' ||
       [

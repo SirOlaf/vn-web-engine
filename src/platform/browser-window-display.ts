@@ -151,12 +151,7 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
     if (this.disposed) return;
     const {width, height} = this.geometry;
     const availableWidth = Math.max(1, this.viewport.clientWidth);
-    const availableHeight = this.expanded
-      ? Math.max(1, this.viewport.clientHeight)
-      : Math.max(
-          1,
-          this.view.innerHeight - Math.max(0, this.viewport.getBoundingClientRect().top) - 16,
-        );
+    const availableHeight = Math.max(1, this.viewport.clientHeight);
     const ratio = this.view.devicePixelRatio > 0 ? this.view.devicePixelRatio : 1;
     this.scale = Math.min(
       availableWidth / width,
@@ -172,7 +167,7 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
       style.transformOrigin = 'top left';
       style.transform = `scale(${this.scale})`;
       style.left = `${(availableWidth - width * this.scale) / 2}px`;
-      style.top = this.expanded ? `${(availableHeight - height * this.scale) / 2}px` : '0px';
+      style.top = `${(availableHeight - height * this.scale) / 2}px`;
     }
     this.coordinates.refresh();
   };

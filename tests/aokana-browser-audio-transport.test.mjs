@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import {AokanaBrowserSpeakerBuffer} from '../dist/engines/buriko/games/aokana/native/audio/browser-speaker-backend.js';
 import {AokanaBrowserMoviePcmOutput} from '../dist/engines/buriko/games/aokana/native/movie-pcm-output.js';
 import {aokanaIsoTime} from '../dist/engines/buriko/games/aokana/native/movie-iso-timeline.js';
+import {subscribeRuntimeAdvisories} from '../dist/platform/runtime-advisories.js';
 
 test('worklet and LAN HTTP audio hosts preserve PCM, render-owned cursors, notifications, and movie completion', async () => {
   const names = ['AudioWorkletProcessor', 'AudioWorkletNode', 'registerProcessor', 'sampleRate'];
@@ -40,6 +41,8 @@ test('worklet and LAN HTTP audio hosts preserve PCM, render-owned cursors, notif
   });
   const f = aokanaIsoTime.fraction;
   const snapshots = [];
+  const advisories = [];
+  const unsubscribe = subscribeRuntimeAdvisories((advisory) => advisories.push(advisory));
   try {
     for (const worklet of [true, false]) {
       const context = {
@@ -139,7 +142,13 @@ test('worklet and LAN HTTP audio hosts preserve PCM, render-owned cursors, notif
     }
     assert.deepEqual(snapshots[0], snapshots[2]);
     assert.deepEqual(snapshots[1], snapshots[3]);
+    assert.deepEqual(
+      advisories.map(({id}) => id),
+      ['audio-fallback'],
+    );
+    assert.match(advisories[0].message, /ScriptProcessor/);
   } finally {
+    unsubscribe();
     for (const port of ports) port.close();
     names.forEach((name, index) => {
       if (previous[index]) Object.defineProperty(globalThis, name, previous[index]);

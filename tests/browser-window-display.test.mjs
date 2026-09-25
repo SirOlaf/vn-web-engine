@@ -80,6 +80,7 @@ test('native desktop pixels, fitted window and pointer mapping retain one coordi
   s.host.configure({width: 1920, height: 1080, fullscreen: false});
   s.host.setPosition(300, 200);
   assert.equal(s.windowElement.style.transform, 'scale(0.5)');
+  assert.equal(s.windowElement.style.top, '90px');
   assert.equal(s.viewport.style.height, '540px');
   const m = s.host.readViewportScreenMapping();
   assert.equal(m.originX + (32 + 480) * m.nativePixelsPerCssX, 300 + 960);

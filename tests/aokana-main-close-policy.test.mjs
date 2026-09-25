@@ -35,7 +35,7 @@ class Element {
   }
 }
 
-test('one scoped Close control retains raw policy separately from menu state and posts on the shared main target', () => {
+test('main Close policy retains native menu state without a browser button and posts on the shared main target', () => {
   const document = {createElement: (tag) => new Element(tag)},
     parent = document.createElement('div'),
     canvas = document.createElement('canvas'),
@@ -58,36 +58,33 @@ test('one scoped Close control retains raw policy separately from menu state and
       geometryChanged() {},
     });
   messages.createMainTarget();
-  const close = host.bindCloseControl(input, messages);
-  assert.equal(close.parent, parent);
-  assert.equal(close['aria-label'], 'Close');
+  host.bindCloseMenu(input, messages);
+  assert.deepEqual(parent.children, [canvas]);
   assert.equal(host.closePolicy, 1);
   assert.equal(host.closeMenuEnabled, true);
-  close.click();
+  host.postClose();
   assert.deepEqual(messages.take(), {target: 'main', message: 0x10, wParam: 0, lParam: 0});
 
   host.setClosePolicy(0);
-  assert.equal(close.disabled, true);
-  close.click();
-  assert.equal(messages.take(), null);
+  assert.equal(host.closeMenuEnabled, false);
   host.postClose();
   assert.deepEqual(messages.take(), {target: 'main', message: 0x10, wParam: 0, lParam: 0});
 
   input.inputActive = true;
   host.setClosePolicy(0x80000000);
   assert.equal(host.closePolicy, 0x80000000);
-  assert.equal(close.disabled, true);
+  assert.equal(host.closeMenuEnabled, false);
   host.setCloseMenuEnabled(true); // WM_SIZE restore can enable the menu independently.
   host.setClosePolicy(0);
   assert.equal(host.closePolicy, 0);
-  assert.equal(close.disabled, false);
-  close.click();
+  assert.equal(host.closeMenuEnabled, true);
+  host.postClose();
   assert.deepEqual(messages.take(), {target: 'main', message: 0x10, wParam: 0, lParam: 0});
 
   input.inputActive = false;
   host.setClosePolicy(2);
   assert.equal(host.closePolicy, 2);
-  assert.equal(close.disabled, false);
+  assert.equal(host.closeMenuEnabled, true);
 
   const menuCalls = [],
     setMenu = host.setCloseMenuEnabled.bind(host);
@@ -103,17 +100,17 @@ test('one scoped Close control retains raw policy separately from menu state and
   assert.deepEqual(menuCalls, [[true, false]]); // Enable menu before publishing active input.
   assert.equal(input.inputActive, true);
   assert.equal(host.closePolicy, 0);
-  assert.equal(close.disabled, false);
+  assert.equal(host.closeMenuEnabled, true);
 
   host.setClosePolicy(0x80000000);
-  assert.equal(close.disabled, false); // Active policy writes retain the visual menu.
+  assert.equal(host.closeMenuEnabled, true); // Active policy writes retain menu state.
   menuCalls.length = 0;
   host.applySizeMenuTail(1, input);
   assert.deepEqual(menuCalls, []); // Nonzero policy makes minimize leave the menu alone.
   assert.equal(input.inputActive, false);
-  assert.equal(close.disabled, false);
+  assert.equal(host.closeMenuEnabled, true);
   host.setClosePolicy(0);
-  assert.equal(close.disabled, true); // Inactive policy writes update the menu.
+  assert.equal(host.closeMenuEnabled, false); // Inactive policy writes update the menu.
 
   menuCalls.length = 0;
   host.applySizeMenuTail(0, input);
@@ -125,7 +122,7 @@ test('one scoped Close control retains raw policy separately from menu state and
   host.applySizeMenuTail(1n, input);
   assert.deepEqual(menuCalls, [[false, true]]); // Disable menu before clearing active input.
   assert.equal(input.inputActive, false);
-  assert.equal(close.disabled, true);
+  assert.equal(host.closeMenuEnabled, false);
   assert.equal(input.iconic, 1);
   assert.equal(input.scriptMinimizeLatch, 1);
 });

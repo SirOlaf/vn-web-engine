@@ -244,8 +244,13 @@ element<HTMLButtonElement>('connect').onclick = async () => {
   const button = element<HTMLButtonElement>('connect');
   button.disabled = true;
   try {
+    archives.clear();
+    select.replaceChildren();
     const response = await fetch('/api/archives');
-    if (!response.ok) throw new Error('Start the local server to open installed archives');
+    if (!response.ok)
+      throw new Error(
+        'Installed archives unavailable. Configure NOAH_DATA_ROOT on the local server.',
+      );
     const files: {name: string; size: number; url: string}[] = await response.json();
     const executableResponse = await fetch('/api/executable');
     if (!executableResponse.ok) throw new Error('Installed Game.exe was not found');

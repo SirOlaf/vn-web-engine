@@ -1,3 +1,5 @@
+import {reportWasmGraphicsFallback} from '../platform/runtime-advisories.js';
+
 /** Linear-memory staging for synchronous pixel kernels with separate input/output rows. */
 export interface WasmPixelExports extends WebAssembly.Exports {
   memory: WebAssembly.Memory;
@@ -71,12 +73,16 @@ export class WasmPixelWorkspace {
       output = this.input + planeLength,
       additionalInput = additionalSource === undefined ? 0 : output + planeLength,
       end = (additionalInput === 0 ? output : additionalInput) + length;
-    if (!Number.isSafeInteger(end) || end > 128 * 1024 * 1024) return false;
+    if (!Number.isSafeInteger(end) || end > 128 * 1024 * 1024) {
+      reportWasmGraphicsFallback();
+      return false;
+    }
     const memory = this.kernel.memory;
     if (end > memory.buffer.byteLength) {
       try {
         memory.grow(Math.ceil((end - memory.buffer.byteLength) / 65536));
       } catch {
+        reportWasmGraphicsFallback();
         return false;
       }
     }
@@ -107,7 +113,6 @@ export class WasmPixelWorkspace {
       }
     return true;
   }
-
   private copyIn(
     view: DataView,
     offset: number,

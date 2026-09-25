@@ -1,3 +1,5 @@
+import {reportRuntimeAdvisory} from '../platform/runtime-advisories.js';
+
 /** A processor owns command state and advances only when the audio device asks for samples. */
 export interface BrowserPcmProcessor<Request> {
   receive(request: Request): void;
@@ -95,5 +97,11 @@ export async function createBrowserPcmNode<Request, Response>(
       result.onprocessorerror?.(new ErrorEvent('processorerror'));
     }
   };
+  reportRuntimeAdvisory({
+    id: 'audio-fallback',
+    title: 'Audio compatibility mode',
+    message:
+      'AudioWorklet is unavailable, so audio is using ScriptProcessor on the main thread. Playback may stutter or fail. Use localhost or HTTPS with a browser that supports AudioWorklet.',
+  });
   return result;
 }

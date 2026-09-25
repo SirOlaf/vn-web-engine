@@ -82,10 +82,6 @@ export class AokanaMainDomInput {
 
   private readonly onFocusOut = (event: FocusEvent): void => {
     if (this.disposed) return;
-    if (this.host.isCloseControl(event.relatedTarget)) {
-      this.deactivate();
-      return;
-    }
     if (this.host.parent.contains(event.relatedTarget as Node)) return;
     // The browser updates activeElement after some focusout dispatches.
     queueMicrotask(() => {

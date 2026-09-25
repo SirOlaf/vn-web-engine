@@ -1140,7 +1140,7 @@ export class AokanaProductionDisplayResourceGraph {
       this.cursorShapes = new AokanaCursorShapes(this.cursor, this.messages, inputs.cursorResource);
       rollback.push(() => this.cursorShapes.dispose());
       this.messages.createMainTarget();
-      this.host.bindCloseControl(this.input, this.messages);
+      this.host.bindCloseMenu(this.input, this.messages);
       this.droppedFiles = new AokanaDroppedFiles(
         inputs.canvas,
         this.messages,

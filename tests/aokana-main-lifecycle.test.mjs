@@ -76,7 +76,7 @@ test('main lifecycle publishes real readiness, preserves nested close order and 
     ),
     order = [];
   messages.createMainTarget();
-  host.bindCloseControl(input, messages);
+  host.bindCloseMenu(input, messages);
   const thread = new AokanaBpThread({
       id: 1,
       operandCapacity: 4,

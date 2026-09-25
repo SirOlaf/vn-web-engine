@@ -1,4 +1,5 @@
 import {instantiateEmbeddedWasm} from '../core/wasm.js';
+import {reportWasmGraphicsFallback} from '../platform/runtime-advisories.js';
 import {LINEAR_RGB_WASM_BINARY} from './linear-rgb-wasm-binary.js';
 
 interface LinearRgbExports extends WebAssembly.Exports {
@@ -105,12 +106,16 @@ export class LinearRgbWasm {
     // Preserve the original acceleration domain as well as bounding compact scratch.
     const originalEnd =
       end + Math.ceil(source.length / 16) * 16 - Math.ceil(sampledBytes / 16) * 16;
-    if (!Number.isSafeInteger(originalEnd) || originalEnd > 128 * 1024 * 1024) return false;
+    if (!Number.isSafeInteger(originalEnd) || originalEnd > 128 * 1024 * 1024) {
+      reportWasmGraphicsFallback();
+      return false;
+    }
     const memory = this.kernel.memory;
     if (end > memory.buffer.byteLength) {
       try {
         memory.grow(Math.ceil((end - memory.buffer.byteLength) / 65536));
       } catch {
+        reportWasmGraphicsFallback();
         return false;
       }
     }

@@ -7,7 +7,10 @@ import type {AokanaNativeInput} from './input.js';
 import type {AokanaWindowMessages} from './window-messages.js';
 import type {AokanaMainDomInput} from './main-dom-input.js';
 import {invalidateCanvasFrame} from '../../../../../graphics/canvas-frame-presenter.js';
-import type {ViewportScreenMapping, WindowDisplayHost} from '../../../../../platform/window-display.js';
+import type {
+  ViewportScreenMapping,
+  WindowDisplayHost,
+} from '../../../../../platform/window-display.js';
 
 export interface AokanaMainWindowCallbacks {
   /** Native live-window gate 1e8d00, set by WM_CREATE and cleared by WM_DESTROY. */
@@ -73,7 +76,6 @@ export class AokanaBrowserMainWindow {
   closeMenuEnabled = true;
   private closeInput: AokanaNativeInput | null = null;
   private closeMessages: AokanaWindowMessages | null = null;
-  private closeButton: HTMLButtonElement | null = null;
   private detached = false;
   private readScreenMapping: (() => AokanaViewportScreenMapping) | null = null;
   private lastRestoredOuterRectangle: AokanaNativeRectangle | null = null;
@@ -253,33 +255,21 @@ export class AokanaBrowserMainWindow {
     return [width, height];
   }
 
-  /** Mount the one scoped main-window Close command against the actual HWND/message owners. */
-  bindCloseControl(input: AokanaNativeInput, messages: AokanaWindowMessages): HTMLButtonElement {
+  /** Bind the native Close menu policy to the live HWND/message owners. */
+  bindCloseMenu(input: AokanaNativeInput, messages: AokanaWindowMessages): void {
     if (
       input.display !== this.display ||
       messages.input !== input ||
       messages.mainTarget() === null
     )
-      throw new Error('Aokana main Close control requires the shared live main-window owners');
-    if (this.closeButton !== null) {
+      throw new Error('Aokana main Close menu requires the shared live main-window owners');
+    if (this.closeInput !== null) {
       if (this.closeInput !== input || this.closeMessages !== messages)
-        throw new Error('Aokana main Close control is already bound to another owner');
-      return this.closeButton;
+        throw new Error('Aokana main Close menu is already bound to another owner');
+      return;
     }
-    const button = this.document.createElement('button');
-    button.type = 'button';
-    button.textContent = '×';
-    button.setAttribute('aria-label', 'Close');
-    button.style.cssText = 'position:absolute;right:0;top:0;z-index:1';
-    button.disabled = !this.closeMenuEnabled;
-    button.addEventListener('click', () => {
-      if (this.closeMenuEnabled) this.postClose();
-    });
-    this.parent.append(button);
     this.closeInput = input;
     this.closeMessages = messages;
-    this.closeButton = button;
-    return button;
   }
 
   /** FF520 stores the raw DWORD even when inputActive suppresses its menu update. */
@@ -290,11 +280,10 @@ export class AokanaBrowserMainWindow {
     if (!this.closeInput.inputActive) this.setCloseMenuEnabled(this.closePolicy !== 0);
   }
 
-  /** WM_SIZE restore/minimize may set the visual menu independently of the raw policy. */
+  /** WM_SIZE restore/minimize may set menu state independently of the raw policy. */
   setCloseMenuEnabled(enabled: boolean): void {
-    if (this.closeButton === null) throw new Error('Aokana main Close menu has no live control');
+    if (this.closeInput === null) throw new Error('Aokana main Close menu has no live owner');
     this.closeMenuEnabled = enabled;
-    this.closeButton.disabled = !enabled;
   }
 
   /** FF770 WM_SIZE's menu/input tail, after separately owned initialized-engine effects. */
@@ -304,7 +293,6 @@ export class AokanaBrowserMainWindow {
       this.closeMessages === null ||
       this.closeMessages.input !== input ||
       this.closeMessages.mainTarget() === null ||
-      this.closeButton === null ||
       this.detached
     )
       throw new Error('Aokana size menu tail requires the shared live main-window owners');
@@ -377,10 +365,6 @@ export class AokanaBrowserMainWindow {
     if (this.detached || this.inputIngress !== null || ingress.host !== this)
       throw new Error('Aokana main input ingress requires the live scoped host');
     this.inputIngress = ingress;
-  }
-
-  isCloseControl(target: EventTarget | null): boolean {
-    return this.closeButton !== null && target === this.closeButton;
   }
 
   /** The window-message owner calls this after its native display/monitor selection. */

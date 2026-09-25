@@ -1,3 +1,5 @@
+import {reportWasmGraphicsFallback} from '../platform/runtime-advisories.js';
+
 /** Optional embedded kernels do not require fetch, a server MIME setting, or WASI. */
 const modules = new Map<string, WebAssembly.Module | null>();
 
@@ -14,6 +16,7 @@ export function instantiateEmbeddedWasm(binary: string): WebAssembly.Instance | 
     // Unsupported SIMD, unavailable WebAssembly, CSP, or allocation failure:
     // callers retain their ordinary JavaScript implementation.
     modules.set(binary, null);
+    reportWasmGraphicsFallback();
     return null;
   }
 }

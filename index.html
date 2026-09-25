@@ -11,7 +11,7 @@
     <main id="game" aria-label="Game">
       <div id="welcome">
         <span class="eyebrow">VN / WEB ENGINE</span>
-        <h1 id="game-title">Open a game</h1>
+        <h1 id="game-title">CHAOS;HEAD NOAH</h1>
         <p id="prompt">Open your installed game or choose its installation folder.</p>
         <p class="touch-help">
           Tap to click · Drag to move · Hold or press with two fingers to right-click
@@ -32,6 +32,14 @@
         ><span>Game options</span>
       </button>
       <div id="sidebar-body">
+        <section>
+          <h2>Game</h2>
+          <label for="viewer-game">Select game</label>
+          <select id="viewer-game">
+            <option value="noah">CHAOS;HEAD NOAH</option>
+            <option value="aokana">Aokana</option>
+          </select>
+        </section>
         <section>
           <h2>Display</h2>
           <button id="fullscreen" aria-pressed="false" aria-describedby="fullscreen-help">
@@ -73,9 +81,9 @@
           </p>
         </section>
         <p id="status" role="status">No game loaded.</p>
-        <a href="assets.html">Asset laboratory</a>
       </div>
     </aside>
+    <div id="runtime-advisories" class="runtime-advisories" aria-live="polite"></div>
     <script type="module" src="dist/game.js"></script>
   </body>
 </html>

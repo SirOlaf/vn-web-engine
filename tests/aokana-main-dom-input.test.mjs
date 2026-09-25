@@ -47,7 +47,6 @@ function fixture() {
   const parent = new Element(),
     canvas = new Element(parent),
     child = new Element(parent),
-    close = new Element(parent),
     outside = new Element(),
     document = new Element();
   document.activeElement = canvas;
@@ -65,7 +64,6 @@ function fixture() {
     parent,
     surface: canvas,
     display,
-    isCloseControl: (target) => target === close,
     isForegroundWindow: () =>
       document.focused &&
       document.visibilityState !== 'hidden' &&
@@ -75,7 +73,7 @@ function fixture() {
   const key = (code, keyCode, type = 'keydown') => {
     return canvas.fire(type, {code, keyCode, repeat: false, getModifierState: () => false});
   };
-  return {parent, canvas, child, close, outside, document, input, messages, keyboard, ingress, key};
+  return {parent, canvas, child, outside, document, input, messages, keyboard, ingress, key};
 }
 
 test('main canvas keyboard ingress owns focusable surface, shared FIFO and scoped release', async () => {
@@ -138,16 +136,5 @@ test('document visibility loss releases held keys without posting a native messa
   s.document.focused = true;
   s.document.defaultView.fire('focus');
   assert.equal(s.input.foreground, true);
-  s.ingress.dispose();
-});
-
-test('focus on the scoped Close control releases keys without touching child keyboard routing', () => {
-  const s = fixture();
-  s.key('KeyD', 68);
-  s.document.activeElement = s.close;
-  s.parent.fire('focusout', {relatedTarget: s.close});
-  assert.equal(s.input.asynchronousKeyState(68) & 0x8000, 0);
-  assert.equal(s.messages.take()?.message, 0x100);
-  assert.equal(s.messages.take(), null);
   s.ingress.dispose();
 });

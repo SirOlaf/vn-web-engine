@@ -6,6 +6,7 @@ import {openBrowserPlatform} from './platform/services.js';
 import {NOAH_PATHS, NOAH_WINDOWS} from './engines/mages/games/chaos-head-noah/paths.js';
 import {openNoahPlayer} from './engines/mages/games/chaos-head-noah/sc3/browser-player.js';
 import {gameDirectoryFiles} from './game-directory.js';
+import {mountGameViewer} from './viewer/game-viewer.js';
 
 function element<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -21,8 +22,8 @@ textMode.onchange = () => {
   }
 };
 const status = element('status'),
-  sidebar = element('sidebar'),
-  toggle = element<HTMLButtonElement>('sidebar-toggle');
+  sidebar = element('sidebar');
+const {collapseOptions: collapse} = mountGameViewer('noah');
 const files = element<HTMLInputElement>('files'),
   imported = element<HTMLInputElement>('save-import'),
   saveFile = element<HTMLSelectElement>('save-file'),
@@ -46,11 +47,6 @@ const services = () =>
 function report(error: unknown) {
   status.textContent = error instanceof Error ? error.message : String(error);
 }
-function collapse(value: boolean) {
-  sidebar.classList.toggle('collapsed', value);
-  toggle.setAttribute('aria-expanded', String(!value));
-  element('sidebar-body').hidden = value;
-}
 function sidebarAvailability(available: boolean) {
   if (sidebar.hidden === !available) return;
   const restoreFocus = !available && sidebar.contains(document.activeElement);
@@ -58,13 +54,6 @@ function sidebarAvailability(available: boolean) {
   sidebar.hidden = !available;
   if (restoreFocus) player?.panel.querySelector('canvas')?.focus({preventScroll: true});
 }
-toggle.onclick = () => collapse(toggle.getAttribute('aria-expanded') === 'true');
-sidebar.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    collapse(true);
-    toggle.focus();
-  }
-});
 // Fullscreen the page so the game and its native-menu-gated sidebar stay together.
 // Older WebKit exposes the same element fullscreen capability under prefixed names.
 const fullscreenButton = element<HTMLButtonElement>('fullscreen');
@@ -181,10 +170,11 @@ async function ready() {
 element<HTMLButtonElement>('connect').onclick = () =>
   void action(async () => {
     prepareLoad();
+    archives.clear();
     const response = await fetch('/api/archives');
     if (!response.ok)
       throw new Error(
-        'Installed game unavailable. Choose the game folder or use the local game server.',
+        'CHAOS;HEAD NOAH files were not found. Choose a folder or configure NOAH_DATA_ROOT on the local server.',
       );
     const entries: {name: string; size: number; url: string}[] = await response.json();
     const executable = await fetch('/api/executable');

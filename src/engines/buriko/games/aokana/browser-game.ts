@@ -12,6 +12,7 @@ import {
   browserDesktopSize,
 } from '../../../../platform/browser-window-display.js';
 import {IndexedDbStore, MemoryStore, type RecordStore} from '../../../../platform/store.js';
+import {mountGameViewer} from '../../../../viewer/game-viewer.js';
 import {AokanaBpMemory} from './bp/memory.js';
 import {
   AokanaBrowserSpeakerBackend,
@@ -45,25 +46,31 @@ interface Installation {
 }
 
 const connect = document.querySelector<HTMLButtonElement>('#connect')!;
+const chooseButton = document.querySelector<HTMLButtonElement>('#choose')!;
 const choose = document.querySelector<HTMLInputElement>('#files')!;
 const play = document.querySelector<HTMLButtonElement>('#play')!;
+const welcome = document.querySelector<HTMLElement>('#welcome')!;
+const fatalError = document.querySelector<HTMLElement>('#fatal-error')!;
 const skipStartup = document.querySelector<HTMLButtonElement>('#skip-startup')!;
-const noCanvas = document.querySelector<HTMLInputElement>('#no-canvas')!;
+const playbackOptions = document.querySelector<HTMLElement>('#playback-options')!;
 const status = document.querySelector<HTMLElement>('#status')!;
-const diagnosticLog = document.querySelector<HTMLElement>('#diagnostics')!;
+const prompt = document.querySelector<HTMLElement>('#prompt')!;
+const viewport = document.querySelector<HTMLElement>('#display-viewport')!;
 const surface = document.querySelector<HTMLElement>('#surface')!;
+const windowLayer = document.querySelector<HTMLElement>('#window-layer')!;
 const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas')!;
 const fullscreenMode = document.querySelector<HTMLSelectElement>('#fullscreen-mode')!;
 const fullscreenButton = document.querySelector<HTMLButtonElement>('#fullscreen')!;
-const leaveFullscreen = document.querySelector<HTMLButtonElement>('#leave-fullscreen')!;
 const fullscreenHelp = document.querySelector<HTMLElement>('#fullscreen-help')!;
+const diagnosticMode = document.documentElement.classList.contains('no-canvas');
+mountGameViewer('aokana');
 const displayHost = new BrowserWindowDisplayHost(
   document.querySelector<HTMLElement>('#display')!,
-  document.querySelector<HTMLElement>('#display-viewport')!,
+  viewport,
   surface,
   syncFullscreenControls,
   report,
-  document.querySelector<HTMLElement>('#window-layer')!,
+  windowLayer,
 );
 function syncFullscreenControls(): void {
   fullscreenMode.value = displayHost.mode;
@@ -76,7 +83,6 @@ function syncFullscreenControls(): void {
         ? 'Exit page view'
         : 'Fill page';
   fullscreenButton.setAttribute('aria-pressed', String(displayHost.isExpanded));
-  leaveFullscreen.hidden = !displayHost.isExpanded;
   fullscreenHelp.hidden = displayHost.mode !== 'screen' || displayHost.isScreenFullscreen;
   fullscreenHelp.textContent = displayHost.screenFullscreenAvailable
     ? 'If the game cannot enter fullscreen automatically, press Enter fullscreen.'
@@ -86,15 +92,19 @@ fullscreenMode.addEventListener('change', () =>
   displayHost.setMode(fullscreenMode.value === 'screen' ? 'screen' : 'page'),
 );
 fullscreenButton.addEventListener('click', () => displayHost.toggleFullscreen());
-leaveFullscreen.addEventListener('click', () => displayHost.setFullscreen(false));
 syncFullscreenControls();
 let selected: Installation | null = null;
 let running = false;
+let loading = false;
 
 function report(message: string): void {
   status.textContent = message;
-  diagnosticLog.textContent = `${diagnosticLog.textContent ?? ''}${new Date().toLocaleTimeString()} ${message}\n`;
-  diagnosticLog.scrollTop = diagnosticLog.scrollHeight;
+  prompt.textContent = message;
+}
+
+function clearFatalError(): void {
+  fatalError.hidden = true;
+  fatalError.textContent = '';
 }
 
 function errorMessage(error: unknown): string {
@@ -217,7 +227,6 @@ async function launch(
     report(skipping ? 'Skipping startup sequence…' : 'Startup skip stopped.');
   };
   try {
-    report('Opening persistent storage…');
     const gameStore = await openStore('game');
     const userStore = await openStore('user');
     const registryStore = await openStore('registry');
@@ -273,7 +282,6 @@ async function launch(
     media.setDriveType(2, 3);
     const cpu = new BrowserX86CompatibilityCpuHost(performance);
     const [width, height] = browserDesktopSize(window);
-    report('Constructing engine services…');
     graph = new AokanaProductionDisplayResourceGraph({
       document,
       parent: surface,
@@ -368,6 +376,7 @@ async function launch(
     });
     skipStartup.hidden = false;
     skipStartup.disabled = false;
+    playbackOptions.hidden = false;
     skipStartup.textContent = 'Skip startup sequence';
     skipStartup.setAttribute('aria-pressed', 'false');
     skipStartup.addEventListener('click', requestSkip);
@@ -379,7 +388,6 @@ async function launch(
       console.info('Aokana write watch', notice);
     });
     core = new AokanaProductionVmCore(graph, data, diagnostics);
-    report('Initializing display and native callbacks…');
     const runner = await AokanaProductionBootRunner.start(core);
     booted = true;
     report('Aokana is running.');
@@ -389,6 +397,7 @@ async function launch(
     skipStartup.removeEventListener('click', requestSkip);
     skipStartup.disabled = true;
     skipStartup.hidden = true;
+    playbackOptions.hidden = true;
     if (graph !== null) {
       graph.input.skipForced = 0;
       graph.mfMovieSession.setAutoSkip(false);
@@ -411,21 +420,15 @@ async function launch(
   }
 }
 
-noCanvas.checked = document.documentElement.classList.contains('no-canvas');
-noCanvas.addEventListener('change', () => {
-  if (running) return;
-  document.documentElement.classList.toggle('no-canvas', noCanvas.checked);
-  const url = new URL(location.href);
-  if (noCanvas.checked) url.searchParams.set('no-canvas', '1');
-  else url.searchParams.delete('no-canvas');
-  history.replaceState(null, '', url);
-});
-
 connect.addEventListener('click', async () => {
+  if (running || loading) return;
+  clearFatalError();
+  loading = true;
   connect.disabled = true;
+  chooseButton.disabled = true;
   selected = null;
   play.disabled = true;
-  report('Reading local game file list…');
+  report('Opening installed game…');
   try {
     selected = await servedFiles();
     play.disabled = false;
@@ -433,12 +436,20 @@ connect.addEventListener('click', async () => {
   } catch (error) {
     report(errorMessage(error));
   } finally {
+    loading = false;
     connect.disabled = false;
+    chooseButton.disabled = false;
   }
 });
 
+chooseButton.addEventListener('click', () => choose.click());
+
 choose.addEventListener('change', async () => {
-  if (!choose.files?.length) return;
+  if (!choose.files?.length || running || loading) return;
+  clearFatalError();
+  loading = true;
+  connect.disabled = true;
+  chooseButton.disabled = true;
   selected = null;
   play.disabled = true;
   try {
@@ -447,18 +458,27 @@ choose.addEventListener('change', async () => {
     report('Selected Aokana folder ready. Press Play.');
   } catch (error) {
     report(errorMessage(error));
+  } finally {
+    choose.value = '';
+    loading = false;
+    connect.disabled = false;
+    chooseButton.disabled = false;
   }
 });
 
 play.addEventListener('click', async () => {
-  if (selected === null || running) return;
-  const mode = noCanvas.checked ? 'none' : 'canvas';
-  document.documentElement.classList.toggle('no-canvas', mode === 'none');
+  if (selected === null || running || loading) return;
+  const mode = diagnosticMode ? 'none' : 'canvas';
+  clearFatalError();
+  if (surface.parentElement !== viewport) viewport.insertBefore(surface, windowLayer);
+  surface.style.visibility = '';
+  windowLayer.style.visibility = '';
   running = true;
+  welcome.hidden = true;
   play.disabled = true;
   connect.disabled = true;
+  chooseButton.disabled = true;
   choose.disabled = true;
-  noCanvas.disabled = true;
   report('Starting Aokana…');
   let audio: AudioContext | null = null;
   try {
@@ -469,14 +489,22 @@ play.addEventListener('click', async () => {
     if (audio !== null) await audio.resume();
     await launch(selected, backend, mode);
   } catch (error) {
-    report(`Aokana stopped: ${errorMessage(error)}`);
+    report('Aokana stopped.');
+    fatalError.textContent = errorMessage(error);
+    fatalError.hidden = false;
     console.error(error);
   } finally {
-    if (audio !== null && audio.state !== 'closed') await audio.close();
-    running = false;
-    connect.disabled = false;
-    choose.disabled = false;
-    noCanvas.disabled = false;
-    play.disabled = false;
+    try {
+      if (audio !== null && audio.state !== 'closed') await audio.close();
+    } catch (error) {
+      console.error('Audio cleanup failed', error);
+    } finally {
+      running = false;
+      welcome.hidden = false;
+      connect.disabled = false;
+      chooseButton.disabled = false;
+      choose.disabled = false;
+      play.disabled = false;
+    }
   }
 });
