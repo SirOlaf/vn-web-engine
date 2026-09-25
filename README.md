@@ -21,13 +21,14 @@ npm run build
 npm start
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Choose a game in the viewer, then either select **Choose game folder** or use the server-backed installation option. **Play** starts the selected game. Aokana is also available directly at [`/aokana.html`](http://127.0.0.1:8000/aokana.html).
+Open the [library](http://127.0.0.1:8000), select a game, and open its player. The library detects server-backed installations and manages browser save files. Each player can also choose an installation folder from the device. **Play** starts the loaded game. Direct player links: [Aokana](http://127.0.0.1:8000/aokana.html) and [CHAOS;HEAD NOAH](http://127.0.0.1:8000/noah.html).
 
 - **CHAOS;HEAD NOAH:** Choose the installation folder containing `Game.exe` and `Data/*.cpk`. For **Open installed game**, put the installation files in `targetgame/chaos-head-noah/`, or point the server at the folder with `NOAH_DATA_ROOT="/path/to/CHAOS HEAD NOAH" npm start`.
 - **Aokana:** Choose the game folder containing `system.arc`, the other root-level `.arc` files, `BGI.gdb`, and one game `.exe`. For **Open installed game**, put these files in `targetgame/aokana/`, or point the server at the folder with `AOKANA_DATA_ROOT="/path/to/Aokana" npm start`. The executable supplies the game's cursor resource.
 
 Game files selected through the browser stay on your device. In server-backed mode, the server reads the installation files and serves the runtime data to connected browsers.
 During Aokana startup, **Skip startup sequence** appears under **Game options → Playback**; select it again to stop skipping.
+The Aokana library and player controls can import and export `BGI.gdb` and numbered `BGI*.cad` browser saves. Close the player before importing a save.
 
 ### HTTPS from another device
 

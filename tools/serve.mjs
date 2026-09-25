@@ -219,6 +219,7 @@ createServer(async (req, res) => {
         'game.css',
         'assets.html',
         'aokana.html',
+        'noah.html',
         'aokana.css',
         'aokana-assets.html',
         'aokana-assets.css',

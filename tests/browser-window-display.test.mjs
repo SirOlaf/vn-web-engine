@@ -50,12 +50,14 @@ function fixture(prefixed = false) {
     getBoundingClientRect: () => ({top: 100}),
   };
   const windowElement = {style: {}, getBoundingClientRect: () => ({left: 32, top: 140})};
+  const auxiliaryLayer = {style: {}};
   const host = new BrowserWindowDisplayHost(
     root,
     viewport,
     windowElement,
     () => {},
     (message) => messages.push(message),
+    auxiliaryLayer,
   );
   return {
     host,
@@ -64,6 +66,7 @@ function fixture(prefixed = false) {
     root,
     viewport,
     windowElement,
+    auxiliaryLayer,
     calls,
     messages,
     saved,
@@ -90,6 +93,29 @@ test('native desktop pixels, fitted window and pointer mapping retain one coordi
   s.view.dispatchEvent(new Event('resize'));
   assert.equal(s.windowElement.style.transform, 'scale(0.1875)');
   assert.equal(s.host.readViewportScreenMapping().nativePixelsPerCssY, 1920 / 360);
+  s.host.dispose();
+});
+
+test('expanded presentation stretches both axes and preserves native pointer coordinates', () => {
+  const s = fixture();
+  s.host.configure({width: 1920, height: 1080, fullscreen: true});
+  s.host.setPosition(300, 200);
+  assert.equal(s.windowElement.style.transform, 'scale(0.5, 0.6666666666666666)');
+  assert.equal(s.auxiliaryLayer.style.transform, s.windowElement.style.transform);
+  assert.equal(s.windowElement.style.left, '0px');
+  assert.equal(s.windowElement.style.top, '0px');
+  assert.equal(s.viewport.style.height, '');
+  const mapping = s.host.readViewportScreenMapping();
+  assert.equal(mapping.nativePixelsPerCssX, 2);
+  assert.equal(mapping.nativePixelsPerCssY, 1.5);
+  assert.equal(mapping.originX + (32 + 480) * mapping.nativePixelsPerCssX, 300 + 960);
+  assert.equal(mapping.originY + (140 + 360) * mapping.nativePixelsPerCssY, 200 + 540);
+  s.viewport.clientWidth = 720;
+  s.view.dispatchEvent(new Event('resize'));
+  assert.equal(s.windowElement.style.transform, 'scale(0.375, 0.6666666666666666)');
+  assert.equal(s.auxiliaryLayer.style.transform, s.windowElement.style.transform);
+  s.host.configure({width: 1920, height: 1080, fullscreen: false});
+  assert.equal(s.windowElement.style.transform, 'scale(0.375)');
   s.host.dispose();
 });
 

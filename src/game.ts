@@ -263,3 +263,5 @@ element<HTMLButtonElement>('export').onclick = () =>
 window.addEventListener('pagehide', (event) => {
   if (!event.persisted) player?.dispose();
 });
+if (new URLSearchParams(location.search).get('source') === 'installed')
+  element<HTMLButtonElement>('connect').click();

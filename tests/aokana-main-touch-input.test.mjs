@@ -79,7 +79,11 @@ function fixture(available = true) {
     display,
     callbacks: {isReady: () => true},
     isLiveMainWindow: () => true,
-    focus() {},
+    focusCalls: 0,
+    focus() {
+      this.focusCalls++;
+      input.foreground = true;
+    },
     mapCanvasViewportPoint(x, y) {
       return {
         screenX: -100 + x * 2,
@@ -138,6 +142,8 @@ test('first touch uses shared queued WM_TOUCH sidecar before owned mouse and bro
   assert.equal(s.touch.setRegistration(1), 1);
   const event = s.canvas.fire('pointerdown');
   assert.equal(event.defaultPrevented, true);
+  assert.equal(s.host.focusCalls, 1);
+  assert.equal(s.input.queryKey(1) & 0x8000, 0x8000);
   assert.equal(s.input.pointerAvailable, true);
   assert.deepEqual(s.input.screenCursorPosition(), [-70, 100]);
   assert.deepEqual(s.input.touchPositions, []);
@@ -277,11 +283,24 @@ test('touch sidecar retains FIFO order around posted messages and caps pending b
   s.ingress.dispose();
 });
 
-test('unregistered and child contacts stay outside the main canvas owner; cancel releases primary', () => {
+test('unregistered touch maps to native mouse while child contacts stay outside the canvas owner', () => {
   const s = fixture();
   const child = new Element();
-  s.canvas.fire('pointerdown');
+  assert.equal(s.canvas.fire('pointerdown').defaultPrevented, true);
+  assert.equal(s.messages.dispatchNext().message.message, 0x201);
+  assert.equal(s.touch.copyContacts(null), 0);
+  assert.equal(s.input.queryKey(1) & 0x8000, 0x8000);
+  s.canvas.fire('mousedown', {
+    pointerType: undefined,
+    buttons: 1,
+    sourceCapabilities: {firesTouchEvents: true},
+  });
   assert.equal(s.messages.take(), null);
+  s.canvas.fire('pointermove', {clientX: 18});
+  assert.equal(s.messages.dispatchNext().message.message, 0x200);
+  s.canvas.fire('pointerup', {clientX: 18});
+  assert.equal(s.messages.dispatchNext().message.message, 0x202);
+  assert.equal(s.input.queryKey(1) & 0x8000, 0);
   s.touch.setRegistration(1);
   s.canvas.fire('pointerdown', {target: child});
   assert.equal(s.messages.take(), null);

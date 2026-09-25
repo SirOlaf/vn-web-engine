@@ -36,7 +36,8 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
   private geometry: WindowDisplayGeometry = {width: 800, height: 600, fullscreen: false};
   private x = 0;
   private y = 0;
-  private scale = 1;
+  private scaleX = 1;
+  private scaleY = 1;
   private expanded = false;
   private modeValue: BrowserFullscreenMode = 'page';
   private pending = false;
@@ -140,10 +141,10 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
   readViewportScreenMapping(): ViewportScreenMapping {
     const rect = this.windowElement.getBoundingClientRect();
     return {
-      originX: this.x - rect.left / this.scale,
-      originY: this.y - rect.top / this.scale,
-      nativePixelsPerCssX: 1 / this.scale,
-      nativePixelsPerCssY: 1 / this.scale,
+      originX: this.x - rect.left / this.scaleX,
+      originY: this.y - rect.top / this.scaleY,
+      nativePixelsPerCssX: 1 / this.scaleX,
+      nativePixelsPerCssY: 1 / this.scaleY,
     };
   }
 
@@ -153,21 +154,22 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
     const availableWidth = Math.max(1, this.viewport.clientWidth);
     const availableHeight = Math.max(1, this.viewport.clientHeight);
     const ratio = this.view.devicePixelRatio > 0 ? this.view.devicePixelRatio : 1;
-    this.scale = Math.min(
-      availableWidth / width,
-      availableHeight / height,
-      this.expanded ? Infinity : 1 / ratio,
-    );
-    this.viewport.style.height = this.expanded ? '' : `${height * this.scale}px`;
+    const fittedScale = Math.min(availableWidth / width, availableHeight / height, 1 / ratio);
+    this.scaleX = this.expanded ? availableWidth / width : fittedScale;
+    this.scaleY = this.expanded ? availableHeight / height : fittedScale;
+    this.viewport.style.height = this.expanded ? '' : `${height * this.scaleY}px`;
     for (const element of new Set([this.windowElement, this.auxiliaryLayer])) {
       const style = element.style;
       style.width = `${width}px`;
       style.height = `${height}px`;
       style.position = 'absolute';
       style.transformOrigin = 'top left';
-      style.transform = `scale(${this.scale})`;
-      style.left = `${(availableWidth - width * this.scale) / 2}px`;
-      style.top = `${(availableHeight - height * this.scale) / 2}px`;
+      style.transform =
+        this.scaleX === this.scaleY
+          ? `scale(${this.scaleX})`
+          : `scale(${this.scaleX}, ${this.scaleY})`;
+      style.left = `${(availableWidth - width * this.scaleX) / 2}px`;
+      style.top = `${(availableHeight - height * this.scaleY) / 2}px`;
     }
     this.coordinates.refresh();
   };

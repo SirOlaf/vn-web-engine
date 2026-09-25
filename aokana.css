@@ -47,6 +47,12 @@
 #fatal-error {
   color: #ffd1cb;
 }
+#save-files .file-actions button {
+  min-width: 0;
+}
+#save-status:empty {
+  display: none;
+}
 .no-canvas #surface {
   background: #111b2b;
 }

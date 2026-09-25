@@ -41,6 +41,7 @@
           <div id="sidebar-body">
             <section>
               <h2>Game</h2>
+              <a class="sidebar-library-link" href="/">← Library</a>
               <label for="viewer-game">Select game</label>
               <select id="viewer-game">
                 <option value="noah">CHAOS;HEAD NOAH</option>
@@ -63,6 +64,23 @@
               <button id="choose" type="button">Choose game folder</button>
               <input id="files" type="file" webkitdirectory directory hidden />
               <p>Read from your device. Never uploaded.</p>
+            </section>
+            <section id="save-files">
+              <h2>Save files</h2>
+              <label for="save-file">Saved in this browser</label>
+              <select id="save-file" aria-label="Browser save file" disabled>
+                <option>No browser saves yet</option>
+              </select>
+              <div class="file-actions">
+                <button id="save-import" type="button">Import</button>
+                <button id="save-export" type="button" disabled>Export</button>
+              </div>
+              <input id="save-import-file" type="file" accept=".gdb,.cad" hidden />
+              <p>
+                Import before playing. A matching selected save is replaced; new saves use game
+                data.
+              </p>
+              <p id="save-status" role="status"></p>
             </section>
             <section id="playback-options" hidden>
               <h2>Playback</h2>

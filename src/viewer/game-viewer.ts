@@ -19,7 +19,7 @@ export function mountGameViewer(game: ViewerGame): {collapseOptions(collapsed: b
 
   gameSelect.value = game;
   gameSelect.addEventListener('change', () => {
-    const destination = gameSelect.value === 'aokana' ? '/aokana.html' : '/';
+    const destination = gameSelect.value === 'aokana' ? '/aokana.html' : '/noah.html';
     window.location.assign(destination);
   });
   toggle.addEventListener('click', () =>

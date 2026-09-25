@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#090b0e" />
+    <title>CHAOS;HEAD NOAH · VN Web Engine</title>
+    <link rel="stylesheet" href="game.css" />
+  </head>
+  <body>
+    <main id="game" aria-label="Game">
+      <div id="welcome">
+        <span class="eyebrow">VN / WEB ENGINE</span>
+        <h1 id="game-title">CHAOS;HEAD NOAH</h1>
+        <p id="prompt">Open your installed game or choose its installation folder.</p>
+        <p class="touch-help">
+          Tap to click · Drag to move · Hold or press with two fingers to right-click
+        </p>
+        <button id="play" hidden>Play</button>
+      </div>
+    </main>
+    <aside id="sidebar" aria-label="Game options">
+      <button
+        id="sidebar-toggle"
+        aria-expanded="true"
+        aria-controls="sidebar-body"
+        aria-label="Toggle game options"
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" />
+          <path d="M8 4v12" stroke="currentColor" /></svg
+        ><span>Game options</span>
+      </button>
+      <div id="sidebar-body">
+        <section>
+          <h2>Game</h2>
+          <a class="sidebar-library-link" href="/">← Library</a>
+          <label for="viewer-game">Select game</label>
+          <select id="viewer-game">
+            <option value="noah">CHAOS;HEAD NOAH</option>
+            <option value="aokana">Aokana</option>
+          </select>
+        </section>
+        <section>
+          <h2>Display</h2>
+          <button id="fullscreen" aria-pressed="false" aria-describedby="fullscreen-help">
+            Enter fullscreen
+          </button>
+          <p id="fullscreen-help" hidden>Fullscreen is unavailable in this browser.</p>
+        </section>
+        <section>
+          <h2>Game files</h2>
+          <button id="connect">Open installed game</button
+          ><button id="choose">Choose game folder</button
+          ><input id="files" type="file" webkitdirectory directory hidden />
+          <p>Read from your device. Never uploaded.</p>
+        </section>
+        <section>
+          <h2>Save files</h2>
+          <label for="save-file">File</label
+          ><select id="save-file">
+            <option value="saveData">SAVEDATA.DAT</option>
+            <option value="config">CONFIG.DAT</option>
+            <option value="padConfig">PADCONFIG.DAT</option>
+          </select>
+          <div class="file-actions">
+            <button id="import">Import</button><button id="export">Export</button>
+          </div>
+          <input id="save-import" type="file" accept=".dat" hidden />
+          <p id="save-help">Import replaces the selected file. Import before playing.</p>
+        </section>
+        <section>
+          <h2>Text rendering</h2>
+          <label class="sr-only" for="text-mode">Text rendering mode</label
+          ><select id="text-mode" aria-describedby="text-help">
+            <option value="native">Native</option>
+            <option value="dom">DOM text</option>
+          </select>
+          <p id="text-help">
+            DOM text uses selectable browser fonts with the game’s line breaks. Click outside text
+            to control the game.
+          </p>
+        </section>
+        <p id="status" role="status">No game loaded.</p>
+      </div>
+    </aside>
+    <div id="runtime-advisories" class="runtime-advisories" aria-live="polite"></div>
+    <script type="module" src="dist/game.js"></script>
+  </body>
+</html>

@@ -42,7 +42,7 @@ export class AokanaBrowserTouchWindow implements AokanaNativeTouchWindow {
   }
 }
 
-/** Scoped PointerEvent profile: one native touch batch and one owned primary mouse translation per event. */
+/** Scoped PointerEvent profile: registered contacts receive WM_TOUCH; primary contact also owns mouse input. */
 export class AokanaMainTouchInput {
   private readonly active = new Set<number>();
   private primary: number | null = null;
@@ -85,7 +85,6 @@ export class AokanaMainTouchInput {
     return (
       !this.disposed &&
       this.touchWindow.available &&
-      this.touchWindow.registered &&
       this.host.isLiveMainWindow() &&
       this.host.parent.style.visibility !== 'hidden' &&
       this.host.document.visibilityState !== 'hidden'
@@ -178,14 +177,18 @@ export class AokanaMainTouchInput {
     } else if (!this.active.has(id)) return;
     const primary = down ? event.isPrimary && this.primary === null : this.primary === id;
     const point = this.sample(event, down ? (primary ? 0x12 : 2) : ending ? 4 : 1);
-    if (!this.messages.enqueuePhysicalTouch([point.sample])) {
+    // RegisterTouchWindow gates WM_TOUCH, not the OS's primary-contact mouse stream.
+    if (this.touchWindow.registered && !this.messages.enqueuePhysicalTouch([point.sample])) {
       this.deactivate();
       event.preventDefault();
       return;
     }
     if (down) {
       this.active.add(id);
-      if (primary) this.primary = id;
+      if (primary) {
+        this.primary = id;
+        this.host.focus();
+      }
       this.host.surface.setPointerCapture?.(event.pointerId);
     }
     if (primary) {

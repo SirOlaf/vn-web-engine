@@ -30,6 +30,7 @@ import {AokanaProductionDisplayResourceGraph} from './native/production-display-
 import {AokanaProductionVmCore} from './native/production-vm-core.js';
 import {aokanaRegistryFold} from './native/registry-case.js';
 import {AokanaNativeText} from './native/text.js';
+import {AokanaSaveTransfer, type AokanaSaveEntry} from './save-transfer.js';
 
 interface ServedFile {
   name: string;
@@ -62,6 +63,11 @@ const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas')!;
 const fullscreenMode = document.querySelector<HTMLSelectElement>('#fullscreen-mode')!;
 const fullscreenButton = document.querySelector<HTMLButtonElement>('#fullscreen')!;
 const fullscreenHelp = document.querySelector<HTMLElement>('#fullscreen-help')!;
+const saveSelect = document.querySelector<HTMLSelectElement>('#save-file')!;
+const saveImport = document.querySelector<HTMLButtonElement>('#save-import')!;
+const saveExport = document.querySelector<HTMLButtonElement>('#save-export')!;
+const saveImportFile = document.querySelector<HTMLInputElement>('#save-import-file')!;
+const saveStatus = document.querySelector<HTMLElement>('#save-status')!;
 const diagnosticMode = document.documentElement.classList.contains('no-canvas');
 mountGameViewer('aokana');
 const displayHost = new BrowserWindowDisplayHost(
@@ -96,6 +102,102 @@ syncFullscreenControls();
 let selected: Installation | null = null;
 let running = false;
 let loading = false;
+let saveBusy = false;
+let saveRevision = 0;
+let browserSaves: AokanaSaveEntry[] = [];
+const saveTransfer = new AokanaSaveTransfer();
+
+function selectedSave(): AokanaSaveEntry | null {
+  const index = Number(saveSelect.value);
+  return Number.isSafeInteger(index) ? (browserSaves[index] ?? null) : null;
+}
+
+function syncSaveControls(): void {
+  saveImport.disabled = running || saveBusy;
+  saveSelect.disabled = saveBusy || browserSaves.length === 0;
+  saveExport.disabled = saveBusy || selectedSave() === null;
+  if (saveBusy) play.disabled = true;
+  else if (!running && !loading) play.disabled = selected === null;
+}
+
+async function refreshBrowserSaves(prefer?: AokanaSaveEntry): Promise<void> {
+  const revision = ++saveRevision;
+  const previous = prefer ?? selectedSave();
+  const entries = await saveTransfer.list();
+  if (revision !== saveRevision) return;
+  browserSaves = entries;
+  saveSelect.replaceChildren();
+  if (browserSaves.length === 0) {
+    saveSelect.add(new Option('No browser saves yet', ''));
+  } else {
+    for (const [index, entry] of browserSaves.entries())
+      saveSelect.add(
+        new Option(
+          `${entry.name} · ${entry.area === 'game' ? 'Game data' : 'User data'}`,
+          String(index),
+        ),
+      );
+    const previousIndex = browserSaves.findIndex(
+      (entry) => entry.area === previous?.area && entry.path === previous.path,
+    );
+    saveSelect.value = String(Math.max(0, previousIndex));
+  }
+  syncSaveControls();
+}
+
+async function saveAction(action: () => Promise<void>): Promise<void> {
+  if (saveBusy) return;
+  saveBusy = true;
+  syncSaveControls();
+  try {
+    await action();
+  } catch (error) {
+    saveStatus.textContent = errorMessage(error);
+  } finally {
+    saveBusy = false;
+    syncSaveControls();
+  }
+}
+
+saveSelect.addEventListener('change', syncSaveControls);
+saveImport.addEventListener('click', () => saveImportFile.click());
+saveImportFile.addEventListener('change', () => {
+  const file = saveImportFile.files?.[0];
+  saveImportFile.value = '';
+  if (!file || running) return;
+  void saveAction(async () => {
+    if (file.size > 64 * 1024 * 1024) throw new Error('Import exceeds 64 MiB.');
+    const selected = selectedSave();
+    const destination =
+      selected !== null && aokanaRegistryFold(selected.name) === aokanaRegistryFold(file.name)
+        ? selected
+        : undefined;
+    const entry = await saveTransfer.import(
+      file.name,
+      new Uint8Array(await file.arrayBuffer()),
+      destination,
+    );
+    await refreshBrowserSaves(entry);
+    saveStatus.textContent = `${entry.name} imported into browser ${entry.area} data.`;
+  });
+});
+saveExport.addEventListener('click', () => {
+  const entry = selectedSave();
+  if (entry === null) return;
+  void saveAction(async () => {
+    const bytes = await saveTransfer.read(entry);
+    const url = URL.createObjectURL(new Blob([bytes.slice().buffer]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = entry.name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    saveStatus.textContent = `${entry.name} exported.`;
+  });
+});
+void refreshBrowserSaves().catch((error) => {
+  saveStatus.textContent = errorMessage(error);
+});
 
 function report(message: string): void {
   status.textContent = message;
@@ -467,13 +569,14 @@ choose.addEventListener('change', async () => {
 });
 
 play.addEventListener('click', async () => {
-  if (selected === null || running || loading) return;
+  if (selected === null || running || loading || saveBusy) return;
   const mode = diagnosticMode ? 'none' : 'canvas';
   clearFatalError();
   if (surface.parentElement !== viewport) viewport.insertBefore(surface, windowLayer);
   surface.style.visibility = '';
   windowLayer.style.visibility = '';
   running = true;
+  syncSaveControls();
   welcome.hidden = true;
   play.disabled = true;
   connect.disabled = true;
@@ -500,11 +603,17 @@ play.addEventListener('click', async () => {
       console.error('Audio cleanup failed', error);
     } finally {
       running = false;
+      syncSaveControls();
       welcome.hidden = false;
       connect.disabled = false;
       chooseButton.disabled = false;
       choose.disabled = false;
       play.disabled = false;
+      void refreshBrowserSaves().catch((error) => {
+        saveStatus.textContent = errorMessage(error);
+      });
     }
   }
 });
+
+if (new URLSearchParams(location.search).get('source') === 'installed') connect.click();
