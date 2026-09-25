@@ -5,7 +5,7 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "tsc -p tsconfig.json && node tools/build-audio-codecs.mjs && vite build",
     "build:wasm": "node tools/build-wasm.mjs",
     "test": "npm run build && node --test tests/*.test.mjs",
     "verify": "npm run build && node tools/verify.mjs",
@@ -34,5 +34,8 @@
     "svelte": "^5.57.1",
     "typescript": "7.0.2",
     "vite": "^8.3.1"
+  },
+  "dependencies": {
+    "@wasm-audio-decoders/ogg-vorbis": "0.1.20"
   }
 }

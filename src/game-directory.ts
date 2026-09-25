@@ -1,3 +1,5 @@
+import {isInstallationMetadata} from './platform/installation-path.js';
+
 export interface BrowserFile {
   readonly name: string;
   readonly webkitRelativePath: string;
@@ -19,6 +21,7 @@ export function gameDirectoryFiles<T extends BrowserFile>(files: Iterable<T>): G
     if (parts.length < 2 || parts.some((part) => !part)) continue;
     root ??= parts[0];
     if (parts[0] !== root) throw new Error('Choose a single game folder.');
+    if (isInstallationMetadata(parts.slice(1).join('/'))) continue;
 
     if (parts.length === 2 && parts[1]!.toLowerCase() === 'game.exe') executable = file;
     else if (parts.length === 3 && parts[1]!.toLowerCase() === 'data' && /\.cpk$/i.test(parts[2]!))

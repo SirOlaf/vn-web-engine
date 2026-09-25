@@ -6,6 +6,33 @@ export interface BrowserAudioContextSnapshot {
   readonly needsResume: boolean;
 }
 
+const hosts = new Set<BrowserAudioContextHost>();
+const listeners = new Set<(hosts: readonly BrowserAudioContextHost[]) => void>();
+
+/** Viewer controls observe browser devices, without becoming part of native playback. */
+export function subscribeBrowserAudioContexts(
+  listener: (hosts: readonly BrowserAudioContextHost[]) => void,
+): () => void {
+  listeners.add(listener);
+  try {
+    listener([...hosts]);
+  } catch {
+    // An observer cannot interrupt construction or activation of an audio device.
+  }
+  return () => listeners.delete(listener);
+}
+
+function publishHosts(): void {
+  const current = [...hosts];
+  for (const listener of listeners) {
+    try {
+      listener(current);
+    } catch {
+      // A viewer observer does not own playback or the audio graph.
+    }
+  }
+}
+
 /** Owns browser activation/recovery of an existing context; the caller owns its audio graph
  * and closing it. A resumed context keeps every buffer and its real playback position. */
 export class BrowserAudioContextHost {
@@ -21,7 +48,10 @@ export class BrowserAudioContextHost {
     this.view = document.defaultView;
     context.addEventListener('statechange', this.stateChanged);
     document.addEventListener('visibilitychange', this.returned);
+    document.addEventListener('click', this.activated, true);
+    document.addEventListener('keydown', this.activated, true);
     this.view?.addEventListener('pageshow', this.returned);
+    hosts.add(this);
     this.publish();
   }
 
@@ -62,6 +92,7 @@ export class BrowserAudioContextHost {
 
   private publish(): void {
     if (this.disposed) return;
+    publishHosts();
     try {
       this.changed(this.snapshot);
     } catch {
@@ -77,6 +108,15 @@ export class BrowserAudioContextHost {
     if (this.disposed) return;
     this.publish();
     if (this.document.visibilityState !== 'visible' || !this.snapshot.needsResume) return;
+    this.recover();
+  };
+
+  private readonly activated = (): void => {
+    if (this.disposed || !this.snapshot.needsResume) return;
+    this.recover();
+  };
+
+  private recover(): void {
     void this.resume().catch((error: unknown) => {
       if (this.disposed) return;
       try {
@@ -85,13 +125,17 @@ export class BrowserAudioContextHost {
         // Error reporting cannot change playback state.
       }
     });
-  };
+  }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.context.removeEventListener('statechange', this.stateChanged);
     this.document.removeEventListener('visibilitychange', this.returned);
+    this.document.removeEventListener('click', this.activated, true);
+    this.document.removeEventListener('keydown', this.activated, true);
     this.view?.removeEventListener('pageshow', this.returned);
+    hosts.delete(this);
+    publishHosts();
   }
 }

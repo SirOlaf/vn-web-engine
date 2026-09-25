@@ -1,4 +1,5 @@
 import type {PcmClip} from './pcm.js';
+import {BrowserAudioContextHost} from './browser-audio-context-host.js';
 
 /** Playback capabilities shared by engines. Positions count played samples, including repeated loops; PCM is trimmed. */
 export interface AudioVoice {
@@ -18,6 +19,7 @@ export interface AudioTransport {
 /** A prepared voice starts paused; replacing or pausing it preserves sample position. */
 export class BrowserAudioTransport implements AudioTransport {
   private readonly context: AudioContext;
+  private readonly contextHost: BrowserAudioContextHost | null;
   private readonly voices = new Set<AudioVoice>();
   private disposed = false;
   constructor(
@@ -25,9 +27,11 @@ export class BrowserAudioTransport implements AudioTransport {
     context?: AudioContext,
   ) {
     this.context = context ?? new AudioContext();
+    this.contextHost =
+      typeof document === 'undefined' ? null : new BrowserAudioContextHost(this.context, document);
   }
   async unlock(): Promise<void> {
-    if (!this.disposed) await this.context.resume();
+    if (!this.disposed) await (this.contextHost?.resume() ?? this.context.resume());
   }
   async prepare(bank: number, id: number, loop: boolean): Promise<AudioVoice> {
     if (this.disposed) throw new Error('Audio transport is disposed');
@@ -136,6 +140,7 @@ export class BrowserAudioTransport implements AudioTransport {
     if (this.disposed) return;
     this.disposed = true;
     for (const voice of this.voices) voice.dispose();
+    this.contextHost?.dispose();
     void this.context.close();
   }
 }

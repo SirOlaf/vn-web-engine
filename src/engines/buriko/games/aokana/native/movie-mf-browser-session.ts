@@ -1,5 +1,6 @@
 import {invalidateCanvasFrame} from '../../../../../graphics/canvas-frame-presenter.js';
 import {playBrowserMediaWithActivation} from '../../../../../video/browser-media-activation.js';
+import {observeBrowserMediaLoading} from '../../../../../video/browser-media-loading.js';
 import type {AokanaBpPointer} from '../bp/memory.js';
 import type {AokanaBrowserMainWindow} from './browser-main-window.js';
 import {
@@ -106,6 +107,7 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
   private video: HTMLVideoElement | null = null;
   private finishedEarly = false;
   private playback: AbortController | null = null;
+  private stopLoading: (() => void) | null = null;
 
   constructor(
     private readonly document: Document,
@@ -126,13 +128,14 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
   }
 
   /** Source, topology, and retained display/audio services are acquired before +84=2. */
-  async open(bytes: Uint8Array, signal: AbortSignal): Promise<void> {
+  async open(source: Blob, signal: AbortSignal): Promise<void> {
     if (this.closed || this.video !== null)
       throw new Error('Aokana MF controller cannot open a second live source');
-    const url = URL.createObjectURL(new Blob([bytes.slice().buffer]));
+    const url = URL.createObjectURL(source);
     const video = this.document.createElement('video');
     this.url = url;
     this.video = video;
+    this.stopLoading = observeBrowserMediaLoading(video);
     video.preload = 'auto';
     video.playsInline = true;
     if (this.window.presentationMode === 'none') video.muted = true;
@@ -166,6 +169,8 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
       if (signal.aborted || this.closed)
         throw new DOMException('MF movie session was retired', 'AbortError');
       if (this.finishedEarly) {
+        this.stopLoading?.();
+        this.stopLoading = null;
         this.nativeState84 = 0;
         this.nativeStateB8 = 0;
         return;
@@ -260,6 +265,8 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
   finishEarly(): void {
     if (this.closed) return;
     this.finishedEarly = true;
+    this.stopLoading?.();
+    this.stopLoading = null;
     this.playback?.abort();
     this.playback = null;
     if (this.callback !== null) this.video?.cancelVideoFrameCallback(this.callback);
@@ -276,6 +283,8 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
   }
 
   private releaseMedia(): void {
+    this.stopLoading?.();
+    this.stopLoading = null;
     this.playback?.abort();
     this.playback = null;
     this.nativeState84 = 0;
@@ -387,7 +396,7 @@ export class AokanaBrowserMfMovieSession {
         try {
           const source = await this.documents.read(direct, signal);
           if (!live()) return 0x80000001;
-          await controller.open(source.bytes, signal);
+          await controller.open(source.blob, signal);
           if (!live()) return 0x80000001;
           started = true;
           return 0;
@@ -402,7 +411,7 @@ export class AokanaBrowserMfMovieSession {
       try {
         const source = await this.documents.read(archived, signal);
         if (!live()) return 0x80000001;
-        await controller.open(source.bytes, signal);
+        await controller.open(source.blob, signal);
         if (!live()) return 0x80000001;
         started = true;
         return 0;

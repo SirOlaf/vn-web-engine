@@ -1,4 +1,5 @@
 import type {AokanaBpPointer} from '../bp/memory.js';
+import {sourceBlob} from '../../../../../core/source.js';
 import type {AokanaProgramFiles} from './program-files.js';
 import {
   AokanaMfMovieSourceCandidates,
@@ -6,9 +7,9 @@ import {
   type AokanaMfDirectSourceCandidate,
 } from './movie-mf-source-candidates.js';
 
-/** A physical MF candidate, materialized for the browser's Blob media source. */
+/** The exact physical MF region, retaining its local file backing when available. */
 export interface AokanaMfMovieDocument {
-  readonly bytes: Uint8Array;
+  readonly blob: Blob;
   readonly kind: 'direct' | 'archive';
 }
 
@@ -52,6 +53,8 @@ export class AokanaMfMovieDocuments {
       length > this.byteBudget
     )
       throw new RangeError('Aokana MF source exceeds its physical region or browser byte budget');
+    const local = sourceBlob(source, start, length);
+    if (local !== null) return {kind: candidate.kind, blob: local};
     const bytes = new Uint8Array(length);
     for (let at = 0; at < length;) {
       if (signal.aborted) throw new DOMException('MF movie source was retired', 'AbortError');
@@ -62,6 +65,6 @@ export class AokanaMfMovieDocuments {
       at += chunk.length;
     }
     if (signal.aborted) throw new DOMException('MF movie source was retired', 'AbortError');
-    return {kind: candidate.kind, bytes};
+    return {kind: candidate.kind, blob: new Blob([bytes.buffer])};
   }
 }

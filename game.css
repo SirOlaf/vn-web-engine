@@ -193,6 +193,19 @@ a {
   width: min(370px, calc(100vw - 32px));
   pointer-events: none;
 }
+.source-activity {
+  position: fixed;
+  z-index: 1099;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: max(16px, env(safe-area-inset-left));
+  max-width: calc(100vw - 32px);
+  padding: 10px 14px;
+  border: 1px solid #39414c;
+  border-radius: 8px;
+  background: #141920f5;
+  font-size: 13px;
+  pointer-events: none;
+}
 .runtime-advisory {
   padding: 12px 16px;
   border: 1px solid #ba9352;
@@ -209,6 +222,12 @@ a {
   margin: 5px 0 0;
   color: #e6d1ae;
   font-size: 13px;
+}
+.runtime-audio-recovery {
+  pointer-events: auto;
+}
+.runtime-audio-recovery button {
+  margin-top: 10px;
 }
 #sidebar.collapsed {
   width: auto;

@@ -1,4 +1,5 @@
 import {oggPageChecksum as aokanaOggChecksum} from '../../../../../../formats/ogg/checksum.js';
+import {decodeVorbis, VorbisDecodeError} from '../../../../../../audio/vorbis-decoder.js';
 import {AokanaWaveBoxError} from './wavebox-header.js';
 
 export {aokanaOggChecksum};
@@ -56,7 +57,7 @@ interface PendingLink {
   finalGranule: bigint | null;
 }
 
-/** Ogg page synchronization/CRC and sequential logical links; codec decoding remains a browser primitive. */
+/** Ogg page synchronization/CRC and sequential logical links; the shared codec supplies PCM. */
 export function parseAokanaOggVorbisLinks(bytes: Uint8Array): readonly AokanaOggVorbisLink[] {
   const links: PendingLink[] = [];
   let current: PendingLink | null = null,
@@ -147,13 +148,25 @@ const browserPlaneOrder: readonly (readonly number[])[] = [
   [0, 2, 1, 6, 7, 4, 5, 3],
 ];
 
-/** Browser Vorbis platform profile. No live context, resampling, gain, loops or playback are involved. */
+/** The shared libvorbis host returns encoded planes and complete native PCM. An explicitly
+ * supplied OfflineAudioContext remains a diagnostic platform profile, never the default. */
 export async function decodeAokanaOggVorbis(
   bytes: Uint8Array,
-  Context: typeof OfflineAudioContext = OfflineAudioContext,
+  Context?: typeof OfflineAudioContext,
 ): Promise<readonly AokanaVorbisPcmLink[]> {
   const result: AokanaVorbisPcmLink[] = [];
   for (const link of parseAokanaOggVorbisLinks(bytes)) {
+    if (Context === undefined) {
+      const decoded = await decodeVorbis(link.bytes).catch((error: unknown) => {
+        if (error instanceof VorbisDecodeError)
+          throw new AokanaWaveBoxError(0x10000000, 'Vorbis rejected Aokana compressed audio');
+        throw error;
+      });
+      if (decoded.sampleRate !== link.sampleRate || decoded.planes.length !== link.channels)
+        throw new Error('Vorbis decoder changed the identified Aokana PCM geometry');
+      result.push({...link, planes: decoded.planes, frames: decoded.frames});
+      continue;
+    }
     const context = new Context({
       numberOfChannels: link.channels,
       length: 1,

@@ -3,6 +3,7 @@ import {lstat, readFile, readdir, stat, realpath} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
+import {isInstallationMetadata} from '../dist/platform/installation-path.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const noah = path.resolve(
   process.env.NOAH_DATA_ROOT ?? path.join(root, 'targetgame', 'chaos-head-noah'),
@@ -51,7 +52,9 @@ async function serveAokanaCursor(req, res) {
     cursorError(req, res, 404, 'missing-executable', 'No Aokana executable found');
     return;
   }
-  const executables = entries.filter((entry) => entry.isFile() && /\.exe$/i.test(entry.name));
+  const executables = entries.filter(
+    (entry) => entry.isFile() && !isInstallationMetadata(entry.name) && /\.exe$/i.test(entry.name),
+  );
   if (executables.length === 0) {
     cursorError(req, res, 404, 'missing-executable', 'No Aokana executable found');
     return;

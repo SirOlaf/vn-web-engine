@@ -27,6 +27,8 @@ Open the [library](http://127.0.0.1:8000), select a game, and open its player. T
 - **Aokana:** Choose the game folder containing `system.arc`, the other root-level `.arc` files, `BGI.gdb`, and one game `.exe`. For **Open installed game**, put these files in `targetgame/aokana/`, or point the server at the folder with `AOKANA_DATA_ROOT="/path/to/Aokana" npm start`. The executable supplies the game's cursor resource.
 
 Game files selected through the browser stay on your device. In server-backed mode, the server reads the installation files and serves the runtime data to connected browsers.
+Both players offer **Add files** and **Add one file** when folder selection is unavailable or incomplete, and **Keep game files in browser** to save a complete installation locally before playing. Use **Open saved game files** on later visits. Folder handles read the original files on supporting browsers; iOS Safari may make a temporary copy. See [mobile files and audio](docs/mobile-compatibility.md) for browser limits, cache controls and audio recovery.
+Ogg Vorbis playback uses a shared WebAssembly decoder to preserve native PCM boundaries and playback waits. Decoder-only WebKit comparisons lost boundary samples (4,109 → 3,981 frames for a synthetic stream; 64,892 → 64,832 for Aokana's `ASUKA` clip, with its first 128 samples missing). The fix decodes those samples without silence padding or timing changes; physical iPhone verification is still pending.
 During Aokana startup, **Skip startup sequence** appears under **Game options → Playback**; select it again to stop skipping.
 The Aokana library and player controls can import and export `BGI.gdb` and numbered `BGI*.cad` browser saves. Close the player before importing a save.
 
@@ -40,7 +42,7 @@ tailscale serve 8000
 
 Open the HTTPS URL printed by Tailscale on a device in the same tailnet, adding `/aokana.html` if desired. Tailscale Serve proxies the server's existing loopback port; `HOST=0.0.0.0` is not needed. An HTTPS reverse proxy to `127.0.0.1:8000` works too. Tailscale Serve may prompt you to enable HTTPS certificates for your tailnet.
 
-WebAssembly acceleration also depends on browser support. If an embedded module cannot run, its JavaScript fallback is used and may be much slower. The viewer reports audio and WebAssembly fallbacks when they occur.
+WebAssembly support is required for the shared Vorbis decoder. Some optional acceleration modules have JavaScript fallbacks, which may be much slower; the viewer reports audio and WebAssembly fallbacks when they occur.
 
 ## Saves and tools
 
@@ -60,3 +62,4 @@ npm test
 ## Legal
 
 This is an unofficial compatibility and preservation project, unaffiliated with the games' developers or publishers. Game files are not included and should not be redistributed with this source tree.
+The bundled Vorbis decoder's dependency attribution and notices are in [third_party/ogg-vorbis](third_party/ogg-vorbis/README.md); the build also distributes them with the decoder.

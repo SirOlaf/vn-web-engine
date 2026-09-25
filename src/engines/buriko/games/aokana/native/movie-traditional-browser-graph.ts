@@ -1,5 +1,6 @@
 import type {AokanaBpPointer} from '../bp/memory.js';
 import {playBrowserMediaWithActivation} from '../../../../../video/browser-media-activation.js';
+import {observeBrowserMediaLoading} from '../../../../../video/browser-media-loading.js';
 import {AokanaBitmapStorage} from './bitmap.js';
 import type {AokanaDisplayDevice} from './display-device.js';
 import type {AokanaFullscreenMovieState} from './movie-fullscreen-state.js';
@@ -47,6 +48,7 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
     readonly renderer: AokanaTraditionalMovieRenderer,
     private readonly document: Document,
     private readonly returnFocus: HTMLElement,
+    private readonly stopLoading: () => void,
   ) {
     this.frame = document.createElement('canvas');
     this.frame.width = video.videoWidth;
@@ -138,6 +140,7 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
   finishEarly(): void {
     if (this.closed || this.finishedEarly) return;
     this.finishedEarly = true;
+    this.stopLoading();
     this.playback.abort();
     if (this.callback !== null) this.video.cancelVideoFrameCallback(this.callback);
     if (this.timer !== null) clearTimeout(this.timer);
@@ -149,6 +152,7 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
   async closeAndJoin(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.stopLoading();
     this.playback.abort();
     if (this.callback !== null) this.video.cancelVideoFrameCallback(this.callback);
     if (this.timer !== null) clearTimeout(this.timer);
@@ -243,7 +247,7 @@ export class AokanaBrowserTraditionalMovieSession {
       try {
         const source = await this.documents.read({kind: 'direct', path: direct}, signal);
         if (!live()) return null;
-        const graph = await this.open(source.bytes, signal);
+        const graph = await this.open(source.blob, signal);
         if (!live()) {
           await graph.closeAndJoin();
           return null;
@@ -265,7 +269,7 @@ export class AokanaBrowserTraditionalMovieSession {
     try {
       const source = await this.documents.read(located, signal);
       if (!live()) return null;
-      const graph = await this.open(source.bytes, signal);
+      const graph = await this.open(source.blob, signal);
       if (!live()) {
         await graph.closeAndJoin();
         return null;
@@ -282,12 +286,10 @@ export class AokanaBrowserTraditionalMovieSession {
     }
   }
 
-  private async open(
-    bytes: Uint8Array,
-    signal: AbortSignal,
-  ): Promise<AokanaBrowserTraditionalGraph> {
-    const url = URL.createObjectURL(new Blob([bytes.slice().buffer]));
+  private async open(source: Blob, signal: AbortSignal): Promise<AokanaBrowserTraditionalGraph> {
+    const url = URL.createObjectURL(source);
     const video = this.document.createElement('video');
+    const stopLoading = observeBrowserMediaLoading(video);
     video.preload = 'auto';
     video.playsInline = true;
     if (this.device.presentationMode === 'none') video.muted = true;
@@ -338,8 +340,10 @@ export class AokanaBrowserTraditionalMovieSession {
         renderer,
         this.document,
         this.device.canvas,
+        stopLoading,
       );
     } catch (error) {
+      stopLoading();
       video.pause();
       video.removeAttribute('src');
       video.load();

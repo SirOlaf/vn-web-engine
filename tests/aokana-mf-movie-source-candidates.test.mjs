@@ -16,6 +16,8 @@ import {
 import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
 import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
 import {AokanaMfMovieSourceCandidates} from '../dist/engines/buriko/games/aokana/native/movie-mf-source-candidates.js';
+import {AokanaMfMovieDocuments} from '../dist/engines/buriko/games/aokana/native/movie-mf-document.js';
+import {BlobSource, SliceSource} from '../dist/core/source.js';
 
 function arc(name, data) {
   const bytes = new Uint8Array(16 + 128 + data.length);
@@ -94,4 +96,33 @@ test('MF movie candidates keep qualified/direct/search order and physical archiv
     Array.from(await files.read(opened.source, archive.offset, archive.length)),
     [5, 6, 7],
   );
+  const documents = new AokanaMfMovieDocuments(candidates, files, 1024);
+  const materialized = await documents.read(archive, new AbortController().signal);
+  assert.equal(materialized.kind, 'archive');
+  assert.deepEqual([...new Uint8Array(await materialized.blob.arrayBuffer())], [5, 6, 7]);
+});
+
+test('browser movies use exact local file regions without reading them into JavaScript', async () => {
+  const blob = new Blob([Uint8Array.of(91, 92, 10, 11, 12, 13, 14, 93)]);
+  const source = new SliceSource(new SliceSource(new BlobSource(blob), 1, 7), 1, 5);
+  const files = {
+    open: async () => ({source}),
+    read: () => {
+      throw new Error('Local movie preparation must retain file backing');
+    },
+  };
+  const documents = new AokanaMfMovieDocuments({resources: {files}}, files, 5);
+  const signal = new AbortController().signal;
+  const path = new Uint8Array();
+  const direct = await documents.read({kind: 'direct', path}, signal);
+  const archived = await documents.read({kind: 'archive', path, offset: 1, length: 3}, signal);
+  assert.deepEqual([...new Uint8Array(await direct.blob.arrayBuffer())], [10, 11, 12, 13, 14]);
+  assert.deepEqual([...new Uint8Array(await archived.blob.arrayBuffer())], [11, 12, 13]);
+  await assert.rejects(
+    documents.read({kind: 'archive', path, offset: 4, length: 2}, signal),
+    /physical region/,
+  );
+  const abort = new AbortController();
+  abort.abort();
+  await assert.rejects(documents.read({kind: 'direct', path}, abort.signal), {name: 'AbortError'});
 });

@@ -151,7 +151,7 @@ test('returning from a retained MF movie restores the unchanged ordinary frame',
   );
   fullscreen.controller = controller;
   try {
-    await controller.open(new Uint8Array(), new AbortController().signal);
+    await controller.open(new Blob(), new AbortController().signal);
     video.callback();
     assert.deepEqual(s.commits.at(-1), video.data);
     video.data.fill(99);

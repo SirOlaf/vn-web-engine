@@ -1,18 +1,23 @@
 import type {WorkerSource} from '../../../../../core/worker-source.js';
 import {StreamMovieVoice} from '../../../../../video/stream-voice.js';
 import type {NoahMovieHost} from './movie-devices.js';
+import {BrowserAudioContextHost} from '../../../../../audio/browser-audio-context-host.js';
 
 /** Noah's CRI/file boundary backed by the web USM/MPEG/HCA decoder. */
 export class BrowserNoahMovies implements NoahMovieHost {
   private readonly voices = new Map<number, StreamMovieVoice>();
   private readonly files = new Map<number, WorkerSource>();
   private readonly options = new Map<number, {gain: number; loop: boolean; paused: boolean}>();
+  private readonly contextHost: BrowserAudioContextHost | null;
   constructor(
     private readonly source: (asset: number) => WorkerSource,
     private readonly context = new AudioContext(),
-  ) {}
+  ) {
+    this.contextHost =
+      typeof document === 'undefined' ? null : new BrowserAudioContextHost(this.context, document);
+  }
   async unlock(): Promise<void> {
-    await this.context.resume();
+    await (this.contextHost?.resume() ?? this.context.resume());
   }
   initialize(channel: number): number {
     const handle = channel + 1;
@@ -75,6 +80,7 @@ export class BrowserNoahMovies implements NoahMovieHost {
   }
   dispose(): void {
     this.reset();
+    this.contextHost?.dispose();
     void this.context.close();
   }
 }

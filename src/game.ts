@@ -5,7 +5,9 @@ import {windowsFileKey} from './platform/windows-filesystem.js';
 import {openBrowserPlatform} from './platform/services.js';
 import {NOAH_PATHS, NOAH_WINDOWS} from './engines/mages/games/chaos-head-noah/paths.js';
 import {openNoahPlayer} from './engines/mages/games/chaos-head-noah/sc3/browser-player.js';
-import {gameDirectoryFiles} from './game-directory.js';
+import {mountInstallationControls} from './viewer/installation-controls.js';
+import type {CachedInstallation, InstallationFile} from './platform/installation-cache.js';
+import type {InstallationSelection} from './platform/installation-picker.js';
 import {mountGameViewer} from './viewer/game-viewer.js';
 
 function element<T extends HTMLElement>(id: string): T {
@@ -34,6 +36,7 @@ let platform: ReturnType<typeof openBrowserPlatform> | undefined,
   player: Awaited<ReturnType<typeof openNoahPlayer>> | undefined,
   busy = false,
   started = false;
+let selectedInstallation: CachedInstallation | null = null;
 const services = () =>
   (platform ??= openBrowserPlatform(
     'chaos-head-noah-gog',
@@ -123,6 +126,7 @@ function updateControls() {
   play.disabled = busy;
   element<HTMLButtonElement>('export').disabled = busy;
   saveFile.disabled = busy;
+  installationControls.refresh();
 }
 async function action(work: () => Promise<void>) {
   if (busy) return;
@@ -167,10 +171,68 @@ async function ready() {
   status.textContent = `${archives.size} archives loaded. Ready to play.`;
   collapse(true);
 }
+async function loadInstallation(installation: CachedInstallation): Promise<void> {
+  const byPath = new Map(installation.files.map((entry) => [entry.path.toLowerCase(), entry]));
+  if (!byPath.has('/game.exe') || !byPath.has('/data/script.cpk') || !byPath.has('/data/mes00.cpk'))
+    throw new Error(
+      'Choose Game.exe and Data/*.cpk, including script.cpk and mes00.cpk. Add the executable and archives in separate selections if needed.',
+    );
+  prepareLoad();
+  selectedInstallation = null;
+  archives.clear();
+  gameFiles.clear();
+  gameFiles.attach('/Game.exe', byPath.get('/game.exe')!.source);
+  for (const entry of installation.files) {
+    if (!/^\/data\/[^/]+\.cpk$/i.test(entry.path)) continue;
+    const name = entry.path.split('/').at(-1)!;
+    status.textContent = `Opening ${name}…`;
+    archives.set(name.toLowerCase(), await CpkArchive.open(entry.source));
+    gameFiles.attach(entry.path, entry.source);
+  }
+  await ready();
+  selectedInstallation = installation;
+}
+async function selectInstallation(selection: InstallationSelection): Promise<void> {
+  prepareLoad();
+  selectedInstallation = null;
+  const files: InstallationFile[] = [];
+  for (const {path, file} of selection.files) {
+    if (path.toLowerCase() !== '/game.exe' && !/^\/data\/[^/]+\.cpk$/i.test(path)) continue;
+    files.push({
+      path,
+      source: new BlobSource(file),
+      lastModifiedMs: file.lastModified,
+    });
+  }
+  await loadInstallation({files, metadata: {}, attachments: {}});
+}
+const installationControls = mountInstallationControls({
+  key: 'chaos-head-noah-gog',
+  choose: element<HTMLButtonElement>('choose'),
+  input: files,
+  current: () => selectedInstallation,
+  canonicalPath: windowsFileKey,
+  selectedPath: (path, directory) => (!directory && /\.cpk$/i.test(path) ? '/Data' + path : path),
+  busy: () => busy || started,
+  setBusy: (value) => {
+    busy = value;
+    updateControls();
+  },
+  report,
+  select: selectInstallation,
+  load: loadInstallation,
+  clear: () => {
+    prepareLoad();
+    selectedInstallation = null;
+    archives.clear();
+    gameFiles.clear();
+  },
+});
 element<HTMLButtonElement>('connect').onclick = () =>
   void action(async () => {
     prepareLoad();
-    archives.clear();
+    selectedInstallation = null;
+    installationControls.resetSelection();
     const response = await fetch('/api/archives');
     if (!response.ok)
       throw new Error(
@@ -180,33 +242,16 @@ element<HTMLButtonElement>('connect').onclick = () =>
     const executable = await fetch('/api/executable');
     if (!executable.ok) throw new Error('Installed Game.exe was not found.');
     const exe: {size: number; url: string} = await executable.json();
-    gameFiles.attach('/Game.exe', new HttpSource(exe.url, exe.size));
-    for (const entry of entries) {
-      status.textContent = `Opening ${entry.name}…`;
-      const source = new HttpSource(entry.url, entry.size);
-      const archive = await CpkArchive.open(source);
-      gameFiles.attach('/Data/' + entry.name, source);
-      archives.set(entry.name.toLowerCase(), archive);
-    }
-    await ready();
-  });
-element<HTMLButtonElement>('choose').onclick = () => files.click();
-files.onchange = () =>
-  void action(async () => {
-    if (!files.files?.length) return;
-    const selectedFiles = Array.from(files.files);
-    files.value = '';
-    const selected = gameDirectoryFiles(selectedFiles);
-    prepareLoad();
-    archives.clear();
-    gameFiles.attach('/Game.exe', new BlobSource(selected.executable));
-    for (const file of selected.archives) {
-      const source = new BlobSource(file);
-      status.textContent = `Opening ${file.name}…`;
-      archives.set(file.name.toLowerCase(), await CpkArchive.open(source));
-      gameFiles.attach('/Data/' + file.name, source);
-    }
-    await ready();
+    const installed: InstallationFile[] = [
+      {path: '/Game.exe', source: new HttpSource(exe.url, exe.size), lastModifiedMs: 0},
+    ];
+    for (const entry of entries)
+      installed.push({
+        path: '/Data/' + entry.name,
+        source: new HttpSource(entry.url, entry.size),
+        lastModifiedMs: 0,
+      });
+    await loadInstallation({files: installed, metadata: {}, attachments: {}});
   });
 play.onclick = () => {
   if (!player || busy || started) return;

@@ -1,15 +1,19 @@
 import {subscribeRuntimeAdvisories} from '../platform/runtime-advisories.js';
+import {mountSourceActivity} from './source-activity.js';
+import {mountBrowserAudioControls} from './browser-audio-controls.js';
 
 export type ViewerGame = 'noah' | 'aokana';
 
 /** The common page chrome belongs to the web viewer, outside either native engine. */
 export function mountGameViewer(game: ViewerGame): {collapseOptions(collapsed: boolean): void} {
+  mountSourceActivity(document.body);
   const sidebar = document.querySelector<HTMLElement>('#sidebar')!;
   const toggle = document.querySelector<HTMLButtonElement>('#sidebar-toggle')!;
   const body = document.querySelector<HTMLElement>('#sidebar-body')!;
   const gameSelect = document.querySelector<HTMLSelectElement>('#viewer-game')!;
   const notices = document.querySelector<HTMLElement>('#runtime-advisories')!;
   const shownAdvisories = new Set<string>();
+  mountBrowserAudioControls(notices, body);
 
   function collapseOptions(collapsed: boolean): void {
     sidebar.classList.toggle('collapsed', collapsed);

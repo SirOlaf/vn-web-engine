@@ -13,6 +13,7 @@ test('Aokana data manifest and ranged file route expose only runtime inputs', as
   await writeFile(path.join(gameRoot, 'BGI.gdb'), Uint8Array.of(4));
   await writeFile(path.join(gameRoot, 'BGIError.txt'), 'log');
   await writeFile(path.join(gameRoot, 'Game.exe'), Uint8Array.of(5, 6));
+  await writeFile(path.join(gameRoot, '._Game.exe'), 'filesystem metadata');
   await symlink('Game.exe', path.join(gameRoot, 'disguised.arc'));
   const server = spawn(process.execPath, ['tools/serve.mjs'], {
     cwd: new URL('../', import.meta.url),

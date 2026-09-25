@@ -84,7 +84,7 @@ export class AokanaWaveBoxOggDecoder {
 export async function createAokanaWaveBoxOggDecoder(
   bytes: Uint8Array,
   options: {readonly gain: number; readonly prefer24Bit: boolean},
-  Context: typeof OfflineAudioContext = OfflineAudioContext,
+  Context?: typeof OfflineAudioContext,
 ): Promise<AokanaWaveBoxOggDecoder> {
   const header = parseAokanaWaveBoxHeader(bytes);
   if (header.codec !== 3) throw new AokanaWaveBoxError(0x11000004, 'Aokana Ogg model requires codec3');

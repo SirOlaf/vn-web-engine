@@ -1,4 +1,6 @@
 import {BlobSource, HttpSource} from '../../../../core/source.js';
+import {BrowserAudioContextHost} from '../../../../audio/browser-audio-context-host.js';
+import {beginRuntimeActivity} from '../../../../platform/runtime-activity.js';
 import {
   MountedFileSystem,
   OverlayFileSystem,
@@ -12,6 +14,9 @@ import {
   browserDesktopSize,
 } from '../../../../platform/browser-window-display.js';
 import {IndexedDbStore, MemoryStore, type RecordStore} from '../../../../platform/store.js';
+import {mountInstallationControls} from '../../../../viewer/installation-controls.js';
+import type {CachedInstallation} from '../../../../platform/installation-cache.js';
+import type {InstallationSelection} from '../../../../platform/installation-picker.js';
 import {mountGameViewer} from '../../../../viewer/game-viewer.js';
 import {AokanaBpMemory} from './bp/memory.js';
 import {
@@ -100,6 +105,7 @@ fullscreenMode.addEventListener('change', () =>
 fullscreenButton.addEventListener('click', () => displayHost.toggleFullscreen());
 syncFullscreenControls();
 let selected: Installation | null = null;
+let selectedSnapshot: CachedInstallation | null = null;
 let running = false;
 let loading = false;
 let saveBusy = false;
@@ -149,6 +155,7 @@ async function saveAction(action: () => Promise<void>): Promise<void> {
   if (saveBusy) return;
   saveBusy = true;
   syncSaveControls();
+  installationControls.refresh();
   try {
     await action();
   } catch (error) {
@@ -156,6 +163,7 @@ async function saveAction(action: () => Promise<void>): Promise<void> {
   } finally {
     saveBusy = false;
     syncSaveControls();
+    installationControls.refresh();
   }
 }
 
@@ -278,22 +286,27 @@ async function servedFiles(): Promise<Installation> {
   return {files, modifiedFiles, cursor, executableName};
 }
 
-async function chosenFiles(selection: FileList): Promise<Installation> {
+async function chosenFiles(selection: InstallationSelection): Promise<Installation> {
   const files = source();
   const modifiedFiles: Installation['modifiedFiles'] = [];
   const executables: File[] = [];
-  for (const file of Array.from(selection)) {
-    const segments = file.webkitRelativePath.split('/');
-    const relative = segments.length > 1 ? segments.slice(1).join('/') : file.name;
-    if (!relative || relative === '.DS_Store' || relative.endsWith('/.DS_Store')) continue;
+  for (const {path: selectedPath, file} of selection.files) {
+    const relative = selectedPath.slice(1);
+    if (!relative) continue;
     const path = filePath('/' + relative);
     files.attach(path, new BlobSource(file));
     modifiedFiles.push({path, lastModifiedMs: file.lastModified});
     if (!relative.includes('/') && relative.toLowerCase().endsWith('.exe')) executables.push(file);
   }
   await requireBootArchive(files);
-  if (executables.length !== 1)
-    throw new Error('Select a game folder containing exactly one Aokana executable.');
+  if (executables.length === 0)
+    throw new Error(
+      `The browser returned ${selection.files.length} files but no executable in the game folder. Check the selected file list, try the browser folder picker, or use Add one file to add the game's .exe.`,
+    );
+  if (executables.length > 1)
+    throw new Error(
+      `The browser returned ${executables.length} executables: ${executables.map((file) => file.name).join(', ')}. Select the game files with only the game's executable.`,
+    );
   const cursor = readAokanaCursorResource(new Uint8Array(await executables[0]!.arrayBuffer()));
   if (cursor === null) throw new Error('The selected executable has no static cursor group 106.');
   return {files, modifiedFiles, cursor, executableName: executables[0]!.name};
@@ -308,6 +321,7 @@ async function launch(
   backend: AokanaSpeakerBackend,
   presentationMode: 'canvas' | 'none',
 ): Promise<void> {
+  const finishStartup = beginRuntimeActivity('Starting game');
   const stores: RecordStore[] = [];
   const openStore = async (name: string): Promise<IndexedDbStore> => {
     const store = await IndexedDbStore.open(['aokana', 'default', name]);
@@ -491,11 +505,13 @@ async function launch(
     });
     core = new AokanaProductionVmCore(graph, data, diagnostics);
     const runner = await AokanaProductionBootRunner.start(core);
+    finishStartup();
     booted = true;
     report('Aokana is running.');
     await runner.run();
     report('Aokana closed.');
   } finally {
+    finishStartup();
     skipStartup.removeEventListener('click', requestSkip);
     skipStartup.disabled = true;
     skipStartup.hidden = true;
@@ -529,10 +545,14 @@ connect.addEventListener('click', async () => {
   connect.disabled = true;
   chooseButton.disabled = true;
   selected = null;
+  selectedSnapshot = null;
+  installationControls.resetSelection();
   play.disabled = true;
+  installationControls.refresh();
   report('Opening installed game…');
   try {
     selected = await servedFiles();
+    selectedSnapshot = installationSnapshot(selected);
     play.disabled = false;
     report('Local Aokana installation ready. Press Play.');
   } catch (error) {
@@ -541,31 +561,74 @@ connect.addEventListener('click', async () => {
     loading = false;
     connect.disabled = false;
     chooseButton.disabled = false;
+    installationControls.refresh();
   }
 });
 
-chooseButton.addEventListener('click', () => choose.click());
+function installationSnapshot(installation: Installation): CachedInstallation {
+  const modified = new Map(
+    installation.modifiedFiles.map(({path, lastModifiedMs}) => [
+      aokanaRegistryFold(path),
+      lastModifiedMs,
+    ]),
+  );
+  return {
+    files: Array.from(installation.files.entries(), ([path, source]) => ({
+      path,
+      source,
+      lastModifiedMs: modified.get(path) ?? 0,
+    })),
+    metadata: {executableName: installation.executableName},
+    attachments: {cursor: new Blob([installation.cursor.slice().buffer])},
+  };
+}
 
-choose.addEventListener('change', async () => {
-  if (!choose.files?.length || running || loading) return;
-  clearFatalError();
-  loading = true;
-  connect.disabled = true;
-  chooseButton.disabled = true;
-  selected = null;
-  play.disabled = true;
-  try {
-    selected = await chosenFiles(choose.files);
-    play.disabled = false;
-    report('Selected Aokana folder ready. Press Play.');
-  } catch (error) {
-    report(errorMessage(error));
-  } finally {
-    choose.value = '';
-    loading = false;
-    connect.disabled = false;
-    chooseButton.disabled = false;
-  }
+const installationControls = mountInstallationControls({
+  key: 'aokana',
+  choose: chooseButton,
+  input: choose,
+  current: () => selectedSnapshot,
+  canonicalPath: aokanaRegistryFold,
+  busy: () => running || loading || saveBusy,
+  setBusy: (busy) => {
+    loading = busy;
+    connect.disabled = busy || running;
+    play.disabled = busy || running || saveBusy || selected === null;
+    if (busy) clearFatalError();
+  },
+  report,
+  select: async (selection) => {
+    selected = null;
+    selectedSnapshot = null;
+    selected = await chosenFiles(selection);
+    selectedSnapshot = installationSnapshot(selected);
+  },
+  load: async (snapshot) => {
+    const files = source();
+    for (const entry of snapshot.files) files.attach(entry.path, entry.source);
+    await requireBootArchive(files);
+    const executableName = snapshot.metadata.executableName;
+    if (
+      !executableName ||
+      executableName.includes('/') ||
+      filePath('/' + executableName).slice(1) !== executableName
+    )
+      throw new Error('The saved installation has no valid executable name.');
+    const cursor = snapshot.attachments.cursor;
+    if (!cursor || !cursor.size || cursor.size > 16 * 1024 * 1024)
+      throw new Error('The saved installation has no valid cursor resource.');
+    selected = {
+      files,
+      modifiedFiles: snapshot.files.map(({path, lastModifiedMs}) => ({path, lastModifiedMs})),
+      executableName,
+      cursor: new Uint8Array(await cursor.arrayBuffer()),
+    };
+    selectedSnapshot = snapshot;
+  },
+  clear: () => {
+    selected = null;
+    selectedSnapshot = null;
+  },
 });
 
 play.addEventListener('click', async () => {
@@ -582,14 +645,19 @@ play.addEventListener('click', async () => {
   connect.disabled = true;
   chooseButton.disabled = true;
   choose.disabled = true;
+  installationControls.refresh();
   report('Starting Aokana…');
   let audio: AudioContext | null = null;
+  let audioHost: BrowserAudioContextHost | null = null;
   try {
     const backend =
       mode === 'none'
         ? new AokanaMemorySpeakerBackend(48000)
         : new AokanaBrowserSpeakerBackend((audio = new AudioContext()));
-    if (audio !== null) await audio.resume();
+    if (audio !== null) {
+      audioHost = new BrowserAudioContextHost(audio, document);
+      await audioHost.resume();
+    }
     await launch(selected, backend, mode);
   } catch (error) {
     report('Aokana stopped.');
@@ -597,6 +665,7 @@ play.addEventListener('click', async () => {
     fatalError.hidden = false;
     console.error(error);
   } finally {
+    audioHost?.dispose();
     try {
       if (audio !== null && audio.state !== 'closed') await audio.close();
     } catch (error) {
@@ -608,6 +677,7 @@ play.addEventListener('click', async () => {
       connect.disabled = false;
       chooseButton.disabled = false;
       choose.disabled = false;
+      installationControls.refresh();
       play.disabled = false;
       void refreshBrowserSaves().catch((error) => {
         saveStatus.textContent = errorMessage(error);

@@ -1,4 +1,5 @@
 import {BrowserWindowsPostTeardownDialogHost} from '../../../../../platform/windows-post-teardown-dialog.js';
+import {beginRuntimeActivity} from '../../../../../platform/runtime-activity.js';
 import type {WindowsPostTeardownDialogHost} from '../../../../../platform/windows-post-teardown-dialog.js';
 import {BrowserWindowsProcessInstanceHost} from '../../../../../platform/windows-process-instance.js';
 import type {
@@ -92,9 +93,15 @@ export class AokanaProductionBootRunner {
     let failed = false;
     try {
       for (;;) {
-        const names = await this.reset.run();
-        if (names === null) break;
-        const child = await core.loader.appendSelectedProgram(names.archive, names.module);
+        const finishLoading = beginRuntimeActivity('Loading game program');
+        let child: number;
+        try {
+          const names = await this.reset.run();
+          if (names === null) break;
+          child = await core.loader.appendSelectedProgram(names.archive, names.module);
+        } finally {
+          finishLoading();
+        }
         if (child === 0) break;
         gate.beginSuccessfulBoot(child);
         while (scheduler.firstThread !== null) {

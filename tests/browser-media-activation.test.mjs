@@ -7,6 +7,7 @@ import {AokanaFullscreenMovieState} from '../dist/engines/buriko/games/aokana/na
 import {AokanaTraditionalMovieAudioPolicy} from '../dist/engines/buriko/games/aokana/native/movie-traditional-audio-policy.js';
 import {AokanaMovieImageConfiguration} from '../dist/engines/buriko/games/aokana/native/movie-image.js';
 import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
+import {subscribeRuntimeActivity} from '../dist/platform/runtime-activity.js';
 
 class Element extends EventTarget {
   style = {};
@@ -58,14 +59,19 @@ class Video extends EventTarget {
   volume = 0.75;
   muted = false;
   error = null;
+  readyState = 0;
   load() {
-    if (this.src) this.dispatchEvent(new Event('loadedmetadata'));
+    if (this.src) {
+      this.readyState = 1;
+      this.dispatchEvent(new Event('loadedmetadata'));
+    }
   }
   play() {
     this.calls++;
     if (!this.allowed)
       return Promise.reject(new DOMException('Gesture required', 'NotAllowedError'));
     this.paused = false;
+    this.readyState = 3;
     this.dispatchEvent(new Event('playing'));
     return Promise.resolve();
   }
@@ -165,19 +171,25 @@ test('browser policy gate retries from a gesture without changing media state, s
 test('MF and traditional movie owners retain their clocks during activation and remove pending controls on skip/reset', async () => {
   const s = fixture(),
     fullscreen = new AokanaFullscreenMovieState();
+  let activities = [];
+  const stopObserving = subscribeRuntimeActivity((current) => {
+    activities = current.map((activity) => activity.label);
+  });
   const controller = new AokanaBrowserMfController(
     s.document,
     {surface: s.canvas, presentationMode: 'canvas'},
     fullscreen,
   );
-  await controller.open(new Uint8Array(), new AbortController().signal);
+  await controller.open(new Blob(), new AbortController().signal);
   await tick();
   assert.equal(controller.nativeState84, 2);
+  assert.deepEqual(activities, ['Buffering movie']);
   assert.equal(s.document.videos[0].currentTime, 0);
   const retiredButton = s.button();
   controller.finishEarly();
   await tick();
   assert.equal(controller.nativeState84, 0);
+  assert.deepEqual(activities, []);
   assert.equal(s.prompt(), undefined);
   retiredButton.dispatchEvent(new Event('click'));
   assert.equal(s.document.videos[0].calls, 1);
@@ -188,7 +200,7 @@ test('MF and traditional movie owners retain their clocks during activation and 
     hasPathWide: async () => true,
   };
   const resources = {files, configuration: {nativeFileRoot: ''}};
-  const documents = {files, candidates: {resources}, read: async () => ({bytes: new Uint8Array()})};
+  const documents = {files, candidates: {resources}, read: async () => ({blob: new Blob()})};
   const device = {
     canvas: s.canvas,
     presentationMode: 'canvas',
@@ -224,12 +236,22 @@ test('MF and traditional movie owners retain their clocks during activation and 
     assert.equal(await session.start(null, {bytes: Uint8Array.of(1, 0), offset: 0}), 5000);
     await tick();
     assert.equal(session.isPlaying(), true);
+    assert.deepEqual(activities, ['Buffering movie']);
     const video = s.document.videos.at(-1);
     assert.equal(video.currentTime, 0);
     video.allowed = true;
     s.button().dispatchEvent(new Event('click'));
     await tick();
     assert.equal(video.paused, false);
+    assert.deepEqual(activities, []);
+    video.dispatchEvent(new Event('stalled'));
+    assert.deepEqual(activities, []); // Network stall is harmless while playable data remains.
+    video.readyState = 2;
+    video.dispatchEvent(new Event('waiting'));
+    assert.deepEqual(activities, ['Buffering movie']);
+    video.readyState = 3;
+    video.dispatchEvent(new Event('canplay'));
+    assert.deepEqual(activities, []);
     assert.equal(s.prompt(), undefined);
     video.currentTime = 5;
     assert.equal(session.isPlaying(), false);
@@ -239,6 +261,7 @@ test('MF and traditional movie owners retain their clocks during activation and 
     const button = s.button(),
       pendingVideo = s.document.videos.at(-1);
     const releaseReset = await session.beginReset();
+    assert.deepEqual(activities, []);
     assert.equal(s.prompt(), undefined);
     assert.equal(pendingVideo.paused, true);
     button.dispatchEvent(new Event('click'));
@@ -246,5 +269,6 @@ test('MF and traditional movie owners retain their clocks during activation and 
     releaseReset();
   } finally {
     await session.closeAndJoin();
+    stopObserving();
   }
 });

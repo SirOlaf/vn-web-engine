@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {BrowserAudioContextHost} from '../dist/audio/browser-audio-context-host.js';
+import {
+  BrowserAudioContextHost,
+  subscribeBrowserAudioContexts,
+} from '../dist/audio/browser-audio-context-host.js';
 
 test('audio activation recovers interrupted contexts without replacing buffers, clocks, or pending gestures', async () => {
   const document = new EventTarget();
@@ -23,13 +26,16 @@ test('audio activation recovers interrupted contexts without replacing buffers, 
   }
   const context = new Context(),
     changes = [],
-    failures = [];
+    failures = [],
+    devices = [];
+  const unsubscribe = subscribeBrowserAudioContexts((hosts) => devices.push(hosts));
   const host = new BrowserAudioContextHost(
     context,
     document,
     (value) => changes.push(value),
     (error) => failures.push(error),
   );
+  assert.deepEqual(devices.at(-1), [host]);
   assert.deepEqual(host.snapshot, {
     state: 'suspended',
     currentTime: 1.25,
@@ -70,17 +76,31 @@ test('audio activation recovers interrupted contexts without replacing buffers, 
   context.requests.shift().resolve();
   await Promise.resolve();
 
+  // Recovery must remain synchronous and usable while earlier resume requests are blocked.
+  context.change('interrupted');
+  document.dispatchEvent(new Event('click'));
+  document.dispatchEvent(new Event('keydown'));
+  assert.equal(context.calls, 6);
+  assert.equal(context.currentTime, 2.5);
+  context.change('running');
+  context.requests.splice(0).forEach((request) => request.resolve());
+  await Promise.resolve();
+
   context.change('closed');
   document.defaultView.dispatchEvent(new Event('pageshow'));
-  assert.equal(context.calls, 4);
+  assert.equal(context.calls, 6);
   assert.equal(host.snapshot.needsResume, false);
   await assert.rejects(host.resume(), {name: 'InvalidStateError'});
   host.dispose();
+  assert.deepEqual(devices.at(-1), []);
+  unsubscribe();
   const count = changes.length;
   context.change('suspended');
   document.dispatchEvent(new Event('visibilitychange'));
   document.defaultView.dispatchEvent(new Event('pageshow'));
-  assert.equal(context.calls, 4);
+  document.dispatchEvent(new Event('click'));
+  document.dispatchEvent(new Event('keydown'));
+  assert.equal(context.calls, 6);
   assert.equal(changes.length, count);
   await assert.rejects(host.resume(), /disposed/);
 });

@@ -77,6 +77,10 @@ export class SourceFileSystem implements FileSystem {
   entries(): ReadonlyMap<string, ByteSource> {
     return new Map(this.files);
   }
+  /** Replace an installation without leaving files from the previous selection mounted. */
+  clear(): void {
+    this.files.clear();
+  }
   async stat(path: string): Promise<FileInfo> {
     return info(this.files, this.canonical(filePath(path)));
   }
