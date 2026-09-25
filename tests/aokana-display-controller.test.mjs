@@ -29,6 +29,9 @@ import {AokanaFullscreenMovieState} from '../dist/engines/buriko/games/aokana/na
 import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
 import {AokanaCpuProfile} from '../dist/engines/buriko/games/aokana/native/cpu-profile.js';
 import {AokanaImportedTextMaps} from '../dist/engines/buriko/games/aokana/native/imported-text-maps.js';
+import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
+import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
+import {setAokanaRequestedClientSize} from '../dist/engines/buriko/games/aokana/native/display-services.js';
 
 // Ordinary configured CPUID primitives; no native program or hardware probe is executed.
 function cpuProfile() {
@@ -80,13 +83,13 @@ function fixture() {
     compositor = new AokanaBitmapCompositor(),
     allocator = new AokanaDistributedAllocator(1),
     environment = new AokanaDisplayObjectEnvironment(compositor, new AokanaDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 1})),
-    manager = new AokanaDisplayManager(environment, new AokanaSurfaces(null, compositor, allocator), display),
+    text = new AokanaNativeText(),
+    manager = new AokanaDisplayManager(environment, new AokanaSurfaces(new AokanaNativeFonts(text), compositor, allocator), display),
     mode = {width: 16, height: 8, refreshRate: 60, format: 22},
     adapters = new AokanaDisplayAdapters(display, [{monitor: 0, pixelShaderVersion: 0xffff0300, mode}], 0,
       () => [display.windowX, display.windowY,
         display.windowX + (parseInt(parent.style.width) || 10), display.windowY + (parseInt(parent.style.height) || 6)]),
     device = new AokanaDisplayDevice(canvas, manager, clock, adapters),
-    text = new AokanaNativeText(),
     dialogs = new AokanaEngineDialogs({}, text, clock, input, new AokanaNativeCursor(canvas), device, display, null, new Uint8Array([0])),
     host = new AokanaBrowserMainWindow(document, parent, canvas, manager, {
       isReady: () => true, presentTransient: () => 0, inlinePaintSuppressed: () => false, geometryChanged: (value) => controller.noteGeometryChange(value),
@@ -101,7 +104,7 @@ function fixture() {
   return {controller, display, manager, device, adapters, mode, input, messages, canvas, parent, notifications, calls, setTick: (value) => {tick = value;}};
 }
 
-test('ordinary display mode creation and reset share geometry, descriptor budget and texture attachment', async () => {
+test('display mode transitions preserve concrete windows and rebase their inner sprites with the logical descriptor', async () => {
   const s = fixture();
   assert.equal(await s.controller.reconfigure(2, 1, 0, null, 1), 1);
   assert.equal(s.parent.style.width, '10px');
@@ -112,6 +115,27 @@ test('ordinary display mode creation and reset share geometry, descriptor budget
   assert.deepEqual(s.display.pendingWindowPosition, [3, 1]);
   assert.equal(s.display.windowPositionPending, 1);
   assert.equal(s.display.resizeInProgress, 0);
+  const windows = new AokanaWindowDisplayState(s.manager);
+  const createWindow = () => {
+    const result = s.manager.createConfigured('window',
+      (order) => new AokanaWindowDisplayObject(windows, order),
+      (window) => window.configureInitial(32, 20));
+    assert.equal(result.result, 0);
+    return s.manager.find('window', result.handle);
+  };
+  createWindow(); // A window without an inner manager follows the same descriptor traversal.
+  const window = createWindow();
+  window.configureInnerObjects(2);
+  s.manager.surfaces.allocate(0, 2, 2, 1);
+  s.manager.surfaces.fill(0, 0x112233);
+  assert.equal(window.createInnerSprite(0, 0, 1, 1, 0, 0, 0), 0);
+  window.setInnerCoordinates(0, 1, 1, 1);
+  const sprite = window.innerObjects[0],
+    coordinates = sprite.coordinates(),
+    composition = window.compositionBitmap,
+    text = window.textBitmap;
+  text.storage.view.setUint32(text.offset, 0xff123456, true);
+  window.setTextCursor(3, 4);
   assert.equal(await s.controller.reconfigure(2, 1, 1, null, 0), 1);
   assert.equal(s.parent.style.width, '16px');
   assert.equal(s.canvas.width, 16);
@@ -123,6 +147,20 @@ test('ordinary display mode creation and reset share geometry, descriptor budget
   assert.equal(s.canvas.width, 8);
   assert.equal(s.display.resizeInProgress, 0);
   assert.deepEqual(s.calls.filter(([call]) => call === 'focus'), [['focus'], ['focus']]);
+  await setAokanaRequestedClientSize(s.controller, 12, 6, null);
+  assert.equal(s.canvas.width, 12);
+  assert.deepEqual(sprite.coordinates(), coordinates);
+  s.display.setSizePreset(2, 6, 4);
+  await s.controller.reconfigure(2, 1, 0, null, 0);
+  assert.deepEqual(sprite.coordinates(), {
+    x: coordinates.x - 0x10000, y: coordinates.y - 0x10000, z: coordinates.z,
+  });
+  assert.equal(sprite.perspective, 3);
+  assert.deepEqual(window.compositionBitmap, composition);
+  assert.equal(window.textBitmap.storage, text.storage);
+  assert.equal(text.storage.view.getUint32(text.offset, true), 0xff123456);
+  assert.deepEqual(window.getTextCursor(), {x: 3, y: 4});
+  assert.equal(s.display.resizeInProgress, 0);
 });
 
 test('deferred mode toggle appends its actual result and adapter changes refresh the cached desktop', async () => {

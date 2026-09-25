@@ -1,4 +1,5 @@
 import {invalidateCanvasFrame} from '../../../../../graphics/canvas-frame-presenter.js';
+import {playBrowserMediaWithActivation} from '../../../../../video/browser-media-activation.js';
 import type {AokanaBpPointer} from '../bp/memory.js';
 import type {AokanaBrowserMainWindow} from './browser-main-window.js';
 import {
@@ -104,6 +105,7 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
   private url: string | null = null;
   private video: HTMLVideoElement | null = null;
   private finishedEarly = false;
+  private playback: AbortController | null = null;
 
   constructor(
     private readonly document: Document,
@@ -198,7 +200,19 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
         this.listeners.push([name, listener]);
       }
       this.nativeState84 = 2;
-      void video.play().catch(failed);
+      const playback = new AbortController();
+      this.playback = playback;
+      void playBrowserMediaWithActivation(video, {
+        document: this.document,
+        signal: playback.signal,
+        returnFocus: this.window.surface,
+      })
+        .catch(() => {
+          if (this.playback === playback) failed();
+        })
+        .finally(() => {
+          if (this.playback === playback) this.playback = null;
+        });
     } catch (error) {
       this.releaseMedia();
       throw error;
@@ -246,6 +260,8 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
   finishEarly(): void {
     if (this.closed) return;
     this.finishedEarly = true;
+    this.playback?.abort();
+    this.playback = null;
     if (this.callback !== null) this.video?.cancelVideoFrameCallback(this.callback);
     if (this.timer !== null) clearTimeout(this.timer);
     this.callback = null;
@@ -260,6 +276,8 @@ export class AokanaBrowserMfController implements AokanaMfMovieVolumeController 
   }
 
   private releaseMedia(): void {
+    this.playback?.abort();
+    this.playback = null;
     this.nativeState84 = 0;
     this.nativeStateB8 = 0;
     const video = this.video;

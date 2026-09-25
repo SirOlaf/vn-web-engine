@@ -17,6 +17,7 @@ import {AokanaKeyboardMessages} from './keyboard-messages.js';
 import {writeAokanaClipboard} from './modal.js';
 import type {AokanaEngineDialogs} from './engine-dialogs.js';
 import {writePropertyWord} from './property-values.js';
+import type {WindowCoordinatesHost} from '../../../../../platform/browser-window-coordinates.js';
 
 /** Native b7540 frame extents and GetSystemMetrics(2)/(3), provided by the actual window profile. */
 export interface AokanaChildWindowMetrics {
@@ -79,6 +80,7 @@ export class AokanaChildWindows {
     readonly nativeWindowTitle: Uint8Array,
     readonly desktopCanvas: HTMLCanvasElement,
     readonly presentationMode: 'canvas' | 'none' = 'canvas',
+    readonly coordinates: WindowCoordinatesHost | null = null,
   ) {}
 
   /** 14006de40: zeroing is intentionally independent of 14006ddd0's closing pass. */
@@ -223,20 +225,22 @@ export class AokanaChildWindows {
       heading.addEventListener('pointerdown', (event) => {
         if (event.target === close || event.target === minimize) return;
         event.preventDefault();
-        const bounds = panel.getBoundingClientRect();
+        const bounds = panel.getBoundingClientRect(),
+          position = this.coordinates?.readPosition(panel) ?? [bounds.left, bounds.top],
+          point = this.coordinates?.viewportToScreen(event.clientX, event.clientY) ?? [event.clientX, event.clientY];
         drag = {
           pointer: event.pointerId,
-          x: event.clientX,
-          y: event.clientY,
-          left: bounds.left,
-          top: bounds.top,
+          x: point[0]!,
+          y: point[1]!,
+          left: position[0]!,
+          top: position[1]!,
         };
         heading.setPointerCapture(event.pointerId);
       });
       heading.addEventListener('pointermove', (event) => {
         if (drag?.pointer !== event.pointerId) return;
-        panel.style.left = `${Math.trunc(drag.left + event.clientX - drag.x)}px`;
-        panel.style.top = `${Math.trunc(drag.top + event.clientY - drag.y)}px`;
+        const point = this.coordinates?.viewportToScreen(event.clientX, event.clientY) ?? [event.clientX, event.clientY];
+        this.positionPanel(panel, Math.trunc(drag.left + point[0]! - drag.x), Math.trunc(drag.top + point[1]! - drag.y));
       });
       const stop = (event: PointerEvent): void => {
         if (drag?.pointer !== event.pointerId) return;
@@ -258,8 +262,8 @@ export class AokanaChildWindows {
           event.preventDefault();
           const delta = event.deltaY === 0 ? 0 : event.deltaY < 0 ? 120 : -120;
           const keyFlags = (event.shiftKey ? 4 : 0) | (event.ctrlKey ? 8 : 0);
-          const position =
-            ((Math.trunc(event.screenY) & 0xffff) << 16) | (Math.trunc(event.screenX) & 0xffff);
+          const point = this.coordinates?.viewportToScreen(event.clientX, event.clientY) ?? [event.screenX, event.screenY],
+            position = ((Math.trunc(point[1]!) & 0xffff) << 16) | (Math.trunc(point[0]!) & 0xffff);
           this.messages.post({
             target,
             message: 0x20a,
@@ -278,7 +282,10 @@ export class AokanaChildWindows {
         this.messages.forgetTarget(allocatedTarget);
         this.ownedTargets.delete(allocatedTarget);
       }
-      record.window?.panel.remove();
+      if (record.window !== null) {
+        this.coordinates?.forget(record.window.panel);
+        record.window.panel.remove();
+      }
       record.window = null;
       record.visible = 0;
       record.closeAllowed = 0;
@@ -288,11 +295,17 @@ export class AokanaChildWindows {
       return 0;
     }
   }
+  private positionPanel(panel: HTMLElement, x: number, y: number): void {
+    if (this.coordinates !== null) this.coordinates.setPosition(panel, x, y);
+    else {
+      panel.style.left = `${x}px`;
+      panel.style.top = `${y}px`;
+    }
+  }
   private movePanel(record: ChildRecord, x: number, y: number, creating: boolean): void {
     const window = record.window;
     if (window === null) return;
-    window.panel.style.left = `${x | 0}px`;
-    window.panel.style.top = `${y | 0}px`;
+    this.positionPanel(window.panel, x | 0, y | 0);
     window.panel.style.width = `${(record.bitmap.width + this.metrics.frameWidth + (creating && (record.scroll.flags & 2) !== 0 ? this.metrics.verticalScrollbarWidth : 0)) | 0}px`;
     window.normalHeight = `${(record.bitmap.height + this.metrics.frameHeight + (creating && (record.scroll.flags & 1) !== 0 ? this.metrics.horizontalScrollbarHeight : 0)) | 0}px`;
     window.panel.style.height = window.minimized
@@ -313,11 +326,12 @@ export class AokanaChildWindows {
       throw new Error(
         'Aokana child GetWindowRect reads an uninitialized RECT after its null HWND fails',
       );
-    const bounds = record.window.panel.getBoundingClientRect();
-    writePropertyWord(output, Math.trunc(bounds.left));
+    const bounds = record.window.panel.getBoundingClientRect(),
+      position = this.coordinates?.readPosition(record.window.panel) ?? [bounds.left, bounds.top];
+    writePropertyWord(output, Math.trunc(position[0]!));
     writePropertyWord(
       output === null ? null : {bytes: output.bytes, offset: output.offset + 4},
-      Math.trunc(bounds.top),
+      Math.trunc(position[1]!),
     );
     return 1;
   }
@@ -345,6 +359,7 @@ export class AokanaChildWindows {
     if (record.closeAllowed === 0 || record.window === null) return;
     if (record.visible !== 0) this.dialogs.transition(false);
     const window = record.window;
+    this.coordinates?.forget(window.panel);
     window.panel.remove();
     record.bitmap.storage?.release();
     this.messages.forgetTarget(window.target);

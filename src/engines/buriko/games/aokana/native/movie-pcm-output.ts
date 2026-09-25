@@ -1,3 +1,5 @@
+import {createBrowserPcmNode, type BrowserPcmNode} from '../../../../../audio/browser-pcm-node.js';
+import {AokanaMoviePcmProcessor} from './movie-pcm-processor.js';
 import {AokanaMoviePcmCore} from './movie-pcm-core.js';
 import type {
   AokanaMoviePcmCommand,
@@ -56,8 +58,7 @@ export class AokanaMemoryMoviePcmOutput {
     return output;
   }
 }
-const modules = new WeakMap<BaseAudioContext, Promise<void>>();
-/** Actual output-thread acknowledgments; no automatic activation or extrapolated clock. */
+/** Actual audio-processor acknowledgments; no automatic activation or extrapolated clock. */
 export class AokanaBrowserMoviePcmOutput {
   private nextId = 1;
   private enqueuePending = false;
@@ -73,7 +74,7 @@ export class AokanaBrowserMoviePcmOutput {
   private readonly listeners = new Set<(status: AokanaMoviePcmStatus) => void>();
   private readonly completions = new Set<(status: AokanaMoviePcmStatus) => void>();
   private constructor(
-    private readonly node: AudioWorkletNode,
+    private readonly node: BrowserPcmNode,
     private readonly format: AokanaMoviePcmFormat,
     readonly outputSampleRate: number,
   ) {
@@ -105,7 +106,7 @@ export class AokanaBrowserMoviePcmOutput {
         pending.resolve(response.status);
       }
     };
-    node.onprocessorerror = () => this.fail(new Error('Movie PCM worklet failed'));
+    node.onprocessorerror = () => this.fail(new Error('Movie PCM processor failed'));
   }
   static async create(
     context: BaseAudioContext,
@@ -116,19 +117,17 @@ export class AokanaBrowserMoviePcmOutput {
       throw new Error('Movie output belongs to another audio context');
     // Validate the declared profile before creating the real node, without consuming audio.
     new AokanaMoviePcmCore(format, context.sampleRate);
-    let module = modules.get(context);
-    if (module === undefined) {
-      module = context.audioWorklet.addModule(new URL('./movie-pcm-worklet.js', import.meta.url));
-      modules.set(context, module);
-    }
-    await module;
-    const node = new AudioWorkletNode(context, 'aokana-movie-pcm', {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
-      channelInterpretation: 'discrete',
-      processorOptions: {format: {...format}},
-    });
+    const node = await createBrowserPcmNode<AokanaMoviePcmRequest, AokanaMoviePcmResponse>(
+      context,
+      {
+        module: new URL('./movie-pcm-worklet.js', import.meta.url),
+        name: 'aokana-movie-pcm',
+        channels: 2,
+        interpretation: 'discrete',
+        processorOptions: {format: {...format}},
+        createProcessor: (send) => new AokanaMoviePcmProcessor(format, context.sampleRate, send),
+      },
+    );
     const output = new AokanaBrowserMoviePcmOutput(node, {...format}, context.sampleRate);
     node.connect(destination);
     try {

@@ -31,8 +31,21 @@
         </button>
         <span id="status" role="status">Connect the local installation or choose a folder.</span>
       </div>
-      <section id="surface" aria-label="Game display">
-        <canvas id="game-canvas" tabindex="0"></canvas>
+      <section id="display" aria-label="Game display">
+        <div class="display-controls">
+          <label for="fullscreen-mode">Fullscreen behavior</label>
+          <select id="fullscreen-mode">
+            <option value="page">Fill browser page</option>
+            <option value="screen">True fullscreen</option>
+          </select>
+          <button id="fullscreen" type="button" aria-pressed="false">Fill page</button>
+          <button id="leave-fullscreen" type="button" hidden>Return to player</button>
+          <span id="fullscreen-help" role="status" hidden></span>
+        </div>
+        <div id="display-viewport">
+          <div id="surface"><canvas id="game-canvas" tabindex="0"></canvas></div>
+          <div id="window-layer"></div>
+        </div>
       </section>
       <pre id="diagnostics" aria-label="Launch diagnostics"></pre>
     </main>

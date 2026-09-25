@@ -89,8 +89,8 @@ test('window geometry uses native units and owns alpha composition separately fr
   small.dispose();
 });
 
-test('window text and overlays compose in order, with old overlay regions refreshed when moved', () => {
-  const {window, surfaces} = setup();
+test('window text and overlays compose in order, preserving animated frame alpha and refreshing old regions', () => {
+  const {window, surfaces, state} = setup();
   surfaces.allocate(0, 32, 20, 1);
   surfaces.fill(0, 0x112233);
   assert.equal(window.setBackgroundSurface(0), 0);
@@ -117,6 +117,25 @@ test('window text and overlays compose in order, with old overlay regions refres
   window.composeAll();
   window.disableOverlays();
   assert.equal(pixel(window.compositionBitmap, 4, 1), 0xff112233);
+
+  const frame = bitmap(4, 1, [0, 0, 0xff00bb00, 0xff00bb00]);
+  surfaces.importRaw(1, 4, 1, 2, {bytes: frame.storage.bytes, offset: 0});
+  assert.equal(
+    state.textLayout.configureOverlayFrames(
+      2,
+      {bytes: new Uint8Array(Uint32Array.from([1, 0xffffffff]).buffer), offset: 0},
+      {value: 0},
+    ),
+    1,
+  );
+  assert.equal(window.setOverlayBitmap(0, state.textLayout.overlayFrames[0]), 0);
+  window.setOverlayPosition(0, 4, 2, 0);
+  window.setOverlayEnabled(0, 1);
+  assert.equal(pixel(window.compositionBitmap, 4, 2), 0xff112233);
+  assert.equal(pixel(window.compositionBitmap, 6, 2), 0xff00bb00);
+  window.setOverlayEnabled(0, 0);
+  assert.equal(pixel(window.compositionBitmap, 6, 2), 0xff112233);
+  state.textLayout.clearOverlayFrames();
 });
 
 test('window text clipping, row scroll, cursor direction and saved text follow the selected region', () => {

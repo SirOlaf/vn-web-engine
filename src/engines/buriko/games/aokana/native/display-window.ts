@@ -789,6 +789,31 @@ export class AokanaWindowDisplayObject extends AokanaDisplayObject {
       throw new Error('Aokana Window inner operation requires its actual Sprite');
     return object;
   }
+
+  /** 067F30 rebases inner sprites after the shared descriptor changes, retaining
+   * the window's own bitmaps. Native stores perspective after moving each sprite. */
+  refreshDisplayGeometry(): void {
+    this.check();
+    if (this.innerObjects.length === 0) return;
+    if (this.innerOrigin === null)
+      throw new Error('Aokana Window consumes unwritten inner origin');
+    const previous = this.innerOrigin,
+      display = this.environment.displayBitmap();
+    this.innerOrigin = {x: -(display.width >>> 1) | 0, y: -(display.height >>> 1) | 0};
+    this.innerProjection = display.width >>> 1;
+    for (let index = 0; index < this.innerObjects.length; index++) {
+      const sprite = this.innerSprite(index);
+      if (sprite === null) continue;
+      const coordinates = sprite.coordinates();
+      sprite.setCoordinates(
+        (coordinates.x + ((this.innerOrigin.x - previous.x) << 16)) | 0,
+        (coordinates.y + ((this.innerOrigin.y - previous.y) << 16)) | 0,
+        coordinates.z,
+      );
+      sprite.setPerspective(this.innerProjection);
+    }
+  }
+
   /** 067B00. */
   setInnerLayer(index: number, layer: number): 0 | 9 {
     const object = this.innerSprite(index);

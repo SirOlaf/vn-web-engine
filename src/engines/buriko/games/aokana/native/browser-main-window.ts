@@ -7,6 +7,7 @@ import type {AokanaNativeInput} from './input.js';
 import type {AokanaWindowMessages} from './window-messages.js';
 import type {AokanaMainDomInput} from './main-dom-input.js';
 import {invalidateCanvasFrame} from '../../../../../graphics/canvas-frame-presenter.js';
+import type {ViewportScreenMapping, WindowDisplayHost} from '../../../../../platform/window-display.js';
 
 export interface AokanaMainWindowCallbacks {
   /** Native live-window gate 1e8d00, set by WM_CREATE and cleared by WM_DESTROY. */
@@ -20,13 +21,7 @@ export interface AokanaMainWindowCallbacks {
 }
 
 /** A live host mapping from viewport CSS pixels to the native monitor coordinate space. */
-export interface AokanaViewportScreenMapping {
-  /** Native screen coordinate of the viewport's CSS (0, 0). */
-  readonly originX: number;
-  readonly originY: number;
-  readonly nativePixelsPerCssX: number;
-  readonly nativePixelsPerCssY: number;
-}
+export type AokanaViewportScreenMapping = ViewportScreenMapping;
 
 function nativeScreenEdge(value: number): number {
   const rounded = Math.round(value);
@@ -93,6 +88,8 @@ export class AokanaBrowserMainWindow {
     readonly manager: AokanaDisplayManager,
     readonly callbacks: AokanaMainWindowCallbacks,
     readonly presentationMode: 'canvas' | 'none' = 'canvas',
+    readonly displayHost: WindowDisplayHost | null = null,
+    readonly childWindowParent: HTMLElement = parent,
   ) {
     // The supplied canvas is the sole main client surface, even when the host
     // provides it detached. Keep an existing nested attachment in place.
@@ -226,7 +223,7 @@ export class AokanaBrowserMainWindow {
       return false;
     this.captureOuterRectangleBeforeMinimize();
     this.minimized = true;
-    this.parent.style.visibility = 'hidden';
+    this.setPresentationVisibility(false);
     if (this.closeInput !== null) this.closeInput.iconic = 1;
     this.refreshInputForeground();
     return true;
@@ -235,7 +232,7 @@ export class AokanaBrowserMainWindow {
   /** Host restore publishes IsIconic independently of the script latch and size tail. */
   restoreScopedWindow(): boolean {
     if (!this.isLiveMainWindow() || !this.minimized) return false;
-    this.parent.style.visibility = 'visible';
+    this.setPresentationVisibility(true);
     this.refreshOuterRectangleAfterRestore();
     this.minimized = false;
     if (this.closeInput !== null) this.closeInput.iconic = 0;
@@ -337,7 +334,7 @@ export class AokanaBrowserMainWindow {
   /** FF690's scoped ShowWindow host primitive; UpdateWindow belongs to the awaited paint owner. */
   showWindow(visible: boolean, deferForegroundRefresh = false): boolean {
     if (!this.isLiveMainWindow()) return false;
-    this.parent.style.visibility = visible ? 'visible' : 'hidden';
+    this.setPresentationVisibility(visible);
     if (!deferForegroundRefresh) this.refreshInputForeground();
     return true;
   }
@@ -345,6 +342,12 @@ export class AokanaBrowserMainWindow {
   /** FF690 refreshes input foreground only after its synchronous UpdateWindow returns. */
   refreshInputForeground(): void {
     this.inputIngress?.refreshForeground();
+  }
+
+  private setPresentationVisibility(visible: boolean): void {
+    const visibility = visible ? 'visible' : 'hidden';
+    this.parent.style.visibility = visibility;
+    this.childWindowParent.style.visibility = visibility;
   }
 
   /** GetForegroundWindow equals the live main HWND only while focus belongs to its DOM subtree. */
@@ -366,6 +369,7 @@ export class AokanaBrowserMainWindow {
     this.inputIngress?.dispose();
     this.inputIngress = null;
     this.detached = true;
+    this.setPresentationVisibility(false);
     this.parent.remove();
   }
 
@@ -404,6 +408,10 @@ export class AokanaBrowserMainWindow {
   applyPosition(x: number, y: number): void {
     this.display.windowX = x | 0;
     this.display.windowY = y | 0;
+    if (this.displayHost !== null) {
+      this.displayHost.setPosition(x | 0, y | 0);
+      return;
+    }
     this.parent.style.left = `${x | 0}px`;
     this.parent.style.top = `${y | 0}px`;
   }
@@ -424,6 +432,7 @@ export class AokanaBrowserMainWindow {
       this.display.frameInsetWidth,
       this.display.frameInsetHeight,
       styleValue,
+      false,
     );
     if (position !== null) this.applyPosition(...position);
     // HWND_NOTOPMOST. Flags 108/10a suppress copy/redraw; activation belongs to the message owner.
@@ -433,7 +442,7 @@ export class AokanaBrowserMainWindow {
   /** b6ec0's borderless MoveWindow uses the raw selected desktop extent. It retains the
    * saved requested windowed size, and does not activate, paint, or recreate the device. */
   applyFullscreenGeometry(left: number, top: number, width: number, height: number): void {
-    this.applyGeometry(width, height, 0, 0, 0x90000000);
+    this.applyGeometry(width, height, 0, 0, 0x90000000, true);
     this.applyPosition(left, top);
   }
 
@@ -448,16 +457,22 @@ export class AokanaBrowserMainWindow {
     insetWidth: number,
     insetHeight: number,
     styleValue: number,
+    fullscreen: boolean,
   ): void {
     this.applyWindowStyle(styleValue);
     this.parent.style.position = 'absolute';
     this.parent.style.boxSizing = 'border-box';
     this.parent.style.width = `${(width + insetWidth) | 0}px`;
     this.parent.style.height = `${(height + insetHeight) | 0}px`;
-    this.parent.style.visibility = (styleValue & 0x10000000) !== 0 ? 'visible' : 'hidden';
+    this.setPresentationVisibility((styleValue & 0x10000000) !== 0);
     this.inputIngress?.refreshForeground();
     this.surface.style.width = `${width | 0}px`;
     this.surface.style.height = `${height | 0}px`;
+    this.displayHost?.configure({
+      width: (width + insetWidth) | 0,
+      height: (height + insetHeight) | 0,
+      fullscreen,
+    });
   }
 
   center(): 0 | 1 {

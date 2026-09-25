@@ -236,6 +236,7 @@ export interface AokanaProductionDisplayResourceGraphInputs {
   readonly document: Document;
   readonly parent: HTMLElement;
   readonly canvas: HTMLCanvasElement;
+  readonly displayHost?: import('../../../../../platform/window-display.js').WindowDisplayHost;
   /** Retain the logical device while suppressing all main-canvas presentation. */
   readonly presentationMode?: 'canvas' | 'none';
   readonly navigator: Navigator;
@@ -258,6 +259,8 @@ export interface AokanaProductionDisplayResourceGraphInputs {
   readonly characterTranslationHost?: WindowsCharacterTranslationHost;
   readonly damageCapacity: number;
   readonly childMetrics: AokanaChildWindowMetrics;
+  readonly childWindowCoordinates?: import('../../../../../platform/browser-window-coordinates.js').WindowCoordinatesHost;
+  readonly childWindowParent?: HTMLElement;
   readonly nativeWindowTitle: Uint8Array;
   /** Selected OS process/token/window/mutex primitives; no browser launch is inferred. */
   readonly externalProcessHost?: AokanaExternalProcessHost | null;
@@ -726,6 +729,8 @@ export class AokanaProductionDisplayResourceGraph {
         this.manager,
         this.callbacks,
         inputs.presentationMode ?? 'canvas',
+        inputs.displayHost ?? null,
+        inputs.childWindowParent ?? inputs.parent,
       );
       rollback.push(() => this.host.detachScopedWindow());
       this.host.bindViewportScreenMapping(inputs.readViewportScreenMapping);
@@ -883,7 +888,7 @@ export class AokanaProductionDisplayResourceGraph {
       );
       this.children = new AokanaChildWindows(
         inputs.document,
-        inputs.parent,
+        inputs.childWindowParent ?? inputs.parent,
         inputs.navigator,
         this.text,
         this.surfaces,
@@ -896,6 +901,7 @@ export class AokanaProductionDisplayResourceGraph {
         this.title.bytes,
         inputs.canvas,
         inputs.presentationMode ?? 'canvas',
+        inputs.childWindowCoordinates ?? null,
       );
       this.children.initialize();
       rollback.push(() => this.children.dispose());

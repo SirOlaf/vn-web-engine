@@ -20,6 +20,7 @@ test('mounted text layout settings clone overlay frames and share reading font p
     state.readingValue1C90F4,
   ];
   try {
+    assert.equal(graph.manager.configureDescriptor(64, 32, 1, 64 * 32), 1);
     assert.equal(state.surfaces, graph.surfaces);
     assert.equal(state.text, graph.text);
     assert.equal(graph.surfaces.fonts, graph.fonts);
@@ -51,9 +52,9 @@ test('mounted text layout settings clone overlay frames and share reading font p
     assert.deepEqual(
       state.overlayFrames.map((frame) => [frame.width, frame.height, frame.format]),
       [
-        [2, 2, 1],
+        [2, 2, 2],
         [0, 0, 0],
-        [1, 3, 1],
+        [1, 3, 2],
       ],
     );
     assert.equal(state.overlayFrames[1].storage, null);

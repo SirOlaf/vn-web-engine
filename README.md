@@ -59,6 +59,8 @@ For nonvisual startup and VM diagnostics, open [`/aokana.html?no-canvas=1`](http
 
 While Aokana is running, use **Skip startup sequence** to request the game's native transition skip and finish fullscreen movies as they start. Select **Stop skipping** when the title is reached.
 
+The player's **Fullscreen behavior** selector chooses **Fill browser page** or **True fullscreen**, and remembers the choice. The game's fullscreen setting uses that policy; the player controls can also expand the view directly. If the browser requires a fresh gesture, press **Enter fullscreen**; unsupported or denied fullscreen retains the page-filling view. **Return to player** restores the surrounding controls. Native display queries use the screen's device-pixel dimensions, so high-density screens expose the higher resolutions allowed by the game. The shared browser host fits the native window to the available page while keeping rendering, pointer input, and child-window coordinates in the native pixel space.
+
 ## Game page
 
 After the files are loaded, select **Play** to replace the launcher with the game canvas. The 1920×1080 output scales to the browser viewport while preserving its native aspect ratio.
@@ -90,6 +92,15 @@ HOST=0.0.0.0 npm start
 ```
 
 This exposes the original game archives to your LAN. Use it only on a trusted network.
+
+Browsers restrict AudioWorklet to secure contexts (HTTPS or loopback), so Aokana over ordinary
+LAN HTTP uses the shared ScriptProcessor audio host with the same PCM
+rendering and playback state. That compatibility host has browser-selected buffering and is more
+sensitive to a busy main thread; HTTPS retains AudioWorklet output. The embedded WebAssembly
+accelerators need no network transfer and already fall back to JavaScript when unavailable.
+
+If the browser blocks movie autoplay, select **Play video** in the browser playback prompt to
+continue with sound. Skipping or closing the current movie also removes its pending prompt.
 
 ## Asset laboratory
 

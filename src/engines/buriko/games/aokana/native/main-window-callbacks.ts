@@ -35,7 +35,7 @@ export class AokanaMainWindowCallbackBinding implements AokanaMainWindowCallback
       frames.inline !== controller.inline ||
       frames.fullscreenMovie !== controller.fullscreenMovie ||
       frames.children.document !== host.document ||
-      frames.children.parent !== host.parent ||
+      frames.children.parent !== host.childWindowParent ||
       frames.children.desktopCanvas !== host.surface ||
       frames.children.surfaces !== host.manager.surfaces ||
       frames.children.messages !== controller.messages ||

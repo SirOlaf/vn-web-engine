@@ -7,6 +7,10 @@ import {
   filePath,
 } from '../../../../platform/filesystem.js';
 import {BrowserX86CompatibilityCpuHost} from '../../../../platform/browser-x86-cpu.js';
+import {
+  BrowserWindowDisplayHost,
+  browserDesktopSize,
+} from '../../../../platform/browser-window-display.js';
 import {IndexedDbStore, MemoryStore, type RecordStore} from '../../../../platform/store.js';
 import {AokanaBpMemory} from './bp/memory.js';
 import {
@@ -16,10 +20,7 @@ import {
 } from './native/audio/speaker-backend.js';
 import {AokanaBpDiagnostics} from './native/diagnostics.js';
 import {readAokanaCursorResource} from './native/cursor-shapes.js';
-import {
-  AokanaMountedFileMetadata,
-  type AokanaFileMetadataRecord,
-} from './native/file-metadata.js';
+import {AokanaMountedFileMetadata, type AokanaFileMetadataRecord} from './native/file-metadata.js';
 import {AokanaMountedProgramPaths} from './native/program-paths.js';
 import {AokanaProgramMedia} from './native/program-files.js';
 import {AokanaProductionBootRunner} from './native/production-boot-runner.js';
@@ -52,6 +53,41 @@ const status = document.querySelector<HTMLElement>('#status')!;
 const diagnosticLog = document.querySelector<HTMLElement>('#diagnostics')!;
 const surface = document.querySelector<HTMLElement>('#surface')!;
 const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas')!;
+const fullscreenMode = document.querySelector<HTMLSelectElement>('#fullscreen-mode')!;
+const fullscreenButton = document.querySelector<HTMLButtonElement>('#fullscreen')!;
+const leaveFullscreen = document.querySelector<HTMLButtonElement>('#leave-fullscreen')!;
+const fullscreenHelp = document.querySelector<HTMLElement>('#fullscreen-help')!;
+const displayHost = new BrowserWindowDisplayHost(
+  document.querySelector<HTMLElement>('#display')!,
+  document.querySelector<HTMLElement>('#display-viewport')!,
+  surface,
+  syncFullscreenControls,
+  report,
+  document.querySelector<HTMLElement>('#window-layer')!,
+);
+function syncFullscreenControls(): void {
+  fullscreenMode.value = displayHost.mode;
+  fullscreenButton.textContent =
+    displayHost.mode === 'screen'
+      ? displayHost.isScreenFullscreen
+        ? 'Exit fullscreen'
+        : 'Enter fullscreen'
+      : displayHost.isExpanded
+        ? 'Exit page view'
+        : 'Fill page';
+  fullscreenButton.setAttribute('aria-pressed', String(displayHost.isExpanded));
+  leaveFullscreen.hidden = !displayHost.isExpanded;
+  fullscreenHelp.hidden = displayHost.mode !== 'screen' || displayHost.isScreenFullscreen;
+  fullscreenHelp.textContent = displayHost.screenFullscreenAvailable
+    ? 'If the game cannot enter fullscreen automatically, press Enter fullscreen.'
+    : 'This browser does not offer fullscreen. The game will fill the page.';
+}
+fullscreenMode.addEventListener('change', () =>
+  displayHost.setMode(fullscreenMode.value === 'screen' ? 'screen' : 'page'),
+);
+fullscreenButton.addEventListener('click', () => displayHost.toggleFullscreen());
+leaveFullscreen.addEventListener('click', () => displayHost.setFullscreen(false));
+syncFullscreenControls();
 let selected: Installation | null = null;
 let running = false;
 
@@ -236,21 +272,18 @@ async function launch(
     const media = new AokanaProgramMedia();
     media.setDriveType(2, 3);
     const cpu = new BrowserX86CompatibilityCpuHost(performance);
-    const width = Math.max(800, Math.floor(window.screen.width || 800));
-    const height = Math.max(600, Math.floor(window.screen.height || 600));
+    const [width, height] = browserDesktopSize(window);
     report('Constructing engine services…');
     graph = new AokanaProductionDisplayResourceGraph({
       document,
       parent: surface,
       canvas,
+      displayHost,
+      childWindowCoordinates: displayHost.coordinates,
+      childWindowParent: displayHost.auxiliaryLayer,
       presentationMode,
       navigator,
-      readViewportScreenMapping: () => ({
-        originX: window.screenX,
-        originY: window.screenY,
-        nativePixelsPerCssX: 1,
-        nativePixelsPerCssY: 1,
-      }),
+      readViewportScreenMapping: () => displayHost.readViewportScreenMapping(),
       monitors: [[0, 0, width, height]],
       selectedMonitor: 0,
       primaryMonitor: 0,
@@ -374,6 +407,7 @@ async function launch(
       }
     }
     for (const store of stores) store.close();
+    displayHost.setFullscreen(false);
   }
 }
 

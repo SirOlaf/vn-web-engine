@@ -458,7 +458,9 @@ export class AokanaTextLayoutState {
       const bitmap = this.surfaces.snapshot(id);
       let result = 1;
       if (bitmap !== null) {
-        const frame = allocateAokanaBitmap(bitmap.width, bitmap.height, 1);
+        // 041fe0's final argument enables alpha; it is not a literal pixel format.
+        const format = this.surfaces.compositor.defaultFormat;
+        const frame = allocateAokanaBitmap(bitmap.width, bitmap.height, format === 1 ? 2 : format);
         this.overlayFrames[index] = frame;
         result = this.surfaces.compositor.composite(frame, bitmap, 0x80, 0, true);
       }

@@ -390,7 +390,7 @@ export class AokanaProductionNativeFragments {
       );
     if (
       graph.children.document !== graph.host.document ||
-      graph.children.parent !== graph.host.parent ||
+      graph.children.parent !== graph.host.childWindowParent ||
       graph.children.desktopCanvas !== graph.host.surface ||
       graph.children.text !== graph.text ||
       graph.children.surfaces !== graph.surfaces ||

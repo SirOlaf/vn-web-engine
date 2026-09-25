@@ -17,6 +17,7 @@ function setup() {
     compositor = new AokanaBitmapCompositor(),
     surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1)),
     state = new AokanaTextLayoutState(surfaces);
+  compositor.defaultFormat = 1;
   return {text, fonts, compositor, surfaces, state};
 }
 const pointer = (bytes) => ({bytes, offset: 0});
@@ -124,9 +125,9 @@ test('animated text frames clone through the shared compositor and preserve blan
   assert.deepEqual(
     state.overlayFrames.map((frame) => [frame.width, frame.height, frame.format]),
     [
-      [2, 2, 1],
+      [2, 2, 2],
       [0, 0, 0],
-      [1, 3, 1],
+      [1, 3, 2],
     ],
   );
   assert.equal(state.overlayFrames[1].storage, null);

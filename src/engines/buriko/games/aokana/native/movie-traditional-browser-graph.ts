@@ -1,4 +1,5 @@
 import type {AokanaBpPointer} from '../bp/memory.js';
+import {playBrowserMediaWithActivation} from '../../../../../video/browser-media-activation.js';
 import {AokanaBitmapStorage} from './bitmap.js';
 import type {AokanaDisplayDevice} from './display-device.js';
 import type {AokanaFullscreenMovieState} from './movie-fullscreen-state.js';
@@ -38,12 +39,14 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
   private deliveryTail: Promise<void> = Promise.resolve();
   private closed = false;
   private finishedEarly = false;
+  private readonly playback = new AbortController();
 
   constructor(
     readonly video: HTMLVideoElement,
     readonly url: string,
     readonly renderer: AokanaTraditionalMovieRenderer,
-    document: Document,
+    private readonly document: Document,
+    private readonly returnFocus: HTMLElement,
   ) {
     this.frame = document.createElement('canvas');
     this.frame.width = video.videoWidth;
@@ -122,14 +125,20 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
     if (typeof this.video.requestVideoFrameCallback === 'function')
       this.callback = this.video.requestVideoFrameCallback(receive);
     else this.timer = setTimeout(receive, 16);
-    // F0680 ignores Run HRESULT after publishing the presentation flag.
-    void this.video.play().catch(() => {});
+    // F0680 ignores Run HRESULT after publishing the presentation flag. Browser policy
+    // denial instead waits for the host's explicit activation control, retaining this clock.
+    void playBrowserMediaWithActivation(this.video, {
+      document: this.document,
+      signal: this.playback.signal,
+      returnFocus: this.returnFocus,
+    }).catch(() => {});
   }
 
   /** Complete the native clock poll while retaining the graph for the script's stop opcode. */
   finishEarly(): void {
     if (this.closed || this.finishedEarly) return;
     this.finishedEarly = true;
+    this.playback.abort();
     if (this.callback !== null) this.video.cancelVideoFrameCallback(this.callback);
     if (this.timer !== null) clearTimeout(this.timer);
     this.callback = null;
@@ -140,6 +149,7 @@ class AokanaBrowserTraditionalGraph implements AokanaTraditionalMovieGraphAudio 
   async closeAndJoin(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.playback.abort();
     if (this.callback !== null) this.video.cancelVideoFrameCallback(this.callback);
     if (this.timer !== null) clearTimeout(this.timer);
     this.callback = null;
@@ -322,7 +332,13 @@ export class AokanaBrowserTraditionalMovieSession {
         connected = browserRgb32(video.videoWidth, -video.videoHeight);
       if (renderer.checkMediaType(checked) !== 0 || renderer.setMediaType(connected) !== 0)
         throw new Error('Aokana traditional movie video media type was rejected');
-      return new AokanaBrowserTraditionalGraph(video, url, renderer, this.document);
+      return new AokanaBrowserTraditionalGraph(
+        video,
+        url,
+        renderer,
+        this.document,
+        this.device.canvas,
+      );
     } catch (error) {
       video.pause();
       video.removeAttribute('src');

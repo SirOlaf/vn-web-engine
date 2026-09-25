@@ -1,3 +1,8 @@
+import {
+  createBrowserPcmNode,
+  type BrowserPcmNode,
+} from '../../../../../../audio/browser-pcm-node.js';
+import {AokanaBufferProcessor} from './buffer-processor.js';
 import type {
   AokanaAudioBufferCommand,
   AokanaAudioBufferFormat,
@@ -7,9 +12,8 @@ import type {
   AokanaAudioBufferStatus,
 } from './buffer-protocol.js';
 
-const modules = new WeakMap<BaseAudioContext, Promise<void>>();
 /** Actual browser buffer primitive. Every command, including cursor queries, is acknowledged
- * by its render-thread owner. There is no synchronous cursor cache or wall-clock estimate. */
+ * by its audio processor owner. There is no synchronous cursor cache or wall-clock estimate. */
 export class AokanaBrowserSpeakerBuffer {
   private nextId = 1;
   private readonly pending = new Map<
@@ -19,7 +23,7 @@ export class AokanaBrowserSpeakerBuffer {
   private readonly listeners = new Set<(event: AokanaAudioBufferNotification) => void>();
   private failure: Error | null = null;
   private disposed = false;
-  private constructor(private readonly node: AudioWorkletNode) {
+  private constructor(private readonly node: BrowserPcmNode) {
     node.port.onmessage = (event: MessageEvent<AokanaAudioBufferResponse>) => {
       const response = event.data;
       if (response.kind === 'failure') {
@@ -36,7 +40,7 @@ export class AokanaBrowserSpeakerBuffer {
       if (response.kind === 'reply') pending.resolve(response.status);
       else pending.reject(new Error(response.message));
     };
-    node.onprocessorerror = () => this.fail(new Error('Aokana audio worklet processor failed'));
+    node.onprocessorerror = () => this.fail(new Error('Aokana audio processor failed'));
   }
   static async create(
     context: BaseAudioContext,
@@ -45,19 +49,17 @@ export class AokanaBrowserSpeakerBuffer {
   ): Promise<AokanaBrowserSpeakerBuffer> {
     if (destination.context !== context)
       throw new Error('Aokana audio destination belongs to a different context');
-    let loaded = modules.get(context);
-    if (loaded === undefined) {
-      loaded = context.audioWorklet.addModule(new URL('./buffer-worklet.js', import.meta.url));
-      modules.set(context, loaded);
-    }
-    await loaded;
-    const node = new AudioWorkletNode(context, 'aokana-mutable-pcm', {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [Math.max(2, format.channels)],
-      channelInterpretation: 'speakers',
-      processorOptions: {format: {...format}},
-    });
+    const node = await createBrowserPcmNode<AokanaAudioBufferRequest, AokanaAudioBufferResponse>(
+      context,
+      {
+        module: new URL('./buffer-worklet.js', import.meta.url),
+        name: 'aokana-mutable-pcm',
+        channels: Math.max(2, format.channels),
+        interpretation: 'speakers',
+        processorOptions: {format: {...format}},
+        createProcessor: (send) => new AokanaBufferProcessor(format, context.sampleRate, send),
+      },
+    );
     const buffer = new AokanaBrowserSpeakerBuffer(node);
     node.connect(destination);
     try {
