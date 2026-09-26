@@ -147,6 +147,8 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
     const availableWidth = Math.max(1, this.viewport.clientWidth);
     const availableHeight = Math.max(1, this.viewport.clientHeight);
     const ratio = this.view.devicePixelRatio > 0 ? this.view.devicePixelRatio : 1;
+    // Native window dimensions are device pixels. Preserve their physical extent on
+    // high-DPI screens; page/screen expansion is the separate user-controlled policy.
     const fittedScale = Math.min(availableWidth / width, availableHeight / height, 1 / ratio);
     this.scaleX = this.expanded ? availableWidth / width : fittedScale;
     this.scaleY = this.expanded ? availableHeight / height : fittedScale;

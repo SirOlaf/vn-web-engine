@@ -30,6 +30,7 @@ Game files selected through the browser stay on your device. The website serves 
 Both players offer **Add files** and **Add one file** when folder selection is unavailable or incomplete, and **Keep game files in browser** to save a complete installation locally before playing. Use **Open saved game files** on later visits. Folder handles read the original files on supporting browsers; iOS Safari may make a temporary copy. See [mobile files and audio](docs/mobile-compatibility.md) for browser limits, cache controls and audio recovery.
 Ogg Vorbis playback uses a shared WebAssembly decoder to preserve native PCM boundaries and playback waits. Decoder-only WebKit comparisons lost boundary samples (4,109 → 3,981 frames for a synthetic stream; 64,892 → 64,832 for Aokana's `ASUKA` clip, with its first 128 samples missing). The fix decodes those samples without silence padding or timing changes; physical iPhone verification is still pending.
 During Aokana startup, **Skip startup sequence** appears under **Game options → Playback**; select it again to stop skipping.
+Its native window size uses device pixels, so it appears smaller on high-DPI displays. Use **Game options → Display** to expand the browser view; see the [startup sizing investigation](docs/aokana-window-sizing.md) for the native configuration trace.
 The Aokana library and player controls can import and export `BGI.gdb` and numbered `BGI*.cad` browser saves. Close the player before importing a save.
 
 ### HTTPS from another device
@@ -55,6 +56,8 @@ The [CHAOS;HEAD NOAH asset laboratory](assets.html) and [Aokana asset laboratory
 `npm run build` produces the complete website in `site/`. Upload only that directory to a static HTTPS host. All page, worker, AudioWorklet, and decoder URLs support hosting beneath a project path, including GitHub Pages. No game files, debug server, tests, or source maps are included. `npm start` serves this same artifact locally.
 
 The included [GitHub Pages workflow](.github/workflows/pages.yml) builds and deploys pushes to `main`, and can also be run manually. Select **GitHub Actions** under the repository's **Settings → Pages → Build and deployment → Source** before enabling it. See [static hosting](docs/static-hosting.md) for setup, subpath verification, and save-storage considerations.
+
+The website is an installable progressive web app. Use your browser's **Install app** command, or **Share → Add to Home Screen** on iPhone/iPad. After the first online visit finishes caching, the library, players, and tools can reopen offline. Game files still need to be selected locally or retained with **Keep game files in browser**. App updates take effect after all open app windows and tabs are closed and the app is reopened.
 
 ## Development
 

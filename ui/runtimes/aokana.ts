@@ -323,6 +323,8 @@ async function launch(
     skipStartup.textContent = 'Skip startup sequence';
     skipStartup.setAttribute('aria-pressed', 'false');
     skipStartup.addEventListener('click', requestSkip);
+    // C3CB0 creates logical preset 2 (800 × 600) before B11F0 initializes D3D.
+    // IPL later restores BGI.gdb and selects its saved client size through 81:64.
     graph.display.requestedWidth = 800;
     graph.display.requestedHeight = 600;
     const memory = new AokanaBpMemory(new Uint8Array(0x10000));

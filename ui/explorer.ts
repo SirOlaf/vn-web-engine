@@ -2,6 +2,7 @@ import {mount} from 'svelte';
 import Explorer from './Explorer.svelte';
 import './explorers/explorer.css';
 import './explorers/aokana.css';
+import './pwa/register.js';
 
 const game = location.pathname.toLowerCase().endsWith('aokana-assets.html') ? 'aokana' : 'noah';
 const target = document.getElementById('app');

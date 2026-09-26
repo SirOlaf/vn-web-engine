@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {readFile, readdir} from 'node:fs/promises';
 import {test} from 'node:test';
+import {runInNewContext} from 'node:vm';
 import {createStaticServer} from '../tools/serve-static.mjs';
 
 test('the production artifact serves complete pages beneath a project path without debug routes', async () => {
@@ -22,6 +23,7 @@ test('the production artifact serves complete pages beneath a project path witho
       const response = await fetch(url);
       assert.equal(response.status, 200, page);
       const html = await response.text();
+      assert.match(html, /rel="manifest" href="\.\/manifest.webmanifest"/);
       const references = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1]);
       assert.ok(
         references.some((reference) => reference.endsWith('.js')),
@@ -39,6 +41,56 @@ test('the production artifact serves complete pages beneath a project path witho
     const files = await readdir(new URL('../site/', import.meta.url), {recursive: true});
     assert.ok(files.includes('.nojekyll'));
     assert.ok(files.includes('assets/ogg-vorbis.LICENSE.txt'));
+    const manifestUrl = `${origin}${base}manifest.webmanifest`;
+    const manifestResponse = await fetch(manifestUrl);
+    assert.match(manifestResponse.headers.get('content-type'), /application\/manifest\+json/);
+    const manifest = await manifestResponse.json();
+    assert.equal(new URL(manifest.scope, manifestUrl).pathname, base);
+    assert.equal(new URL(manifest.id, manifestUrl).pathname, base);
+    assert.equal((await fetch(new URL(manifest.start_url, manifestUrl))).status, 200);
+    assert.equal(manifest.display, 'standalone');
+    for (const size of [192, 512]) {
+      const icon = manifest.icons.find((icon) => icon.sizes === `${size}x${size}`);
+      assert.ok(icon, `${size}px install icon`);
+      const image = Buffer.from(await (await fetch(new URL(icon.src, manifestUrl))).arrayBuffer());
+      assert.equal(image.subarray(1, 4).toString(), 'PNG');
+      assert.equal(image.readUInt32BE(16), size);
+      assert.equal(image.readUInt32BE(20), size);
+    }
+    // Exercise installation against the generated artifact: lazy modules and
+    // icons must be available offline even if no player has been opened yet.
+    const events = new Map();
+    let installation;
+    let precached;
+    runInNewContext(await (await fetch(`${origin}${base}sw.js`)).text(), {
+      URL,
+      Request,
+      self: {
+        registration: {scope: `${origin}${base}`},
+        addEventListener: (name, handler) => events.set(name, handler),
+      },
+      caches: {
+        open: async () => ({
+          addAll: async (requests) => {
+            precached = requests;
+          },
+        }),
+      },
+    });
+    events.get('install')({
+      waitUntil: (promise) => {
+        installation = promise;
+      },
+    });
+    await installation;
+    assert.deepEqual(
+      Array.from(precached, (request) => {
+        assert.ok(request.url.startsWith(`${origin}${base}`));
+        return request.url.slice(`${origin}${base}`.length);
+      }).sort(),
+      files.filter((file) => file.includes('.') && !['.nojekyll', 'sw.js'].includes(file)).sort(),
+      'the offline cache includes the complete built website',
+    );
     assert.ok(files.some((file) => /worklet.*\.js$/.test(file)));
     assert.ok(files.some((file) => /worker.*\.js$/.test(file)));
     const codec = files.find((file) => /\/ogg-vorbis-[^/]+\.js$/.test(file));

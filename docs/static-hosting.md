@@ -35,6 +35,18 @@ The workflow uploads only `site/`. Keep `targetgame/`, `dist/`, and the reposito
 
 No deployment has to run locally. The workflow needs the usual Pages environment and repository Pages permissions. Refer to [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) for repository settings.
 
+## Install and use offline
+
+The production build includes a web app manifest, install icons, and a service worker. Open the deployed site over HTTPS, then use the browser's **Install app** command. On iPhone/iPad, use Safari's **Share → Add to Home Screen**. Installation opens the library in a standalone window; all player and laboratory pages belong to the same app. Install controls vary by browser.
+
+On the first online visit, the service worker caches the complete website, including both engines, workers, AudioWorklets, and the lazy Vorbis decoder. Once installation completes, later visits work offline. In browser developer tools, **Application → Service Workers** shows activation; **Cache Storage** lists the cached build. The manifest, registration scope, and cache URLs all follow the deployment directory, including GitHub Pages repository subpaths.
+
+This cache contains only built website files. To play offline, select game files from your device or use **Keep game files in browser**, then **Open saved game files**. Installing the app does not copy your game installation or back up saves. See [mobile compatibility](mobile-compatibility.md) for file access and storage limits.
+
+Updates download in the background and wait until all open tabs and installed app windows for this site close. Reopen the app to use the update. A running game is never reloaded to apply an update, and its lazy modules keep using the same cached build. Activation removes only older app caches for this deployment scope; it does not clear saves, retained game files, or sibling project caches. This follows the [service worker update lifecycle](https://web.dev/articles/service-worker-lifecycle).
+
+The service worker is registered only in production builds. Vite development sessions keep their normal live-update behavior. To check offline behavior, build and serve `site/`, including the nested-path preview above.
+
 ## Browser storage and HTTPS
 
 Saves, preferences, and retained game files belong to the browser profile and origin. Moving from localhost to GitHub Pages or to a custom domain does not move existing browser data; export saves first and import them at the new address. Paths under the same origin share its storage, so two project sites on the same `owner.github.io` origin are not isolated by repository path.
