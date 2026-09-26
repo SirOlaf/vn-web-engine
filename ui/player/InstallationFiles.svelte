@@ -22,18 +22,8 @@
   <button id="installation-save" type="button">Keep game files in browser</button>
   <button id="installation-remove" type="button">Remove saved game files</button>
   <button id="installation-cancel" type="button" hidden>Cancel copy</button>
-  <p>Read from your device. Never uploaded.</p>
   <p>
-    Supporting browsers remember your chosen folder for this game without copying its files. It
-    reopens after refresh, or you can reconnect it when the browser asks for access again.
-  </p>
-  <p>
-    Add files individually if your file manager cannot select several. Added files join the current
-    selection; choosing a folder replaces it. Safari may copy selections temporarily.
-  </p>
-  <p>
-    Keep game files in browser storage to reopen them later without selecting the folder. This
-    optional copy is separate from saves; the website still needs to load.
+    Add files individually if your file manager cannot select several.
   </p>
   <p id="installation-status" role="status"></p>
 </section>

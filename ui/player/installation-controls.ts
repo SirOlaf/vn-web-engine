@@ -259,7 +259,7 @@ export function mountInstallationControls(options: {
   async function restoreDirectory(): Promise<void> {
     if (!hasInstallationDirectoryPicker(window) || !directories.available()) {
       directoryStatus.textContent =
-        'This browser cannot remember device folders. Keep game files in browser to reopen them later.';
+        'This browser cannot remember device folders.';
       return;
     }
     const revision = selectionRevision;

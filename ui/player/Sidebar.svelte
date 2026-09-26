@@ -50,8 +50,7 @@
         <option value="native">Native</option><option value="dom">DOM text</option>
       </select>
       <p id="text-help">
-        DOM text uses selectable browser fonts with the game’s line breaks. Click outside text to
-        control the game. Glyph placement and visual effects are approximate.
+        DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and visual effects are approximate.
       </p>
     </section>
     {#if game === 'aokana'}
