@@ -1,0 +1,67 @@
+#display {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+#display-viewport {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100% !important;
+  background: #000;
+}
+#surface {
+  position: relative;
+  overflow: hidden;
+  background: #000;
+}
+#game-canvas {
+  display: block;
+  max-width: 100%;
+}
+#window-layer {
+  pointer-events: none;
+  z-index: 10;
+}
+#window-layer > * {
+  pointer-events: auto;
+}
+#display[data-expanded] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+}
+#display #welcome {
+  position: relative;
+  z-index: 1;
+}
+#display #sidebar {
+  z-index: 20;
+}
+#fatal-error {
+  color: #ffd1cb;
+}
+#save-files .file-actions button {
+  min-width: 0;
+}
+#save-status:empty {
+  display: none;
+}
+.no-canvas #surface {
+  background: #111b2b;
+}
+.no-canvas #display-viewport canvas,
+.no-canvas #display-viewport video,
+.no-canvas #display-viewport img,
+.no-canvas #display-viewport picture,
+.no-canvas #display-viewport svg,
+.no-canvas #display-viewport object,
+.no-canvas #display-viewport embed {
+  opacity: 0 !important;
+}

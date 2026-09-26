@@ -12,6 +12,8 @@ test('game directory selection finds root executable and direct Data archives', 
   const selected = gameDirectoryFiles([
     file('CHAOS HEAD NOAH/readme.txt'),
     file('CHAOS HEAD NOAH/Data/script.cpk'),
+    file('CHAOS HEAD NOAH/Data/._script.cpk'),
+    file('CHAOS HEAD NOAH/._Game.exe'),
     file('CHAOS HEAD NOAH/Game.exe'),
     file('CHAOS HEAD NOAH/Data/mes00.CPK'),
     file('CHAOS HEAD NOAH/Data/cache/ignored.cpk'),

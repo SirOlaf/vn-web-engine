@@ -1,0 +1,48 @@
+{
+  "schema": "ghidra-ledger-partial-observation/v1",
+  "observedOn": "2026-09-19",
+  "status": "incomplete",
+  "identity": {
+    "programPath": "/aokana.exe",
+    "executableSha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+    "languageId": "x86:LE:64:default",
+    "imageBase": "0x140000000"
+  },
+  "observations": [
+    {
+      "tool": "get_current_program_info",
+      "program": "/aokana.exe",
+      "language": "x86:LE:64:default",
+      "imageBase": "140000000"
+    },
+    {
+      "tool": "get_program_options",
+      "program": "/aokana.exe",
+      "group": "Program Information",
+      "option": "Executable SHA256",
+      "value": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a"
+    },
+    {
+      "tool": "get_function_by_address",
+      "program": "/aokana.exe",
+      "address": "1400DE050",
+      "name": "AokanaNative90_01_SetPresentationEnabled",
+      "entry": "1400de050",
+      "reportedBodyStart": "1400de050",
+      "reportedBodyEnd": "1400de066"
+    },
+    {
+      "tool": "run_script_inline",
+      "program": "/aokana.exe",
+      "result": "Script execution disabled. Set GHIDRA_MCP_ALLOW_SCRIPTS=1 to enable."
+    }
+  ],
+  "unobserved": [
+    "Full body range enumeration",
+    "Full body and per-range byte hashes",
+    "Live dirty/transaction state",
+    "Domain-file identity and modification stamp",
+    "Separate immutable saved-database readback"
+  ],
+  "note": "Metadata only. The textual get_function_by_address endpoint is not substituted for FunctionManager.getFunctionAt export evidence. No raw game bytes, current save claim, or verified receipt is included."
+}

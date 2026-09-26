@@ -1,4 +1,37 @@
+# Dependencies and generated build output
 node_modules/
 dist/
+site/
+*.tsbuildinfo
+/wasm/**/target/
+npm-debug.log*
+
+# Local test output and compiled fixture generators
+/coverage/
+/playwright-report/
+/test-results/
+/tests/fixtures/audio/generate-vorbis-boundaries
+/tests/fixtures/audio/generate-vorbis-boundaries.exe
+
+# Python caches and local environments
 __pycache__/
+*.py[cod]
+.venv/
+
+# Filesystem metadata and editor backups
 .DS_Store
+._*
+__MACOSX/
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# Local game installations and generated investigation evidence
+targetgame/
+docs/investigations/
+docs/reconstruction/
+docs/tooling/boundaries/
+docs/tooling/evidence/
+tools/native-audit/workspace/

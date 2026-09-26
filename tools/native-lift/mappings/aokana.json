@@ -1,0 +1,841 @@
+{
+  "schemaVersion": 1,
+  "kind": "native-mapping-database",
+  "binaries": [
+    {
+      "id": "aokana-f585e28f",
+      "programPath": "/aokana.exe",
+      "executableSha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+      "languageId": "x86:LE:64:default",
+      "imageBase": "0x140000000"
+    }
+  ],
+  "types": [
+    {
+      "id": "aokana.NativeAddress",
+      "kind": "integer",
+      "bits": 64,
+      "signed": false,
+      "representation": "bigint"
+    },
+    {
+      "id": "aokana.Bitmap",
+      "kind": "reference",
+      "import": {
+        "module": "src/engines/buriko/games/aokana/native/bitmap.js",
+        "export": "AokanaBitmap",
+        "source": {
+          "path": "src/engines/buriko/games/aokana/native/bitmap.ts",
+          "sha256": "3672bc640254c1b92ad7018ef0e1e94616045d603ba83e7ac29fea8fcfb33921"
+        }
+      },
+      "nativeBits": 64,
+      "nullable": false,
+      "mutability": "mutable"
+    },
+    {
+      "id": "aokana.Thread",
+      "kind": "opaque",
+      "import": {
+        "module": "src/engines/buriko/games/aokana/bp/state.js",
+        "export": "AokanaBpThread",
+        "source": {
+          "path": "src/engines/buriko/games/aokana/bp/state.ts",
+          "sha256": "feeafdd292baa64fd9af8ce5d66397d2eb53fe560c2aef86f39a8692902fbe7c"
+        }
+      },
+      "nullable": false
+    },
+    {
+      "id": "aokana.UnknownHandle",
+      "kind": "opaque",
+      "import": null,
+      "nullable": true
+    },
+    {
+      "id": "aokana.Particle",
+      "kind": "reference",
+      "import": {
+        "module": "src/engines/buriko/games/aokana/native/particle-objects.js",
+        "export": "AokanaParticle",
+        "source": {
+          "path": "src/engines/buriko/games/aokana/native/particle-objects.ts",
+          "sha256": "0c9d19992af184b506dbc87bcc0a27902ab5fed4a8075c10f63e7f53f73a4967"
+        }
+      },
+      "nativeBits": 64,
+      "nullable": false,
+      "mutability": "mutable"
+    },
+    {
+      "id": "aokana.ParticleImages",
+      "kind": "reference",
+      "import": {
+        "module": "src/engines/buriko/games/aokana/native/particle-images.js",
+        "export": "AokanaParticleImages",
+        "source": {
+          "path": "src/engines/buriko/games/aokana/native/particle-images.ts",
+          "sha256": "f94cdd05a47c3331c73845048de2513c775a83b41679312eae58affd31d13a03"
+        }
+      },
+      "nativeBits": 64,
+      "nullable": false,
+      "mutability": "mutable"
+    },
+    {
+      "id": "aokana.ParticleVariants",
+      "kind": "reference",
+      "import": {
+        "module": "src/engines/buriko/games/aokana/native/particle-images.js",
+        "export": "AokanaParticleVariants",
+        "source": {
+          "path": "src/engines/buriko/games/aokana/native/particle-images.ts",
+          "sha256": "f94cdd05a47c3331c73845048de2513c775a83b41679312eae58affd31d13a03"
+        }
+      },
+      "nativeBits": 64,
+      "nullable": false,
+      "mutability": "mutable"
+    },
+    {
+      "id": "aokana.SnowParameterRecord",
+      "kind": "opaque",
+      "import": null,
+      "nullable": false
+    },
+    {
+      "id": "aokana.FireflyParameterRecord",
+      "kind": "opaque",
+      "import": null,
+      "nullable": false
+    },
+    {
+      "id": "aokana.SnowParameterTable",
+      "kind": "opaque",
+      "import": null,
+      "nullable": false
+    },
+    {
+      "id": "aokana.FireflyParameterTable",
+      "kind": "opaque",
+      "import": null,
+      "nullable": false
+    }
+  ],
+  "implementations": [
+    {
+      "id": "aokana.nativeVectorAngle",
+      "module": "src/engines/buriko/games/aokana/bp/opcodes/native-math.js",
+      "export": "nativeVectorAngle",
+      "source": {
+        "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
+        "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "x",
+            "type": "i32"
+          },
+          {
+            "name": "y",
+            "type": "i32"
+          }
+        ],
+        "returnType": "i32"
+      },
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
+          }
+        ],
+        "notes": [
+          "Signature and order were authored from the existing exported function; tooling never parses TypeScript to infer them.",
+          "Full numerical equivalence and exact native entry/body/readback/save are not established by this mapping."
+        ]
+      }
+    },
+    {
+      "id": "aokana.nativeCursorInterpolation",
+      "module": "src/engines/buriko/games/aokana/bp/opcodes/native-math.js",
+      "export": "nativeCursorInterpolation",
+      "source": {
+        "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
+        "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "delta",
+            "type": "i32"
+          },
+          {
+            "name": "easing",
+            "type": "i32"
+          },
+          {
+            "name": "progress",
+            "type": "u32"
+          },
+          {
+            "name": "steps",
+            "type": "u32"
+          }
+        ],
+        "returnType": "i32"
+      },
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
+          }
+        ],
+        "notes": [
+          "Existing source states the reachable native caller domain is 0 < progress < steps.",
+          "Signature and parameter order are explicit source contracts; native ABI locations and native readback remain unresolved."
+        ]
+      }
+    },
+    {
+      "id": "aokana.readPrimaryFrameIndex",
+      "module": "tools/native-lift/adapters/aokana-particle.mjs",
+      "export": "readPrimaryFrameIndex",
+      "source": {
+        "path": "tools/native-lift/adapters/aokana-particle.mjs",
+        "sha256": "d5fb9359c9541c77702c076fe3e6deea395b046082962cd0d598ab39b0cd7a86"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "particle",
+            "type": {
+              "named": "aokana.Particle"
+            }
+          }
+        ],
+        "returnType": "u16"
+      },
+      "evidence": {
+        "state": "reviewed-contract",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-095bb0.md",
+            "sha256": "485abb4802cc619db8e91f967655a98f0bbf47a9e061f835ab5fc4bb3bb4ba45",
+            "section": "Aokana 095bb0 owner-load contract"
+          }
+        ],
+        "notes": [
+          "The adapter directly calls the existing AokanaParticle.frame implementation.",
+          "The mapping supplies the authored signature; tooling does not parse the TypeScript class."
+        ]
+      }
+    },
+    {
+      "id": "aokana.advanceParticle",
+      "module": "tools/native-lift/adapters/aokana-particle.mjs",
+      "export": "advanceParticle",
+      "source": {
+        "path": "tools/native-lift/adapters/aokana-particle.mjs",
+        "sha256": "d5fb9359c9541c77702c076fe3e6deea395b046082962cd0d598ab39b0cd7a86"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "particle",
+            "type": {
+              "named": "aokana.Particle"
+            }
+          }
+        ],
+        "returnType": "i32"
+      },
+      "evidence": {
+        "state": "reviewed-contract",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-095be0.md",
+            "sha256": "b48214231d6113dfb6a2061965b055a02fedd2d9b89159a9fb3dd82e7fa22a6c",
+            "section": "Aokana 095be0 generational-slot and implementation contract"
+          }
+        ],
+        "notes": [
+          "The adapter directly calls the existing AokanaParticle.update implementation.",
+          "The exact native CFG and variable generations remain in the hash-pinned companion slot IR."
+        ]
+      }
+    }
+  ],
+  "functions": [
+    {
+      "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+      "rva": "0x315f0",
+      "implementation": "aokana.nativeVectorAngle",
+      "abi": {
+        "convention": "unresolved",
+        "parameters": [
+          {
+            "name": "x",
+            "type": "i32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "No exact native register/stack evidence was imported for this parameter."
+            }
+          },
+          {
+            "name": "y",
+            "type": "i32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "No exact native register/stack evidence was imported for this parameter."
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "x",
+            "source": {
+              "kind": "parameter",
+              "name": "x"
+            }
+          },
+          {
+            "parameter": "y",
+            "source": {
+              "kind": "parameter",
+              "name": "y"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "unresolved",
+          "reason": "No exact native return-register evidence was imported."
+        }
+      },
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
+          },
+          {
+            "path": "docs/investigations/aokana-native-input-timing.md",
+            "sha256": "e7a39897d7183dc72d7849b3976ab6b65715f7b221336af9eb3928269124c09d",
+            "section": "Touch contact and history angle helper"
+          }
+        ],
+        "notes": [
+          "Existing source and touch-history investigation explicitly identify the integer vector-angle helper at this RVA.",
+          "Native entry/body/direct readback/save are unreviewed. Source correspondence does not authorize replacing the complete native function without further review."
+        ]
+      }
+    },
+    {
+      "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+      "rva": "0xa0f60",
+      "implementation": "aokana.nativeVectorAngle",
+      "abi": {
+        "convention": "unresolved",
+        "parameters": [
+          {
+            "name": "x",
+            "type": "i32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "No exact native register/stack evidence was imported for this parameter."
+            }
+          },
+          {
+            "name": "y",
+            "type": "i32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "No exact native register/stack evidence was imported for this parameter."
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "x",
+            "source": {
+              "kind": "parameter",
+              "name": "x"
+            }
+          },
+          {
+            "parameter": "y",
+            "source": {
+              "kind": "parameter",
+              "name": "y"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "unresolved",
+          "reason": "No exact native return-register evidence was imported."
+        }
+      },
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
+          },
+          {
+            "path": "docs/investigations/aokana-native-d0.md",
+            "sha256": "236a9fba26fd472eafcd1edcd39083e2e9e419f567d45edf32438d3578d5a0ad",
+            "section": "Logical-spatial integer vector angle cache"
+          }
+        ],
+        "notes": [
+          "The logical-spatial investigation states the cached wrapper is equivalent to native 0x315f0 within and outside its cache domain. This assertion is retained without reconstructing or copying the cache.",
+          "Native entry/body/direct readback/save are unreviewed. Source correspondence does not authorize replacing the complete native function without further review."
+        ]
+      }
+    },
+    {
+      "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+      "rva": "0xef720",
+      "implementation": "aokana.nativeCursorInterpolation",
+      "abi": {
+        "convention": "unresolved",
+        "parameters": [
+          {
+            "name": "delta",
+            "type": "i32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "No exact native register/stack evidence was imported for this parameter."
+            }
+          },
+          {
+            "name": "easing",
+            "type": "i32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "No exact native register/stack evidence was imported for this parameter."
+            }
+          },
+          {
+            "name": "progress",
+            "type": "u32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "No exact native register/stack evidence was imported for this parameter."
+            }
+          },
+          {
+            "name": "steps",
+            "type": "u32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "No exact native register/stack evidence was imported for this parameter."
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "delta",
+            "source": {
+              "kind": "parameter",
+              "name": "delta"
+            }
+          },
+          {
+            "parameter": "easing",
+            "source": {
+              "kind": "parameter",
+              "name": "easing"
+            }
+          },
+          {
+            "parameter": "progress",
+            "source": {
+              "kind": "parameter",
+              "name": "progress"
+            }
+          },
+          {
+            "parameter": "steps",
+            "source": {
+              "kind": "parameter",
+              "name": "steps"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "unresolved",
+          "reason": "No exact native return-register evidence was imported."
+        }
+      },
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
+            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
+          }
+        ],
+        "notes": [
+          "Address and reachable caller domain come from the existing nativeCursorInterpolation declaration.",
+          "Native entry/body/direct readback/save are unreviewed. Source correspondence does not authorize replacing the complete native function without further review."
+        ]
+      }
+    },
+    {
+      "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+      "rva": "0x95bb0",
+      "implementation": "aokana.readPrimaryFrameIndex",
+      "abi": {
+        "convention": "win64",
+        "parameters": [
+          {
+            "name": "particle",
+            "type": {
+              "named": "aokana.Particle"
+            },
+            "location": {
+              "kind": "register",
+              "name": "rcx"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "particle",
+            "source": {
+              "kind": "parameter",
+              "name": "particle"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "register",
+          "name": "ax"
+        }
+      },
+      "evidence": {
+        "state": "reviewed-contract",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-095bb0.md",
+            "sha256": "485abb4802cc619db8e91f967655a98f0bbf47a9e061f835ab5fc4bb3bb4ba45",
+            "section": "Aokana 095bb0 owner-load contract"
+          }
+        ],
+        "notes": [
+          "The live high graph recovers the receiver in RCX and the return value in AX.",
+          "The database contract supplies the types because Ghidra's stored formal signature is undefined."
+        ]
+      }
+    },
+    {
+      "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+      "rva": "0x95be0",
+      "implementation": "aokana.advanceParticle",
+      "abi": {
+        "convention": "win64",
+        "parameters": [
+          {
+            "name": "particle",
+            "type": {
+              "named": "aokana.Particle"
+            },
+            "location": {
+              "kind": "register",
+              "name": "rcx"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "particle",
+            "source": {
+              "kind": "parameter",
+              "name": "particle"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "register",
+          "name": "eax"
+        }
+      },
+      "evidence": {
+        "state": "reviewed-contract",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-095be0.md",
+            "sha256": "b48214231d6113dfb6a2061965b055a02fedd2d9b89159a9fb3dd82e7fa22a6c",
+            "section": "Aokana 095be0 generational-slot and implementation contract"
+          }
+        ],
+        "notes": [
+          "The live HighFunction recovers the receiver in RCX and return value in EAX.",
+          "The database supplies the authored receiver and result types because the stored Ghidra formal signature is undefined."
+        ]
+      }
+    }
+  ],
+  "variantFamilies": [],
+  "layouts": [
+    {
+      "id": "aokana.particle.layout",
+      "kind": "struct",
+      "type": "aokana.Particle",
+      "size": {"bytes": 64, "kind": "minimum"},
+      "fields": [
+        {"name": "active", "offsetBytes": 16, "sizeBytes": 4, "storage": "inline", "type": "i32"},
+        {
+          "name": "framePosition",
+          "offsetBytes": 36,
+          "sizeBytes": 4,
+          "storage": "inline",
+          "type": "u32"
+        },
+        {
+          "name": "specialFramePosition",
+          "offsetBytes": 40,
+          "sizeBytes": 4,
+          "storage": "inline",
+          "type": "u32"
+        },
+        {
+          "name": "frameIncrement",
+          "offsetBytes": 44,
+          "sizeBytes": 4,
+          "storage": "inline",
+          "type": "i32"
+        },
+        {
+          "name": "specialFrameIncrement",
+          "offsetBytes": 48,
+          "sizeBytes": 4,
+          "storage": "inline",
+          "type": "i32"
+        },
+        {
+          "name": "specialFrameCount",
+          "offsetBytes": 52,
+          "sizeBytes": 4,
+          "storage": "inline",
+          "type": "u32"
+        },
+        {
+          "name": "images",
+          "offsetBytes": 56,
+          "sizeBytes": 8,
+          "storage": "pointer",
+          "type": {"named": "aokana.ParticleImages"}
+        }
+      ],
+      "evidence": {
+        "state": "reviewed-contract",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-native-layouts.md",
+            "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
+            "section": "Partial AokanaParticle layout"
+          }
+        ],
+        "notes": ["Only reviewed fields are named; the 0x40-byte size is a minimum."]
+      }
+    },
+    {
+      "id": "aokana.particle-images.layout",
+      "kind": "struct",
+      "type": "aokana.ParticleImages",
+      "size": {"bytes": 272, "kind": "exact"},
+      "fields": [
+        {"name": "count", "offsetBytes": 0, "sizeBytes": 4, "storage": "inline", "type": "u32"}
+      ],
+      "evidence": {
+        "state": "reviewed-contract",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-native-layouts.md",
+            "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
+            "section": "Partial AokanaParticle layout"
+          }
+        ],
+        "notes": [
+          "The exact record size and count field are source-pinned; unnamed bytes remain opaque."
+        ]
+      }
+    },
+    {
+      "id": "aokana.snow-record.layout",
+      "kind": "struct",
+      "type": "aokana.SnowParameterRecord",
+      "size": {"bytes": 44, "kind": "exact"},
+      "fields": [],
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-native-layouts.md",
+            "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
+            "section": "Parameter-table globals"
+          }
+        ],
+        "notes": ["Record width is explicit; individual fields remain unnamed."]
+      }
+    },
+    {
+      "id": "aokana.firefly-record.layout",
+      "kind": "struct",
+      "type": "aokana.FireflyParameterRecord",
+      "size": {"bytes": 72, "kind": "exact"},
+      "fields": [],
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-native-layouts.md",
+            "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
+            "section": "Parameter-table globals"
+          }
+        ],
+        "notes": ["Record width is explicit; individual fields remain unnamed."]
+      }
+    },
+    {
+      "id": "aokana.snow-table.layout",
+      "kind": "array",
+      "type": "aokana.SnowParameterTable",
+      "size": {"bytes": 2816, "kind": "exact"},
+      "elementType": {"named": "aokana.SnowParameterRecord"},
+      "elementSizeBytes": 44,
+      "count": 64,
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-native-layouts.md",
+            "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
+            "section": "Parameter-table globals"
+          }
+        ],
+        "notes": ["The table maps 64 exact-width records."]
+      }
+    },
+    {
+      "id": "aokana.firefly-table.layout",
+      "kind": "array",
+      "type": "aokana.FireflyParameterTable",
+      "size": {"bytes": 4608, "kind": "exact"},
+      "elementType": {"named": "aokana.FireflyParameterRecord"},
+      "elementSizeBytes": 72,
+      "count": 64,
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-native-layouts.md",
+            "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
+            "section": "Parameter-table globals"
+          }
+        ],
+        "notes": ["The table maps 64 exact-width records."]
+      }
+    }
+  ],
+  "globals": [
+    {
+      "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+      "address": "0x1401e08e0",
+      "name": "snowParameterTable",
+      "type": {"named": "aokana.SnowParameterTable"},
+      "implementation": {
+        "rootType": {"named": "aokana.ParticleVariants"},
+        "path": ["snowParameters"]
+      },
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-native-layouts.md",
+            "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
+            "section": "Parameter-table globals"
+          }
+        ],
+        "notes": ["The absolute address maps to the implementation-owned snow parameter array."]
+      }
+    },
+    {
+      "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+      "address": "0x1401d6de0",
+      "name": "fireflyParameterTable",
+      "type": {"named": "aokana.FireflyParameterTable"},
+      "implementation": {
+        "rootType": {"named": "aokana.ParticleVariants"},
+        "path": ["fireflyParameters"]
+      },
+      "evidence": {
+        "state": "source-assertion",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-native-layouts.md",
+            "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
+            "section": "Parameter-table globals"
+          }
+        ],
+        "notes": ["The absolute address maps to the implementation-owned firefly parameter array."]
+      }
+    }
+  ],
+  "lifters": [
+    {
+      "id": "aokana.particle.primary-frame-owner-load",
+      "kind": "owner-load-call",
+      "target": {
+        "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
+        "rva": "0x95bb0",
+        "bodySha256": "c4676f80593df3dfe0f353e0abce1ec0dc676f63ed0c05399d6c4ead91165c64"
+      },
+      "operation": {
+        "address": "0x140095bb0",
+        "sequence": 1,
+        "addressSpace": "ram",
+        "offsetBytes": 38,
+        "widthBits": 16
+      },
+      "receiverParameter": "particle",
+      "implementation": "aokana.readPrimaryFrameIndex",
+      "arguments": [
+        {
+          "parameter": "particle",
+          "source": {
+            "kind": "native-parameter",
+            "name": "particle"
+          }
+        }
+      ],
+      "evidence": {
+        "state": "reviewed-contract",
+        "references": [
+          {
+            "path": "docs/tooling/evidence/aokana-095bb0.md",
+            "sha256": "485abb4802cc619db8e91f967655a98f0bbf47a9e061f835ab5fc4bb3bb4ba45",
+            "section": "Aokana 095bb0 owner-load contract"
+          }
+        ],
+        "notes": [
+          "The matcher must consume the single-use pointer INT_ADD and the 16-bit LOAD together.",
+          "Any body, operation, address-space, offset, width, receiver, or signature drift refuses the import."
+        ]
+      }
+    }
+  ]
+}

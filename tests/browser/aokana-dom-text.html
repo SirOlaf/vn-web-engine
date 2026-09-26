@@ -1,0 +1,187 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Synthetic raster DOM text checks</title>
+<link rel="stylesheet" href="../../ui/player/player.css" />
+<style>
+  body {
+    background: white;
+    color: black;
+  }
+  #stage {
+    position: relative;
+    width: 320px;
+    height: 180px;
+  }
+  #display {
+    position: relative;
+    width: 160px;
+    height: 120px;
+  }
+  #viewport {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100% !important;
+  }
+  canvas {
+    width: 320px;
+    height: 180px;
+  }
+</style>
+<p id="result">Running synthetic text checks…</p>
+<div id="display">
+  <div id="viewport">
+    <div id="stage"><canvas id="native" width="320" height="180"></canvas></div>
+  </div>
+</div>
+<script type="module">
+  import {BrowserRasterText} from '../../dist/text/browser-raster-text.js';
+  import {BrowserRasterTextPresentation} from '../../dist/text/browser-raster-text-presentation.js';
+  import {BrowserWindowDisplayHost} from '../../dist/platform/browser-window-display.js';
+  import {recordRasterText} from '../../dist/text/raster-text.js';
+  import {
+    allocateAokanaBitmap,
+    fillAokanaBitmap,
+  } from '../../dist/engines/buriko/games/aokana/native/bitmap.js';
+  import {AokanaBitmapCompositor} from '../../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
+  import {presentAokanaChildBitmap} from '../../dist/engines/buriko/games/aokana/native/child-bitmap.js';
+  // All pixels and strings in this fixture are generated here. No game assets,
+  // installation handles, or game storage are read.
+  const canvas = document.querySelector('#native');
+  const display = document.querySelector('#display');
+  const stage = document.querySelector('#stage');
+  const host = new BrowserWindowDisplayHost(display, document.querySelector('#viewport'), stage);
+  // Exercise page expansion without requesting OS fullscreen or changing the saved preference.
+  const fullscreenMode = localStorage.getItem('vn.fullscreen-mode');
+  host.setMode('page');
+  if (fullscreenMode === null) localStorage.removeItem('vn.fullscreen-mode');
+  else localStorage.setItem('vn.fullscreen-mode', fullscreenMode);
+  host.configure({width: 320, height: 180, fullscreen: false});
+  const renderer = new BrowserRasterText(canvas);
+  const frame = new ImageData(320, 180);
+  for (let i = 3; i < frame.data.length; i += 4) frame.data[i] = 255;
+  const glyph = (id, text, x, y, vertical = false) => ({
+    id,
+    text,
+    x,
+    y,
+    width: 16,
+    height: 24,
+    clip: {x, y, width: 16, height: 24},
+    size: 24,
+    family: 'sans-serif',
+    bold: false,
+    vertical,
+    color: 0xffffff,
+    alpha: 255,
+  });
+  const check = (condition, message) => {
+    if (!condition) throw Error(message);
+  };
+  const checkAlignment = (message) => {
+    const native = canvas.getBoundingClientRect();
+    for (const element of [renderer.text.element, renderer.text.element.querySelector('canvas')]) {
+      const overlay = element.getBoundingClientRect();
+      for (const axis of ['left', 'top', 'width', 'height'])
+        check(Math.abs(overlay[axis] - native[axis]) < 0.1, `${message}: ${axis}`);
+    }
+  };
+  try {
+    renderer.show(frame, [glyph(1, 'A', 10, 10), glyph(2, 'B', 26, 10)]);
+    check(canvas.getBoundingClientRect().width <= 160, 'window fits at half scale or smaller');
+    checkAlignment('scaled window alignment');
+    host.setFullscreen(true);
+    checkAlignment('nonuniform page expansion without another frame');
+    renderer.show(frame, [glyph(1, 'A', 10, 10), glyph(2, 'B', 26, 10)]);
+    checkAlignment('nonuniform page expansion after another frame');
+    canvas.style.margin = '7px 0 0 11px';
+    stage.style.border = '3px solid transparent';
+    renderer.show(frame, [glyph(1, 'A', 10, 10), glyph(2, 'B', 26, 10)]);
+    checkAlignment('position within a scaled bordered window');
+    canvas.style.margin = '';
+    stage.style.border = '';
+    host.setFullscreen(false);
+    renderer.show(frame, [glyph(1, 'A', 10, 10), glyph(2, 'B', 26, 10)]);
+    checkAlignment('return to windowed alignment');
+    const node = renderer.text.element.querySelector('[data-game-text]').firstChild;
+    check(node.nodeType === Node.TEXT_NODE && node.data === 'AB', 'continuous line');
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, 1);
+    document.getSelection().removeAllRanges();
+    document.getSelection().addRange(range);
+    renderer.show(frame, [
+      glyph(1, 'A', 10, 10),
+      glyph(2, 'B', 26, 10),
+      glyph(3, 'C', 42, 10),
+      glyph(4, 'D', 10, 40),
+    ]);
+    check(
+      renderer.text.element.querySelector('[data-game-text]').firstChild === node,
+      'stable reveal node',
+    );
+    check(node.data === 'ABCD', 'continuous native line wrap');
+    check(document.getSelection().toString() === 'A', 'selection preserved while revealing');
+    renderer.show(frame, [glyph(5, '日', 250, 10, true), glyph(6, '本', 250, 34, true)]);
+    const vertical = renderer.text.element.querySelector('[data-game-text]');
+    check(
+      vertical.textContent === '日本' && vertical.style.writingMode === 'vertical-rl',
+      'vertical text',
+    );
+    renderer.hide();
+    check(
+      renderer.text.element.hidden && !renderer.text.element.querySelector('[data-game-text]'),
+      'hide clears text',
+    );
+    renderer.dispose();
+    check(!document.querySelector('.game-glyph-slots'), 'dispose removes layer');
+    check(
+      canvas
+        .getContext('2d')
+        .getImageData(0, 0, 1, 1)
+        .data.every((v) => v === 0),
+      'native canvas unchanged',
+    );
+    const owner = new BrowserRasterTextPresentation();
+    const surface = allocateAokanaBitmap(320, 180, 1),
+      ink = allocateAokanaBitmap(12, 24, 1);
+    fillAokanaBitmap(surface, 0);
+    fillAokanaBitmap(ink, 0xffffff);
+    recordRasterText(ink, 'Z', {size: 24, width: 12});
+    new AokanaBitmapCompositor().draw(surface, 10, 10, ink, 0, 0);
+    presentAokanaChildBitmap(canvas, surface, 0, 0, owner);
+    check(!document.querySelector('.game-glyph-slots'), 'native mode has no alternate display');
+    const canonical = canvas.getContext('2d').getImageData(10, 10, 1, 1).data.slice();
+    surface.storage.release();
+    ink.storage.release();
+    owner.setTextMode('dom');
+    check(
+      document.querySelector('[data-game-text]').textContent === 'Z',
+      'retained child frame survives native release',
+    );
+    owner.setTextMode('native');
+    owner.setTextMode('dom');
+    check(
+      document.querySelector('[data-game-text]').textContent === 'Z',
+      'live mode switching retains text',
+    );
+    check(
+      canvas
+        .getContext('2d')
+        .getImageData(10, 10, 1, 1)
+        .data.every((v, i) => v === canonical[i]),
+      'mode switch does not change native pixels',
+    );
+    owner.clear(canvas);
+    owner.dispose();
+    check(!document.querySelector('.game-glyph-slots'), 'presentation teardown');
+    document.querySelector('#result').textContent =
+      'PASS: scaled window and page expansion alignment, continuous text, reveal selection, vertical text, native pixel isolation, bitmap output and mode-switch lifecycle';
+    window.testResult = 'PASS';
+  } catch (error) {
+    document.querySelector('#result').textContent = 'FAIL: ' + error.message;
+    window.testResult = error.stack;
+  } finally {
+    host.dispose();
+  }
+</script>

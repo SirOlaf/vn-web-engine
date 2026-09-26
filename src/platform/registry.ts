@@ -48,6 +48,26 @@ interface KeyDocument {
 }
 const encoder = new TextEncoder(),
   decoder = new TextDecoder('utf-8', {fatal: true});
+/** Keep existing URI keys while representing isolated UTF-16 surrogate units losslessly. */
+function component(name: string): string {
+  let result = '';
+  for (let i = 0; i < name.length; i++) {
+    const unit = name.charCodeAt(i);
+    if (unit >= 0xd800 && unit <= 0xdbff && i + 1 < name.length) {
+      const next = name.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += encodeURIComponent(name.slice(i, i + 2));
+        i++;
+        continue;
+      }
+    }
+    result +=
+      unit >= 0xd800 && unit <= 0xdfff
+        ? '%u' + unit.toString(16).padStart(4, '0')
+        : encodeURIComponent(name[i]!);
+  }
+  return result;
+}
 function decode(bytes: Uint8Array): KeyDocument {
   const d = JSON.parse(decoder.decode(bytes)) as KeyDocument;
   if (
@@ -93,7 +113,7 @@ export class StoredRegistry implements Registry {
     // URI encoding prevents slashes or punctuation in key components from aliasing our record namespace.
     const prefix = `registry:${key.hive}:${key.view}/`;
     return {
-      id: prefix + parts.map((p) => encodeURIComponent(this.name(p))).join('/'),
+      id: prefix + parts.map((p) => component(this.name(p))).join('/'),
       prefix,
       parts,
     };
@@ -110,7 +130,7 @@ export class StoredRegistry implements Registry {
     await this.store.update((records) => {
       for (let i = 0; i <= parts.length; i++) {
         const current = parts.slice(0, i),
-          id = prefix + current.map((p) => encodeURIComponent(this.name(p))).join('/');
+          id = prefix + current.map((p) => component(this.name(p))).join('/');
         if (!records.has(id)) records.set(id, encode({path: current.join('\\'), values: []}));
       }
     });

@@ -1,0 +1,111 @@
+{
+  "schema": "ghidra-ledger-snapshot/v1",
+  "note": "Synthetic worked example only. No live Ghidra capture is claimed.",
+  "capturedAt": "2026-09-19T11:00:00.000Z",
+  "exporter": {
+    "name": "NativeLedgerExport",
+    "version": 1
+  },
+  "identity": {
+    "programPath": "/synthetic-ledger.bin",
+    "executableSha256": "b29cc8b64c6074eee19706783d0626a42d29af1a3c9726fce8a8d86d589cbf96",
+    "languageId": "x86:LE:64:default",
+    "imageBase": "0xffff000000000000"
+  },
+  "errors": [],
+  "stateBefore": {
+    "changed": false,
+    "transactionOpen": false,
+    "modificationNumber": "9007199254740993",
+    "domainFile": {
+      "programPath": "/synthetic-ledger.bin",
+      "fileId": "synthetic-file-id",
+      "exists": true,
+      "lastModifiedMs": "1789815000000",
+      "version": -1
+    }
+  },
+  "readback": [
+    {
+      "address": "0xffff000000001000",
+      "lookup": "FunctionManager.getFunctionAt",
+      "function": {
+        "entryAddress": "0xffff000000001000",
+        "name": "Synthetic::TwoRangeFunction",
+        "bodyRanges": [
+          {
+            "start": "0xffff000000001000",
+            "end": "0xffff000000001003",
+            "byteLength": 4,
+            "bytesSha256": "9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a"
+          },
+          {
+            "start": "0xffff000000001020",
+            "end": "0xffff000000001021",
+            "byteLength": 2,
+            "bytesSha256": "c42522128b49193de8cd45d8f7589cd7e085e65f138640d57d4482e5f7189623"
+          }
+        ],
+        "bodyByteLength": 6,
+        "bodySha256": "7192385c3c0605de55bb9476ce1d90748190ecb32a8eed7f5207b30cf6a1fe89"
+      }
+    }
+  ],
+  "savedReadback": {
+    "method": "DomainFile.getImmutableDomainObject(DEFAULT_VERSION)",
+    "separateInstance": true,
+    "changeable": false,
+    "changed": false,
+    "sourceFile": {
+      "programPath": "/synthetic-ledger.bin",
+      "fileId": "synthetic-file-id",
+      "exists": true,
+      "lastModifiedMs": "1789815000000",
+      "version": -1
+    },
+    "identity": {
+      "programPath": "/synthetic-ledger.bin",
+      "executableSha256": "b29cc8b64c6074eee19706783d0626a42d29af1a3c9726fce8a8d86d589cbf96",
+      "languageId": "x86:LE:64:default",
+      "imageBase": "0xffff000000000000"
+    },
+    "readback": [
+      {
+        "address": "0xffff000000001000",
+        "lookup": "FunctionManager.getFunctionAt",
+        "function": {
+          "entryAddress": "0xffff000000001000",
+          "name": "Synthetic::TwoRangeFunction",
+          "bodyRanges": [
+            {
+              "start": "0xffff000000001000",
+              "end": "0xffff000000001003",
+              "byteLength": 4,
+              "bytesSha256": "9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a"
+            },
+            {
+              "start": "0xffff000000001020",
+              "end": "0xffff000000001021",
+              "byteLength": 2,
+              "bytesSha256": "c42522128b49193de8cd45d8f7589cd7e085e65f138640d57d4482e5f7189623"
+            }
+          ],
+          "bodyByteLength": 6,
+          "bodySha256": "7192385c3c0605de55bb9476ce1d90748190ecb32a8eed7f5207b30cf6a1fe89"
+        }
+      }
+    ]
+  },
+  "stateAfter": {
+    "changed": false,
+    "transactionOpen": false,
+    "modificationNumber": "9007199254740993",
+    "domainFile": {
+      "programPath": "/synthetic-ledger.bin",
+      "fileId": "synthetic-file-id",
+      "exists": true,
+      "lastModifiedMs": "1789815000000",
+      "version": -1
+    }
+  }
+}

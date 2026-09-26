@@ -1,4 +1,5 @@
 import {TouchMouse} from './touch-mouse.js';
+import {isBrowserTextTarget} from './browser-text-target.js';
 export interface InputFrame {
   keys: ReadonlySet<string>;
   pressed: ReadonlySet<string>;
@@ -32,9 +33,7 @@ export class BrowserInput {
       throw new Error('Invalid input surface dimensions');
     const signal = this.abort.signal;
     element.tabIndex = element.tabIndex < 0 ? 0 : element.tabIndex;
-    const editable = (target: EventTarget | null) =>
-      target instanceof Element &&
-      !!target.closest('input,textarea,select,[contenteditable="true"],[data-game-text]');
+    const editable = isBrowserTextTarget;
     element.addEventListener(
       'keydown',
       (e) => {

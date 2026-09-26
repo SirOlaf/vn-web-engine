@@ -1,4 +1,5 @@
 dist/
+site/
 node_modules/
 third_party/
 docs/*.json

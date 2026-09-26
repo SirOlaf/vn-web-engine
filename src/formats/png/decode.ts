@@ -5,6 +5,8 @@ export interface DecodedPng {
   colorType: number;
   bitDepth: number;
   pixels: Uint8Array;
+  /** Source palette indices, preserved before RGBA expansion for indexed images. */
+  indices?: Uint8Array;
 }
 const signature = [137, 80, 78, 71, 13, 10, 26, 10];
 const crcTable = Uint32Array.from({length: 256}, (_, i) => {
@@ -148,6 +150,7 @@ export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
   }
   if (filled !== expected) throw new Error('Truncated PNG scanlines');
   const pixels = new Uint8Array(width * height * 4),
+    indices = type === 3 ? new Uint8Array(width * height) : undefined,
     bpp = Math.max(1, Math.ceil((channels * depth) / 8)),
     max = (1 << Math.min(depth, 16)) - 1;
   const transparent = alpha
@@ -194,6 +197,7 @@ export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
           a = 255;
         if (type === 3) {
           const ix = sample(n);
+          indices![(p.y + y * p.dy) * width + p.x + x * p.dx] = ix;
           if (!palette || ix * 3 + 2 >= palette.length)
             throw new Error('PNG palette index out of range');
           r = palette[ix * 3]!;
@@ -229,5 +233,5 @@ export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
       [previous, row] = [row, previous];
     }
   }
-  return {width, height, colorType: type, bitDepth: depth, pixels};
+  return {width, height, colorType: type, bitDepth: depth, pixels, indices};
 }

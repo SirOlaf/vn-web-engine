@@ -38,8 +38,8 @@ export async function inspectBoot(
     captureStartupFrame,
     async () => {
       sound?.unlock();
-      await audio?.unlock();
-      await movies?.unlock();
+      // Activate every device before awaiting: WebKit can require this original gesture.
+      await Promise.all([audio?.unlock(), movies?.unlock()]);
     },
     cursors,
     presentation,

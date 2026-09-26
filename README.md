@@ -1,30 +1,19 @@
 # VN Web Engine
 
-VN Web Engine is an experimental, from-scratch visual novel runtime built entirely on the web platform. Its long-term goal is to support multiple native VN engines without flattening their differences into a single approximate runtime.
+A browser runtime for Windows visual novel engines. The source tree contains no game assets; use files from your own installation. Native game executables are read only for resources, never run in the browser.
 
-Development currently targets the MAGES engine. The first game implementation is **CHAOS;HEAD NOAH** for Windows (GOG), with complete opcode coverage across its 350 scripts and browser-native support for rendering, audio, movies, input, saves, and configuration.
+## Supported games
 
-The project does not include game assets. You must provide files from a legally obtained copy of the game.
+| Game                                  | Engine      | Current state                                                                                  |
+| ------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------- |
+| CHAOS;HEAD NOAH (Windows GOG release) | MAGES / SC3 | Game runtime, menus, saves, audio, movies, and input implemented.                              |
+| Aokana                                | BURIKO      | Loads and runs in the browser; native behavior and presentation are still being reconstructed. |
 
-## Project status
-
-The CHAOS;HEAD NOAH implementation is feature-complete at the engine level and follows the native executable's behavior wherever it is game-specific. It includes:
-
-- the SC3 script runtime and all opcodes used by the shipped scripts;
-- title, story, configuration, save/load, backlog, TIPS, gallery, and music-room flows;
-- CPK archives, CRILAYLA compression, PNG and WebP images, and MVL character meshes;
-- streaming HCA audio and USM/MPEG-1 movie playback;
-- native-style surfaces, masks, blend modes, shaders, particles, and scene effects;
-- keyboard, mouse, touch, and fullscreen input;
-- browser-persistent files, registry state, achievements, and native save formats;
-- native atlas text or optional selectable DOM text; and
-- an asset laboratory for inspecting the original archives.
-
-Only CHAOS;HEAD NOAH is currently supported as a playable game. Shared MAGES components are intentionally limited to behavior demonstrated to be common across titles.
+The games share browser services for files, storage, audio, video, graphics, and input. Game-specific behavior lives under `src/engines/`.
 
 ## Quick start
 
-You need a recent Node.js installation with npm and an installed copy of CHAOS;HEAD NOAH.
+Install Node.js 24 or newer with npm, then run:
 
 ```sh
 npm ci
@@ -32,135 +21,57 @@ npm run build
 npm start
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000), then use one of these methods:
+Open the [library](http://127.0.0.1:8000), select a game, and open its player. Choose the installation folder from your device, then use **Play** to start the loaded game. The library also manages browser save files. Direct player links: [Aokana](http://127.0.0.1:8000/aokana.html) and [CHAOS;HEAD NOAH](http://127.0.0.1:8000/noah.html).
 
-1. Select **Choose game folder** and provide the installation folder containing `Game.exe` and `Data`. The files are read locally by your browser.
-2. Place this repository inside the game installation, alongside `Game.exe` and the `Data` directory, then select **Open installed game**.
+- **CHAOS;HEAD NOAH:** Choose the installation folder containing `Game.exe` and `Data/*.cpk`.
+- **Aokana:** Choose the game folder containing `system.arc`, the other root-level `.arc` files, `BGI.gdb`, and one game `.exe`. The executable supplies the game's cursor resource.
 
-The automatic installation layout is:
+Game files selected through the browser stay on your device. The website serves only the engine; it does not upload or stream your installation.
+Both players remember a successfully selected game folder on supporting browsers and reopen it after refresh. If access expires, use **Reconnect remembered folder**; **Forget remembered folder** removes the reference without deleting files or saves. This stores only a folder handle, with no installation copy. Both players offer **Add files** and **Add one file** when folder selection is unavailable or incomplete, and **Keep game files in browser** to save a complete installation locally before playing. Use **Open saved game files** on later visits. Input-based selections and individually added files cannot retain live folder access; iOS Safari may make a temporary copy. See [mobile files and audio](docs/mobile-compatibility.md) for browser limits, cache controls and audio recovery.
+Ogg Vorbis playback uses a shared WebAssembly decoder to preserve native PCM boundaries and playback waits. Decoder-only WebKit comparisons lost boundary samples (4,109 → 3,981 frames for a synthetic stream; 64,892 → 64,832 for Aokana's `ASUKA` clip, with its first 128 samples missing). The fix decodes those samples without silence padding or timing changes; physical iPhone verification is still pending.
+During Aokana startup, **Skip startup sequence** appears under **Game options → Playback**; select it again to stop skipping.
+Both players support **Game options → Text rendering → DOM text** for selection, copying, and browser dictionaries. See [DOM text coverage and limitations](docs/dom-text.md).
+Its native window size uses device pixels, so it appears smaller on high-DPI displays. Use **Game options → Display** to expand the browser view; see the [startup sizing investigation](docs/aokana-window-sizing.md) for the native configuration trace.
+The Aokana library and player controls can import and export `BGI.gdb` and numbered `BGI*.cad` browser saves. Close the player before importing a save.
 
-```text
-CHAOS HEAD NOAH/
-├── Data/
-│   └── *.cpk
-├── Game.exe
-└── web-engine/
-```
+### HTTPS from another device
 
-`Game.exe` is used only as a resource container for the game's original cursors. Native executable code is never run by the browser engine.
-
-## Game page
-
-After the files are loaded, select **Play** to replace the launcher with the game canvas. The 1920×1080 output scales to the browser viewport while preserving its native aspect ratio.
-
-A collapsible **Game options** panel floats over the page; the game itself is never placed inside it. The panel is available before launch and from supported native menu states, then hides during story playback and title transitions. It provides host-level controls for fullscreen, file selection, save transfer, and text rendering without replacing the game's own menus or input flow.
-
-Game input follows the native player:
-
-- use the keyboard or mouse as you would in the native release;
-- tap to left-click on touchscreens;
-- drag to move while holding the left button;
-- hold for 500 ms or press with two fingers to right-click; and
-- use the Game options panel for browser-level controls and save transfer.
-
-Native atlas text provides the closest visual match. DOM text uses browser fonts while retaining the game's line breaks, making supported text selectable and accessible.
-
-## Files, saves, and privacy
-
-Game archives are read in bounded ranges and are not uploaded. The bundled server listens on loopback by default and serves files only from the expected installation and build paths.
-
-Save data, configuration, registry values, and achievements are stored in browser-local IndexedDB, isolated by game and profile. The Game options panel supports the original `SAVEDATA.DAT`, `CONFIG.DAT`, and `PADCONFIG.DAT` formats. Import is available before play begins; existing files can also be exported as backups.
-
-Browser storage belongs to the current browser origin and profile. Clearing site data removes it, so export important saves periodically.
-
-To test from another device on your local network, run:
+The local URL above is a browser secure context because it uses loopback. Ordinary `http://` from another device is not: AudioWorklet may be unavailable, causing audio to use a slower compatibility path or fail if that path is unsupported. Use HTTPS when playing remotely. With [Tailscale Serve](https://tailscale.com/docs/reference/examples/serve), keep `npm start` running on the game host and, in another terminal there, run:
 
 ```sh
-HOST=0.0.0.0 npm start
+tailscale serve 8000
 ```
 
-This exposes the original game archives to your LAN. Use it only on a trusted network.
+Open the HTTPS URL printed by Tailscale on a device in the same tailnet, adding `/aokana.html` if desired. Tailscale Serve proxies the server's existing loopback port; `HOST=0.0.0.0` is not needed. An HTTPS reverse proxy to `127.0.0.1:8000` works too. Tailscale Serve may prompt you to enable HTTPS certificates for your tailnet.
 
-## Asset laboratory
+WebAssembly support is required for the shared Vorbis decoder. Some optional acceleration modules have JavaScript fallbacks, which may be much slower; the viewer reports audio and WebAssembly fallbacks when they occur.
 
-The [asset laboratory](assets.html) provides a separate interface for exploring the original archives. It can:
+## Saves and tools
 
-- preview PNG and WebP images;
-- compose MVL character expressions;
-- decode, play, seek, loop, and export HCA audio as WAV;
-- stream USM movies with synchronized MPEG-1 video and HCA audio;
-- inspect decompressed scripts and other binary assets; and
-- run the game with additional diagnostic controls and a bounded instruction trace.
+Browser saves and settings are stored in IndexedDB for the current origin and browser profile. Clearing site data removes them. The viewer provides save import and export for CHAOS;HEAD NOAH.
 
-Like the game page, the laboratory reads local files without uploading them.
+The [CHAOS;HEAD NOAH asset laboratory](assets.html) and [Aokana asset laboratory](aokana-assets.html) are separate inspection tools.
 
-Its **Diagnostic player** embeds a development player in the laboratory viewer and exposes restart, fast-forward, status, and instruction-trace controls. Those debugging controls are not shown on the normal game page.
+## Static hosting
 
-## Architecture
+`npm run build` produces the complete website in `site/`. Upload only that directory to a static HTTPS host. All page, worker, AudioWorklet, and decoder URLs support hosting beneath a project path, including GitHub Pages. No game files, debug server, tests, or source maps are included. `npm start` serves this same artifact locally.
 
-The central design rule is simple: **only universally shared behavior belongs in a shared behavioral abstraction**. Engine-, game-, and platform-specific behavior stays on its native path, even when a broader abstraction would appear more convenient.
+The included [GitHub Pages workflow](.github/workflows/pages.yml) builds and deploys pushes to `main`, and can also be run manually. Select **GitHub Actions** under the repository's **Settings → Pages → Build and deployment → Source** before enabling it. See [static hosting](docs/static-hosting.md) for setup, subpath verification, and save-storage considerations.
 
-```text
-src/
-├── core/          Checked binary primitives and streaming byte sources
-├── formats/       CRI, MPEG-1, PNG, and PE resource readers
-├── audio/         PCM, HCA worker transport, and Web Audio playback
-├── video/         Decoding workers, YUV frames, and WebGL presentation
-├── graphics/      Surfaces, masks, meshes, blending, and draw submission
-├── text/          Atlas and DOM text presentation
-├── input/         Browser mouse, keyboard, and touch input
-├── platform/      Filesystem, registry, storage, and achievements
-└── engines/mages/
-    ├── assets.ts  Shared MAGES asset identification and overlays
-    ├── mvl.ts     Shared MVL character geometry
-    └── games/
-        └── chaos-head-noah/
-            └── sc3/  The game's native runtime, opcodes, and presentation
-```
-
-The boundary is documented in [`src/engines/mages/README.md`](src/engines/mages/README.md).
-
-The runtime has no production npm dependencies. TypeScript and Prettier are development dependencies.
+The website is an installable progressive web app. Use your browser's **Install app** command, or **Share → Add to Home Screen** on iPhone/iPad. After the first online visit finishes caching, the library, players, and tools can reopen offline. Game files still need to be selected locally or retained with **Keep game files in browser**. App updates take effect after all open app windows and tabs are closed and the app is reopened.
 
 ## Development
 
-Run the formatter and unit/integration suite before submitting changes:
-
 ```sh
-npm run format
 npm run format:check
 npm test
 ```
 
-Tests cover parsers, malformed inputs, state access, opcode control flow, rendering commands, storage, media synchronization, and browser input. Tests that use installed game data remain read-only.
+`npm test` builds and runs the unit and integration suite. Additional archive, media, and VM checks are available through the `verify:*` scripts in [package.json](package.json). The [native reconstruction tooling](docs/tooling/README.md) has its own workflow. Optional embedded WebAssembly kernels are checked into the source; edit their Rust sources and run `npm run build:wasm` only when rebuilding them.
 
-Additional verification commands include:
-
-```sh
-npm run verify
-npm run differential
-npm run verify:audio
-npm run verify:movies
-npm run verify:characters
-npm run verify:vm
-```
-
-`verify` checks archive structure and every stored span. `differential` compares every CRILAYLA result against an independent Python implementation. Media and VM verification commands exercise the installed archives more deeply. Native-comparison commands under the `compare:*` namespace may additionally require Python, FFmpeg, clang, and x86-64 execution support.
-
-Current verification data covers 19 archives, 15,577 entries, 1,393 compressed entries, 12,436 HCA audio assets, 142 USM movies, 396 character pairs, and every opcode type present in the shipped scripts.
-
-## Documentation
-
-Not done yet
-
-## Known limitations
-
-- Other MAGES games do not yet have game adapters.
-- The current automatic installation path targets the Windows GOG release of CHAOS;HEAD NOAH.
-- Movie seeking decodes forward from the beginning and can be slow for long files.
-- Selectable DOM text intentionally trades pixel-perfect glyph rendering for browser-native text.
-- The narrow-screen interface and touch controls are implemented, but physical-device coverage remains limited.
+`npm run check:ui` checks the Svelte interfaces and their TypeScript controllers. The runtime compiler remains TypeScript 7; Svelte's checker uses the compatible TypeScript 6 compiler API. `npm run build:runtime` emits the separate `dist/` modules used by tests and debugging tools. To run the local archive-streaming endpoints for diagnostics, use `npm run start:debug`; configure `NOAH_DATA_ROOT` or `AOKANA_DATA_ROOT` as needed. The normal website has no server-installation controls.
 
 ## Legal
 
-This is an unofficial compatibility project and is not affiliated with or endorsed by MAGES. Inc., Spike Chunsoft, or the game's publishers. CHAOS;HEAD NOAH and its assets belong to their respective owners. No copyrighted game data is included or required to be redistributed with this source tree.
+This is an unofficial compatibility and preservation project, unaffiliated with the games' developers or publishers. Game files are not included and should not be redistributed with this source tree.
+The bundled Vorbis decoder's dependency attribution and notices are in [third_party/ogg-vorbis](third_party/ogg-vorbis/README.md); the build also distributes them with the decoder.

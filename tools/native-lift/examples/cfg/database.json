@@ -1,0 +1,684 @@
+{
+  "schemaVersion": 1,
+  "kind": "native-mapping-database",
+  "binaries": [
+    {
+      "id": "synthetic-cfg",
+      "programPath": "/synthetic-cfg.exe",
+      "executableSha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+      "languageId": "x86:LE:64:default",
+      "imageBase": "0x140000000"
+    }
+  ],
+  "types": [
+    {
+      "id": "CounterState",
+      "kind": "reference",
+      "import": {
+        "module": "tools/native-lift/examples/cfg/types.mjs",
+        "export": "CounterState",
+        "source": {
+          "path": "tools/native-lift/examples/cfg/types.mts",
+          "sha256": "0cb2ae4aa6cae8e08424eb1c8025cee0af5fa3d06178f42c133dab0cbbd3cd25"
+        }
+      },
+      "nativeBits": 64,
+      "nullable": false,
+      "mutability": "mutable"
+    },
+    {
+      "id": "UnknownText",
+      "kind": "opaque",
+      "import": null,
+      "nullable": false
+    },
+    {
+      "id": "UnknownList",
+      "kind": "opaque",
+      "import": null,
+      "nullable": false
+    }
+  ],
+  "implementations": [
+    {
+      "id": "run",
+      "module": "tools/native-lift/examples/cfg/implementations.mjs",
+      "export": "run",
+      "source": {
+        "path": "tools/native-lift/examples/cfg/implementations.mjs",
+        "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "context",
+            "type": {
+              "named": "CounterState"
+            }
+          },
+          {
+            "name": "value",
+            "type": "i32"
+          },
+          {
+            "name": "chooseAlternate",
+            "type": "bool"
+          },
+          {
+            "name": "opaqueValue",
+            "type": "unknown"
+          }
+        ],
+        "returnType": "i32"
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "id": "bump",
+      "module": "tools/native-lift/examples/cfg/implementations.mjs",
+      "export": "bump",
+      "source": {
+        "path": "tools/native-lift/examples/cfg/implementations.mjs",
+        "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "context",
+            "type": {
+              "named": "CounterState"
+            }
+          },
+          {
+            "name": "value",
+            "type": "i32"
+          }
+        ],
+        "returnType": "i32"
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "id": "base",
+      "module": "tools/native-lift/examples/cfg/implementations.mjs",
+      "export": "base",
+      "source": {
+        "path": "tools/native-lift/examples/cfg/implementations.mjs",
+        "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "value",
+            "type": "i32"
+          }
+        ],
+        "returnType": "i32"
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "id": "alternate",
+      "module": "tools/native-lift/examples/cfg/implementations.mjs",
+      "export": "alternate",
+      "source": {
+        "path": "tools/native-lift/examples/cfg/implementations.mjs",
+        "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "value",
+            "type": "i32"
+          }
+        ],
+        "returnType": "i32"
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "id": "measureText",
+      "module": "tools/native-lift/examples/cfg/implementations.mjs",
+      "export": "measureText",
+      "source": {
+        "path": "tools/native-lift/examples/cfg/implementations.mjs",
+        "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "value",
+            "type": "unknown"
+          }
+        ],
+        "returnType": "u32"
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "id": "measureList",
+      "module": "tools/native-lift/examples/cfg/implementations.mjs",
+      "export": "measureList",
+      "source": {
+        "path": "tools/native-lift/examples/cfg/implementations.mjs",
+        "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "value",
+            "type": "unknown"
+          }
+        ],
+        "returnType": "u32"
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "id": "swapLoop",
+      "module": "tools/native-lift/examples/cfg/implementations.mjs",
+      "export": "swapLoop",
+      "source": {
+        "path": "tools/native-lift/examples/cfg/implementations.mjs",
+        "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "count",
+            "type": "u32"
+          }
+        ],
+        "returnType": "u32"
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    }
+  ],
+  "functions": [
+    {
+      "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+      "rva": "0x1000",
+      "implementation": "run",
+      "abi": {
+        "convention": "custom",
+        "parameters": [
+          {
+            "name": "context",
+            "type": {
+              "named": "CounterState"
+            },
+            "location": {
+              "kind": "unresolved",
+              "reason": "Synthetic contract; no native ABI is asserted"
+            }
+          },
+          {
+            "name": "value",
+            "type": "i32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "Synthetic contract; no native ABI is asserted"
+            }
+          },
+          {
+            "name": "chooseAlternate",
+            "type": "bool",
+            "location": {
+              "kind": "unresolved",
+              "reason": "Synthetic contract; no native ABI is asserted"
+            }
+          },
+          {
+            "name": "opaqueValue",
+            "type": "unknown",
+            "location": {
+              "kind": "unresolved",
+              "reason": "Synthetic contract; no native ABI is asserted"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "context",
+            "source": {
+              "kind": "parameter",
+              "name": "context"
+            }
+          },
+          {
+            "parameter": "value",
+            "source": {
+              "kind": "parameter",
+              "name": "value"
+            }
+          },
+          {
+            "parameter": "chooseAlternate",
+            "source": {
+              "kind": "parameter",
+              "name": "chooseAlternate"
+            }
+          },
+          {
+            "parameter": "opaqueValue",
+            "source": {
+              "kind": "parameter",
+              "name": "opaqueValue"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "unresolved",
+          "reason": "Synthetic contract"
+        }
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+      "rva": "0x1100",
+      "implementation": "bump",
+      "abi": {
+        "convention": "custom",
+        "parameters": [
+          {
+            "name": "context",
+            "type": {
+              "named": "CounterState"
+            },
+            "location": {
+              "kind": "unresolved",
+              "reason": "Synthetic contract; no native ABI is asserted"
+            }
+          },
+          {
+            "name": "value",
+            "type": "i32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "Synthetic contract; no native ABI is asserted"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "context",
+            "source": {
+              "kind": "parameter",
+              "name": "context"
+            }
+          },
+          {
+            "parameter": "value",
+            "source": {
+              "kind": "parameter",
+              "name": "value"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "unresolved",
+          "reason": "Synthetic contract"
+        }
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+      "rva": "0x2000",
+      "implementation": "base",
+      "abi": {
+        "convention": "custom",
+        "parameters": [
+          {
+            "name": "value",
+            "type": "i32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "Synthetic contract; no native ABI is asserted"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "value",
+            "source": {
+              "kind": "parameter",
+              "name": "value"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "unresolved",
+          "reason": "Synthetic contract"
+        }
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+      "rva": "0x3000",
+      "implementation": "measureText",
+      "abi": {
+        "convention": "custom",
+        "parameters": [
+          {
+            "name": "value",
+            "type": "unknown",
+            "location": {
+              "kind": "unresolved",
+              "reason": "Synthetic contract; no native ABI is asserted"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "value",
+            "source": {
+              "kind": "parameter",
+              "name": "value"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "unresolved",
+          "reason": "Synthetic contract"
+        }
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    },
+    {
+      "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+      "rva": "0x4000",
+      "implementation": "swapLoop",
+      "abi": {
+        "convention": "custom",
+        "parameters": [
+          {
+            "name": "count",
+            "type": "u32",
+            "location": {
+              "kind": "unresolved",
+              "reason": "Synthetic contract; no native ABI is asserted"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "count",
+            "source": {
+              "kind": "parameter",
+              "name": "count"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "unresolved",
+          "reason": "Synthetic contract"
+        }
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [],
+        "notes": [
+          "Synthetic metadata and ordinary in-memory values only"
+        ]
+      }
+    }
+  ],
+  "variantFamilies": [
+    {
+      "id": "math",
+      "kind": "code",
+      "selector": {
+        "type": "u32",
+        "values": [
+          0,
+          1
+        ],
+        "initial": 0
+      },
+      "operations": [
+        {
+          "id": "call",
+          "signature": {
+            "parameters": [
+              {
+                "name": "value",
+                "type": "i32"
+              }
+            ],
+            "returnType": "i32"
+          },
+          "targets": [
+            {
+              "selectorValue": 0,
+              "implementation": "base",
+              "applicability": [
+                {
+                  "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+                  "rva": "0x2000",
+                  "body": {
+                    "kind": "synthetic",
+                    "sha256": "fba572d290ce81e2b7f9a423a0278761c9e1a0a9542d6150e98f37dabca3210c",
+                    "provenance": {
+                      "path": "tools/native-lift/examples/cfg/implementations.mjs",
+                      "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd",
+                      "section": "synthetic body base"
+                    }
+                  }
+                }
+              ],
+              "evidence": {
+                "state": "synthetic",
+                "references": [],
+                "notes": [
+                  "Synthetic metadata and ordinary in-memory values only"
+                ]
+              }
+            },
+            {
+              "selectorValue": 1,
+              "implementation": "alternate",
+              "applicability": [
+                {
+                  "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+                  "rva": "0x2000",
+                  "body": {
+                    "kind": "synthetic",
+                    "sha256": "bf0a050b81c8d8a9fb3cdb9948320589a3385f9887f7ac97ed7ed1ffc33bba02",
+                    "provenance": {
+                      "path": "tools/native-lift/examples/cfg/implementations.mjs",
+                      "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd",
+                      "section": "synthetic body alternate"
+                    }
+                  }
+                }
+              ],
+              "evidence": {
+                "state": "synthetic",
+                "references": [],
+                "notes": [
+                  "Synthetic metadata and ordinary in-memory values only"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shape",
+      "kind": "type",
+      "selector": {
+        "type": "u32",
+        "values": [
+          0,
+          1
+        ]
+      },
+      "operations": [
+        {
+          "id": "measure",
+          "signature": {
+            "parameters": [
+              {
+                "name": "value",
+                "type": "unknown"
+              }
+            ],
+            "returnType": "u32"
+          },
+          "targets": [
+            {
+              "selectorValue": 0,
+              "implementation": "measureText",
+              "applicability": [
+                {
+                  "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+                  "rva": "0x3000",
+                  "body": {
+                    "kind": "synthetic",
+                    "sha256": "b2d0ab392a520b03feb1c713f5ed886b088ba454edda85900b0b774e8e57d5c2",
+                    "provenance": {
+                      "path": "tools/native-lift/examples/cfg/implementations.mjs",
+                      "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd",
+                      "section": "synthetic body measureText"
+                    }
+                  }
+                }
+              ],
+              "evidence": {
+                "state": "synthetic",
+                "references": [],
+                "notes": [
+                  "Synthetic metadata and ordinary in-memory values only"
+                ]
+              }
+            },
+            {
+              "selectorValue": 1,
+              "implementation": "measureList",
+              "applicability": [
+                {
+                  "binarySha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+                  "rva": "0x3000",
+                  "body": {
+                    "kind": "synthetic",
+                    "sha256": "cb44361cb799183166d1d99e75b6ccf60ec881ccf3d0bc0d395f0de68fc1befe",
+                    "provenance": {
+                      "path": "tools/native-lift/examples/cfg/implementations.mjs",
+                      "sha256": "4b78a30266ee8b9cfe0232ab1830dc503c63f4fc327c319c54710e7711629fcd",
+                      "section": "synthetic body measureList"
+                    }
+                  }
+                }
+              ],
+              "evidence": {
+                "state": "synthetic",
+                "references": [],
+                "notes": [
+                  "Synthetic metadata and ordinary in-memory values only"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "types": [
+        {
+          "selectorValue": 0,
+          "type": {
+            "named": "UnknownText"
+          },
+          "evidence": {
+            "state": "synthetic",
+            "references": [],
+            "notes": [
+              "Synthetic metadata and ordinary in-memory values only"
+            ]
+          }
+        },
+        {
+          "selectorValue": 1,
+          "type": {
+            "named": "UnknownList"
+          },
+          "evidence": {
+            "state": "synthetic",
+            "references": [],
+            "notes": [
+              "Synthetic metadata and ordinary in-memory values only"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

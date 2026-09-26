@@ -1,0 +1,74 @@
+.pages,
+.preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin: 1rem 0;
+}
+.pages button {
+  flex: 1;
+}
+.preview-controls label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.preview-controls input[type='range'] {
+  min-width: 200px;
+}
+#viewer canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background-color: #ddd;
+  background-image:
+    linear-gradient(45deg, #bbb 25%, transparent 25%),
+    linear-gradient(-45deg, #bbb 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #bbb 75%),
+    linear-gradient(-45deg, transparent 75%, #bbb 75%);
+  background-size: 20px 20px;
+  background-position:
+    0 0,
+    0 10px,
+    10px -10px,
+    -10px 0;
+}
+#viewer video {
+  width: 100%;
+  max-height: 75vh;
+}
+#viewer audio {
+  width: 100%;
+  margin: 1rem 0;
+}
+#viewer pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 32rem;
+  overflow: auto;
+}
+#viewer details {
+  margin: 1rem 0;
+}
+#viewer .exports {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+#viewer .font-sample {
+  font-size: 32px;
+  line-height: 1.6;
+  padding: 1rem;
+  border: 1px solid #777;
+}
+#viewer .error {
+  color: #d65858;
+}
+#viewer canvas.actual-size {
+  max-width: none;
+}
+#viewer {
+  overflow: auto;
+}

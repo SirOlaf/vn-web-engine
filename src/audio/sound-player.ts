@@ -1,8 +1,10 @@
 import type {ByteSource} from '../core/source.js';
 import {HcaStream} from '../formats/cri/hca/stream.js';
+import {BrowserAudioContextHost} from './browser-audio-context-host.js';
 /** One replaceable UI-sound voice. Reuses the from-scratch HCA decoder. */
 export class SoundPlayer {
   private readonly context = new AudioContext();
+  private readonly contextHost = new BrowserAudioContextHost(this.context, document);
   private gain = this.context.createGain();
   private node: AudioBufferSourceNode | undefined;
   private generation = 0;
@@ -14,7 +16,7 @@ export class SoundPlayer {
     this.gain.connect(this.context.destination);
   }
   unlock(): void {
-    void this.context.resume().catch(this.error);
+    void this.contextHost.resume().catch(this.error);
   }
   play(id: number, volume: number): void {
     const generation = ++this.generation;
@@ -39,7 +41,7 @@ export class SoundPlayer {
     }
     void buffer
       .then(async (b) => {
-        await this.context.resume();
+        await this.contextHost.resume();
         if (generation !== this.generation) return;
         const node = this.context.createBufferSource();
         node.buffer = b;
@@ -59,6 +61,7 @@ export class SoundPlayer {
   }
   dispose(): void {
     this.generation++;
+    this.contextHost.dispose();
     this.node?.stop();
     this.node?.disconnect();
     void this.context.close();

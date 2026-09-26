@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 2,
+  "kind": "reviewed-cfg-module",
+  "entryImplementation": "swapLoop",
+  "functions": [
+    {
+      "implementation": "swapLoop",
+      "provenance": {
+        "binary": {
+          "programPath": "/synthetic-cfg.exe",
+          "executableSha256": "767282d3fb0a478ad84fcdb9d10a9a7154d9e07fae7edf22a93376457340e88c",
+          "languageId": "x86:LE:64:default",
+          "imageBase": "0x140000000"
+        },
+        "entryAddress": "0x140004000",
+        "bodyRanges": [
+          {
+            "start": "0x140004000",
+            "end": "0x1400040ff"
+          }
+        ],
+        "bodySha256": "d04147d651fde0aa915a4c2afc8198213aa42f21baf80200122f7eac0a34f2f7",
+        "sourceKind": "synthetic",
+        "sourceSha256": "07bc373484a633e72041e4bd4af1c5a9844f8285d23a3dab7ba4989e99afcb95",
+        "exporter": "synthetic-fixtures/v2",
+        "reviewReference": "tests/tooling-native-cfg.test.mjs",
+        "assumptions": [
+          "No native execution or equivalence claim",
+          "Direct parameter and reference contracts are explicit in the local database"
+        ]
+      },
+      "variant": null,
+      "parameterValues": {
+        "count": "limit"
+      },
+      "entryBlock": "entry",
+      "blocks": [
+        {
+          "id": "entry",
+          "phis": [],
+          "operations": [],
+          "terminator": {
+            "opcode": "JUMP",
+            "target": "loop",
+            "source": {
+              "address": "0x140004000",
+              "sequence": 0
+            }
+          }
+        },
+        {
+          "id": "loop",
+          "phis": [
+            {
+              "id": "a",
+              "type": "u32",
+              "incoming": {
+                "entry": {
+                  "constant": "0xa",
+                  "type": "u32"
+                },
+                "body": {
+                  "ref": "b"
+                }
+              },
+              "source": {
+                "address": "0x140004000",
+                "sequence": 1
+              }
+            },
+            {
+              "id": "b",
+              "type": "u32",
+              "incoming": {
+                "entry": {
+                  "constant": "0x14",
+                  "type": "u32"
+                },
+                "body": {
+                  "ref": "a"
+                }
+              },
+              "source": {
+                "address": "0x140004000",
+                "sequence": 2
+              }
+            },
+            {
+              "id": "count",
+              "type": "u32",
+              "incoming": {
+                "entry": {
+                  "constant": "0x0",
+                  "type": "u32"
+                },
+                "body": {
+                  "ref": "next"
+                }
+              },
+              "source": {
+                "address": "0x140004000",
+                "sequence": 3
+              }
+            }
+          ],
+          "operations": [
+            {
+              "id": "again",
+              "type": "bool",
+              "opcode": "INT_LESS",
+              "inputs": [
+                {
+                  "ref": "count"
+                },
+                {
+                  "ref": "limit"
+                }
+              ],
+              "source": {
+                "address": "0x140004000",
+                "sequence": 4
+              }
+            }
+          ],
+          "terminator": {
+            "opcode": "BRANCH",
+            "condition": {
+              "ref": "again"
+            },
+            "trueTarget": "body",
+            "falseTarget": "done",
+            "source": {
+              "address": "0x140004000",
+              "sequence": 5
+            }
+          }
+        },
+        {
+          "id": "body",
+          "phis": [],
+          "operations": [
+            {
+              "id": "next",
+              "type": "u32",
+              "opcode": "INT_ADD",
+              "inputs": [
+                {
+                  "ref": "count"
+                },
+                {
+                  "constant": "0x1",
+                  "type": "u32"
+                }
+              ],
+              "source": {
+                "address": "0x140004000",
+                "sequence": 6
+              }
+            }
+          ],
+          "terminator": {
+            "opcode": "JUMP",
+            "target": "loop",
+            "source": {
+              "address": "0x140004000",
+              "sequence": 7
+            }
+          }
+        },
+        {
+          "id": "done",
+          "phis": [],
+          "operations": [],
+          "terminator": {
+            "opcode": "RETURN",
+            "value": {
+              "ref": "a"
+            },
+            "source": {
+              "address": "0x140004000",
+              "sequence": 8
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

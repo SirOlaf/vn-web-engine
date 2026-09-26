@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "kind": "native-mapping-database",
+  "binaries": [
+    {
+      "id": "synthetic-loop",
+      "programPath": "/synthetic-loop.exe",
+      "executableSha256": "2312a839c4089467a43470454bef63343549796888a2cd9cecc712c66bc43478",
+      "languageId": "x86:LE:64:default",
+      "imageBase": "0x140000000"
+    }
+  ],
+  "types": [],
+  "implementations": [
+    {
+      "id": "synthetic.loop",
+      "module": "tools/native-lift/examples/ghidra/reference.mjs",
+      "export": "loop",
+      "source": {
+        "path": "tools/native-lift/examples/ghidra/reference.mjs",
+        "sha256": "c6faff0ab0fb8a1839dcfa28880e9af6d10f8062f5db667f0d45eb960ef950de"
+      },
+      "signature": {
+        "parameters": [
+          {
+            "name": "value",
+            "type": "i32"
+          }
+        ],
+        "returnType": "i32"
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [
+          {
+            "path": "tools/native-lift/examples/ghidra/reference.mjs",
+            "sha256": "c6faff0ab0fb8a1839dcfa28880e9af6d10f8062f5db667f0d45eb960ef950de",
+            "section": "loop: ordinary scalar reference for invented instructions"
+          }
+        ],
+        "notes": [
+          "Ghidra fixture produced by SyntheticExportCheck; no target instructions executed."
+        ]
+      }
+    }
+  ],
+  "functions": [
+    {
+      "binarySha256": "2312a839c4089467a43470454bef63343549796888a2cd9cecc712c66bc43478",
+      "rva": "0x1000",
+      "implementation": "synthetic.loop",
+      "abi": {
+        "convention": "win64",
+        "parameters": [
+          {
+            "name": "nativeValue",
+            "type": "i32",
+            "location": {
+              "kind": "register",
+              "name": "ecx"
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "parameter": "value",
+            "source": {
+              "kind": "parameter",
+              "name": "nativeValue"
+            }
+          }
+        ],
+        "returnLocation": {
+          "kind": "register",
+          "name": "eax"
+        }
+      },
+      "evidence": {
+        "state": "synthetic",
+        "references": [
+          {
+            "path": "tools/native-lift/examples/ghidra/reference.mjs",
+            "sha256": "c6faff0ab0fb8a1839dcfa28880e9af6d10f8062f5db667f0d45eb960ef950de",
+            "section": "loop: ordinary scalar reference for invented instructions"
+          }
+        ],
+        "notes": [
+          "Ghidra fixture produced by SyntheticExportCheck; no target instructions executed."
+        ]
+      }
+    }
+  ],
+  "variantFamilies": []
+}

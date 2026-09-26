@@ -17,6 +17,8 @@ export class DomGlyphSlots {
   >();
   private readonly measure = document.createElement('canvas').getContext('2d')!;
   private selectionFrame = 0;
+  private width = 1920;
+  private height = 1080;
   private readonly queueSelection = () => {
     if (!this.selectionFrame)
       this.selectionFrame = requestAnimationFrame(() => {
@@ -31,7 +33,13 @@ export class DomGlyphSlots {
     parent.append(this.element);
     document.addEventListener('selectionchange', this.queueSelection);
   }
-  show(slot: GlyphSlot, z: number, family?: string): void {
+  setSize(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
+    this.element.style.width = `${width}px`;
+    this.element.style.height = `${height}px`;
+  }
+  show(slot: GlyphSlot, z: number, family?: string, atlasTint = true): void {
     this.buffers.set(slot.id, slot.glyphs);
     const content = slotText(slot);
     let nodes = this.nodes.get(slot.id);
@@ -77,7 +85,7 @@ export class DomGlyphSlots {
       node.replaceData(prefix, node.length - prefix, content.text.slice(prefix));
     }
     const size = Math.min(content.size, bounds.height / content.lines),
-      font = `${size}px ${family ?? 'serif'}`;
+      font = `${slot.bold ? 'bold ' : ''}${size}px ${family ?? 'serif'}`;
     this.measure.font = font;
     this.measure.fontKerning = 'none';
     const fullLines = Array.from({length: content.lines}, () => '');
@@ -99,7 +107,7 @@ export class DomGlyphSlots {
     const shape = `polygon(${wrapWidth}px 0,${edge.join(',')},${wrapWidth}px ${content.lines * lineHeight}px)`;
     box.style.cssText = `position:absolute;left:${clip.x}px;top:${clip.y}px;width:${clip.width}px;height:${clip.height}px;overflow:hidden;pointer-events:none;z-index:${z}`;
     let filter = '';
-    if (family || content.shadows.length) {
+    if ((family && atlasTint) || content.shadows.length) {
       const ns = 'http://www.w3.org/2000/svg';
       if (!nodes.tint) {
         const svg = document.createElementNS(ns, 'svg'),
@@ -180,6 +188,19 @@ export class DomGlyphSlots {
       filter = `filter:url(#${nodes.tint.id});`;
     }
     text.style.cssText = `position:absolute;display:block;left:${bounds.x - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;--text-wrap-height:${content.lines * lineHeight}px;--text-wrap-shape:${shape};white-space:break-spaces;word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;${filter}line-height:${lineHeight}px;color:#${(content.color & 0xffffff).toString(16).padStart(6, '0')};opacity:${filter ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
+    text.className = slot.vertical ? 'vertical-game-text' : '';
+    if (slot.vertical) {
+      text.style.writingMode = 'vertical-rl';
+      text.style.textOrientation = 'mixed';
+      text.style.whiteSpace = 'pre';
+      text.style.width = `${bounds.width}px`;
+      text.style.height = `${Math.max(bounds.height, measured)}px`;
+      text.style.top = `${bounds.y - clip.y}px`;
+      text.style.lineHeight = `${bounds.width}px`;
+      text.style.transform = `scaleY(${Math.min(1, bounds.height / measured)})`;
+      text.style.filter = '';
+      text.style.opacity = String(Math.min(255, content.alpha) / 255);
+    }
     if (document.getSelection()?.containsNode(node, true) || nodes.highlights.length)
       this.queueSelection();
   }
@@ -188,8 +209,8 @@ export class DomGlyphSlots {
   private paintSelection(): void {
     const selection = document.getSelection(),
       layer = this.element.getBoundingClientRect(),
-      sx = layer.width / 1920,
-      sy = layer.height / 1080;
+      sx = layer.width / this.width,
+      sy = layer.height / this.height;
     for (const {box, node, highlights} of this.nodes.values()) {
       const rectangles: DOMRect[] = [];
       if (selection && !selection.isCollapsed && !box.hidden && !box.inert && sx > 0 && sy > 0) {
