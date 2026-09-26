@@ -1,8 +1,8 @@
-import type {WorkerSource} from '../core/worker-source.js';
-import type {MovieInfo} from '../formats/cri/movie.js';
-import type {YuvFrame} from './frame.js';
-import type {MovieRequest, MovieResponse} from './worker-protocol.js';
-import {YuvRenderer} from './renderer.js';
+import type {WorkerSource} from '../../src/core/worker-source.js';
+import type {MovieInfo} from '../../src/formats/cri/movie.js';
+import type {YuvFrame} from '../../src/video/frame.js';
+import type {MovieRequest, MovieResponse} from '../../src/video/worker-protocol.js';
+import {YuvRenderer} from '../../src/video/renderer.js';
 /** Inspector adapter. AudioContext is the clock; suspension freezes audio and video together. */
 export function mountMoviePlayer(parent: HTMLElement, source: WorkerSource): () => void {
   const panel = document.createElement('section');
@@ -156,7 +156,9 @@ export function mountMoviePlayer(parent: HTMLElement, source: WorkerSource): () 
       await ctx.suspend();
       if (token !== generation) return;
       epoch = ctx.currentTime - position + 0.05;
-      worker = new Worker(new URL('./decode-worker.js', import.meta.url), {type: 'module'});
+      worker = new Worker(new URL('../../src/video/decode-worker.ts', import.meta.url), {
+        type: 'module',
+      });
       worker.onerror = (event) => {
         if (token === generation) fail(new Error(event.message || 'Movie worker failed'));
       };

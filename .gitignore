@@ -1,6 +1,7 @@
 # Dependencies and generated build output
 node_modules/
 dist/
+site/
 *.tsbuildinfo
 /wasm/**/target/
 npm-debug.log*

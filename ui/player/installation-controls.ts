@@ -1,4 +1,7 @@
-import {BrowserInstallationCache, type CachedInstallation} from '../platform/installation-cache.js';
+import {
+  BrowserInstallationCache,
+  type CachedInstallation,
+} from '../../src/platform/installation-cache.js';
 import {
   hasInstallationDirectoryPicker,
   hasInstallationFilePicker,
@@ -7,7 +10,7 @@ import {
   InstallationSelectionFiles,
   selectedInstallationFiles,
   type InstallationSelection,
-} from '../platform/installation-picker.js';
+} from '../../src/platform/installation-picker.js';
 
 /** Shared installation UI; engines only interpret the selected tree and its game metadata. */
 export function mountInstallationControls(options: {
@@ -24,32 +27,20 @@ export function mountInstallationControls(options: {
   canonicalPath?(path: string): string;
   selectedPath?(path: string, directory: boolean): string;
 }): {refresh(): void; resetSelection(): void} {
-  const section = options.choose.parentElement!;
+  const section = options.choose.closest<HTMLElement>('#installation-files')!;
+  const element = <T extends HTMLElement>(id: string) => section.querySelector<T>(`#${id}`)!;
   const cache = new BrowserInstallationCache();
   const controls: HTMLButtonElement[] = [];
-  const status = document.createElement('p');
-  status.setAttribute('role', 'status');
-  status.style.overflowWrap = 'anywhere';
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.multiple = true;
-  input.hidden = true;
-  const single = document.createElement('input');
-  single.type = 'file';
-  single.hidden = true;
+  const status = element<HTMLParagraphElement>('installation-status');
+  const input = element<HTMLInputElement>('installation-files-input');
+  const single = element<HTMLInputElement>('installation-file-input');
   const selectionFiles = new InstallationSelectionFiles(
     options.canonicalPath,
     options.selectedPath,
   );
-  const selectedDetails = document.createElement('details');
-  selectedDetails.hidden = true;
-  const selectedSummary = document.createElement('summary');
-  const selectedNames = document.createElement('p');
-  selectedNames.style.whiteSpace = 'pre-wrap';
-  selectedNames.style.overflowWrap = 'anywhere';
-  selectedNames.style.maxHeight = '14em';
-  selectedNames.style.overflowY = 'auto';
-  selectedDetails.append(selectedSummary, selectedNames);
+  const selectedDetails = element<HTMLDetailsElement>('installation-selection');
+  const selectedSummary = element<HTMLElement>('installation-selection-summary');
+  const selectedNames = element<HTMLElement>('installation-selection-names');
   let working = false;
   let cachedInstallation: CachedInstallation | null = null;
   let abort: AbortController | null = null;
@@ -57,12 +48,9 @@ export function mountInstallationControls(options: {
     status.textContent = text;
     options.report(text);
   }
-  function button(label: string, action: () => void): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = label;
+  function button(id: string, action: () => void): HTMLButtonElement {
+    const button = element<HTMLButtonElement>(id);
     button.onclick = action;
-    section.append(button);
     controls.push(button);
     return button;
   }
@@ -109,8 +97,8 @@ export function mountInstallationControls(options: {
       });
     } else options.input.click();
   };
-  if (hasInstallationDirectoryPicker(window))
-    button('Use browser folder picker', () => options.input.click());
+  const fallback = button('installation-folder-fallback', () => options.input.click());
+  fallback.hidden = !hasInstallationDirectoryPicker(window);
   options.input.onchange = () => {
     const files = Array.from(options.input.files ?? []);
     options.input.value = '';
@@ -119,7 +107,7 @@ export function mountInstallationControls(options: {
       await select(selectedInstallationFiles(files, true));
     });
   };
-  button('Add files', () => {
+  button('installation-add-files', () => {
     if (hasInstallationFilePicker(window)) {
       const picked = pickInstallationFiles(window);
       void run(async () => {
@@ -127,7 +115,7 @@ export function mountInstallationControls(options: {
       });
     } else input.click();
   });
-  button('Add one file', () => single.click());
+  button('installation-add-file', () => single.click());
   single.onchange = () => {
     const files = Array.from(single.files ?? []);
     single.value = '';
@@ -145,15 +133,13 @@ export function mountInstallationControls(options: {
     });
   };
   const open = button(
-    'Open saved game files',
+    'installation-open',
     () =>
       void run(async () => {
         message('Opening browser game files…');
         const installation = await cache.open(options.key);
         if (!installation)
-          throw new Error(
-            'No game files saved here yet. Open a server installation or choose device files first.',
-          );
+          throw new Error('No game files saved here yet. Choose device files first.');
         await options.load(installation);
         resetSelection();
         cachedInstallation = installation;
@@ -161,7 +147,7 @@ export function mountInstallationControls(options: {
       }),
   );
   const save = button(
-    'Keep game files in browser',
+    'installation-save',
     () =>
       void run(async () => {
         const installation = options.current();
@@ -176,7 +162,7 @@ export function mountInstallationControls(options: {
             );
           },
         });
-        // Swap the live mount too, so pressing Play no longer streams the server installation.
+        // Swap the live mount too, so Play reads the durable browser copy.
         const saved = await cache.open(options.key);
         if (!saved) throw new Error('The browser removed the saved installation.');
         await options.load(saved);
@@ -190,7 +176,7 @@ export function mountInstallationControls(options: {
       }),
   );
   const remove = button(
-    'Remove saved game files',
+    'installation-remove',
     () =>
       void run(async () => {
         await cache.remove(options.key);
@@ -203,12 +189,8 @@ export function mountInstallationControls(options: {
         cachedInstallation = null;
       }),
   );
-  const cancel = button('Cancel copy', () => abort?.abort());
+  const cancel = button('installation-cancel', () => abort?.abort());
   cancel.hidden = true;
-  const help = document.createElement('p');
-  help.textContent =
-    'Add files or add one file at a time if your file manager cannot select several. Added files join the current selection; choosing a folder replaces it. Safari may copy selections temporarily. Keeping files in browser storage makes an optional persistent copy, separate from saves; the page itself still needs the server.';
-  section.append(input, single, selectedDetails, help, status);
   function refresh(): void {
     const disabled = working || options.busy();
     options.choose.disabled = disabled;

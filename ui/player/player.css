@@ -300,3 +300,19 @@ a {
   pointer-events: none;
   user-select: none;
 }
+
+#noah-surface {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+}
+#installation-status {
+  overflow-wrap: anywhere;
+}
+#installation-selection-names {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 14em;
+  overflow-y: auto;
+}

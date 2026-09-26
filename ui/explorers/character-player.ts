@@ -1,5 +1,5 @@
-import {parseMvl, characterExpressions, composeCharacter} from './mvl.js';
-import {TexturedMeshRenderer} from '../../graphics/textured-mesh.js';
+import {parseMvl, characterExpressions, composeCharacter} from '../../src/engines/mages/mvl.js';
+import {TexturedMeshRenderer} from '../../src/graphics/textured-mesh.js';
 /** Inspector adapter; game animation policy and story VM are intentionally separate. */
 export async function mountCharacterPlayer(
   parent: HTMLElement,

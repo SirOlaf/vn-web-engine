@@ -1,8 +1,8 @@
-import {BlobSource, HttpSource, SliceSource, type ByteSource} from '../../core/source.js';
-import {Arc20Archive} from '../../formats/buriko/arc20.js';
-import {signature} from '../../formats/buriko/binary.js';
-import {imageRgba, type AssetInspection} from './assets.js';
-import type {ExplorerRequest, ExplorerSource} from './explorer-worker.js';
+import {BlobSource, SliceSource, type ByteSource} from '../../src/core/source.js';
+import {Arc20Archive} from '../../src/formats/buriko/arc20.js';
+import {signature} from '../../src/formats/buriko/binary.js';
+import {imageRgba, type AssetInspection} from '../../src/engines/buriko/assets.js';
+import type {ExplorerRequest, ExplorerSource} from '../../src/engines/buriko/explorer-worker.js';
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
   if (!node) throw new Error(`Missing ${id}`);
@@ -55,18 +55,13 @@ function descriptor(input: ByteSource): ExplorerSource {
   }
   if (input instanceof BlobSource)
     return {kind: 'blob', blob: input.blob.slice(offset, offset + size)};
-  if (input instanceof HttpSource)
-    return {
-      kind: 'http',
-      url: new URL(input.url, location.href).href,
-      size: input.size,
-      offset,
-      length: size,
-    };
   throw new Error('Source cannot be transferred to decoder');
 }
 function workerClient() {
-  const worker = new Worker(new URL('./explorer-worker.js', import.meta.url), {type: 'module'});
+  const worker = new Worker(
+    new URL('../../src/engines/buriko/explorer-worker.ts', import.meta.url),
+    {type: 'module'},
+  );
   let serial = 0;
   const pending = new Map<
     number,
@@ -528,18 +523,4 @@ el<HTMLInputElement>('files').onchange = (event) => {
     })),
   );
 };
-el('connect').onclick = () =>
-  void (async () => {
-    try {
-      const response = await fetch('/api/aokana/archives');
-      if (!response.ok)
-        throw new Error('Local installation unavailable. Choose the game folder or run npm start.');
-      const files = (await response.json()) as {name: string; url: string; size: number}[];
-      await mountSources(
-        files.map((file) => ({name: file.name, source: new HttpSource(file.url, file.size)})),
-      );
-    } catch (error) {
-      report(error);
-    }
-  })();
 window.addEventListener('pagehide', () => clear());

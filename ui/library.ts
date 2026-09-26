@@ -1,6 +1,7 @@
 import {SourceFileSystem} from '../src/platform/filesystem.js';
 import {openBrowserPlatform} from '../src/platform/services.js';
 import {windowsFileKey} from '../src/platform/windows-filesystem.js';
+import {BrowserInstallationCache} from '../src/platform/installation-cache.js';
 import {NOAH_PATHS, NOAH_WINDOWS} from '../src/engines/mages/games/chaos-head-noah/paths.js';
 
 export type GameId = 'aokana' | 'noah';
@@ -11,35 +12,14 @@ export interface InstallationStatus {
 
 export async function installationStatus(game: GameId): Promise<InstallationStatus> {
   try {
-    if (game === 'aokana') {
-      const [filesResponse, cursorResponse] = await Promise.all([
-        fetch('/api/aokana/files'),
-        fetch('/api/aokana/cursor', {method: 'HEAD'}),
-      ]);
-      if (!filesResponse.ok || !cursorResponse.ok)
-        return {ready: false, detail: 'Choose an installation folder in the player.'};
-      const files: {name?: string}[] = await filesResponse.json();
-      if (!Array.isArray(files) || !files.some((file) => file.name?.toLowerCase() === 'system.arc'))
-        return {ready: false, detail: 'The local installation needs system.arc.'};
-      return {ready: true, detail: `${files.length} game files available on this device`};
-    }
-    const [archivesResponse, executableResponse] = await Promise.all([
-      fetch('/api/archives'),
-      fetch('/api/executable'),
-    ]);
-    if (!archivesResponse.ok || !executableResponse.ok)
-      return {ready: false, detail: 'Choose an installation folder in the player.'};
-    const archives: {name?: string}[] = await archivesResponse.json();
-    if (
-      !Array.isArray(archives) ||
-      !['script.cpk', 'mes00.cpk'].every((required) =>
-        archives.some((archive) => archive.name?.toLowerCase() === required),
-      )
-    )
-      return {ready: false, detail: 'The local installation needs its game archives.'};
-    return {ready: true, detail: `${archives.length} archives available on this device`};
+    const cached = await new BrowserInstallationCache().open(
+      game === 'aokana' ? 'aokana' : 'chaos-head-noah-gog',
+    );
+    if (!cached) return {ready: false, detail: 'Choose the game folder in the player.'};
+    const title = game === 'aokana' ? 'game files' : 'game archives';
+    return {ready: true, detail: `${cached.files.length} ${title} saved in this browser`};
   } catch {
-    return {ready: false, detail: 'The local installation could not be checked.'};
+    return {ready: false, detail: 'Choose the game folder in the player.'};
   }
 }
 

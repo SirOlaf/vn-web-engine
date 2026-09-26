@@ -5,11 +5,14 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "build": "tsc -p tsconfig.json && node tools/build-audio-codecs.mjs && vite build",
+    "build": "npm run check:ui && npm run build:runtime && vite build",
+    "build:runtime": "node tools/clean-runtime.mjs && node node_modules/typescript-runtime/bin/tsc -p tsconfig.json && node tools/build-audio-codecs.mjs",
+    "check:ui": "svelte-check --tsconfig ./tsconfig.ui.json",
     "build:wasm": "node tools/build-wasm.mjs",
     "test": "npm run build && node --test tests/*.test.mjs",
     "verify": "npm run build && node tools/verify.mjs",
-    "start": "node tools/serve.mjs",
+    "start": "node tools/serve-static.mjs",
+    "start:debug": "node tools/serve.mjs",
     "differential": "npm run build && node tools/differential.mjs",
     "verify:audio": "npm run build && node tools/verify-audio.mjs",
     "verify:movies": "npm run build && node tools/verify-movies.mjs",
@@ -32,7 +35,9 @@
     "prettier": "3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
     "svelte": "^5.57.1",
-    "typescript": "7.0.2",
+    "svelte-check": "^4.7.6",
+    "typescript": "6.0.3",
+    "typescript-runtime": "npm:typescript@7.0.2",
     "vite": "^8.3.1"
   },
   "dependencies": {

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {playBrowserMediaWithActivation} from '../dist/video/browser-media-activation.js';
+import {
+  playBrowserMediaWithActivation,
+  subscribeBrowserMediaActivation,
+} from '../dist/video/browser-media-activation.js';
 import {AokanaBrowserMfController} from '../dist/engines/buriko/games/aokana/native/movie-mf-browser-session.js';
 import {AokanaBrowserTraditionalMovieSession} from '../dist/engines/buriko/games/aokana/native/movie-traditional-browser-graph.js';
 import {AokanaFullscreenMovieState} from '../dist/engines/buriko/games/aokana/native/movie-fullscreen-state.js';
@@ -99,16 +102,19 @@ function fixture() {
   };
   const canvas = new Element(document, 'canvas');
   document.body.append(canvas);
-  const prompt = () => document.body.children.find((child) => child.tag === 'section');
-  const button = () => prompt()?.children.find((child) => child.tag === 'button');
-  return {document, canvas, prompt, button};
+  let requests = [];
+  subscribeBrowserMediaActivation(document, (value) => {
+    requests = value;
+  });
+  const request = () => requests[0];
+  return {document, canvas, request};
 }
 const tick = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
 
-test('browser policy gate retries from a gesture without changing media state, survives fullscreen, and cancels cleanly', async () => {
+test('browser policy gate publishes host recovery actions, retries in the gesture, and cancels cleanly', async () => {
   const s = fixture(),
     media = new Video(),
     abort = new AbortController();
@@ -118,26 +124,20 @@ test('browser policy gate retries from a gesture without changing media state, s
     returnFocus: s.canvas,
   });
   await tick();
-  const prompt = s.prompt(),
-    button = s.button();
-  assert.equal(button.textContent, 'Play video');
+  const request = s.request();
+  assert.equal(request.pending, false);
+  assert.equal(request.returnFocus, s.canvas);
   assert.equal(media.currentTime, 0);
   assert.equal(media.muted, false);
   assert.equal(media.volume, 0.75);
-  const fullscreen = new Element(s.document, 'main');
-  s.document.body.append(fullscreen);
-  s.document.webkitFullscreenElement = fullscreen;
-  s.document.dispatchEvent(new Event('webkitfullscreenchange'));
-  assert.equal(prompt.parentElement, fullscreen);
-  button.dispatchEvent(new Event('click'));
+  request.retry();
   assert.equal(media.calls, 2); // play() happens inside the gesture, before a microtask.
   await tick();
-  assert.equal(button.disabled, false);
+  assert.equal(s.request().pending, false);
   media.allowed = true;
-  button.dispatchEvent(new Event('click'));
+  request.retry();
   await playing;
-  assert.equal(prompt.parentElement, null);
-  assert.equal(s.document.activeElement, s.canvas);
+  assert.equal(s.request(), undefined);
   assert.equal(media.currentTime, 0);
 
   s.document.webkitFullscreenElement = null;
@@ -148,12 +148,12 @@ test('browser policy gate retries from a gesture without changing media state, s
     signal: cancel.signal,
   });
   await tick();
-  const retiredButton = s.button();
+  const retiredButton = s.request();
   cancel.abort();
   await assert.rejects(pending, {name: 'AbortError'});
-  retiredButton.dispatchEvent(new Event('click'));
+  retiredButton.retry();
   assert.equal(blocked.calls, 1);
-  assert.equal(s.prompt(), undefined);
+  assert.equal(s.request(), undefined);
 
   const broken = new Video();
   const codecFailure = new DOMException('Unsupported codec', 'NotSupportedError');
@@ -165,7 +165,7 @@ test('browser policy gate retries from a gesture without changing media state, s
     }),
     (error) => error === codecFailure,
   );
-  assert.equal(s.prompt(), undefined);
+  assert.equal(s.request(), undefined);
 });
 
 test('MF and traditional movie owners retain their clocks during activation and remove pending controls on skip/reset', async () => {
@@ -185,13 +185,13 @@ test('MF and traditional movie owners retain their clocks during activation and 
   assert.equal(controller.nativeState84, 2);
   assert.deepEqual(activities, ['Buffering movie']);
   assert.equal(s.document.videos[0].currentTime, 0);
-  const retiredButton = s.button();
+  const retiredButton = s.request();
   controller.finishEarly();
   await tick();
   assert.equal(controller.nativeState84, 0);
   assert.deepEqual(activities, []);
-  assert.equal(s.prompt(), undefined);
-  retiredButton.dispatchEvent(new Event('click'));
+  assert.equal(s.request(), undefined);
+  retiredButton.retry();
   assert.equal(s.document.videos[0].calls, 1);
   controller.close();
 
@@ -240,7 +240,7 @@ test('MF and traditional movie owners retain their clocks during activation and 
     const video = s.document.videos.at(-1);
     assert.equal(video.currentTime, 0);
     video.allowed = true;
-    s.button().dispatchEvent(new Event('click'));
+    s.request().retry();
     await tick();
     assert.equal(video.paused, false);
     assert.deepEqual(activities, []);
@@ -252,19 +252,19 @@ test('MF and traditional movie owners retain their clocks during activation and 
     video.readyState = 3;
     video.dispatchEvent(new Event('canplay'));
     assert.deepEqual(activities, []);
-    assert.equal(s.prompt(), undefined);
+    assert.equal(s.request(), undefined);
     video.currentTime = 5;
     assert.equal(session.isPlaying(), false);
 
     await session.start(null, {bytes: Uint8Array.of(1, 0), offset: 0});
     await tick();
-    const button = s.button(),
+    const button = s.request(),
       pendingVideo = s.document.videos.at(-1);
     const releaseReset = await session.beginReset();
     assert.deepEqual(activities, []);
-    assert.equal(s.prompt(), undefined);
+    assert.equal(s.request(), undefined);
     assert.equal(pendingVideo.paused, true);
-    button.dispatchEvent(new Event('click'));
+    button.retry();
     assert.equal(pendingVideo.calls, 1);
     releaseReset();
   } finally {

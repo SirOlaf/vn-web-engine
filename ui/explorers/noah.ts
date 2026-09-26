@@ -1,17 +1,17 @@
-import {openNoahPlayer} from './engines/mages/games/chaos-head-noah/sc3/browser-player.js';
-import {BlobSource, HttpSource} from './core/source.js';
-import {CpkArchive} from './formats/cri/cpk.js';
-import {mountCharacterPlayer} from './engines/mages/character-player.js';
-import {mountMoviePlayer} from './video/player.js';
-import {mountAudioPlayer} from './audio/player.js';
-import type {AudioSource} from './audio/worker-protocol.js';
-import {identifyAsset} from './engines/mages/assets.js';
-import {SourceFileSystem} from './platform/filesystem.js';
-import {openBrowserPlatform} from './platform/services.js';
-import {mountStoragePanel} from './platform/storage-panel.js';
-import {windowsFileKey} from './platform/windows-filesystem.js';
-import {NOAH_WINDOWS} from './engines/mages/games/chaos-head-noah/paths.js';
-import {gameDirectoryFiles} from './game-directory.js';
+import {openNoahPlayer} from '../../src/engines/mages/games/chaos-head-noah/sc3/browser-player.js';
+import {BlobSource} from '../../src/core/source.js';
+import {CpkArchive} from '../../src/formats/cri/cpk.js';
+import {mountCharacterPlayer} from './character-player.js';
+import {mountMoviePlayer} from './movie-player.js';
+import {mountAudioPlayer} from './audio-player.js';
+import type {AudioSource} from '../../src/audio/worker-protocol.js';
+import {identifyAsset} from '../../src/engines/mages/assets.js';
+import {SourceFileSystem} from '../../src/platform/filesystem.js';
+import {openBrowserPlatform} from '../../src/platform/services.js';
+import {mountStoragePanel} from './storage-panel.js';
+import {windowsFileKey} from '../../src/platform/windows-filesystem.js';
+import {NOAH_WINDOWS} from '../../src/engines/mages/games/chaos-head-noah/paths.js';
+import {gameDirectoryFiles} from '../../src/game-directory.js';
 function element<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing ${id}`);
@@ -37,7 +37,7 @@ element<HTMLButtonElement>('vm-boot').onclick = async () => {
     const scripts = lookup('script.cpk'),
       messages = lookup('mes00.cpk');
     if (!scripts || !messages)
-      throw new Error('Open installed game or choose script.cpk, mes00.cpk and Game.exe first.');
+      throw new Error('Choose script.cpk, mes00.cpk and Game.exe in the game folder first.');
     try {
       await gameFiles.stat('/Game.exe');
     } catch {
@@ -169,14 +169,6 @@ function render(): void {
               kind: 'blob',
               blob: source.blob.slice(entry.offset, entry.offset + entry.storedSize),
             };
-          else if (source instanceof HttpSource)
-            descriptor = {
-              kind: 'http',
-              url: new URL(source.url, location.href).href,
-              size: source.size,
-              offset: entry.offset,
-              length: entry.storedSize,
-            };
           else throw new Error('This source cannot be transferred to an audio worker');
           disposePreview = isMovie
             ? mountMoviePlayer(viewer, descriptor)
@@ -240,35 +232,6 @@ function render(): void {
 }
 select.onchange = render;
 filter.oninput = render;
-element<HTMLButtonElement>('connect').onclick = async () => {
-  const button = element<HTMLButtonElement>('connect');
-  button.disabled = true;
-  try {
-    archives.clear();
-    select.replaceChildren();
-    const response = await fetch('/api/archives');
-    if (!response.ok)
-      throw new Error(
-        'Installed archives unavailable. Configure NOAH_DATA_ROOT on the local server.',
-      );
-    const files: {name: string; size: number; url: string}[] = await response.json();
-    const executableResponse = await fetch('/api/executable');
-    if (!executableResponse.ok) throw new Error('Installed Game.exe was not found');
-    const executable: {name: string; size: number; url: string} = await executableResponse.json();
-    gameFiles.attach('/' + executable.name, new HttpSource(executable.url, executable.size));
-    for (const file of files) {
-      status.textContent = `Indexing ${file.name}…`;
-      gameFiles.attach('/Data/' + file.name, new HttpSource(file.url, file.size));
-      add(file.name, await CpkArchive.open(await gameFiles.open('/Data/' + file.name)));
-    }
-    render();
-    status.textContent = `${archives.size} archives indexed. Choose an asset.`;
-  } catch (error) {
-    report(error);
-  } finally {
-    button.disabled = false;
-  }
-};
 element<HTMLInputElement>('files').onchange = async (event) => {
   try {
     const input = event.target as HTMLInputElement;
@@ -277,6 +240,7 @@ element<HTMLInputElement>('files').onchange = async (event) => {
     input.value = '';
     const selected = gameDirectoryFiles(selectedFiles);
     archives.clear();
+    gameFiles.clear();
     select.replaceChildren();
     gameFiles.attach('/Game.exe', new BlobSource(selected.executable));
     for (const file of selected.archives) {
@@ -285,7 +249,7 @@ element<HTMLInputElement>('files').onchange = async (event) => {
       add(file.name, await CpkArchive.open(await gameFiles.open(path)));
     }
     render();
-    status.textContent = `${archives.size} archives indexed locally.`;
+    status.textContent = `${archives.size} archives indexed from this device.`;
   } catch (error) {
     report(error);
   }

@@ -3,50 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Aokana · Asset laboratory</title>
-    <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="aokana-assets.css" />
   </head>
   <body>
-    <header>
-      <span class="eyebrow">AOKANA ULTIMATE EDITION / BURIKO</span>
-      <h1>Asset laboratory</h1>
-      <p>Explore your local archives, images, scripts, sound, fonts, and movies.</p>
-    </header>
-    <div class="toolbar">
-      <button id="connect">Open targetgame/aokana</button
-      ><label class="file"
-        >Choose game folder<input id="files" type="file" webkitdirectory directory /></label
-      ><a href="assets.html">MAGES explorer</a
-      ><span id="status" role="status">Choose your game installation.</span>
-    </div>
-    <main>
-      <aside>
-        <label>Archive or file<select id="archives" aria-label="Archive or file"></select></label
-        ><label
-          >Filter by index or name<input
-            id="filter"
-            type="search"
-            placeholder="Name or entry index"
-        /></label>
-        <p id="count"></p>
-        <div class="pages">
-          <button id="previous">Previous</button><button id="next">Next</button>
-        </div>
-        <div id="entries"></div>
-      </aside>
-      <section id="viewer">
-        <div class="empty">
-          <span>01 / ASSETS</span>
-          <h2>Open your installation.</h2>
-          <p>ARC20 · BSE · DSC · CompressedBG · BF_Movie · Ogg Vorbis · MP4 · fonts · SDC</p>
-          <p>
-            Files stay local. Select an entry to preview it. This explorer does not execute game
-            scripts.
-          </p>
-        </div>
-      </section>
-    </main>
-    <script type="module" src="dist/engines/buriko/explorer.js"></script>
+    <div id="app"></div>
+    <script type="module" src="./ui/explorer.ts"></script>
   </body>
 </html>

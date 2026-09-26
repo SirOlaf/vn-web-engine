@@ -1,13 +1,14 @@
-import {subscribeSourceActivity, type SourceActivity} from '../core/source-activity.js';
-import {subscribeRuntimeActivity, type RuntimeActivity} from '../platform/runtime-activity.js';
+import {subscribeSourceActivity, type SourceActivity} from '../../src/core/source-activity.js';
+import {
+  subscribeRuntimeActivity,
+  type RuntimeActivity,
+} from '../../src/platform/runtime-activity.js';
 
 /** Host loading feedback stays outside the game's canvas and native presentation. */
-export function mountSourceActivity(parent: HTMLElement): () => void {
-  const status = parent.ownerDocument.createElement('div');
-  status.className = 'source-activity';
-  status.setAttribute('role', 'status');
-  status.hidden = true;
-  parent.append(status);
+export function subscribePlayerActivity(
+  changed: (state: {hidden: boolean; label: string}) => void,
+): () => void {
+  const status = {hidden: true, label: ''};
   let source: SourceActivity | undefined;
   let activities: readonly RuntimeActivity[] = [];
   let show: ReturnType<typeof setTimeout> | undefined;
@@ -27,7 +28,8 @@ export function mountSourceActivity(parent: HTMLElement): () => void {
         `Reading ${locations} files… ${(bytes / 1048576).toFixed(1)} MiB read; oldest read ${elapsed(source.oldestStartedAt!)}`,
       );
     }
-    if (labels.length) status.textContent = labels.join(' · ');
+    if (labels.length) status.label = labels.join(' · ');
+    changed({...status});
   }
   function update(): void {
     const pending = (source?.pending ?? 0) > 0 || activities.length > 0;
@@ -39,6 +41,7 @@ export function mountSourceActivity(parent: HTMLElement): () => void {
       if (show === undefined && status.hidden)
         show = setTimeout(() => {
           status.hidden = false;
+          changed({...status});
           show = undefined;
         }, 350);
     } else {
@@ -51,6 +54,7 @@ export function mountSourceActivity(parent: HTMLElement): () => void {
         clearInterval(tick);
         tick = undefined;
         status.hidden = true;
+        changed({...status});
         hide = undefined;
       }, 200);
     }
@@ -69,6 +73,5 @@ export function mountSourceActivity(parent: HTMLElement): () => void {
     clearTimeout(show);
     clearTimeout(hide);
     clearInterval(tick);
-    status.remove();
   };
 }

@@ -1,48 +1,45 @@
-import {BlobSource, HttpSource} from '../../../../core/source.js';
-import {BrowserAudioContextHost} from '../../../../audio/browser-audio-context-host.js';
-import {beginRuntimeActivity} from '../../../../platform/runtime-activity.js';
+import {BlobSource} from '../../src/core/source.js';
+import {BrowserAudioContextHost} from '../../src/audio/browser-audio-context-host.js';
+import {beginRuntimeActivity} from '../../src/platform/runtime-activity.js';
 import {
   MountedFileSystem,
   OverlayFileSystem,
   SourceFileSystem,
   StoredFileSystem,
   filePath,
-} from '../../../../platform/filesystem.js';
-import {BrowserX86CompatibilityCpuHost} from '../../../../platform/browser-x86-cpu.js';
+} from '../../src/platform/filesystem.js';
+import {BrowserX86CompatibilityCpuHost} from '../../src/platform/browser-x86-cpu.js';
 import {
   BrowserWindowDisplayHost,
   browserDesktopSize,
-} from '../../../../platform/browser-window-display.js';
-import {IndexedDbStore, MemoryStore, type RecordStore} from '../../../../platform/store.js';
-import {mountInstallationControls} from '../../../../viewer/installation-controls.js';
-import type {CachedInstallation} from '../../../../platform/installation-cache.js';
-import type {InstallationSelection} from '../../../../platform/installation-picker.js';
-import {mountGameViewer} from '../../../../viewer/game-viewer.js';
-import {AokanaBpMemory} from './bp/memory.js';
+} from '../../src/platform/browser-window-display.js';
+import {IndexedDbStore, MemoryStore, type RecordStore} from '../../src/platform/store.js';
+import {mountInstallationControls} from '../player/installation-controls.js';
+import type {CachedInstallation} from '../../src/platform/installation-cache.js';
+import type {InstallationSelection} from '../../src/platform/installation-picker.js';
+import {mountGameViewer} from '../player/game-viewer.js';
+import {setRuntimeState, subscribeSaveBusy} from '../player/runtime-state.js';
+import {mountFullscreenControls} from '../player/fullscreen.js';
+import {AokanaBpMemory} from '../../src/engines/buriko/games/aokana/bp/memory.js';
 import {
   AokanaBrowserSpeakerBackend,
   AokanaMemorySpeakerBackend,
   type AokanaSpeakerBackend,
-} from './native/audio/speaker-backend.js';
-import {AokanaBpDiagnostics} from './native/diagnostics.js';
-import {readAokanaCursorResource} from './native/cursor-shapes.js';
-import {AokanaMountedFileMetadata, type AokanaFileMetadataRecord} from './native/file-metadata.js';
-import {AokanaMountedProgramPaths} from './native/program-paths.js';
-import {AokanaProgramMedia} from './native/program-files.js';
-import {AokanaProductionBootRunner} from './native/production-boot-runner.js';
-import {AokanaProductionDataOwners} from './native/production-data-owners.js';
-import {AokanaProductionDisplayResourceGraph} from './native/production-display-resource-graph.js';
-import {AokanaProductionVmCore} from './native/production-vm-core.js';
-import {aokanaRegistryFold} from './native/registry-case.js';
-import {AokanaNativeText} from './native/text.js';
-import {AokanaSaveTransfer, type AokanaSaveEntry} from './save-transfer.js';
-
-interface ServedFile {
-  name: string;
-  size: number;
-  lastModifiedMs: number;
-  url: string;
-}
+} from '../../src/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+import {AokanaBpDiagnostics} from '../../src/engines/buriko/games/aokana/native/diagnostics.js';
+import {readAokanaCursorResource} from '../../src/engines/buriko/games/aokana/native/cursor-shapes.js';
+import {
+  AokanaMountedFileMetadata,
+  type AokanaFileMetadataRecord,
+} from '../../src/engines/buriko/games/aokana/native/file-metadata.js';
+import {AokanaMountedProgramPaths} from '../../src/engines/buriko/games/aokana/native/program-paths.js';
+import {AokanaProgramMedia} from '../../src/engines/buriko/games/aokana/native/program-files.js';
+import {AokanaProductionBootRunner} from '../../src/engines/buriko/games/aokana/native/production-boot-runner.js';
+import {AokanaProductionDataOwners} from '../../src/engines/buriko/games/aokana/native/production-data-owners.js';
+import {AokanaProductionDisplayResourceGraph} from '../../src/engines/buriko/games/aokana/native/production-display-resource-graph.js';
+import {AokanaProductionVmCore} from '../../src/engines/buriko/games/aokana/native/production-vm-core.js';
+import {aokanaRegistryFold} from '../../src/engines/buriko/games/aokana/native/registry-case.js';
+import {AokanaNativeText} from '../../src/engines/buriko/games/aokana/native/text.js';
 
 interface Installation {
   files: SourceFileSystem;
@@ -51,7 +48,6 @@ interface Installation {
   executableName: string;
 }
 
-const connect = document.querySelector<HTMLButtonElement>('#connect')!;
 const chooseButton = document.querySelector<HTMLButtonElement>('#choose')!;
 const choose = document.querySelector<HTMLInputElement>('#files')!;
 const play = document.querySelector<HTMLButtonElement>('#play')!;
@@ -65,147 +61,27 @@ const viewport = document.querySelector<HTMLElement>('#display-viewport')!;
 const surface = document.querySelector<HTMLElement>('#surface')!;
 const windowLayer = document.querySelector<HTMLElement>('#window-layer')!;
 const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas')!;
-const fullscreenMode = document.querySelector<HTMLSelectElement>('#fullscreen-mode')!;
-const fullscreenButton = document.querySelector<HTMLButtonElement>('#fullscreen')!;
-const fullscreenHelp = document.querySelector<HTMLElement>('#fullscreen-help')!;
-const saveSelect = document.querySelector<HTMLSelectElement>('#save-file')!;
-const saveImport = document.querySelector<HTMLButtonElement>('#save-import')!;
-const saveExport = document.querySelector<HTMLButtonElement>('#save-export')!;
-const saveImportFile = document.querySelector<HTMLInputElement>('#save-import-file')!;
-const saveStatus = document.querySelector<HTMLElement>('#save-status')!;
 const diagnosticMode = document.documentElement.classList.contains('no-canvas');
-mountGameViewer('aokana');
+const {collapseOptions} = mountGameViewer('aokana');
+let fullscreenControls: ReturnType<typeof mountFullscreenControls> | undefined;
 const displayHost = new BrowserWindowDisplayHost(
   document.querySelector<HTMLElement>('#display')!,
   viewport,
   surface,
-  syncFullscreenControls,
+  () => fullscreenControls?.refresh(),
   report,
   windowLayer,
 );
-function syncFullscreenControls(): void {
-  fullscreenMode.value = displayHost.mode;
-  fullscreenButton.textContent =
-    displayHost.mode === 'screen'
-      ? displayHost.isScreenFullscreen
-        ? 'Exit fullscreen'
-        : 'Enter fullscreen'
-      : displayHost.isExpanded
-        ? 'Exit page view'
-        : 'Fill page';
-  fullscreenButton.setAttribute('aria-pressed', String(displayHost.isExpanded));
-  fullscreenHelp.hidden = displayHost.mode !== 'screen' || displayHost.isScreenFullscreen;
-  fullscreenHelp.textContent = displayHost.screenFullscreenAvailable
-    ? 'If the game cannot enter fullscreen automatically, press Enter fullscreen.'
-    : 'This browser does not offer fullscreen. The game will fill the page.';
-}
-fullscreenMode.addEventListener('change', () =>
-  displayHost.setMode(fullscreenMode.value === 'screen' ? 'screen' : 'page'),
-);
-fullscreenButton.addEventListener('click', () => displayHost.toggleFullscreen());
-syncFullscreenControls();
+fullscreenControls = mountFullscreenControls(displayHost);
 let selected: Installation | null = null;
 let selectedSnapshot: CachedInstallation | null = null;
 let running = false;
 let loading = false;
 let saveBusy = false;
-let saveRevision = 0;
-let browserSaves: AokanaSaveEntry[] = [];
-const saveTransfer = new AokanaSaveTransfer();
-
-function selectedSave(): AokanaSaveEntry | null {
-  const index = Number(saveSelect.value);
-  return Number.isSafeInteger(index) ? (browserSaves[index] ?? null) : null;
+function syncControls(): void {
+  setRuntimeState({running, busy: loading});
+  play.disabled = running || loading || saveBusy || selected === null;
 }
-
-function syncSaveControls(): void {
-  saveImport.disabled = running || saveBusy;
-  saveSelect.disabled = saveBusy || browserSaves.length === 0;
-  saveExport.disabled = saveBusy || selectedSave() === null;
-  if (saveBusy) play.disabled = true;
-  else if (!running && !loading) play.disabled = selected === null;
-}
-
-async function refreshBrowserSaves(prefer?: AokanaSaveEntry): Promise<void> {
-  const revision = ++saveRevision;
-  const previous = prefer ?? selectedSave();
-  const entries = await saveTransfer.list();
-  if (revision !== saveRevision) return;
-  browserSaves = entries;
-  saveSelect.replaceChildren();
-  if (browserSaves.length === 0) {
-    saveSelect.add(new Option('No browser saves yet', ''));
-  } else {
-    for (const [index, entry] of browserSaves.entries())
-      saveSelect.add(
-        new Option(
-          `${entry.name} · ${entry.area === 'game' ? 'Game data' : 'User data'}`,
-          String(index),
-        ),
-      );
-    const previousIndex = browserSaves.findIndex(
-      (entry) => entry.area === previous?.area && entry.path === previous.path,
-    );
-    saveSelect.value = String(Math.max(0, previousIndex));
-  }
-  syncSaveControls();
-}
-
-async function saveAction(action: () => Promise<void>): Promise<void> {
-  if (saveBusy) return;
-  saveBusy = true;
-  syncSaveControls();
-  installationControls.refresh();
-  try {
-    await action();
-  } catch (error) {
-    saveStatus.textContent = errorMessage(error);
-  } finally {
-    saveBusy = false;
-    syncSaveControls();
-    installationControls.refresh();
-  }
-}
-
-saveSelect.addEventListener('change', syncSaveControls);
-saveImport.addEventListener('click', () => saveImportFile.click());
-saveImportFile.addEventListener('change', () => {
-  const file = saveImportFile.files?.[0];
-  saveImportFile.value = '';
-  if (!file || running) return;
-  void saveAction(async () => {
-    if (file.size > 64 * 1024 * 1024) throw new Error('Import exceeds 64 MiB.');
-    const selected = selectedSave();
-    const destination =
-      selected !== null && aokanaRegistryFold(selected.name) === aokanaRegistryFold(file.name)
-        ? selected
-        : undefined;
-    const entry = await saveTransfer.import(
-      file.name,
-      new Uint8Array(await file.arrayBuffer()),
-      destination,
-    );
-    await refreshBrowserSaves(entry);
-    saveStatus.textContent = `${entry.name} imported into browser ${entry.area} data.`;
-  });
-});
-saveExport.addEventListener('click', () => {
-  const entry = selectedSave();
-  if (entry === null) return;
-  void saveAction(async () => {
-    const bytes = await saveTransfer.read(entry);
-    const url = URL.createObjectURL(new Blob([bytes.slice().buffer]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = entry.name;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    saveStatus.textContent = `${entry.name} exported.`;
-  });
-});
-void refreshBrowserSaves().catch((error) => {
-  saveStatus.textContent = errorMessage(error);
-});
 
 function report(message: string): void {
   status.textContent = message;
@@ -235,55 +111,6 @@ function mountedKey(path: string): string {
 async function requireBootArchive(files: SourceFileSystem): Promise<void> {
   const boot = await files.stat('/system.arc').catch(() => null);
   if (boot?.kind !== 'file') throw new Error('The selected installation has no system.arc.');
-}
-
-async function servedFiles(): Promise<Installation> {
-  const response = await fetch('/api/aokana/files');
-  if (!response.ok) throw new Error(`Local game server returned HTTP ${response.status}.`);
-  const manifest: unknown = await response.json();
-  if (!Array.isArray(manifest)) throw new Error('The local game file manifest is invalid.');
-  const files = source();
-  const modifiedFiles: Installation['modifiedFiles'] = [];
-  for (const value of manifest) {
-    const entry = value as Partial<ServedFile>;
-    if (
-      typeof entry.name !== 'string' ||
-      !Number.isSafeInteger(entry.size) ||
-      (entry.size ?? -1) < 0 ||
-      typeof entry.lastModifiedMs !== 'number' ||
-      !Number.isFinite(entry.lastModifiedMs) ||
-      typeof entry.url !== 'string'
-    )
-      throw new Error('The local game file manifest has an invalid entry.');
-    const path = filePath('/' + entry.name);
-    const url = new URL(entry.url, location.href);
-    if (url.origin !== location.origin || !url.pathname.startsWith('/aokana-data/'))
-      throw new Error('The local game file manifest points outside the game server.');
-    files.attach(path, new HttpSource(url.href, entry.size!));
-    modifiedFiles.push({path, lastModifiedMs: entry.lastModifiedMs!});
-  }
-  await requireBootArchive(files);
-  const cursorResponse = await fetch('/api/aokana/cursor');
-  if (!cursorResponse.ok) {
-    const detail: unknown = await cursorResponse.json().catch(() => null);
-    const message =
-      detail !== null &&
-      typeof detail === 'object' &&
-      'message' in detail &&
-      typeof detail.message === 'string'
-        ? detail.message
-        : `HTTP ${cursorResponse.status}`;
-    throw new Error(`Cannot load the game's cursor resource: ${message}.`);
-  }
-  const encodedName = cursorResponse.headers.get('X-Aokana-Executable-Name');
-  if (encodedName === null) throw new Error('The game server did not identify the executable.');
-  const executableName = decodeURIComponent(encodedName);
-  if (filePath('/' + executableName).slice(1) !== executableName || executableName.includes('/'))
-    throw new Error('The game server returned an invalid executable name.');
-  const cursor = new Uint8Array(await cursorResponse.arrayBuffer());
-  if (cursor.length === 0 || cursor.length > 16 * 1024 * 1024)
-    throw new Error('The game cursor resource has an invalid length.');
-  return {files, modifiedFiles, cursor, executableName};
 }
 
 async function chosenFiles(selection: InstallationSelection): Promise<Installation> {
@@ -538,33 +365,6 @@ async function launch(
   }
 }
 
-connect.addEventListener('click', async () => {
-  if (running || loading) return;
-  clearFatalError();
-  loading = true;
-  connect.disabled = true;
-  chooseButton.disabled = true;
-  selected = null;
-  selectedSnapshot = null;
-  installationControls.resetSelection();
-  play.disabled = true;
-  installationControls.refresh();
-  report('Opening installed game…');
-  try {
-    selected = await servedFiles();
-    selectedSnapshot = installationSnapshot(selected);
-    play.disabled = false;
-    report('Local Aokana installation ready. Press Play.');
-  } catch (error) {
-    report(errorMessage(error));
-  } finally {
-    loading = false;
-    connect.disabled = false;
-    chooseButton.disabled = false;
-    installationControls.refresh();
-  }
-});
-
 function installationSnapshot(installation: Installation): CachedInstallation {
   const modified = new Map(
     installation.modifiedFiles.map(({path, lastModifiedMs}) => [
@@ -592,8 +392,8 @@ const installationControls = mountInstallationControls({
   busy: () => running || loading || saveBusy,
   setBusy: (busy) => {
     loading = busy;
-    connect.disabled = busy || running;
-    play.disabled = busy || running || saveBusy || selected === null;
+
+    syncControls();
     if (busy) clearFatalError();
   },
   report,
@@ -639,13 +439,14 @@ play.addEventListener('click', async () => {
   surface.style.visibility = '';
   windowLayer.style.visibility = '';
   running = true;
-  syncSaveControls();
+  syncControls();
   welcome.hidden = true;
   play.disabled = true;
-  connect.disabled = true;
+
   chooseButton.disabled = true;
   choose.disabled = true;
   installationControls.refresh();
+  collapseOptions(true);
   report('Starting Aokana…');
   let audio: AudioContext | null = null;
   let audioHost: BrowserAudioContextHost | null = null;
@@ -672,18 +473,19 @@ play.addEventListener('click', async () => {
       console.error('Audio cleanup failed', error);
     } finally {
       running = false;
-      syncSaveControls();
+      syncControls();
       welcome.hidden = false;
-      connect.disabled = false;
+
       chooseButton.disabled = false;
       choose.disabled = false;
       installationControls.refresh();
-      play.disabled = false;
-      void refreshBrowserSaves().catch((error) => {
-        saveStatus.textContent = errorMessage(error);
-      });
+      syncControls();
     }
   }
 });
 
-if (new URLSearchParams(location.search).get('source') === 'installed') connect.click();
+subscribeSaveBusy((value) => {
+  saveBusy = value;
+  syncControls();
+  installationControls.refresh();
+});

@@ -16,7 +16,7 @@ original loading order.
    the root archives, `BGI.gdb` and game executable. For NOAH include `Game.exe` and `Data/*.cpk`.
    Expand **selected files** to see the exact paths the browser returned if files are missing.
    macOS `._` sidecars and `.DS_Store` metadata are ignored during installation selection.
-4. To retain an installation in the browser, open device files or **Open installed game**,
+4. To retain an installation in the browser, choose device files,
    then choose **Keep game files in browser** before Play. The copy has byte progress and
    cancellation. When finished, the current player uses the saved copy immediately.
 5. On later visits choose **Open saved game files**. **Remove saved game files** deletes
@@ -31,8 +31,6 @@ See [Chrome's File System Access documentation](https://developer.chrome.com/doc
 [WebKit's folder-input release notes](https://webkit.org/blog/16574/webkit-features-in-safari-18-4/),
 [the iOS picker implementation](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/UIProcess/ios/forms/WKFileUploadPanel.mm),
 and [Safari 26 storage support](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/).
-On iPhone, **Open installed game → Keep game files in browser** can copy directly from the
-server into persistent storage, avoiding the folder picker's temporary import.
 
 The cache streams files into OPFS in bounded chunks, then publishes a completed manifest.
 Cancellation or a failed replacement retains the previous completed installation. Replacement
@@ -45,8 +43,9 @@ Persistence is requested but the browser decides whether to grant it. Private br
 quota limits, browser eviction and clearing site data can remove cached installations.
 See [WebKit's storage policy](https://webkit.org/blog/14403/updates-to-storage-policy/).
 These are local game assets, not an offline application install: the viewer page and its
-JavaScript still need the server. LAN HTTP lacks the secure context needed by advanced
-file/storage APIs; use the HTTPS setup in the project README.
+JavaScript still need the static website. GitHub Pages supplies HTTPS; for a local server,
+LAN HTTP lacks the secure context needed by advanced file/storage APIs. Use the HTTPS setup
+in the project README.
 
 ## Vorbis decoding and audio recovery
 
@@ -78,7 +77,7 @@ interrupted/suspended playback failures; see [the WebKit interruption report](ht
 Audio-context recovery addresses a separate failure mode from the Vorbis boundary error.
 Physical-device playback and game visuals require user verification.
 
-Device and server reads display activity outside the canvas, including bytes read and
+File reads display activity outside the canvas, including bytes read and
 how long the oldest pending read has been waiting. Startup and browser movie preparation
 have separate activity labels; movie metadata loading and buffering are distinguished
 from application file reads. These indicators observe work without advancing native clocks
@@ -89,7 +88,7 @@ region directly to browser media playback, including movies inside archives. Pre
 this path read the entire movie in 128 KiB chunks and copied it again before playback.
 The shared source helper uses [Blob ranges](https://www.w3.org/TR/FileAPI/#slice-method-algo)
 to avoid those application-created copies. The browser still owns its internal buffering.
-Server byte-range transport remains unchanged; local files and the installation cache are
-the preferred ways to avoid network latency during gameplay. The initial pre-splash delay
+Server byte-range transport remains available to development tools. The player uses device
+files or the installation cache, avoiding network latency during gameplay. The initial pre-splash delay
 reported on Android Brave with internal-storage files still needs device timing evidence;
 the activity labels help distinguish startup work, file reads, and media preparation.

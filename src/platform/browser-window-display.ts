@@ -4,15 +4,15 @@ import type {
   WindowDisplayHost,
 } from './window-display.js';
 import {BrowserWindowCoordinatesHost} from './browser-window-coordinates.js';
+import {
+  browserFullscreenElement,
+  browserFullscreenAvailable,
+  requestBrowserFullscreen,
+  type BrowserFullscreenDocument,
+  type BrowserFullscreenElement,
+} from './browser-fullscreen.js';
 
 export type BrowserFullscreenMode = 'page' | 'screen';
-type FullscreenDocument = Document & {
-  webkitFullscreenElement?: Element | null;
-  webkitFullscreenEnabled?: boolean;
-  webkitExitFullscreen?: () => void | Promise<void>;
-};
-type FullscreenElement = HTMLElement & {webkitRequestFullscreen?: () => void | Promise<void>};
-
 /** Browser screen dimensions are CSS pixels; native display queries use device pixels. */
 export function browserDesktopSize(
   view: Pick<Window, 'screen' | 'devicePixelRatio'>,
@@ -31,7 +31,7 @@ export function browserDesktopSize(
  */
 export class BrowserWindowDisplayHost implements WindowDisplayHost {
   readonly coordinates: BrowserWindowCoordinatesHost;
-  private readonly document: FullscreenDocument;
+  private readonly document: BrowserFullscreenDocument;
   private readonly view: Window;
   private geometry: WindowDisplayGeometry = {width: 800, height: 600, fullscreen: false};
   private x = 0;
@@ -46,7 +46,7 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
   private observer: ResizeObserver | null = null;
 
   constructor(
-    readonly root: FullscreenElement,
+    readonly root: BrowserFullscreenElement,
     readonly viewport: HTMLElement,
     readonly windowElement: HTMLElement,
     private readonly changed: () => void = () => {},
@@ -83,17 +83,10 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
     return this.expanded;
   }
   get isScreenFullscreen(): boolean {
-    return (this.document.fullscreenElement ?? this.document.webkitFullscreenElement) === this.root;
+    return browserFullscreenElement(this.document) === this.root;
   }
   get screenFullscreenAvailable(): boolean {
-    return (
-      (typeof this.root.requestFullscreen === 'function' &&
-        typeof this.document.exitFullscreen === 'function' &&
-        this.document.fullscreenEnabled !== false) ||
-      (typeof this.root.webkitRequestFullscreen === 'function' &&
-        typeof this.document.webkitExitFullscreen === 'function' &&
-        this.document.webkitFullscreenEnabled !== false)
-    );
+    return browserFullscreenAvailable(this.root);
   }
 
   setMode(mode: BrowserFullscreenMode): void {
@@ -187,21 +180,8 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
     if (wantsScreen === this.isScreenFullscreen || (wantsScreen && this.blocked)) return;
     let result: void | Promise<void>;
     try {
-      if (wantsScreen) {
-        if (!this.screenFullscreenAvailable) throw new Error('Fullscreen unavailable');
-        // Invoke synchronously so clicks retain their transient user activation.
-        result =
-          typeof this.root.requestFullscreen === 'function' &&
-          typeof this.document.exitFullscreen === 'function' &&
-          this.document.fullscreenEnabled !== false
-            ? this.root.requestFullscreen()
-            : this.root.webkitRequestFullscreen!();
-      } else {
-        result =
-          this.document.fullscreenElement === this.root
-            ? this.document.exitFullscreen()
-            : this.document.webkitExitFullscreen!();
-      }
+      // Invoke synchronously so clicks retain their transient user activation.
+      result = requestBrowserFullscreen(this.root, wantsScreen);
     } catch {
       this.fullscreenFailed(wantsScreen);
       return;

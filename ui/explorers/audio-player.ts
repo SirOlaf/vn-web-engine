@@ -1,6 +1,6 @@
-import {encodeWav} from './pcm.js';
-import type {PcmClip} from './pcm.js';
-import type {AudioResponse, AudioSource} from './worker-protocol.js';
+import {encodeWav} from '../../src/audio/pcm.js';
+import type {PcmClip} from '../../src/audio/pcm.js';
+import type {AudioResponse, AudioSource} from '../../src/audio/worker-protocol.js';
 /** Inspector playback host; codec modules have no DOM or AudioContext dependencies. */
 export function mountAudioPlayer(
   container: HTMLElement,
@@ -197,7 +197,9 @@ export function mountAudioPlayer(
       decode.disabled = false;
     };
     try {
-      worker = new Worker(new URL('./decode-worker.js', import.meta.url), {type: 'module'});
+      worker = new Worker(new URL('../../src/audio/decode-worker.ts', import.meta.url), {
+        type: 'module',
+      });
     } catch (error) {
       fail(`Cannot start audio worker: ${error instanceof Error ? error.message : error}`);
       return;

@@ -80,7 +80,7 @@ export class AokanaDisplayObjectLists {
     if (count === 0) return;
     const keys = new Uint32Array(count);
     for (let root = this.roots; root !== null; root = root.next) {
-      let next = this.expanded;
+      let next: OrderedNode | null = this.expanded;
       let previous: OrderedNode | null = null;
       const length = AokanaDisplayObject.prototype.copyExpandedSortKeys.call(root.object, keys);
       for (let index = 0; index < length; index++) {
@@ -89,7 +89,7 @@ export class AokanaDisplayObjectLists {
           previous = next;
           next = next.next;
         }
-        const inserted = new AokanaDisplayListEntry(key, root.object, next);
+        const inserted: OrderedNode = new AokanaDisplayListEntry(key, root.object, next);
         if (previous === null) this.expanded = inserted;
         else previous.next = inserted;
         previous = inserted;

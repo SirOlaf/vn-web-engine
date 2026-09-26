@@ -6,16 +6,16 @@
 <button id="write">Write and cancel replacement</button>
 <button id="read">Check after reload and remove</button>
 <pre id="result" role="status">Ready</pre>
-<section id="controls">
-  <h2>Shared viewer controls (generated files only)</h2>
-  <button id="choose">Choose game folder</button>
-  <input id="files" type="file" webkitdirectory hidden />
-</section>
+<div id="controls"></div>
 <script type="module">
-  import {BlobSource} from '../../dist/core/source.js';
-  import {openWorkerSource} from '../../dist/core/worker-source.js';
-  import {BrowserInstallationCache} from '../../dist/platform/installation-cache.js';
-  import {mountInstallationControls} from '../../dist/viewer/installation-controls.js';
+  import {mount, flushSync} from 'svelte';
+  import InstallationFiles from '../../ui/player/InstallationFiles.svelte';
+  import {BlobSource} from '../../src/core/source.js';
+  import {openWorkerSource} from '../../src/core/worker-source.js';
+  import {BrowserInstallationCache} from '../../src/platform/installation-cache.js';
+  import {mountInstallationControls} from '../../ui/player/installation-controls.ts';
+  // Run with the Vite development server so this uses the production Svelte widget.
+  flushSync(() => mount(InstallationFiles, {target: document.querySelector('#controls')}));
   const cache = new BrowserInstallationCache();
   const key = 'synthetic-browser-installation-check';
   const size = 9 * 1024 * 1024 + 3;

@@ -1,41 +1,71 @@
+/** A host-rendered recovery action. Calling retry must retain the original user gesture. */
+export interface BrowserMediaActivationRequest {
+  readonly id: number;
+  readonly pending: boolean;
+  readonly returnFocus?: HTMLElement;
+  retry(): void;
+}
+
+type ActivationListener = (requests: readonly BrowserMediaActivationRequest[]) => void;
+interface ActivationState {
+  requests: Map<number, BrowserMediaActivationRequest>;
+  listeners: Set<ActivationListener>;
+}
+const documents = new WeakMap<Document, ActivationState>();
+let nextRequest = 0;
+function activationState(document: Document): ActivationState {
+  let state = documents.get(document);
+  if (!state) {
+    state = {requests: new Map(), listeners: new Set()};
+    documents.set(document, state);
+  }
+  return state;
+}
+function publish(state: ActivationState): void {
+  const requests = [...state.requests.values()];
+  for (const listener of state.listeners) {
+    try {
+      listener(requests);
+    } catch {
+      /* Presentation cannot own playback. */
+    }
+  }
+}
+
+/** The shared page UI observes pending browser gestures, outside native media ownership. */
+export function subscribeBrowserMediaActivation(
+  document: Document,
+  listener: ActivationListener,
+): () => void {
+  const state = activationState(document);
+  state.listeners.add(listener);
+  listener([...state.requests.values()]);
+  return () => state.listeners.delete(listener);
+}
+
 /** Start real media playback, requesting a new gesture only when browser autoplay policy
- * requires one. Cancellation retires both the prompt and pending playback; codec failures
+ * requires one. Cancellation retires both the request and pending playback; codec failures
  * remain failures for the caller. No media clock, volume, or source is substituted. */
 export function playBrowserMediaWithActivation(
   media: HTMLMediaElement,
   options: {document: Document; signal: AbortSignal; returnFocus?: HTMLElement},
 ): Promise<void> {
   const {document, signal} = options;
-  const fullscreenDocument = document as Document & {webkitFullscreenElement?: Element | null};
   return new Promise<void>((resolve, reject) => {
+    const state = activationState(document);
+    const id = ++nextRequest;
     let settled = false;
     let pending = false;
-    let prompt: HTMLElement | null = null;
-    let button: HTMLButtonElement | null = null;
-    let previousFocus: Element | null = null;
-    const mount = (): void => {
-      if (prompt !== null)
-        (
-          document.fullscreenElement ??
-          fullscreenDocument.webkitFullscreenElement ??
-          document.body
-        ).append(prompt);
+    let requested = false;
+    const update = (): void => {
+      if (!requested) return;
+      state.requests.set(id, {id, pending, returnFocus: options.returnFocus, retry: attempt});
+      publish(state);
     };
     const cleanup = (): void => {
       signal.removeEventListener('abort', aborted);
       media.removeEventListener('error', failed);
-      if (prompt !== null)
-        for (const name of ['fullscreenchange', 'webkitfullscreenchange'])
-          document.removeEventListener(name, mount);
-      const restore = prompt?.contains(document.activeElement) === true;
-      prompt?.remove();
-      prompt = null;
-      button = null;
-      if (restore) {
-        const target = options.returnFocus ?? previousFocus;
-        if (target?.isConnected && 'focus' in target)
-          (target as HTMLElement).focus({preventScroll: true});
-      }
+      if (state.requests.delete(id)) publish(state);
     };
     const complete = (failed: boolean, error?: unknown): void => {
       if (settled) return;
@@ -51,52 +81,6 @@ export function playBrowserMediaWithActivation(
     const failed = (): void => {
       complete(true, new Error(media.error?.message || 'Browser media playback failed'));
     };
-    const showPrompt = (): void => {
-      if (prompt !== null) {
-        if (button !== null) button.disabled = false;
-        return;
-      }
-      previousFocus = document.activeElement;
-      prompt = document.createElement('section');
-      prompt.setAttribute('aria-label', 'Video playback');
-      Object.assign(prompt.style, {
-        position: 'fixed',
-        zIndex: '2147483647',
-        bottom: '1rem',
-        left: '1rem',
-        right: '1rem',
-        margin: '0 auto',
-        maxWidth: '32rem',
-        padding: '1rem',
-        border: '1px solid #7484a5',
-        borderRadius: '0.5rem',
-        background: '#10131c',
-        color: '#fff',
-        font: '1rem system-ui, sans-serif',
-        textAlign: 'center',
-      });
-      const message = document.createElement('p');
-      message.setAttribute('role', 'status');
-      message.textContent = 'Your browser paused video playback. Select Play video to continue.';
-      button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = 'Play video';
-      Object.assign(button.style, {
-        padding: '0.6rem 1rem',
-        font: 'inherit',
-        color: '#fff',
-        background: '#26344e',
-        border: '1px solid #7484a5',
-        borderRadius: '0.35rem',
-        cursor: 'pointer',
-      });
-      button.addEventListener('click', attempt);
-      prompt.append(message, button);
-      for (const name of ['fullscreenchange', 'webkitfullscreenchange'])
-        document.addEventListener(name, mount);
-      mount();
-      button.focus({preventScroll: true});
-    };
     const refused = (error: unknown): void => {
       pending = false;
       if (settled) return;
@@ -106,17 +90,14 @@ export function playBrowserMediaWithActivation(
         'name' in error &&
         error.name === 'NotAllowedError'
       ) {
-        try {
-          showPrompt();
-        } catch (promptError) {
-          complete(true, promptError);
-        }
+        requested = true;
+        update();
       } else complete(true, error);
     };
     function attempt(): void {
       if (settled || pending) return;
       pending = true;
-      if (button !== null) button.disabled = true;
+      update();
       try {
         // Keep play() in the button's activation task; awaiting anything first loses the gesture.
         void media.play().then(() => {

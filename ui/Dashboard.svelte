@@ -1,52 +1,33 @@
 <script lang="ts">
   import {onMount, tick} from 'svelte';
-  import {
-    downloadBytes,
-    installationStatus,
-    noahSaveFiles,
-    readNoahSave,
-    writeNoahSave,
-    type GameId,
-    type InstallationStatus,
-  } from './library.js';
-  import {
-    AokanaSaveTransfer,
-    type AokanaSaveEntry,
-  } from '../src/engines/buriko/games/aokana/save-transfer.js';
+  import {installationStatus, type GameId, type InstallationStatus} from './library.js';
+  import SaveFiles from './player/SaveFiles.svelte';
 
   const games = {
     aokana: {
       title: 'Aokana',
       engine: 'BURIKO',
-      description: 'Four girls take to the skies in a world where anyone can fly.',
-      route: '/aokana.html',
+      route: './aokana.html',
+      explorerRoute: './aokana-assets.html',
       initials: 'AO',
     },
     noah: {
       title: 'CHAOS;HEAD NOAH',
       engine: 'MAGES',
-      description: 'A mystery unfolds in Shibuya through a distinctive visual novel interface.',
-      route: '/noah.html',
+      route: './noah.html',
+      explorerRoute: './assets.html',
       initials: 'CH',
     },
   } as const;
-  const transfer = new AokanaSaveTransfer();
   let selected: GameId = 'aokana';
   let tab: 'overview' | 'files' = 'overview';
   let installations: Record<GameId, InstallationStatus | null> = {aokana: null, noah: null};
   let checking = false;
-  let busy = false;
-  let message = '';
-  let saveFiles: AokanaSaveEntry[] = [];
-  let saveSelection = '';
-  let noahSelection: string = noahSaveFiles[0].id;
-  let fileInput: HTMLInputElement;
   let overviewTab: HTMLButtonElement;
   let filesTab: HTMLButtonElement;
 
   $: game = games[selected];
   $: installation = installations[selected];
-  $: chosenAokanaSave = saveFiles.find((entry) => `${entry.area}:${entry.path}` === saveSelection);
 
   async function refreshInstallations(): Promise<void> {
     checking = true;
@@ -58,21 +39,8 @@
     checking = false;
   }
 
-  async function refreshSaves(): Promise<void> {
-    try {
-      saveFiles = await transfer.list();
-      if (!saveFiles.some((entry) => `${entry.area}:${entry.path}` === saveSelection)) {
-        const first = saveFiles[0];
-        saveSelection = first ? `${first.area}:${first.path}` : '';
-      }
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
-  }
-
   function chooseGame(id: GameId): void {
     selected = id;
-    message = '';
   }
 
   async function moveTab(event: KeyboardEvent): Promise<void> {
@@ -90,67 +58,8 @@
     (tab === 'overview' ? overviewTab : filesTab).focus();
   }
 
-  function openImport(): void {
-    fileInput.value = '';
-    fileInput.click();
-  }
-
-  async function importFile(): Promise<void> {
-    const file = fileInput.files?.[0];
-    if (!file || busy) return;
-    const targetGame = selected;
-    const targetNoahSave = noahSelection;
-    const targetAokanaSave = chosenAokanaSave;
-    busy = true;
-    message = '';
-    try {
-      if (file.size > 64 * 1024 * 1024) throw new Error('Import exceeds 64 MiB.');
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      if (targetGame === 'aokana') {
-        const destination =
-          targetAokanaSave?.name.toLowerCase() === file.name.toLowerCase()
-            ? targetAokanaSave
-            : undefined;
-        const imported = await transfer.import(file.name, bytes, destination);
-        await refreshSaves();
-        saveSelection = `${imported.area}:${imported.path}`;
-        message = `${imported.name} imported.`;
-      } else {
-        await writeNoahSave(targetNoahSave, bytes);
-        message = `${noahSaveFiles.find((entry) => entry.id === targetNoahSave)?.name} imported.`;
-      }
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    } finally {
-      fileInput.value = '';
-      busy = false;
-    }
-  }
-
-  async function exportFile(): Promise<void> {
-    if (busy) return;
-    busy = true;
-    message = '';
-    try {
-      if (selected === 'aokana') {
-        if (!chosenAokanaSave) throw new Error('Select a save file.');
-        downloadBytes(chosenAokanaSave.name, await transfer.read(chosenAokanaSave));
-        message = `${chosenAokanaSave.name} exported.`;
-      } else {
-        const file = noahSaveFiles.find((entry) => entry.id === noahSelection)!;
-        downloadBytes(file.name, await readNoahSave(noahSelection));
-        message = `${file.name} exported.`;
-      }
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    } finally {
-      busy = false;
-    }
-  }
-
   onMount(() => {
     void refreshInstallations();
-    void refreshSaves();
   });
 </script>
 
@@ -160,33 +69,23 @@
 
 <div class="app-shell">
   <header class="topbar">
-    <a class="brand" href="/" aria-label="VN Web Engine library">
+    <a class="brand" href="./index.html" aria-label="VN Web Engine library">
       <span class="brand-mark" aria-hidden="true">VN</span>
       <span class="brand-copy">WEB ENGINE <small>LIBRARY</small></span>
     </a>
-    <span class="topbar-note">Your games, on the web</span>
+    <span class="topbar-note">Native Visual Novels running in your Browser</span>
   </header>
 
   <main>
-    <section class="intro" aria-labelledby="library-title">
-      <div>
-        <p class="eyebrow">YOUR COLLECTION / 02 GAMES</p>
-        <h1 id="library-title">Pick up where your story begins.</h1>
-        <p class="intro-copy">
-          Open a local installation, choose a game folder, or manage saved data.
-        </p>
-      </div>
-      <button class="refresh" type="button" onclick={refreshInstallations} disabled={checking}>
-        <span aria-hidden="true">↻</span>
-        {checking ? 'Checking…' : 'Refresh library'}
-      </button>
-    </section>
-
     <div class="library-layout">
       <section class="shelf" aria-label="Games">
         <div class="section-heading">
           <h2>Library</h2>
           <span>2 titles</span>
+          <button class="refresh" type="button" onclick={refreshInstallations} disabled={checking}>
+            <span aria-hidden="true">↻</span>
+            {checking ? 'Checking…' : 'Refresh browser files'}
+          </button>
         </div>
         {#each ['aokana', 'noah'] as GameId[] as id}
           <button
@@ -208,15 +107,16 @@
                 {installations[id] === null
                   ? 'Checking files'
                   : installations[id]?.ready
-                    ? 'Local files ready'
-                    : 'Folder needed'}
+                    ? 'Browser copy ready'
+                    : 'Choose a folder'}
               </small>
             </span>
             <span class="card-arrow" aria-hidden="true">›</span>
           </button>
         {/each}
         <p class="shelf-note">
-          Game files stay on your device. The local server only reads installations you configure.
+          Game files stay on your device. Choose a folder in the player or keep a browser copy for
+          later.
         </p>
       </section>
 
@@ -227,7 +127,6 @@
         <div class="detail-heading">
           <div>
             <h2 id="detail-title">{game.title}</h2>
-            <p>{game.description}</p>
           </div>
           <span class="detail-monogram" aria-hidden="true">{game.initials}</span>
         </div>
@@ -269,21 +168,18 @@
                   >{installation === null
                     ? 'Checking local installation'
                     : installation.ready
-                      ? 'Ready to open'
+                      ? 'Browser copy ready'
                       : 'Choose a game folder'}</strong
                 >
                 <p>{installation?.detail ?? 'Looking for game files on this device…'}</p>
               </div>
             </div>
             <div class="primary-actions">
-              <a
-                class="button primary"
-                href={installation?.ready ? `${game.route}?source=installed` : game.route}
-              >
-                {installation?.ready ? 'Open installed game' : 'Open game page'}
+              <a class="button primary" href={game.route}>
+                Open game
                 <span aria-hidden="true">↗</span>
               </a>
-              <a class="button secondary" href={game.route}>Choose folder in player</a>
+              <a class="button secondary" href={game.explorerRoute}>Open asset laboratory</a>
             </div>
             <div class="info-row"><span>Engine</span><strong>{game.engine}</strong></div>
             <div class="info-row"><span>Game files</span><strong>Read locally</strong></div>
@@ -298,53 +194,8 @@
                 <h3>Saved data</h3>
                 <p>Import or download the game’s local save files.</p>
               </div>
-              {#if selected === 'aokana'}<button
-                  class="text-button"
-                  type="button"
-                  onclick={refreshSaves}>Refresh</button
-                >{/if}
             </div>
-            {#if selected === 'aokana'}
-              <label for="aokana-save">File</label>
-              <select
-                id="aokana-save"
-                bind:value={saveSelection}
-                disabled={busy || saveFiles.length === 0}
-              >
-                {#if saveFiles.length === 0}<option value="">No saves yet</option>{/if}
-                {#each saveFiles as file}<option value={`${file.area}:${file.path}`}
-                    >{file.name} · {file.area === 'game' ? 'Game' : 'User data'} · {Math.ceil(
-                      file.size / 1024,
-                    )} KB</option
-                  >{/each}
-              </select>
-            {:else}
-              <label for="noah-save">File</label>
-              <select id="noah-save" bind:value={noahSelection} disabled={busy}>
-                {#each noahSaveFiles as file}<option value={file.id}>{file.name}</option>{/each}
-              </select>
-            {/if}
-            <div class="save-actions">
-              <button type="button" onclick={openImport} disabled={busy}>Import file</button>
-              <button
-                type="button"
-                onclick={exportFile}
-                disabled={busy || (selected === 'aokana' && !chosenAokanaSave)}
-                >Export selected</button
-              >
-            </div>
-            <input
-              bind:this={fileInput}
-              class="visually-hidden"
-              type="file"
-              accept={selected === 'aokana' ? '.gdb,.cad' : '.dat'}
-              onchange={importFile}
-              aria-label="Choose a save file to import"
-            />
-            <p class="help">
-              Close the player before importing so the game does not overwrite the imported file.
-            </p>
-            <p class="action-message" role="status">{message}</p>
+            <SaveFiles game={selected} heading={false} />
           </div>
         {/if}
       </section>

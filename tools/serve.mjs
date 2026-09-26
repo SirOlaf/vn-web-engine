@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {isInstallationMetadata} from '../dist/platform/installation-path.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
+const site = path.join(root, 'site');
 const noah = path.resolve(
   process.env.NOAH_DATA_ROOT ?? path.join(root, 'targetgame', 'chaos-head-noah'),
 );
@@ -181,7 +182,7 @@ createServer(async (req, res) => {
         .end(req.method === 'HEAD' ? undefined : JSON.stringify(files));
       return;
     }
-    let base = root,
+    let base = site,
       relative = pathname === '/' ? 'index.html' : pathname.slice(1);
     if (pathname.startsWith('/aokana-data/')) {
       base = aokana;
@@ -215,22 +216,9 @@ createServer(async (req, res) => {
         res.writeHead(404).end();
         return;
       }
-    } else if (!(
-      relative === 'index.html' ||
-      [
-        'style.css',
-        'game.css',
-        'assets.html',
-        'aokana.html',
-        'noah.html',
-        'aokana.css',
-        'aokana-assets.html',
-        'aokana-assets.css',
-      ].includes(relative) ||
-      relative.startsWith('dist/')
-    )) {
-      res.writeHead(404).end();
-      return;
+    } else if (relative.startsWith('dist/')) {
+      base = path.join(root, 'dist');
+      relative = relative.slice('dist/'.length);
     }
     const file = await realpath(path.resolve(base, relative));
     const realBase = await realpath(base);

@@ -13,7 +13,7 @@ The games share browser services for files, storage, audio, video, graphics, and
 
 ## Quick start
 
-Install a recent Node.js version with npm, then run:
+Install Node.js 24 or newer with npm, then run:
 
 ```sh
 npm ci
@@ -21,12 +21,12 @@ npm run build
 npm start
 ```
 
-Open the [library](http://127.0.0.1:8000), select a game, and open its player. The library detects server-backed installations and manages browser save files. Each player can also choose an installation folder from the device. **Play** starts the loaded game. Direct player links: [Aokana](http://127.0.0.1:8000/aokana.html) and [CHAOS;HEAD NOAH](http://127.0.0.1:8000/noah.html).
+Open the [library](http://127.0.0.1:8000), select a game, and open its player. Choose the installation folder from your device, then use **Play** to start the loaded game. The library also manages browser save files. Direct player links: [Aokana](http://127.0.0.1:8000/aokana.html) and [CHAOS;HEAD NOAH](http://127.0.0.1:8000/noah.html).
 
-- **CHAOS;HEAD NOAH:** Choose the installation folder containing `Game.exe` and `Data/*.cpk`. For **Open installed game**, put the installation files in `targetgame/chaos-head-noah/`, or point the server at the folder with `NOAH_DATA_ROOT="/path/to/CHAOS HEAD NOAH" npm start`.
-- **Aokana:** Choose the game folder containing `system.arc`, the other root-level `.arc` files, `BGI.gdb`, and one game `.exe`. For **Open installed game**, put these files in `targetgame/aokana/`, or point the server at the folder with `AOKANA_DATA_ROOT="/path/to/Aokana" npm start`. The executable supplies the game's cursor resource.
+- **CHAOS;HEAD NOAH:** Choose the installation folder containing `Game.exe` and `Data/*.cpk`.
+- **Aokana:** Choose the game folder containing `system.arc`, the other root-level `.arc` files, `BGI.gdb`, and one game `.exe`. The executable supplies the game's cursor resource.
 
-Game files selected through the browser stay on your device. In server-backed mode, the server reads the installation files and serves the runtime data to connected browsers.
+Game files selected through the browser stay on your device. The website serves only the engine; it does not upload or stream your installation.
 Both players offer **Add files** and **Add one file** when folder selection is unavailable or incomplete, and **Keep game files in browser** to save a complete installation locally before playing. Use **Open saved game files** on later visits. Folder handles read the original files on supporting browsers; iOS Safari may make a temporary copy. See [mobile files and audio](docs/mobile-compatibility.md) for browser limits, cache controls and audio recovery.
 Ogg Vorbis playback uses a shared WebAssembly decoder to preserve native PCM boundaries and playback waits. Decoder-only WebKit comparisons lost boundary samples (4,109 → 3,981 frames for a synthetic stream; 64,892 → 64,832 for Aokana's `ASUKA` clip, with its first 128 samples missing). The fix decodes those samples without silence padding or timing changes; physical iPhone verification is still pending.
 During Aokana startup, **Skip startup sequence** appears under **Game options → Playback**; select it again to stop skipping.
@@ -50,6 +50,12 @@ Browser saves and settings are stored in IndexedDB for the current origin and br
 
 The [CHAOS;HEAD NOAH asset laboratory](assets.html) and [Aokana asset laboratory](aokana-assets.html) are separate inspection tools.
 
+## Static hosting
+
+`npm run build` produces the complete website in `site/`. Upload only that directory to a static HTTPS host. All page, worker, AudioWorklet, and decoder URLs support hosting beneath a project path, including GitHub Pages. No game files, debug server, tests, or source maps are included. `npm start` serves this same artifact locally.
+
+The included [GitHub Pages workflow](.github/workflows/pages.yml) builds and deploys pushes to `main`, and can also be run manually. Select **GitHub Actions** under the repository's **Settings → Pages → Build and deployment → Source** before enabling it. See [static hosting](docs/static-hosting.md) for setup, subpath verification, and save-storage considerations.
+
 ## Development
 
 ```sh
@@ -58,6 +64,8 @@ npm test
 ```
 
 `npm test` builds and runs the unit and integration suite. Additional archive, media, and VM checks are available through the `verify:*` scripts in [package.json](package.json). The [native reconstruction tooling](docs/tooling/README.md) has its own workflow. Optional embedded WebAssembly kernels are checked into the source; edit their Rust sources and run `npm run build:wasm` only when rebuilding them.
+
+`npm run check:ui` checks the Svelte interfaces and their TypeScript controllers. The runtime compiler remains TypeScript 7; Svelte's checker uses the compatible TypeScript 6 compiler API. `npm run build:runtime` emits the separate `dist/` modules used by tests and debugging tools. To run the local archive-streaming endpoints for diagnostics, use `npm run start:debug`; configure `NOAH_DATA_ROOT` or `AOKANA_DATA_ROOT` as needed. The normal website has no server-installation controls.
 
 ## Legal
 

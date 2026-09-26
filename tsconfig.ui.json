@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false,
+    "types": ["svelte", "vite/client"]
+  },
+  "include": ["ui/**/*.ts", "ui/**/*.svelte", "src/**/*.ts"]
+}

@@ -1,6 +1,6 @@
-import {readFile} from './filesystem.js';
-import type {PlatformServices} from './services.js';
-import type {RegistryHive, RegistryKey} from './registry.js';
+import {readFile} from '../../src/platform/filesystem.js';
+import type {PlatformServices} from '../../src/platform/services.js';
+import type {RegistryHive, RegistryKey} from '../../src/platform/registry.js';
 
 /** Application UI over the same injected services the engine will receive. */
 export function mountStoragePanel(parent: HTMLElement, platform: PlatformServices): () => void {
