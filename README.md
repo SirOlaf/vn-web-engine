@@ -41,7 +41,7 @@ Ogg Vorbis playback uses a shared WebAssembly decoder to preserve native PCM bou
 During BGI startup, **Skip startup sequence** appears under **Game options → Playback**; select it again to stop skipping.
 Both players support **Game options → Text rendering → DOM text** for selection, copying, and browser dictionaries. See [DOM text coverage and limitations](docs/dom-text.md).
 Its native window size uses device pixels, so it appears smaller on high-DPI displays. Use **Game options → Display** to expand the browser view; see the [startup sizing investigation](docs/aokana-window-sizing.md) for the native configuration trace.
-The BGI library and player controls select a game before importing or exporting `BGI.gdb`, numbered `BGI*.cad`, and `UserData/JewelryHeartsAcademia*.sud` browser saves. Close the player before importing a save.
+The BGI library and player controls select a game before importing or exporting `BGI.gdb`, numbered `BGI*.cad`, and `UserData/*.sud` browser saves. Imported `.sud` files go into the selected game's `UserData` folder, regardless of filename prefix or letter case (for example, `AoKana000.sud`). Close the player before importing a save.
 
 ### HTTPS from another device
 

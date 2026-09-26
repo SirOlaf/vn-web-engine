@@ -38,7 +38,7 @@ test('Buriko save transfer uses the native save names and persistent game/user b
   );
 });
 
-test('Buriko save transfer recognizes only JewelryHeartsAcademia UserData SUD files', async () => {
+test('Buriko save transfer recognizes game UserData SUD files regardless of filename prefix', async () => {
   const stores = {game: new MemoryStore(), user: new MemoryStore()},
     transfer = new BurikoSaveTransfer(async (area) => ({
       snapshot: () => stores[area].snapshot(),
@@ -50,7 +50,7 @@ test('Buriko save transfer recognizes only JewelryHeartsAcademia UserData SUD fi
     records.set('file:/USERDATA/JEWELRYHEARTSACADEMIA1000.SUD', Uint8Array.of(10));
     records.set('file:/USERDATA/JEWELRYHEARTSACADEMIA-01.SUD', Uint8Array.of(11));
     records.set('file:/USERDATA/NOT_IDENTIFIER.SUD', Uint8Array.of(8));
-    records.set('file:/USERDATA/IDENTIFIER007.SUD', Uint8Array.of(12));
+    records.set('file:/USERDATA/OTHERGAME1.SUD', Uint8Array.of(12));
     records.set('file:/OTHER/JEWELRYHEARTSACADEMIA008.SUD', Uint8Array.of(9));
   });
   await stores.user.update((records) => {
@@ -63,29 +63,27 @@ test('Buriko save transfer recognizes only JewelryHeartsAcademia UserData SUD fi
       ['game', '/USERDATA/JEWELRYHEARTSACADEMIA-01.SUD', 'user-data'],
       ['game', '/USERDATA/JEWELRYHEARTSACADEMIA007.SUD', 'user-data'],
       ['game', '/USERDATA/JEWELRYHEARTSACADEMIA1000.SUD', 'user-data'],
+      ['game', '/USERDATA/NOT_IDENTIFIER.SUD', 'user-data'],
+      ['game', '/USERDATA/OTHERGAME1.SUD', 'user-data'],
     ],
   );
   assert.deepEqual([...(await transfer.read(found[1]))], [7]);
 
-  const imported = await transfer.import('JewelryHeartsAcademia008.sud', Uint8Array.of(8));
+  const imported = await transfer.import('AoKana000.sud', Uint8Array.of(8));
   assert.equal(imported.area, 'game');
-  assert.equal(imported.path, '/USERDATA/JEWELRYHEARTSACADEMIA008.SUD');
+  assert.equal(imported.path, '/USERDATA/AOKANA000.SUD');
   assert.equal(imported.kind, 'user-data');
   assert.deepEqual([...(await transfer.read(imported))], [8]);
-  await assert.rejects(
-    transfer.import('IDENTIFIER007.sud', Uint8Array.of(1)),
-    /JewelryHeartsAcademia/,
-  );
-  await assert.rejects(
-    transfer.import('JewelryHeartsAcademia1.sud', Uint8Array.of(1)),
-    /JewelryHeartsAcademia/,
-  );
+  await transfer.import('aokana000.SuD', Uint8Array.of(1, 2), imported);
+  assert.deepEqual([...(await transfer.read(imported))], [1, 2]);
+  assert.equal((await transfer.list()).filter((entry) => entry.path === imported.path).length, 1);
+  await assert.rejects(transfer.import('../AoKana000.sud', Uint8Array.of(1)), /UserData/);
   await assert.rejects(
     transfer.read({area: 'game', path: '/OTHER/JEWELRYHEARTSACADEMIA008.SUD'}),
-    /JewelryHeartsAcademia/,
+    /UserData/,
   );
   await assert.rejects(
     transfer.read({area: 'user', path: '/USERDATA/JEWELRYHEARTSACADEMIA009.SUD'}),
-    /JewelryHeartsAcademia/,
+    /UserData/,
   );
 });
