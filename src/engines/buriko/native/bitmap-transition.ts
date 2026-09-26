@@ -8,6 +8,7 @@ import {
 } from './bitmap.js';
 import {burikoSignedProduct16, saturateBurikoByte} from './bitmap-pairs.js';
 import {bitmapRead8, bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
+import {transitionLegacy169BitmapPixels} from './legacy-169-bitmap-transition.js';
 
 function cvtt32(value: number): number {
   const integer = Math.trunc(value);
@@ -101,6 +102,7 @@ function transitionBurikoBitmapPixels(
   blend: number,
   extra: number,
   maskAtDestination: boolean,
+  compatibility: '1.69' | '1.72' = '1.72',
 ): 0 | 1 | 3 | 4 | 7 | 8 {
   const output = {...destination},
     input = {...source},
@@ -128,8 +130,10 @@ function transitionBurikoBitmapPixels(
   }
   cropBurikoBitmap(output, area);
   if (output.format !== input.format) return 1;
-  if (input.format === 1)
-    transition32(output, input, matte, parameter >>> 0, blend >>> 0, extra >>> 0);
+  if (input.format === 1) {
+    const transition = compatibility === '1.69' ? transitionLegacy169BitmapPixels : transition32;
+    transition(output, input, matte, parameter >>> 0, blend >>> 0, extra >>> 0);
+  }
   return 0;
 }
 

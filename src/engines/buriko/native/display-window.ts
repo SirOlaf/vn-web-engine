@@ -30,11 +30,13 @@ const emptyBitmap = (): BurikoBitmap => ({
 interface WindowLayer {
   readonly owner: BurikoMemoryDx;
   readonly bitmap: BurikoBitmap;
+  readonly textFlow: string;
   enabled: number;
   x: number;
   y: number;
   transparency: number;
 }
+let nextOverlayTextFlow = 0;
 
 /** CDspObjWindow, constructor 0691a0 and vtable 17d838. Its descriptor storage is
  * distinct from the base object's geometry and from the optional local object manager. */
@@ -58,6 +60,7 @@ export class BurikoWindowDisplayObject extends BurikoDisplayObject {
   private readonly layers: WindowLayer[] = Array.from({length: 8}, () => ({
     owner: new BurikoMemoryDx(),
     bitmap: emptyBitmap(),
+    textFlow: `buriko-window-overlay/${++nextOverlayTextFlow}`,
     enabled: 0,
     x: 0,
     y: 0,
@@ -224,15 +227,20 @@ export class BurikoWindowDisplayObject extends BurikoDisplayObject {
           }
         }
         for (const layer of this.layers)
-          if (layer.enabled !== 0 && layer.bitmap.storage !== null)
+          if (layer.enabled !== 0 && layer.bitmap.storage !== null) {
+            // Overlay surfaces can contain decoded font glyphs. Their native
+            // pixels still compose normally, but controls have their own text
+            // flow so a flashing marker cannot resize adjacent dialogue.
+            const overlay = {...layer.bitmap, rasterTextFlow: layer.textFlow};
             compositor.draw(
               destination,
               (layer.x - clipped.left) | 0,
               (layer.y - clipped.top) | 0,
-              layer.bitmap,
+              overlay,
               1,
               layer.transparency,
             );
+          }
       } else if (stage === 2 && this.inner !== null) {
         this.inner.damage.record(0, rectangle);
         this.inner.renderer.drawDamage();

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {decodeSdc} from '../dist/formats/buriko/compressed-resource.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, pointerView} from '../dist/engines/buriko/bp/memory.js';
+import {markIndeterminateMemory} from '../dist/core/indeterminate-memory.js';
+import {textByte} from '../dist/engines/buriko/native/text.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoProgramFiles,
@@ -28,6 +30,8 @@ import {
 import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
 import {legacyGdb, shortModernGdb} from './aokana-persistence-fixtures.mjs';
+import {memoryOpcodes} from '../dist/engines/buriko/bp/opcodes/memory.js';
+import {createLegacy169CoreOpcodes} from '../dist/engines/buriko/bp/opcodes/legacy-169.js';
 
 const ptr = (bytes, offset = 0) => ({bytes, offset});
 const text = new BurikoNativeText(),
@@ -212,4 +216,55 @@ test('GDB file load supports both ordinary compact and large legacy layouts with
     assert.deepEqual(Array.from(s.bits.read(ptr(encode('legacy-flag'))).data), [0xa0]);
   }
   s.processing.dispose();
+});
+
+test('missing GDB coordinates can be stored then overwritten, but cannot be observed', async () => {
+  const s = await setup();
+  try {
+    const load = createGroup80Persistence(s.persistence).find((slot) => slot.secondary === 0x80);
+    for (const store of [memoryOpcodes[0x0a], createLegacy169CoreOpcodes()[0x0a]]) {
+      const h = {thread: s.thread, memory: s.memory, diagnostics: {writeWatchEnabled: false}};
+      assert.equal(await load.execute(h), 0);
+      assert.equal(pop32(s.thread), 1);
+      for (const offset of [512, 516]) {
+        s.thread.pc = 0;
+        s.thread.moduleMemory[0] = 2; // DWORD storage.
+        push32(s.thread, s.memory.abi.moduleTag + offset);
+        assert.equal(store(h), 0);
+        assert.throws(
+          () => s.memory.readU32(s.thread, s.memory.abi.moduleTag + offset),
+          /unwritten native stack/,
+        );
+        s.memory.writeU32(s.thread, s.memory.abi.moduleTag + offset, 123);
+        assert.equal(s.memory.readU32(s.thread, s.memory.abi.moduleTag + offset), 123);
+      }
+      assert.equal(s.thread.stackIndex, 0);
+    }
+    const bytes = s.memory.globalMemory;
+    markIndeterminateMemory(bytes, 512, 4, 'unwritten native stack coordinates');
+    const view = pointerView({bytes, offset: 508}, 8);
+    assert.equal(view.getUint32(0, true), 0); // An unrelated read is valid.
+    assert.throws(() => view.getUint32(4, true), /unwritten native stack/);
+    assert.throws(() => textByte(bytes, 512), /unwritten native stack/);
+    view.setUint16(4, 123, true);
+    assert.equal(view.getUint16(4, true), 123);
+    assert.throws(() => view.getUint32(4, true), /unwritten native stack/);
+    s.memory.copy(s.thread, 520, 512, 4);
+    assert.throws(() => s.memory.readU32(s.thread, 520), /unwritten native stack/);
+    push32(s.thread, 520);
+    push32(s.thread, 4);
+    memoryOpcodes[0x61]({
+      thread: s.thread,
+      memory: s.memory,
+      diagnostics: {
+        writeWatchEnabled: false,
+        checkWrite() {},
+      },
+    });
+    assert.equal(s.memory.readU32(s.thread, 520), 0);
+    s.memory.clearGlobal();
+    assert.equal(s.memory.readU32(s.thread, 512), 0);
+  } finally {
+    s.processing.dispose();
+  }
 });

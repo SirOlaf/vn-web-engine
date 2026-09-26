@@ -1,4 +1,8 @@
 import type {BurikoBpPointer} from '../bp/memory.js';
+import {
+  clearIndeterminateMemory,
+  requireDeterminateMemory,
+} from '../../../core/indeterminate-memory.js';
 import {CP932_TO_UNICODE, UNICODE_TO_CP932} from './text-cp932-data.js';
 
 export type BurikoTextMode = 0 | 1 | 0x80000000;
@@ -26,6 +30,7 @@ const utf8Encoder = new TextEncoder();
 export function textByte(bytes: Uint8Array, offset: number): number {
   const value = bytes[offset];
   if (value === undefined) throw new RangeError('Buriko native text read outside backing storage');
+  requireDeterminateMemory(bytes, offset, 1);
   return value;
 }
 
@@ -50,6 +55,7 @@ export function copyText(destination: BurikoBpPointer, source: BurikoBpPointer):
     if (destination.offset + index >= destination.bytes.length)
       throw new RangeError('Buriko native text write outside backing storage');
     destination.bytes[destination.offset + index] = value;
+    clearIndeterminateMemory(destination.bytes, destination.offset + index, 1);
     index++;
     if (value === 0) return;
   }
@@ -58,7 +64,9 @@ export function copyText(destination: BurikoBpPointer, source: BurikoBpPointer):
 export function writeText(destination: BurikoBpPointer, bytes: Uint8Array): void {
   if (destination.offset < 0 || destination.offset + bytes.length > destination.bytes.length)
     throw new RangeError('Buriko native text write outside backing storage');
+  requireDeterminateMemory(bytes, 0, bytes.length);
   destination.bytes.set(bytes, destination.offset);
+  clearIndeterminateMemory(destination.bytes, destination.offset, bytes.length);
 }
 
 /** 1400f8580 accepts 81..9f, e0..fc, and ff as a lead byte; it does not inspect the trail. */

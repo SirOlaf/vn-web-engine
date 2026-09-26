@@ -712,7 +712,7 @@ export class BurikoProductionDisplayResourceGraph {
       this.fontProvider = inputs.fontProvider ?? new BurikoBrowserFonts();
       this.fonts = new BurikoNativeFonts(this.text, this.fontProvider);
       rollback.push(() => this.fonts.dispose());
-      this.compositor = new BurikoBitmapCompositor();
+      this.compositor = new BurikoBitmapCompositor(this.engineVersion.bpAbi.compatibility);
       this.damage = new BurikoDisplayDamage(inputs.damageCapacity, {
         left: 0,
         top: 0,

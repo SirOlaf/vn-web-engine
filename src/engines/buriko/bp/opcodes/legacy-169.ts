@@ -2,10 +2,27 @@ import type {BurikoBpOpcodeContext, BurikoBpOpcodeHandler} from '../../native/ty
 import {textByte, textLength} from '../../native/text.js';
 import {formatVmConversion} from '../../native/text-format.js';
 import type {BurikoBpPointer} from '../memory.js';
-import {pop32, push32, readFrame32, setPc, validCodeAddress, writeFrame32} from '../state.js';
+import {
+  pop32,
+  popDeferred32,
+  push32,
+  pushIndeterminate32,
+  readFrame32,
+  setPc,
+  validCodeAddress,
+  writeFrame32,
+} from '../state.js';
 import {readU8} from '../decode.js';
-import {accessSize, pointer, pointerBytes, readScalar, writeScalar} from './operands.js';
+import {
+  accessSize,
+  pointer,
+  pointerBytes,
+  readScalar,
+  writeScalar,
+  writeDeferredScalar,
+} from './operands.js';
 import {x87TrigonometricInteger} from '../../../../core/x87-integer.js';
+import {copyMemoryBytes} from '../../../../core/indeterminate-memory.js';
 
 /** 00421630 deliberately accepts80..9f ande0..ff, including invalid CP932 leads. */
 function character(p: BurikoBpPointer): {value: number; wide: number; length: number} {
@@ -27,20 +44,18 @@ const punctuation = new Set([
 
 /** REP MOVSD then MOVSB copies forwards; overlapping operands can repeat overwritten DWORDs. */
 function copyForward(destination: BurikoBpPointer, source: BurikoBpPointer, length: number): void {
-  const dst = pointerBytes(destination, length),
-    src = pointerBytes(source, length);
-  const a = new DataView(dst.buffer, dst.byteOffset, dst.byteLength);
-  const b = new DataView(src.buffer, src.byteOffset, src.byteLength);
+  const dst = pointerBytes(destination, length, 0, 'transport'),
+    src = pointerBytes(source, length, 0, 'transport');
   let offset = 0;
-  for (; offset + 4 <= length; offset += 4) a.setUint32(offset, b.getUint32(offset, true), true);
-  for (; offset < length; offset++) dst[offset] = src[offset]!;
+  for (; offset + 4 <= length; offset += 4) copyMemoryBytes(dst, offset, src, offset, 4);
+  for (; offset < length; offset++) copyMemoryBytes(dst, offset, src, offset, 1);
 }
 
 function copyCString(destination: BurikoBpPointer, source: BurikoBpPointer): void {
   let offset = 0;
   for (;;) {
     const value = textByte(source.bytes, source.offset + offset);
-    pointerBytes(destination, 1, offset)[0] = value;
+    pointerBytes(destination, 1, offset, 'write')[0] = value;
     if (value === 0) return;
     offset++;
   }
@@ -52,17 +67,20 @@ function cstring(p: BurikoBpPointer): Uint8Array {
 
 function store(h: BurikoBpOpcodeContext, reverse: boolean): 0 {
   const watched = h.diagnostics.writeWatchEnabled;
-  const first = pop32(h.thread);
-  if (reverse && !watched) pointer(h, first);
-  const second = pop32(h.thread);
-  const address = reverse ? first : second,
+  const first = reverse ? {value: pop32(h.thread)} : popDeferred32(h.thread);
+  if (reverse && !watched) pointer(h, first.value);
+  const second = reverse ? popDeferred32(h.thread) : {value: pop32(h.thread)};
+  const address = reverse ? first.value : second.value,
     value = reverse ? second : first;
   if (!reverse && !watched) pointer(h, address);
   const type = readU8(h.thread);
   if (watched) h.diagnostics.checkWrite(h.thread, address, accessSize(type));
   // 00450650 has no default store; its caller09 still pushes the original value.
-  if (type <= 2) writeScalar(h, address, type, value);
-  if (!reverse) push32(h.thread, value);
+  if (type <= 2) writeDeferredScalar(h, address, type, value);
+  if (!reverse) {
+    if (value.reason === undefined) push32(h.thread, value.value);
+    else pushIndeterminate32(h.thread, value.reason);
+  }
   return 0;
 }
 
@@ -84,7 +102,7 @@ function divide64(h: BurikoBpOpcodeContext, remainder: boolean): 0 {
   const a = new DataView(abytes.buffer, abytes.byteOffset, 8).getBigInt64(0, true);
   if (b === 0n) throw new Error('Buriko1.69 native64-bit division by zero');
   // The x86 CRT unsigned-magnitude helper wraps INT64_MIN/-1 rather than IDIV overflow.
-  const output = pointerBytes(destination, 8);
+  const output = pointerBytes(destination, 8, 0, 'write');
   new DataView(output.buffer, output.byteOffset, 8).setBigInt64(
     0,
     BigInt.asIntN(64, remainder ? a % b : a / b),
@@ -184,10 +202,10 @@ function formatText(
       const formatted = formatVmConversion(piece.conversion!, value);
       bytes = Uint8Array.from(formatted, (c) => c.charCodeAt(0));
     }
-    pointerBytes(destination, bytes.length, output).set(bytes);
+    pointerBytes(destination, bytes.length, output, 'write').set(bytes);
     output += bytes.length;
   }
-  pointerBytes(destination, 1, output)[0] = 0;
+  pointerBytes(destination, 1, output, 'write')[0] = 0;
 }
 
 export function createLegacy169CoreOpcodes(): Readonly<Record<number, BurikoBpOpcodeHandler>> {

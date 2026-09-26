@@ -1,4 +1,5 @@
 import {pointerView, type BurikoBpMemory, type BurikoBpPointer} from '../bp/memory.js';
+import {copyMemoryBytes} from '../../../core/indeterminate-memory.js';
 import {burikoWindowCenteredPosition, burikoWindowPositionAllowed} from './browser-main-window.js';
 import type {BurikoDisplayAdapters} from './display-adapters.js';
 import {burikoNamedBitByteCount, type BurikoNamedBitArrays} from './named-bit-arrays.js';
@@ -15,8 +16,12 @@ const pointer = (bytes: Uint8Array, offset = 0): BurikoBpPointer => ({bytes, off
 function copy(target: BurikoBpPointer, source: BurikoBpPointer, length: number): void {
   const input = pointerView(source, length),
     output = pointerView(target, length);
-  new Uint8Array(output.buffer, output.byteOffset, length).set(
+  copyMemoryBytes(
+    new Uint8Array(output.buffer, output.byteOffset, length),
+    0,
     new Uint8Array(input.buffer, input.byteOffset, length),
+    0,
+    length,
   );
 }
 

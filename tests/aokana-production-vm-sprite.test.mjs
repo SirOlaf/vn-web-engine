@@ -74,7 +74,7 @@ test('mounted VM binds sprite lifecycle and input targets to its graph', async (
     await callSprite(0x59, [lifecycleHandle, 7, 8, 0, 2, 3, 0, 65536, 65536, 0, 0x80, 18, 9]);
     assert.equal(configuredSprite.mode, 2);
     await callSprite(0x5a, [lifecycleHandle, 9, 10, 0, 2, 256, 1, 0x80, 19, 10]);
-    assert.deepEqual([configuredSprite.mode, configuredSprite.revealProgress], [3, 256]);
+    assert.deepEqual([configuredSprite.mode, configuredSprite.revealExponent], [3, 256]);
     await callSprite(0x5b, [lifecycleHandle, 11, 12, 0, 3, 1, 1, 256, 20, 11]);
     assert.deepEqual([configuredSprite.mode, configuredSprite.displacementMapSurface], [4, 3]);
     await callSprite(0x5c, [

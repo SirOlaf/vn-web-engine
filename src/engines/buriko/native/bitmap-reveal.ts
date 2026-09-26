@@ -3,6 +3,51 @@ import type {BurikoBitmap} from './bitmap.js';
 import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import {clearBurikoBitmap} from './bitmap-copy.js';
 import {bitmapRead8, bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
+import {
+  burikoSignedProduct16,
+  readBurikoPixelPair,
+  saturateBurikoByte,
+  writeBurikoPixelPairValues,
+} from './bitmap-pairs.js';
+
+/** 0040FBF0 uses two-pixel MMX groups for even widths and scalar pixels for odd widths. */
+function revealLegacy169(
+  destination: BurikoBitmap,
+  source: BurikoBitmap,
+  mask: BurikoBitmap,
+  exponent: number,
+  progress: number,
+): void {
+  const shift = exponent & 31,
+    threshold = Math.imul((1 << shift) + 1, progress),
+    pixel = (color: number, value: number): number => {
+      const coverage = Math.max(0, Math.min(256, (threshold - (value << shift)) | 0));
+      return (color & 0xffffff) | ((((color >>> 24) * coverage) >>> 8) << 24);
+    };
+  for (let row = 0; row < source.height; row++) {
+    const input = source.offset + row * source.stride,
+      output = destination.offset + row * destination.stride,
+      maskRow = mask.offset + row * mask.stride;
+    if ((source.width & 1) !== 0) {
+      for (let column = 0; column < source.width; column++) {
+        const value = bitmapRead8(mask, maskRow + column),
+          color = bitmapRead32(source, input + column * 4);
+        bitmapWrite32(destination, output + column * 4, pixel(color, value));
+      }
+    } else
+      for (let column = 0; column < source.width; column += 2) {
+        const secondMask = bitmapRead8(mask, maskRow + column + 1),
+          firstMask = bitmapRead8(mask, maskRow + column),
+          colors = readBurikoPixelPair(source, input + column * 4);
+        writeBurikoPixelPairValues(
+          destination,
+          output + column * 4,
+          pixel(colors[0], firstMask),
+          pixel(colors[1], secondMask),
+        );
+      }
+  }
+}
 
 /** 04b070/04ae60 clamp the exponent, then apply a signed linear ramp to each mask byte. */
 function reveal32(
@@ -76,6 +121,8 @@ function revealBurikoBitmapPixels(
   progress: number,
 ): void {
   if (mask.format !== 3 || destination.format !== 2) return;
+  const legacy = compositor.compatibility === '1.69';
+  if (legacy && source.format !== 2) return;
   progress >>>= 0;
   if (progress === 0) {
     clearBurikoBitmap(destination);
@@ -85,7 +132,8 @@ function revealBurikoBitmapPixels(
     compositor.copy(destination, source, 0);
     return;
   }
-  if (source.format === 1 || source.format === 2)
+  if (legacy) revealLegacy169(destination, source, mask, exponent, progress);
+  else if (source.format === 1 || source.format === 2)
     reveal32(destination, source, mask, exponent, progress);
 }
 
@@ -97,11 +145,13 @@ function blendReveal32(
   exponent: number,
   progress: number,
   transparency: number,
+  legacy: boolean,
 ): void {
   const coefficients: number[] = [];
   let accumulator = 0;
-  for (let index = 0; index < 129; index++) {
-    coefficients.push((accumulator >>> 3) & 65535);
+  // 0040FA70 uses 128 Q7 entries; 04B430/04B290 use 129 Q12 entries.
+  for (let index = 0; index < (legacy ? 128 : 129); index++) {
+    coefficients.push((accumulator >>> (legacy ? 8 : 3)) & 65535);
     accumulator = (accumulator + 256 - transparency) >>> 0;
   }
   const threshold = Math.imul(((1 << exponent) + 1) | 0, progress) | 0,
@@ -130,9 +180,11 @@ function blendReveal32(
       let result = old & 0xff000000;
       for (let shift = 0; shift < 24; shift += 8) {
         const value = (old >>> shift) & 255,
-          delta = (((input >>> shift) & 255) - value) << 4;
-        result |=
-          Math.max(0, Math.min(255, value + Math.floor((delta * coefficient) / 65536))) << shift;
+          difference = ((input >>> shift) & 255) - value,
+          delta = legacy
+            ? burikoSignedProduct16(difference, coefficient) >> 7
+            : Math.floor(((difference << 4) * coefficient) / 65536);
+        result |= saturateBurikoByte(value + delta) << shift;
       }
       bitmapWrite32(destination, outputRow + column * 4, result);
     }
@@ -153,12 +205,14 @@ function blendRevealedBurikoBitmapPixels(
   transparency: number,
 ): void {
   if (mask.format !== 3 || destination.format !== 1 || transparency >>> 0 >= 256) return;
+  const legacy = compositor.compatibility === '1.69';
+  if (legacy && source.format !== 2) return;
   if (progress >>> 0 >= 256) {
     compositor.composite(destination, source, 0x20, transparency, false);
     return;
   }
   if (source.format === 1 || source.format === 2)
-    blendReveal32(destination, source, mask, exponent, progress, transparency);
+    blendReveal32(destination, source, mask, exponent, progress, transparency, legacy);
 }
 
 export const revealBurikoBitmap = withBurikoBitmapText(revealBurikoBitmapPixels, {
@@ -166,7 +220,9 @@ export const revealBurikoBitmap = withBurikoBitmapText(revealBurikoBitmapPixels,
   source: 2,
   replace: true,
   applied: (_, args) =>
-    args[3].format === 3 && args[1].format === 2 && (args[2].format === 1 || args[2].format === 2),
+    args[3].format === 3 &&
+    args[1].format === 2 &&
+    (args[2].format === 2 || (args[0].compatibility !== '1.69' && args[2].format === 1)),
   opacity: (args) => (args[5] >>> 0 === 0 ? 0 : 1),
 });
 
@@ -176,7 +232,7 @@ export const blendRevealedBurikoBitmap = withBurikoBitmapText(blendRevealedBurik
   applied: (_, args) =>
     args[3].format === 3 &&
     args[1].format === 1 &&
-    (args[2].format === 1 || args[2].format === 2) &&
+    (args[2].format === 2 || (args[0].compatibility !== '1.69' && args[2].format === 1)) &&
     args[6] >>> 0 < 256,
   opacity: (args) => (args[5] >>> 0 === 0 ? 0 : (256 - args[6]) / 256),
 });

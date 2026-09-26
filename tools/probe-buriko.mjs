@@ -3,6 +3,7 @@
  * It never presents or inspects pixels and never logs dialogue/resource bytes.
  * Run after `npm run build:runtime`.
  * A verified product ID may be supplied as BURIKO_PROBE_PRODUCT_ID when a packed executable hides it.
+ * BURIKO_PROBE_EXECUTABLE substitutes a root file at the selected executable's mounted path.
  */
 import {open, readdir} from 'node:fs/promises';
 import {basename, dirname, join, relative, resolve, sep} from 'node:path';
@@ -13,10 +14,11 @@ import {sha256} from '../dist/core/sha256.js';
 import {readPeVersionStrings} from '../dist/formats/pe/version-info.js';
 import {burikoEngineVersion} from '../dist/engines/buriko/native/engine-version.js';
 import {readBurikoBootProductIdentity} from '../dist/engines/buriko/native/boot-metadata-source.js';
+import {burikoInstallationView} from '../dist/engines/buriko/installation-view.js';
 import {createMountedVmFixture} from '../tests/aokana-production-vm-fixture.mjs';
 import {BurikoProductionBootRunner} from '../dist/engines/buriko/native/production-boot-runner.js';
 
-const defaultRoots = ['targetgame/aokana', 'targetgame/穢翼のユースティア'];
+const defaultRoots = ['targetgame/aokana', 'targetgame/穢翼のユースティアno-patch'];
 const legacyAokanaSha256 = 'f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a';
 const legacyAokanaIdentity = 'AoNoKanataNoFourRhythmUEDL';
 const roots = process.argv.slice(2).length ? process.argv.slice(2) : defaultRoots;
@@ -105,6 +107,13 @@ async function probe(inputRoot) {
     executables.find((path) => basename(path).toLowerCase() === 'bgi.exe') ??
     executables.find((path) => !/setup|unins|config/i.test(basename(path))) ??
     executables[0];
+  const executableOverride = process.env.BURIKO_PROBE_EXECUTABLE;
+  const executableInput =
+    executableOverride === undefined ? executable : join(root, executableOverride);
+  if (executableInput !== undefined && dirname(executableInput) !== root)
+    throw new Error('The executable override must name a file in the installation root');
+  if (executableInput !== undefined && !files.includes(executableInput))
+    throw new Error('The executable override is absent from the installation root');
   const sources = new SourceFileSystem((path) => path.toLowerCase());
   let executableSource;
   let bootArchiveSource;
@@ -117,20 +126,38 @@ async function probe(inputRoot) {
   const dialogs = [];
   let outcome = 'not-started';
   let error = null;
+  let errorFrames = [];
+  const instructionTail = [];
+  const sourceEntries = [];
 
   try {
     for (const path of selected) {
-      const handle = await open(path, 'r');
+      const inputPath = path === executable ? executableInput : path;
+      const handle = await open(inputPath, 'r');
       const {size} = await handle.stat();
       await handle.close();
-      const source = new HandleSource(path, size);
-      sources.attach('/' + relative(root, path).split(sep).join('/'), source);
+      const source = new HandleSource(inputPath, size);
+      sourceEntries.push({path: '/' + relative(root, path).split(sep).join('/'), source});
       if (path === executable) executableSource = source;
       if (dirname(path) === root && basename(path).toLowerCase() === 'system.arc')
         bootArchiveSource = source;
     }
     if (executable === undefined)
       throw new Error('No root executable was found; graph profile needs an executable path');
+    const installationView = await burikoInstallationView(
+      sourceEntries,
+      '/' + relative(root, executable).split(sep).join('/'),
+    );
+    for (const entry of installationView.files) sources.attach(entry.path, entry.source);
+    console.log(
+      JSON.stringify({
+        game: basename(root),
+        phase: 'mounted-view',
+        kind: installationView.kind,
+        mountedFiles: installationView.files.length,
+        excludedFiles: installationView.excludedPaths.length,
+      }),
+    );
     if (executableSource.size > 512 * 1024 * 1024)
       throw new Error('Selected executable exceeds the installation inspector size limit');
     const executableBytes = await executableSource.read(0, executableSource.size);
@@ -214,6 +241,20 @@ async function probe(inputRoot) {
     interpreter.step = (thread, actor) => {
       if (opcodeCount >= maxOpcodes) throw new Error(`Opcode budget ${maxOpcodes} reached`);
       const opcode = thread.moduleMemory[thread.pc] ?? 0;
+      instructionTail.push({
+        pc: `0x${thread.pc.toString(16)}`,
+        opcode: `0x${opcode.toString(16).padStart(2, '0')}`,
+        ...((
+          engineVersion.bpAbi.compatibility === '1.69'
+            ? opcode >= 0x80
+            : (opcode >= 0x7f && opcode <= 0xe0) || opcode === 0xff
+        )
+          ? {
+              secondary: `0x${(thread.moduleMemory[thread.pc + 1] ?? 0).toString(16).padStart(2, '0')}`,
+            }
+          : {}),
+      });
+      if (instructionTail.length > 8) instructionTail.shift();
       const result = originalStep(thread, actor);
       opcodeCount++;
       opcodeCounts.set(opcode, (opcodeCounts.get(opcode) ?? 0) + 1);
@@ -268,6 +309,8 @@ async function probe(inputRoot) {
     error = /[\u3040-\u30ff\u3400-\u9fff]/u.test(message)
       ? `${caught instanceof Error ? caught.name : 'Error'} (localized dialog detail suppressed)`
       : message;
+    if (caught instanceof Error)
+      errorFrames = (caught.stack ?? '').split('\n').filter((line) => /^\s+at /.test(line));
     outcome = 'error';
   } finally {
     if (runner?.instanceLease) {
@@ -299,6 +342,7 @@ async function probe(inputRoot) {
       modules: moduleNames,
       dialogs,
       error,
+      ...(error === null ? {} : {errorFrames, instructionTail}),
     }),
   );
 }

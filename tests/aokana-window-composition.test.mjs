@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBitmapStorage, allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {
+  BurikoBitmapStorage,
+  allocateBurikoBitmap,
+  fillBurikoBitmap,
+  cropBurikoBitmap,
+} from '../dist/engines/buriko/native/bitmap.js';
 import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
@@ -17,6 +22,10 @@ import {createGroup90Windows} from '../dist/engines/buriko/native/group-90-windo
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoDisplayTexture} from '../dist/engines/buriko/native/display-texture.js';
+import {recordRasterText, visibleRasterText} from '../dist/text/raster-text.js';
+import {rasterTextSlots} from '../dist/text/browser-raster-text.js';
+import {slotText} from '../dist/text/glyph-slots.js';
 
 function setup() {
   const compositor = new BurikoBitmapCompositor();
@@ -179,6 +188,79 @@ test('text-mask mode erases overlay coverage before text composition even for fu
   window.setTextMaskMode(1);
   assert.equal(pixel(window.compositionBitmap, 1, 1), 0xff000000);
   assert.equal(pixel(window.compositionBitmap, 2, 1), 0xffc04020);
+});
+
+test('completed sparse text retains its full coverage through indicator composition and partial texture damage', () => {
+  const {window, compositor} = setup();
+  window.fillBackground(0xff080810);
+  window.setTextEnabled(1);
+  for (const [i, text] of Array.from('ABCDEF').entries()) {
+    const ink = allocateBurikoBitmap(4, 6, 2);
+    fillBurikoBitmap(ink, 0);
+    // Transparent cell margins are normal for rasterized fonts. A damage strip
+    // through a margin must not alter the surviving semantic glyph's coverage.
+    for (let y = 2; y < 4; y++)
+      for (let x = 1; x < 3; x++)
+        ink.storage.view.setUint32(y * ink.stride + x * 4, 0xffffffff, true);
+    recordRasterText(ink, text, {size: 6, width: 4});
+    window.drawTextBitmap(
+      area(),
+      i < 4 ? 2 + i * 4 : 6 + (i - 4) * 4,
+      i < 4 ? 2 : 12,
+      ink,
+      0x80,
+      0,
+    );
+    ink.storage.release();
+  }
+  const source = new BurikoDisplayTexture(32, 32, 22),
+    target = new BurikoDisplayTexture(32, 32, 22);
+  const upload = (rectangle) => {
+    const input = window.compositionBitmap,
+      output = {...source.textBitmap, format: 1};
+    cropBurikoBitmap(input, rectangle);
+    cropBurikoBitmap(output, rectangle);
+    compositor.composite(output, input, 0x80, 0, true);
+    source.addDirtyRectangle(rectangle);
+    target.updateFrom(source);
+    const slots = rasterTextSlots(visibleRasterText(target.textBitmap));
+    const body = slots.find((s) => !s.slot.glyphs[0].flow);
+    assert.ok(body);
+    assert.ok(slots.filter((s) => s !== body).every((s) => slotText(s.slot).text === 'W'));
+    const content = slotText(body.slot);
+    assert.equal(content.text, 'ABCDEF');
+    assert.deepEqual(content.clip, {x: 2, y: 2, width: 16, height: 16});
+    assert.ok(body.slot.glyphs.every((g) => g.alpha === 255));
+  };
+  upload({left: 0, top: 0, right: 31, bottom: 19});
+  const indicator = bitmap(
+    4,
+    6,
+    Array.from({length: 24}, (_, i) => (i === 13 ? 0xffffffff : 0)),
+  );
+  // An ordinary same-style glyph surface is a supported wait-frame source.
+  // Its separate owner flow must survive window copies and texture damage.
+  recordRasterText(indicator, 'W', {size: 6, width: 4});
+  window.setOverlayBitmap(0, indicator);
+  window.setOverlayPosition(0, 18, 2, 0);
+  for (let i = 0; i < 4; i++) {
+    window.setOverlayEnabled(0, i & 1);
+    // Broad native damage can split text cells even when only the indicator's
+    // pixels change. Alternate the upper margin and lower part of both rows.
+    for (const top of [2, 12])
+      for (const [first, last] of [
+        [top, top + 1],
+        [top + 2, top + 5],
+      ]) {
+        const rectangle = {left: 0, top: first, right: 31, bottom: last};
+        window.composeRectangle(rectangle);
+        upload(rectangle);
+      }
+  }
+  source.dispose();
+  target.dispose();
+  indicator.storage.release();
+  window.dispose();
 });
 
 test('shared window globals update before pool invalidation and combine the two fades when drawing', () => {

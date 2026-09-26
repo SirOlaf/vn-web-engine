@@ -516,7 +516,7 @@ export const nativeMathOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> 
       afterYx = sy * afterXz + cy * x;
     const sz = sineFixedAngle(zAngle),
       cz = cosineFixedAngle(zAngle);
-    const bytes = pointerBytes(destination, 12),
+    const bytes = pointerBytes(destination, 12, 0, 'write'),
       output = new DataView(bytes.buffer, bytes.byteOffset, 12);
     output.setInt32(0, truncateInt32(Math.floor(cz * afterYx - sz * afterXy + 0.5)), true);
     output.setInt32(4, truncateInt32(Math.floor(cz * afterXy + sz * afterYx + 0.5)), true);

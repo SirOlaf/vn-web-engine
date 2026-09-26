@@ -1,5 +1,11 @@
 import type {BurikoBpThread} from './state.js';
 import {byteDataView} from '../../../core/binary.js';
+import {
+  clearIndeterminateMemory,
+  copyMemoryBytes,
+  provenanceDataView,
+  requireDeterminateMemory,
+} from '../../../core/indeterminate-memory.js';
 import {BURIKO_BP_ABI_172, type BurikoBpAbi} from './abi.js';
 
 /** A native byte pointer: views of one backing buffer continue to overlap. */
@@ -50,7 +56,7 @@ export class BurikoBpHeap {
       if (capacity > 0xffffffff)
         throw new RangeError('Buriko heap growth overflows its 32-bit size');
       const bytes = new Uint8Array(capacity);
-      bytes.set(this.bytes);
+      copyMemoryBytes(bytes, 0, this.bytes, 0, previous);
       this.bytes = bytes;
       this.freeBlocks.push({offset: previous, size: capacity - previous});
       this.coalesce();
@@ -133,7 +139,7 @@ export function pointerView(pointer: BurikoBpPointer, length?: number): DataView
   ) {
     throw new RangeError('Buriko pointer exceeds its byte view');
   }
-  return new DataView(bytes.buffer, bytes.byteOffset + offset, length ?? bytes.byteLength - offset);
+  return provenanceDataView(bytes, offset, length ?? bytes.byteLength - offset);
 }
 
 /** The exact title-local resolver and native allocation tables; no host pointer objects in VM cells. */
@@ -177,6 +183,7 @@ export class BurikoBpMemory {
   /** E82F0 clears the current configured global arena. */
   clearGlobal(): void {
     this.globalBytes.fill(0);
+    clearIndeterminateMemory(this.globalBytes, 0, this.globalBytes.length);
   }
 
   resolve(thread: BurikoBpThread, address: number): BurikoBpPointer | null {
@@ -234,58 +241,73 @@ export class BurikoBpMemory {
 
   readU8(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 1);
+    requireDeterminateMemory(p.bytes, p.offset, 1);
     return byteDataView(p.bytes).getUint8(p.offset);
   }
   readI8(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 1);
+    requireDeterminateMemory(p.bytes, p.offset, 1);
     return byteDataView(p.bytes).getInt8(p.offset);
   }
   readU16(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 2);
+    requireDeterminateMemory(p.bytes, p.offset, 2);
     return byteDataView(p.bytes).getUint16(p.offset, true);
   }
   readI16(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 2);
+    requireDeterminateMemory(p.bytes, p.offset, 2);
     return byteDataView(p.bytes).getInt16(p.offset, true);
   }
   readU32(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 4);
+    requireDeterminateMemory(p.bytes, p.offset, 4);
     return byteDataView(p.bytes).getUint32(p.offset, true);
   }
   readI32(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 4);
+    requireDeterminateMemory(p.bytes, p.offset, 4);
     return byteDataView(p.bytes).getInt32(p.offset, true);
   }
   readU64(t: BurikoBpThread, a: number): bigint {
     const p = this.scalarPointer(t, a, 8);
+    requireDeterminateMemory(p.bytes, p.offset, 8);
     return byteDataView(p.bytes).getBigUint64(p.offset, true);
   }
   readI64(t: BurikoBpThread, a: number): bigint {
     const p = this.scalarPointer(t, a, 8);
+    requireDeterminateMemory(p.bytes, p.offset, 8);
     return byteDataView(p.bytes).getBigInt64(p.offset, true);
   }
   writeU8(t: BurikoBpThread, a: number, v: number): void {
     const p = this.scalarPointer(t, a, 1);
     byteDataView(p.bytes).setUint8(p.offset, v);
+    clearIndeterminateMemory(p.bytes, p.offset, 1);
   }
   writeU16(t: BurikoBpThread, a: number, v: number): void {
     const p = this.scalarPointer(t, a, 2);
     byteDataView(p.bytes).setUint16(p.offset, v, true);
+    clearIndeterminateMemory(p.bytes, p.offset, 2);
   }
   writeU32(t: BurikoBpThread, a: number, v: number): void {
     const p = this.scalarPointer(t, a, 4);
     byteDataView(p.bytes).setUint32(p.offset, v, true);
+    clearIndeterminateMemory(p.bytes, p.offset, 4);
   }
   writeU64(t: BurikoBpThread, a: number, v: bigint): void {
     const p = this.scalarPointer(t, a, 8);
     byteDataView(p.bytes).setBigUint64(p.offset, v, true);
+    clearIndeterminateMemory(p.bytes, p.offset, 8);
   }
 
   readCString(thread: BurikoBpThread, address: number): Uint8Array {
     const {bytes, offset} = this.pointer(thread, address);
-    const end = bytes.indexOf(0, offset);
-    if (end < 0) throw new BurikoBpMemoryFault(address, 'Unterminated byte string');
-    return bytes.subarray(offset, end);
+    let end = offset;
+    for (; end < bytes.length; end++) {
+      requireDeterminateMemory(bytes, end, 1);
+      if (bytes[end] === 0) return bytes.subarray(offset, end);
+    }
+    throw new BurikoBpMemoryFault(address, 'Unterminated byte string');
   }
 
   copy(thread: BurikoBpThread, destination: number, source: number, size: number): void {
@@ -293,7 +315,7 @@ export class BurikoBpMemory {
     if (size === 0) return;
     const target = this.pointer(thread, destination, size);
     const input = this.pointer(thread, source, size);
-    target.bytes.set(input.bytes.subarray(input.offset, input.offset + size), target.offset);
+    copyMemoryBytes(target.bytes, target.offset, input.bytes, input.offset, size);
   }
 
   allocatePooled(size: number): number {
@@ -410,7 +432,8 @@ export class BurikoBpMemory {
     const record = this.indirect(address, 0);
     if (!record) return INVALID_HANDLE;
     const bytes = size === 0 ? null : new Uint8Array(size);
-    if (bytes && record.bytes) bytes.set(record.bytes.subarray(0, size));
+    if (bytes && record.bytes)
+      copyMemoryBytes(bytes, 0, record.bytes, 0, Math.min(size, record.size));
     record.bytes = bytes;
     record.size = size;
     return 0;
@@ -431,7 +454,7 @@ export class BurikoBpMemory {
     if (size !== 0) {
       if (!destination) throw new BurikoBpMemoryFault(0, 'Null indirect buffer destination');
       pointerView(destination, size);
-      destination.bytes.set(record.bytes!.subarray(offset, offset + size), destination.offset);
+      copyMemoryBytes(destination.bytes, destination.offset, record.bytes!, offset, size);
     }
     return 0;
   }
@@ -451,7 +474,7 @@ export class BurikoBpMemory {
     if (size !== 0) {
       if (!source) throw new BurikoBpMemoryFault(0, 'Null indirect buffer source');
       pointerView(source, size);
-      record.bytes!.set(source.bytes.subarray(source.offset, source.offset + size), offset);
+      copyMemoryBytes(record.bytes!, offset, source.bytes, source.offset, size);
     }
     return 0;
   }
@@ -470,13 +493,14 @@ export class BurikoBpMemory {
     const nextSize = (record.size + size) >>> 0;
     if (nextSize > 0x40000000) return INVALID_SIZE;
     const bytes = nextSize === 0 ? null : new Uint8Array(nextSize);
-    if (record.bytes) bytes?.set(record.bytes.subarray(0, offset));
+    if (record.bytes && bytes) copyMemoryBytes(bytes, 0, record.bytes, 0, offset);
     if (size !== 0) {
       if (!source) throw new BurikoBpMemoryFault(0, 'Null indirect buffer source');
       pointerView(source, size);
-      bytes!.set(source.bytes.subarray(source.offset, source.offset + size), offset);
+      copyMemoryBytes(bytes!, offset, source.bytes, source.offset, size);
     }
-    if (record.bytes) bytes?.set(record.bytes.subarray(offset), offset + size);
+    if (record.bytes && bytes)
+      copyMemoryBytes(bytes, offset + size, record.bytes, offset, record.size - offset);
     record.bytes = bytes;
     record.size = nextSize;
     return 0;

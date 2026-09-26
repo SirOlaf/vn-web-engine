@@ -56,6 +56,8 @@ export type BurikoBitmapDrawResult = BurikoBitmapResult | 4;
 
 /** Native renderer globals, separate from individual CSurfaceManager instances. */
 export class BurikoBitmapCompositor {
+  constructor(readonly compatibility: '1.69' | '1.72' = '1.72') {}
+
   /** 1401d1cb4; 1400407b0/1400407c0 select the format of temporary glyph bitmaps. */
   defaultFormat = 0;
   /** 1401D1498; 040730/040740, consumed after raw RGBA surface import. */

@@ -1,3 +1,4 @@
+import {copyMemoryBytes, requireDeterminateMemory} from '../../../core/indeterminate-memory.js';
 import type {ByteSource} from '../../../core/source.js';
 import {FileError} from '../../../platform/filesystem.js';
 import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
@@ -133,7 +134,13 @@ export class BurikoNativeFile {
     const destination = pointerView(output, bytes.length);
     if (initialized !== undefined && output.offset + bytes.length > initialized.length)
       throw new RangeError('Buriko native file read exceeds destination initialization mask');
-    new Uint8Array(destination.buffer, destination.byteOffset, destination.byteLength).set(bytes);
+    copyMemoryBytes(
+      new Uint8Array(destination.buffer, destination.byteOffset, destination.byteLength),
+      0,
+      bytes,
+      0,
+      bytes.length,
+    );
     initialized?.fill(1, output.offset, output.offset + bytes.length);
     this.position += BigInt(bytes.length);
     return {success: true, transferred: bytes.length >>> 0};
@@ -143,6 +150,7 @@ export class BurikoNativeFile {
     count >>>= 0;
     if (this.output === null || count === 0) return 0;
     const input = pointerView(source, count);
+    requireDeterminateMemory(source.bytes, source.offset, count);
     const transferred = await this.output.write(
       new Uint8Array(input.buffer, input.byteOffset, input.byteLength),
     );

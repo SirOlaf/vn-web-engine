@@ -1,6 +1,6 @@
 import {DomGlyphSlots} from './dom-glyph-slots.js';
 import type {GlyphSlot, TextGlyph} from './glyph-slots.js';
-import type {RasterTextGlyph} from './raster-text.js';
+import {rasterTextGlyphKey, type RasterTextGlyph} from './raster-text.js';
 
 /** Group visible fragments into continuous browser-shaped text, not one node per glyph. */
 export function rasterTextSlots(
@@ -9,17 +9,23 @@ export function rasterTextSlots(
   const unique = new Map<string, RasterTextGlyph>();
   for (const g of glyphs) {
     if (!(g.alpha > 0 && g.width > 0 && g.height > 0)) continue;
-    const key = `${g.id}/${g.x}/${g.y}/${g.width}/${g.height}`;
+    const key = rasterTextGlyphKey(g);
     const previous = unique.get(key);
     if (previous) {
       const x = Math.min(previous.clip.x, g.clip.x),
         y = Math.min(previous.clip.y, g.clip.y);
-      previous.clip = {
-        x,
-        y,
-        width: Math.max(previous.clip.x + previous.clip.width, g.clip.x + g.clip.width) - x,
-        height: Math.max(previous.clip.y + previous.clip.height, g.clip.y + g.clip.height) - y,
-      };
+      // Retained damage strips precede newer draws. Geometry is shared, but the
+      // native fade/tint can change between them: preserve coverage while taking
+      // the latest style, rather than freezing the first reveal's dim alpha.
+      unique.set(key, {
+        ...g,
+        clip: {
+          x,
+          y,
+          width: Math.max(previous.clip.x + previous.clip.width, g.clip.x + g.clip.width) - x,
+          height: Math.max(previous.clip.y + previous.clip.height, g.clip.y + g.clip.height) - y,
+        },
+      });
     } else unique.set(key, {...g, clip: {...g.clip}});
   }
   const rows = new Map<string, RasterTextGlyph[]>();
@@ -31,7 +37,7 @@ export function rasterTextSlots(
       g.bold,
       g.size,
       g.color,
-      Math.round(g.alpha),
+      g.flow ?? null,
     ]);
     const row = rows.get(key) ?? [];
     row.push(g);
@@ -49,6 +55,7 @@ export function rasterTextSlots(
         slot: {
           id: `raster/${key}/${first.x}/${first.y}`,
           glyphs,
+          explicitLines: true,
           vertical: first.vertical,
           bold: first.bold,
         },
@@ -93,11 +100,19 @@ export function rasterTextSlots(
             block.family === row.family &&
             block.slot.bold === row.slot.bold &&
             start.color === first.color &&
-            start.alpha === first.alpha &&
+            start.flow === first.flow &&
+            (start.size ?? start.height) === (first.size ?? first.height) &&
             start.height === first.height &&
-            Math.abs(start.x - first.x) < first.height / 2 &&
+            // Dialogue often hangs its continuation under the opening quote.
+            // Keep that indentation in one selectable paragraph.
+            Math.abs(start.x - first.x) <= first.height * 1.5 &&
             first.y - last.y >= first.height &&
-            first.y - last.y <= first.height * 2
+            first.y - last.y <= first.height * 2 &&
+            // A single CSS text flow has one line advance. Keep unrelated rows
+            // with different spacing out of this paragraph.
+            (last.line === 0 ||
+              (Math.abs((last.y - start.y) / last.line - (first.y - last.y)) < 0.5 &&
+                Math.abs(block.slot.glyphs.find((g) => g.line === 1)!.x - first.x) < 0.5))
           );
         });
     if (previous) {

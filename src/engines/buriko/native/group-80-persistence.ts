@@ -1,7 +1,6 @@
-import {pop32, push32} from '../bp/state.js';
+import {pop32, push32, pushIndeterminate32} from '../bp/state.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoPersistence} from './persistence.js';
-import {BurikoUndefinedResourceRead} from './resource-memory.js';
 import type {BurikoBpOpcodeContext, BurikoNativeSlotDefinition} from './types.js';
 
 function popPointer(h: BurikoBpOpcodeContext): BurikoBpPointer | null {
@@ -50,12 +49,14 @@ export function createGroup80Persistence(
       name: 'LoadGlobalDatabase',
       execute: async (h): Promise<0> => {
         const result = await persistence.load();
-        if (result.position === null)
-          throw new BurikoUndefinedResourceRead(
-            'Buriko GDB wrapper pushes unwritten stack coordinates',
-          );
-        push32(h.thread, result.position[0]);
-        push32(h.thread, result.position[1]);
+        if (result.position === null) {
+          const reason = 'Buriko GDB caller observes unwritten native stack coordinates';
+          pushIndeterminate32(h.thread, reason);
+          pushIndeterminate32(h.thread, reason);
+        } else {
+          push32(h.thread, result.position[0]);
+          push32(h.thread, result.position[1]);
+        }
         push32(
           h.thread,
           result.status === 0x80000001 ? 1 : result.status === 0x80000002 ? 2 : result.status,

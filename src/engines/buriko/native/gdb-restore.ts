@@ -1,3 +1,4 @@
+import {clearIndeterminateMemory, copyMemoryBytes} from '../../../core/indeterminate-memory.js';
 import {decodeSdc} from '../../../formats/buriko/compressed-resource.js';
 import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoNamedBitArrays} from './named-bit-arrays.js';
@@ -21,12 +22,17 @@ function copyAndZero(
   if (destination === null) return;
   const input = pointerView(source, stored),
     output = pointerView(destination, stored);
-  new Uint8Array(output.buffer, output.byteOffset, output.byteLength).set(
+  copyMemoryBytes(
+    new Uint8Array(output.buffer, output.byteOffset, output.byteLength),
+    0,
     new Uint8Array(input.buffer, input.byteOffset, input.byteLength),
+    0,
+    stored,
   );
   if (stored < capacity) {
     const remainder = pointerView(offset(destination, stored), capacity - stored);
     new Uint8Array(remainder.buffer, remainder.byteOffset, remainder.byteLength).fill(0);
+    clearIndeterminateMemory(destination.bytes, destination.offset + stored, capacity - stored);
   }
 }
 

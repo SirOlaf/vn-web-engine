@@ -54,6 +54,7 @@
   if (fullscreenMode === null) localStorage.removeItem('vn.fullscreen-mode');
   else localStorage.setItem('vn.fullscreen-mode', fullscreenMode);
   host.configure({width: 320, height: 180, fullscreen: false});
+  const initialNative = canvas.getContext('2d').getImageData(0, 0, 1, 1).data.slice();
   const renderer = new BrowserRasterText(canvas);
   const frame = new ImageData(320, 180);
   for (let i = 3; i < frame.data.length; i += 4) frame.data[i] = 255;
@@ -117,8 +118,138 @@
       renderer.text.element.querySelector('[data-game-text]').firstChild === node,
       'stable reveal node',
     );
-    check(node.data === 'ABCD', 'continuous native line wrap');
+    check(node.data === 'ABC\nD', 'authoritative native line wrap');
     check(document.getSelection().toString() === 'A', 'selection preserved while revealing');
+    document.getSelection().removeAllRanges();
+    const dialogue = [
+      glyph(10, 'A', 10, 10),
+      glyph(11, 'B', 26, 10),
+      glyph(12, 'C', 42, 10),
+      glyph(13, 'D', 26, 46),
+      glyph(14, 'E', 42, 46),
+      glyph(15, 'F', 26, 82),
+      glyph(16, 'G', 42, 82),
+    ].map((g, i) => ({...g, family: 'monospace', alpha: [255, 96, 192][i % 3]}));
+    renderer.show(frame, dialogue);
+    const paragraph = renderer.text.element.querySelector('[data-game-text]'),
+      paragraphNode = paragraph.firstChild;
+    check(
+      renderer.text.element.querySelectorAll('[data-game-text]').length === 1,
+      'fades or hanging indentation fragmented dialogue',
+    );
+    check(paragraphNode.data === 'ABC\nDE\nFG', 'native dialogue row boundaries lost');
+    const characterRect = (index) => {
+      const r = document.createRange();
+      r.setStart(paragraphNode, index);
+      r.setEnd(paragraphNode, index + 1);
+      return r.getBoundingClientRect();
+    };
+    const firstRect = characterRect(0),
+      secondRect = characterRect(4),
+      thirdRect = characterRect(7),
+      presentationScale = renderer.text.element.getBoundingClientRect().width / frame.width;
+    check(
+      Math.abs(secondRect.left - firstRect.left - 16 * presentationScale) < 1,
+      'native dialogue continuation indentation lost',
+    );
+    check(
+      Math.abs(secondRect.top - firstRect.top - 36 * presentationScale) < 1 &&
+        Math.abs(thirdRect.top - secondRect.top - 36 * presentationScale) < 1,
+      'dialogue wrapped on browser widths instead of native rows',
+    );
+    if (CSS.highlights && typeof Highlight !== 'undefined')
+      check(
+        [...CSS.highlights.keys()].some((name) => name.startsWith('game-ink-')),
+        'native per-glyph fade alpha was dropped',
+      );
+    for (const g of dialogue) g.alpha = 255;
+    renderer.show(frame, dialogue);
+    check(paragraph.firstChild === paragraphNode, 'fades replaced the paragraph node');
+    if (CSS.highlights)
+      check(
+        ![...CSS.highlights.keys()].some((name) => name.startsWith('game-ink-')),
+        'retired fade ranges leaked',
+      );
+    range.selectNodeContents(paragraphNode);
+    document.getSelection().addRange(range);
+    const clipboard = new DataTransfer();
+    document.dispatchEvent(
+      new ClipboardEvent('copy', {clipboardData: clipboard, cancelable: true}),
+    );
+    check(clipboard.getData('text/plain') === 'ABCDEFG', 'copy included presentation-only wraps');
+    document.getSelection().removeAllRanges();
+    // A later row with different font advances cannot reflow completed text.
+    // Strings, geometry, and pixels in this reveal are generated synthetic data.
+    const completed = Array.from('iiii').map((c, i) => glyph(30 + i, c, 10 + i * 16, 10)),
+      reveal = Array.from('WWWWW').map((c, i) => glyph(40 + i, c, 10 + i * 16, 46));
+    let stableNode, stableStyle, stableEndpoint;
+    for (let length = 1; length <= reveal.length; length++) {
+      renderer.show(frame, [...completed, ...reveal.slice(0, length)]);
+      const element = renderer.text.element.querySelector('[data-game-text]'),
+        node = element.firstChild,
+        endpoint = document.createRange();
+      endpoint.setStart(node, 3);
+      endpoint.setEnd(node, 4);
+      const rect = endpoint.getBoundingClientRect(),
+        style = [
+          element.style.left,
+          element.style.top,
+          element.style.transform,
+          element.style.lineHeight,
+        ].join('/');
+      check(
+        node.data === `iiii\n${'W'.repeat(length)}`,
+        'second-row reveal altered completed source',
+      );
+      if (stableNode) {
+        check(
+          node === stableNode && style === stableStyle,
+          'later reveal changed paragraph identity or scaling',
+        );
+        check(
+          Math.abs(rect.left - stableEndpoint.left) < 0.1 &&
+            Math.abs(rect.top - stableEndpoint.top) < 0.1,
+          'completed row endpoint moved during reveal',
+        );
+      }
+      stableNode = node;
+      stableStyle = style;
+      stableEndpoint = rect;
+    }
+    const body = completed.map((g) => ({...g, text: 'W'})),
+      marker = {...glyph(99, 'i', 74, 10), flow: 'synthetic-wait-indicator'};
+    let markerBodyNode, markerBodyStyle, markerBodyEndpoint;
+    for (let cycle = 0; cycle < 6; cycle++) {
+      const visible = cycle & 1;
+      renderer.show(frame, [...body, ...reveal, ...(visible ? [marker] : [])]);
+      const element = renderer.text.element.querySelector('[data-game-text]'),
+        node = element.firstChild,
+        endpoint = document.createRange();
+      endpoint.setStart(node, 3);
+      endpoint.setEnd(node, 4);
+      const rect = endpoint.getBoundingClientRect(),
+        style = [element.style.font, element.style.transform, element.style.lineHeight].join('/');
+      check(node.data === 'WWWW\nWWWWW', 'marker entered dialogue typography');
+      check(
+        renderer.text.element.querySelectorAll('[data-game-text]').length === 1 + visible,
+        'marker flow was not independent',
+      );
+      if (markerBodyNode) {
+        check(
+          node === markerBodyNode && style === markerBodyStyle,
+          'indicator changed completed text font or scaling',
+        );
+        check(
+          Math.abs(rect.left - markerBodyEndpoint.left) < 0.1 &&
+            Math.abs(rect.top - markerBodyEndpoint.top) < 0.1 &&
+            Math.abs(rect.width - markerBodyEndpoint.width) < 0.1,
+          'completed text pulsated with indicator visibility',
+        );
+      }
+      markerBodyNode = node;
+      markerBodyStyle = style;
+      markerBodyEndpoint = rect;
+    }
     renderer.show(frame, [glyph(5, '日', 250, 10, true), glyph(6, '本', 250, 34, true)]);
     const vertical = renderer.text.element.querySelector('[data-game-text]');
     check(
@@ -136,7 +267,7 @@
       canvas
         .getContext('2d')
         .getImageData(0, 0, 1, 1)
-        .data.every((v) => v === 0),
+        .data.every((v, i) => v === initialNative[i]),
       'native canvas unchanged',
     );
     const owner = new BrowserRasterTextPresentation();

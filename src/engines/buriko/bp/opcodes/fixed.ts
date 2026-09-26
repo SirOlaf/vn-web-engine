@@ -1,7 +1,7 @@
 import type {BurikoBpOpcodeContext, BurikoBpOpcodeHandler} from '../../native/types.js';
-import type {BurikoBpPointer} from '../memory.js';
+import {pointerView, type BurikoBpPointer} from '../memory.js';
 import {pop32, push32} from '../state.js';
-import {pointer, pointerBytes} from './operands.js';
+import {pointer} from './operands.js';
 import {
   burikoRosettaSseReciprocal,
   burikoRosettaSseReciprocalSqrt,
@@ -48,8 +48,7 @@ export function divideFixed(numerator: number, denominator: number): number {
 }
 
 function view(p: BurikoBpPointer, size: number, offset = 0): DataView {
-  const bytes = pointerBytes(p, size, offset);
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return pointerView({bytes: p.bytes, offset: p.offset + offset}, size);
 }
 
 function readVector(p: BurikoBpPointer): number[] {

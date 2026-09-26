@@ -16,7 +16,7 @@ import {
 } from '../../src/platform/browser-window-display.js';
 import {IndexedDbStore, MemoryStore, type RecordStore} from '../../src/platform/store.js';
 import {mountInstallationControls} from '../player/installation-controls.js';
-import type {CachedInstallation} from '../../src/platform/installation-cache.js';
+import type {CachedInstallation, InstallationFile} from '../../src/platform/installation-cache.js';
 import type {InstallationSelection} from '../../src/platform/installation-picker.js';
 import {mountGameViewer} from '../player/game-viewer.js';
 import {setRuntimeState, subscribeSaveBusy} from '../player/runtime-state.js';
@@ -46,6 +46,8 @@ import {burikoRegistryFold} from '../../src/engines/buriko/native/registry-case.
 import {BurikoNativeText} from '../../src/engines/buriko/native/text.js';
 
 interface Installation extends BurikoExecutable {
+  /** Keep the raw selection for handle/cache restoration, before runtime projection. */
+  selectedFiles: readonly InstallationFile[];
   files: SourceFileSystem;
   modifiedFiles: {path: string; lastModifiedMs: number}[];
 }
@@ -134,10 +136,14 @@ async function chosenFiles(selection: InstallationSelection): Promise<Installati
       ?.file.webkitRelativePath.split('/')[0];
   const executable = await inspectBurikoInstallation(entries, folderTitle);
   const files = source();
-  for (const entry of entries) files.attach(entry.path, entry.source);
+  for (const entry of executable.runtimeFiles) files.attach(entry.path, entry.source);
   return {
+    selectedFiles: entries,
     files,
-    modifiedFiles: entries.map(({path, lastModifiedMs}) => ({path, lastModifiedMs})),
+    modifiedFiles: executable.runtimeFiles.map(({path, lastModifiedMs}) => ({
+      path,
+      lastModifiedMs,
+    })),
     ...executable,
   };
 }
@@ -148,7 +154,7 @@ async function selectedInstallation(installation: Installation): Promise<void> {
   activeBurikoGame.set(installation.savedGame);
   burikoTitle.set(installation.title);
   if (installation.metadataNotes.length !== 0)
-    console.info('BGI optional installation metadata:', installation.metadataNotes);
+    console.info('BGI installation metadata:', installation.metadataNotes);
 }
 
 function fileTime(): bigint {
@@ -395,18 +401,8 @@ async function launch(
 }
 
 function installationSnapshot(installation: Installation): CachedInstallation {
-  const modified = new Map(
-    installation.modifiedFiles.map(({path, lastModifiedMs}) => [
-      burikoRegistryFold(path),
-      lastModifiedMs,
-    ]),
-  );
   return {
-    files: Array.from(installation.files.entries(), ([path, source]) => ({
-      path,
-      source,
-      lastModifiedMs: modified.get(path) ?? 0,
-    })),
+    files: [...installation.selectedFiles],
     metadata: {executableName: installation.executableName, title: installation.title},
     attachments: {},
   };
@@ -439,10 +435,14 @@ const installationControls = mountInstallationControls({
     activeBurikoGame.set(null);
     const executable = await inspectBurikoInstallation(snapshot.files, snapshot.metadata.title);
     const files = source();
-    for (const entry of snapshot.files) files.attach(entry.path, entry.source);
+    for (const entry of executable.runtimeFiles) files.attach(entry.path, entry.source);
     await selectedInstallation({
+      selectedFiles: snapshot.files,
       files,
-      modifiedFiles: snapshot.files.map(({path, lastModifiedMs}) => ({path, lastModifiedMs})),
+      modifiedFiles: executable.runtimeFiles.map(({path, lastModifiedMs}) => ({
+        path,
+        lastModifiedMs,
+      })),
       ...executable,
       title: snapshot.metadata.title || executable.title,
     });

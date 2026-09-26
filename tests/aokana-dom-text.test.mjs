@@ -89,6 +89,52 @@ test('partial damage and opaque overlays keep only visible semantic text, and fu
   assert.equal(rasterTextBitmap(surface), surface);
 });
 
+test('raster paragraphs keep faded glyphs, cropped fragments and hanging dialogue rows in source order', () => {
+  const make = (id, text, x, y, alpha) => ({
+    id,
+    text,
+    x,
+    y,
+    width: 16,
+    height: 24,
+    size: 24,
+    clip: {x, y, width: 16, height: 24},
+    family: 'monospace',
+    bold: false,
+    vertical: false,
+    color: 0xffffff,
+    alpha,
+  });
+  const glyphs = [
+    make(1, 'A', 10, 10, 255),
+    make(2, 'B', 26, 10, 96),
+    make(3, 'C', 42, 10, 192),
+    make(4, 'D', 26, 46, 255),
+    make(5, 'E', 42, 46, 160),
+    make(6, 'F', 26, 82, 255),
+  ];
+  // Native damage uploads can expose disjoint strips of the same glyph.
+  const fragment = {...glyphs[1], clip: {x: 26, y: 10, width: 8, height: 24}};
+  glyphs[1].clip = {x: 34, y: 10, width: 8, height: 24};
+  const slots = rasterTextSlots([...glyphs, fragment]);
+  assert.equal(slots.length, 1);
+  assert.equal(slotText(slots[0].slot).text, 'ABCDEF');
+  assert.deepEqual(
+    slots[0].slot.glyphs.map((g) => g.line),
+    [0, 0, 0, 1, 1, 2],
+  );
+  assert.deepEqual(slots[0].slot.glyphs[1].clip, {x: 26, y: 10, width: 16, height: 24});
+  const previousId = slots[0].slot.id;
+  glyphs[1].alpha = 255;
+  // Retained damage strips can precede a freshly opaque glyph with the same
+  // identity. The new style must retire the old fade across the continuous run.
+  const refreshed = rasterTextSlots([fragment, ...glyphs]);
+  assert.equal(refreshed[0].slot.id, previousId);
+  assert.equal(refreshed[0].slot.glyphs[1].alpha, 255);
+  const fading = {...glyphs[1], alpha: 64};
+  assert.equal(rasterTextSlots([...glyphs, fading])[0].slot.glyphs[1].alpha, 64);
+});
+
 test('textless alpha replay cannot introduce a native divide fault, while native transparent tails still fault', () => {
   const source = bitmap(3, 3, 0xffffffff, 2),
     destination = bitmap(3, 3, 0, 2);

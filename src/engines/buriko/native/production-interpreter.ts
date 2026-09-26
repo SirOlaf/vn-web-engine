@@ -14,7 +14,9 @@ import {BurikoSharedInterpreters} from './shared-interpreters.js';
 import {
   createLegacy169NativeDefinitions,
   createLegacy169PrimaryOpcodes,
+  legacy169BaseSystemIdentity,
 } from './legacy-169-handlers.js';
+import {BurikoLegacy169Registration} from './legacy-169-registration.js';
 
 /**
  * The complete BP dispatch owner. Bank validation is deliberately first: an
@@ -35,6 +37,14 @@ export class BurikoProductionInterpreter {
     const legacy = abi.compatibility === '1.69';
     if (legacy && (graph.systemProfile === null || graph.legacy169Flash === null))
       throw new Error('Buriko1.69 interpreter requires its system profile and Flash service');
+    const legacyRegistration =
+      legacy && graph.systemProfile !== null
+        ? new BurikoLegacy169Registration(
+            graph.resource.files,
+            () => legacy169BaseSystemIdentity(graph.controller.cpu, graph.systemProfile!),
+            graph.externalProcessHost,
+          )
+        : null;
     this.shared = new BurikoSharedInterpreters(
       core.control,
       graph.resource.processing,
@@ -58,6 +68,7 @@ export class BurikoProductionInterpreter {
             graph.controller.cpu,
             graph.systemProfile!,
             graph.legacy169Flash!,
+            legacyRegistration,
           )
         : [],
     );

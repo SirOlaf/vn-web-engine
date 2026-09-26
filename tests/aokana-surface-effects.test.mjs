@@ -36,8 +36,8 @@ const bitmap = (width, height, values = []) => ({
   bytesPerPixel: 4,
 });
 
-function fixture(width, height) {
-  const compositor = new BurikoBitmapCompositor();
+function fixture(width, height, compatibility = '1.72') {
+  const compositor = new BurikoBitmapCompositor(compatibility);
   compositor.defaultFormat = 1;
   const bounds = rectangle(0, 0, width - 1, height - 1),
     output = bitmap(width, height),
@@ -112,7 +112,22 @@ function fixture(width, height) {
     );
     manager.find('sprite', handle).setActivation(0);
   }
-  return {surface, call, render};
+  function maskedBackdrop(first, second, mask, parameter, level, expected) {
+    assert.equal(
+      manager.configureMaskedBackdrop(0, 0, first, 0, 0, second, mask, parameter, level),
+      0,
+    );
+    manager.setBackdropActivation(1, 1);
+    renderer.drawFull();
+    assert.deepEqual(
+      Array.from(
+        {length: width * height},
+        (_, i) => output.storage.view.getUint32(i * 4, true) & 0xffffff,
+      ),
+      Array.from({length: width * height}, (_, i) => expected(i % width, Math.floor(i / width))),
+    );
+  }
+  return {surface, call, render, maskedBackdrop};
 }
 
 import {BurikoSurfaceEffects} from '../dist/engines/buriko/native/surface-effects.js';
@@ -130,6 +145,20 @@ test('masked transition and optional-mask mix feed real sprites', () => {
   s.render(1, (x) => gray([32, 64, 96, 159][x]));
   s.call(0x19, [4, 1, 0, 2, -1, 0, 128]);
   s.render(4, (x) => gray(x === 0 ? 32 : 96));
+});
+
+test('1.69 surface and backdrop transitions select low-three-bit triangle frequency', () => {
+  const s = fixture(7, 2, '1.69'),
+    coverage = [20, 40, 80, 120, 160, 200, 240],
+    expected = (x) => gray(32 + coverage[x] / 2);
+  s.surface(1, 1, () => gray(32));
+  s.surface(2, 1, () => gray(160));
+  s.surface(3, 3, (x) => coverage[x]);
+  s.surface(4, 1, () => gray(32));
+  s.call(0x19, [4, 0, 0, 2, 3, 8, 128]);
+  s.render(4, expected);
+  // Different high selector bits are the same frequency in this native revision.
+  s.maskedBackdrop(2, 1, 3, 24, 128, expected);
 });
 
 test('vector strips retain source bounds across rows and select actual endpoint maps', () => {

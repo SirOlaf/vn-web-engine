@@ -54,8 +54,8 @@ function pixels(value) {
   ).flat();
 }
 
-function fixture(width = 80, height = 80, actors = 2) {
-  const compositor = new BurikoBitmapCompositor();
+function fixture(width = 80, height = 80, actors = 2, compatibility = '1.72') {
+  const compositor = new BurikoBitmapCompositor(compatibility);
   compositor.defaultFormat = 2;
   const bounds = rectangle(width, height),
     environment = new BurikoDisplayObjectEnvironment(
@@ -158,6 +158,54 @@ test('modes zero, one and two select simple, fused blend and affine lowers', () 
   );
 });
 
+test('animated reveal progress remains separate from the owned mask exponent in both native revisions', () => {
+  const colors = [0xffe0e0e0, 0x80c0c0c0, 0xffa0a0a0, 0xff808080];
+  const masks = [0, 16, 32, 48];
+  for (const compatibility of ['1.69', '1.72']) {
+    const {environment, surfaces} = fixture(2, 2, 1, compatibility);
+    install(surfaces, 1, bitmap(2, 2, 2, colors));
+    install(surfaces, 2, bitmap(2, 2, 3, masks));
+    const sprite = new BurikoDisplaySprite(environment, surfaces, 0);
+    assert.equal(sprite.initializeReveal(0, 0, 1, 2, 2, 0, 0x20, 64, 0), 0);
+    for (const progress of [0, 32, 64, 128, 255, 256]) {
+      sprite.setValueD8(0, progress);
+      const direct = bitmap(2, 2, 1, Array(4).fill(0x05080808));
+      sprite.draw(direct, rectangle(2, 2), 0);
+      const expectedRgb = colors.map((pixel, index) => {
+        const coverage = Math.max(0, Math.min(256, 5 * progress - masks[index] * 4));
+        const tableIndex = (coverage * (pixel >>> 24)) >>> 9;
+        const coefficient = Math.floor((tableIndex * 192) / (compatibility === '1.69' ? 256 : 8));
+        const value =
+          progress >= 256
+            ? 8 + Math.floor((((pixel & 255) - 8) * Math.floor(((pixel >>> 25) * 192) / 256)) / 128)
+            : 8 +
+              Math.floor(
+                (((pixel & 255) - 8) * coefficient) / (compatibility === '1.69' ? 128 : 4096),
+              );
+        return rgba(value, 5);
+      });
+      assert.deepEqual(pixels(direct), expectedRgb, `${compatibility} direct progress ${progress}`);
+      sprite.blendMode = 0x80;
+      const temporary = bitmap(2, 2, 2, Array(4).fill(0));
+      sprite.draw(temporary, rectangle(2, 2), 0);
+      assert.deepEqual(
+        pixels(temporary),
+        colors.map((pixel, index) => {
+          if (progress === 0) return 0;
+          const coverage = Math.max(
+            0,
+            Math.min(compatibility === '1.69' ? 256 : 255, 5 * progress - masks[index] * 4),
+          );
+          const alpha = progress >= 256 ? pixel >>> 24 : ((pixel >>> 24) * coverage) >>> 8;
+          return ((pixel & 0xffffff) | (alpha << 24)) >>> 0;
+        }),
+        `${compatibility} temporary progress ${progress}`,
+      );
+      sprite.blendMode = 0x20;
+    }
+  }
+});
+
 test('modes three and four use owned reveal data and shared surface coefficients', () => {
   const {environment, surfaces} = fixture();
   install(surfaces, 1, bitmap(2, 2, 2, [rgba(9), rgba(19), rgba(29), rgba(39)]));
@@ -166,7 +214,7 @@ test('modes three and four use owned reveal data and shared surface coefficients
   assert.equal(surfaces.coefficientTables.configureRipple(1, 1, 256, 1, 1), 0);
   const sprite = new BurikoDisplaySprite(environment, surfaces, 0);
   assert.equal(sprite.configureReveal(1, 2), 0);
-  sprite.revealProgress = 256;
+  sprite.setValueD8(0, 256);
   sprite.blendMode = 0x80;
   const revealed = bitmap(2, 2, 2, Array(4).fill(0));
   sprite.draw(revealed, rectangle(2, 2), 0);
@@ -509,7 +557,7 @@ test('Bank 90:56-5D configures all seven sprite modes through the shared manager
     [
       sprite.mode,
       sprite.sourceSurface,
-      sprite.revealProgress,
+      sprite.revealExponent,
       sprite.getValueD8(0),
       sprite.position(),
       sprite.blendMode,

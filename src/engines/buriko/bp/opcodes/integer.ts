@@ -1,5 +1,5 @@
 import type {BurikoBpOpcodeContext, BurikoBpOpcodeHandler} from '../../native/types.js';
-import {pop32, push32} from '../state.js';
+import {pop32, popDeferred32, push32} from '../state.js';
 import {readI8, readU8, readVarInt} from '../decode.js';
 
 /** 1400d0180: comparison/boolean helper. Bit operations return the bit result. */
@@ -158,7 +158,7 @@ export const integerOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
     return 0;
   },
   0x73: (h) => {
-    pop32(h.thread);
+    popDeferred32(h.thread);
     return 0;
   },
 };

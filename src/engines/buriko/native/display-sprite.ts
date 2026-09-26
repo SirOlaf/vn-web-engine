@@ -169,7 +169,8 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
   secondarySurface = -1;
   staticMaskSurface = -1;
   displacementMapSurface = -1;
-  revealProgress = 0;
+  /** Native +2D0/+3F0; D8 index zero stores the independently animated reveal progress. */
+  revealExponent = 0;
   sampling = 0;
   mixValue = 0;
   blendSelector = -1;
@@ -539,7 +540,7 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
     y: number,
     sourceSurface: number,
     maskSurface: number,
-    revealProgress: number,
+    revealExponent: number,
     transitionValue: number,
     blendMode: number,
     blendValue: number,
@@ -548,7 +549,7 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
     const result = this.configureReveal(sourceSurface, maskSurface);
     if (result !== 0) return result;
     this.move(x, y);
-    this.revealProgress = revealProgress | 0;
+    this.revealExponent = revealExponent | 0;
     this.setValueD8(0, transitionValue);
     this.blendMode = blendMode | 0;
     this.setBlendValue(blendValue);
@@ -1838,7 +1839,8 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
     const selected = crop(source, rectangle),
       mask = crop(revealMask, rectangle);
     if (selected === null || mask === null) return;
-    const exponent = this.getValueD8(0);
+    // 0041AEEB / 140065EF0 keep the mask exponent separate from animated D8 progress.
+    const progress = this.getValueD8(0);
     if (
       !this.effects.active &&
       destination.format === 1 &&
@@ -1849,8 +1851,8 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
         destination,
         selected,
         mask,
-        exponent,
-        this.revealProgress,
+        this.revealExponent,
+        progress,
         this.effectiveBlendValue(),
       );
       return;
@@ -1865,8 +1867,8 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
       temporary,
       selected,
       mask,
-      exponent,
-      this.revealProgress,
+      this.revealExponent,
+      progress,
     );
     this.finishTemporary(destination, temporary, rectangle, false);
   }

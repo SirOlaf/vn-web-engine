@@ -1,5 +1,5 @@
 import type {BurikoBpOpcodeContext, BurikoBpOpcodeHandler} from '../../native/types.js';
-import {pop32, push32, validCodeAddress} from '../state.js';
+import {pop32, popDeferred32, push32, validCodeAddress} from '../state.js';
 import {readU8, readU16, readU32, readTypedVarInt, readVarInt} from '../decode.js';
 import {
   accessSize,
@@ -10,20 +10,21 @@ import {
   pointerBytes,
   readScalar,
   writeScalar,
+  writeDeferredScalar,
 } from './operands.js';
 import {arithmetic32, compare32} from './integer.js';
 
 function watchedStore(h: BurikoBpOpcodeContext, reverse: boolean): 0 {
   const watched = h.diagnostics.writeWatchEnabled;
-  const first = pop32(h.thread);
-  if (reverse && !watched) pointer(h, first);
-  const second = pop32(h.thread);
-  const address = reverse ? first : second,
+  const first = reverse ? {value: pop32(h.thread)} : popDeferred32(h.thread);
+  if (reverse && !watched) pointer(h, first.value);
+  const second = reverse ? popDeferred32(h.thread) : {value: pop32(h.thread)};
+  const address = reverse ? first.value : second.value,
     value = reverse ? second : first;
   if (!reverse && !watched) pointer(h, address);
   const type = readU8(h.thread);
   if (watched) h.diagnostics.checkWrite(h.thread, address, accessSize(type));
-  writeScalar(h, address, type, value);
+  writeDeferredScalar(h, address, type, value);
   return 0;
 }
 
@@ -74,8 +75,8 @@ export const memoryOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
       const currentAddress = (address + i * width) >>> 0;
       if (watched) h.diagnostics.checkWrite(h.thread, currentAddress, width);
       const bytes = watched
-        ? pointerBytes(pointer(h, currentAddress), width)
-        : pointerBytes(destination!, width, i * width);
+        ? pointerBytes(pointer(h, currentAddress), width, 0, 'write')
+        : pointerBytes(destination!, width, i * width, 'write');
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       const value = values[count - i - 1]!;
       if (width === 4) view.setUint32(0, value, true);
@@ -132,7 +133,7 @@ export const memoryOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
       address = pop32(h.thread);
     if (!h.diagnostics.writeWatchEnabled) pointer(h, address);
     h.diagnostics.checkWrite(h.thread, address, size);
-    pointerBytes(pointer(h, address), size).fill(0);
+    pointerBytes(pointer(h, address), size, 0, 'write').fill(0);
     return 0;
   },
   0x62: (h) => {
@@ -141,7 +142,7 @@ export const memoryOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
       address = pop32(h.thread);
     if (!h.diagnostics.writeWatchEnabled) pointer(h, address);
     h.diagnostics.checkWrite(h.thread, address, size);
-    pointerBytes(pointer(h, address), size).fill(value & 255);
+    pointerBytes(pointer(h, address), size, 0, 'write').fill(value & 255);
     return 0;
   },
   0x63: (h) => {

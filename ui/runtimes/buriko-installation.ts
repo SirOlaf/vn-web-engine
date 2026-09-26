@@ -6,10 +6,13 @@ import type {InstallationFile} from '../../src/platform/installation-cache.js';
 import {readBurikoCursorResource} from '../../src/engines/buriko/native/cursor-shapes.js';
 import {burikoEngineVersion} from '../../src/engines/buriko/native/engine-version.js';
 import {readBurikoBootProductIdentity} from '../../src/engines/buriko/native/boot-metadata-source.js';
+import {burikoInstallationView} from '../../src/engines/buriko/installation-view.js';
 import {legacyAokanaProfile} from '../game-profiles/aokana.js';
 import type {BurikoSavedGame} from '../player/buriko-library.js';
 
 export interface BurikoExecutable {
+  /** Runtime mount entries retain their original range-readable source objects. */
+  readonly runtimeFiles: readonly InstallationFile[];
   readonly executableName: string;
   readonly title: string;
   readonly cursor: Uint8Array | null;
@@ -54,14 +57,16 @@ function embeddedProductIdentity(bytes: Uint8Array): string | null {
   return identities.size === 1 ? [...identities][0]! : null;
 }
 
-/** Select the interpreter, retaining launchers and installers as mounted files. */
+/** Select the interpreter and an installed-folder or browser disc runtime view. */
 export async function inspectBurikoInstallation(
   files: readonly InstallationFile[],
   folderTitle?: string,
 ): Promise<BurikoExecutable> {
   const boot = files.find((file) => file.path.toLowerCase() === '/system.arc');
   if (boot === undefined) throw new Error('The selected installation has no system.arc.');
-  const candidates = files.filter((file) => /^\/[^/]+\.exe$/i.test(file.path));
+  const candidates = files.filter(
+    (file) => /^\/[^/]+\.exe$/i.test(file.path) && !/^\/[^/]+ForInstalling\.exe$/i.test(file.path),
+  );
   candidates.sort(
     (left, right) =>
       Number(right.path.toLowerCase() === '/bgi.exe') -
@@ -105,10 +110,15 @@ export async function inspectBurikoInstallation(
         : 'No identifiable BGI / Ethornell interpreter was found in the selected folder.',
     );
   const executableName = chosen.file.path.slice(1);
+  const runtime = await burikoInstallationView(files, chosen.file.path);
   const digest = await hash(chosen.bytes);
   const legacy = digest === legacyAokanaProfile.executableSha256 ? legacyAokanaProfile : null;
   let identity = legacy?.productIdentity ?? embeddedProductIdentity(chosen.bytes);
   const errors: string[] = [];
+  if (runtime.kind === 'disc')
+    errors.push(
+      `Browser disc runtime view: ${runtime.catalogPath} is an integrity catalog, not an installation manifest. Its listed files and the main interpreter are mounted directly; ${runtime.excludedPaths.length} unlisted disc files remain outside the game folder.`,
+    );
   const fileVersion = chosen.version?.FileVersion ?? '';
   const interpreterVersion = /\bVersion\s*:\s*(\d+(?:\.\d+)+)/i.exec(fileVersion)?.[1] ?? null;
   const compatibilityVersion =
@@ -173,6 +183,7 @@ export async function inspectBurikoInstallation(
       : `product-${await hash(new TextEncoder().encode(persistentIdentity))}`;
   const savedGame: BurikoSavedGame = legacy ?? {id, title, namespace: ['buriko', id, 'default']};
   return {
+    runtimeFiles: runtime.files,
     executableName,
     title,
     cursor,

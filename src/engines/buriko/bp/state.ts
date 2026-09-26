@@ -1,4 +1,10 @@
 import {BurikoBpHeap} from './memory.js';
+import {
+  clearIndeterminateMemory,
+  requireDeterminateMemory,
+} from '../../../core/indeterminate-memory.js';
+
+const indeterminateOperands = new WeakMap<BurikoBpThread, Map<number, string>>();
 
 export interface BurikoBpModule {
   readonly name: Uint8Array;
@@ -165,16 +171,32 @@ export function push32(thread: BurikoBpThread, value: number): void {
   if (thread.stackIndex >= thread.operandStack.length)
     throw new RangeError('Buriko operand stack access outside storage');
   thread.operandStack[thread.stackIndex] = value >>> 0;
+  indeterminateOperands.get(thread)?.delete(thread.stackIndex);
   const next = (thread.stackIndex + 1) >>> 0;
   thread.stackIndex = next >= thread.operandStack.length ? 0 : next;
 }
 
-export function pop32(thread: BurikoBpThread): number {
+/** Moving an unwritten native output is allowed; observing its value is not. */
+export function pushIndeterminate32(thread: BurikoBpThread, reason: string): void {
+  const index = thread.stackIndex;
+  push32(thread, 0);
+  let cells = indeterminateOperands.get(thread);
+  if (!cells) indeterminateOperands.set(thread, (cells = new Map()));
+  cells.set(index, reason);
+}
+
+export function popDeferred32(thread: BurikoBpThread): {value: number; reason?: string} {
   thread.stackIndex =
     (thread.stackIndex === 0 ? thread.operandStack.length - 1 : thread.stackIndex - 1) >>> 0;
   const value = thread.operandStack[thread.stackIndex];
   if (value === undefined) throw new RangeError('Buriko operand stack access outside storage');
-  return value;
+  return {value, reason: indeterminateOperands.get(thread)?.get(thread.stackIndex)};
+}
+
+export function pop32(thread: BurikoBpThread): number {
+  const word = popDeferred32(thread);
+  if (word.reason !== undefined) throw new Error(word.reason);
+  return word.value;
 }
 
 export function setPc(thread: BurikoBpThread, address: number): void {
@@ -193,6 +215,7 @@ export function validFrameAddress(thread: BurikoBpThread, address: number): bool
 }
 
 export function readFrame32(thread: BurikoBpThread, offset: number): number {
+  requireDeterminateMemory(thread.frameMemory, offset >>> 0, 4);
   return new DataView(
     thread.frameMemory.buffer,
     thread.frameMemory.byteOffset,
@@ -206,6 +229,7 @@ export function writeFrame32(thread: BurikoBpThread, offset: number, value: numb
     thread.frameMemory.byteOffset,
     thread.frameMemory.byteLength,
   ).setUint32(offset >>> 0, value, true);
+  clearIndeterminateMemory(thread.frameMemory, offset >>> 0, 4);
 }
 
 function reservationPosition(

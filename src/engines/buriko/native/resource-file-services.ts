@@ -1,3 +1,4 @@
+import {requireDeterminateMemory} from '../../../core/indeterminate-memory.js';
 import {FileError} from '../../../platform/filesystem.js';
 import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoProgramOutputFile} from './program-files.js';
@@ -45,6 +46,7 @@ export class BurikoResourceFileServices {
     try {
       if (length === 0) return await output.write(new Uint8Array());
       const view = pointerView(required(data), length);
+      requireDeterminateMemory(data!.bytes, data!.offset, length);
       return await output.write(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
     } finally {
       output.close();

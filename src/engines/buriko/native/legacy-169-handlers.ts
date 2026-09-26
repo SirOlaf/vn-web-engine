@@ -3,6 +3,7 @@ import type {BurikoCpuProfile} from './cpu-profile.js';
 import type {BurikoSystemProfile, BurikoWindowsVersion} from './system-profile.js';
 import type {BurikoSurfaces} from './surfaces.js';
 import type {BurikoLegacy169FlashSurfaces} from './legacy-169-flash.js';
+import type {BurikoLegacy169Registration} from './legacy-169-registration.js';
 import {reduceLegacy169BitmapHalf} from './legacy-169-bitmap-reduce.js';
 import type {BurikoBpOpcodeHandler, BurikoNativeSlotDefinition} from './types.js';
 
@@ -25,29 +26,57 @@ function osClass(version: BurikoWindowsVersion): number {
   }
 }
 
+function systemIdentity(
+  cpuRegisters: readonly number[],
+  version: BurikoWindowsVersion,
+  user: number,
+  computer: number,
+  seed: number,
+): number {
+  return (
+    (((((cpuRegisters[0]! & 0xfff) | osClass(version)) << 16) | (user << 8) | computer) ^ seed) >>>
+    0
+  );
+}
+
+function firstProfileByte(bytes: Uint8Array | null, capacity: number): number {
+  if (bytes === null || bytes.length >= capacity) return 0;
+  if (bytes.includes(0))
+    throw new RangeError('Buriko system host returned a terminated ANSI profile field');
+  return bytes[0] ?? 0;
+}
+
 /** 004228A0 uses cleared name buffers, fresh GetVersionExA, and CPUID.1 EAX low12. */
 export function legacy169SystemIdentity(
   cpu: BurikoCpuProfile,
   system: BurikoSystemProfile,
   seed: number,
 ): number {
-  const first = (bytes: Uint8Array | null, capacity: number): number => {
-    if (bytes === null || bytes.length >= capacity) return 0;
-    if (bytes.includes(0))
-      throw new RangeError('Buriko system host returned a terminated ANSI profile field');
-    return bytes[0] ?? 0;
-  };
-  const user = first(system.host.readUserName(), 256);
-  const computer = first(system.host.readComputerName(), 16);
+  const user = firstProfileByte(system.host.readUserName(), 256);
+  const computer = firstProfileByte(system.host.readComputerName(), 16);
   const version = system.host.readVersion();
   if (version === null)
     throw new Error('Buriko 1.69 identity consumes unwritten GetVersionExA output');
   const registers = cpu.query(1);
   if (registers === null)
     throw new Error('Buriko 1.69 identity consumes an indeterminate CPUID result');
-  return (
-    (((((registers[0] & 0xfff) | osClass(version)) << 16) | (user << 8) | computer) ^ seed) >>> 0
-  );
+  return systemIdentity(registers, version, user, computer, seed);
+}
+
+/** 00422710 calls CPUID before GetVersionExA; it is the unsalted sibling identity. */
+export function legacy169BaseSystemIdentity(
+  cpu: BurikoCpuProfile,
+  system: BurikoSystemProfile,
+): number {
+  const user = firstProfileByte(system.host.readUserName(), 256);
+  const computer = firstProfileByte(system.host.readComputerName(), 16);
+  const registers = cpu.query(1);
+  if (registers === null)
+    throw new Error('Buriko 1.69 identity consumes an indeterminate CPUID result');
+  const version = system.host.readVersion();
+  if (version === null)
+    throw new Error('Buriko 1.69 identity consumes unwritten GetVersionExA output');
+  return systemIdentity(registers, version, user, computer, 0);
 }
 
 const mapped = (status: number): number => {
@@ -69,8 +98,9 @@ export function createLegacy169NativeDefinitions(
   cpu: BurikoCpuProfile,
   system: BurikoSystemProfile,
   flash: BurikoLegacy169FlashSurfaces,
+  registration: BurikoLegacy169Registration | null = null,
 ): BurikoNativeSlotDefinition[] {
-  return [
+  const definitions: BurikoNativeSlotDefinition[] = [
     {
       primary: 0x80,
       secondary: 0xef,
@@ -119,6 +149,46 @@ export function createLegacy169NativeDefinitions(
       },
     },
   ];
+  const requireRegistration = (): BurikoLegacy169Registration => {
+    if (registration === null)
+      throw new Error('Buriko 1.69 registration requires its file/process owner');
+    return registration;
+  };
+  definitions.push(
+    {
+      primary: 0x80,
+      secondary: 0xec,
+      nativeAddress: 0x00461cd0,
+      name: 'LegacyRegistrationCheck',
+      execute: async (h): Promise<0> => {
+        push32(h.thread, Number(await requireRegistration().check()));
+        return 0;
+      },
+    },
+    {
+      primary: 0x80,
+      secondary: 0xed,
+      nativeAddress: 0x00461cf0,
+      name: 'LegacyRegistrationLoad',
+      execute: async (h): Promise<0> => {
+        // FUN_004639d0 pops and resolves this old 26-bit pointer before loading COMAP.
+        const output = h.memory.resolve(h.thread, pop32(h.thread));
+        push32(h.thread, Number(await requireRegistration().loadComap(output)));
+        return 0;
+      },
+    },
+    {
+      primary: 0x80,
+      secondary: 0xee,
+      nativeAddress: 0x00461d10,
+      name: 'LegacySystemIdentityBase',
+      execute: (h) => {
+        push32(h.thread, legacy169BaseSystemIdentity(cpu, system));
+        return 0;
+      },
+    },
+  );
+  return definitions;
 }
 
 /** 00452100 has no secondary word and pushes no result, including failure paths. */

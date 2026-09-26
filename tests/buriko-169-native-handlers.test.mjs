@@ -212,7 +212,12 @@ test('unavailable Flash returns1 without replacing a surface; wrappers retain ex
   assert.equal(thread.stackIndex, 0);
   assert.deepEqual(
     definitions.map((d) => d.nativeAddress),
-    [0x461d30, 0x45d240, 0x45d2f0, 0x45d370],
+    [0x461d30, 0x45d240, 0x45d2f0, 0x45d370, 0x461cd0, 0x461cf0, 0x461d10],
+  );
+  // Missing legacy owners cannot fall through to the newer DLL operations.
+  await assert.rejects(
+    () => definitions.find((d) => d.secondary === 0xec).execute(context),
+    /registration requires its file\/process owner/,
   );
   await f.flash.closeAndJoin();
 });

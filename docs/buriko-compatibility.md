@@ -19,8 +19,35 @@ Unrecognized pairs require native analysis before admission.
 The older revision has its own native slot inventory and overrides for changed
 primary bytecodes, text operations, Flash surfaces, and audio archive storage.
 Its x87 integer operations use the shared `src/core/x87-integer.ts` arithmetic
-implementation. Uncertain rounding and reads of unwritten native storage remain
-explicit failures rather than guessed values.
+implementation. Uncertain rounding and observations of unwritten native storage
+remain explicit failures rather than guessed values.
+
+Mask transitions also select the native revision. Compatibility 1.69 uses the
+low three parameter bits for triangle frequency and its older coefficient
+arithmetic in both surface and backdrop paths. Its invalid coefficient-table
+read remains an explicit error. Compatibility 1.72 retains its full-parameter
+frequency and separate arithmetic.
+
+Masked sprite reveals keep the configured mask exponent separate from animated
+`D8(0)` progress. Both revisions pass exponent before progress to their bitmap
+kernels. Compatibility 1.69 accepts RGBA sources, uses Q7 direct blending, and
+preserves its unclamped x86 shifts and even-width MMX / odd-width scalar reads.
+Compatibility 1.72 retains its separate Q12 interpolation and source dispatch.
+
+A missing global database leaves the native coordinate pair unwritten. The BP
+stack and scalar stores carry those outputs as indeterminate values, allowing
+the script to replace them on the failure branch. Numeric use still fails.
+Shared byte-storage provenance lives in `src/core/indeterminate-memory.ts`;
+native readbacks do not receive invented coordinates.
+
+The 1.69 `80:ec`, `80:ed`, and `80:ee` slots implement registration checking,
+COMAP readback, and the unsalted system identity. The newer revision uses these
+slot numbers for DLL operations. The older checker preserves the native
+`reg.exe` launch and retry cadence through the shared process host. COMAP
+readback writes only transferred bytes and returns whether the file opened;
+missing files do not produce a successful registration. Short or invalid
+registration data that would read unwritten native stack bytes raises an
+explicit error. Process launch marshaling lives in `src/platform/windows-process.ts`.
 
 The older audio reader owns a `PackFile` index per stream storage. It preserves
 first-match lookup, short-read counts, and the native bug that adds read-error
@@ -58,6 +85,32 @@ chunks. Adding an optional process dump does not change the namespace.
 Unknown native mutex identities are scoped to that installation by the browser
 process host without changing the product bytes exposed to bytecode.
 Optional metadata failures remain available in the browser console.
+
+Boot enters the reconstructed interpreter through `ipl._bp`; it does not execute
+the Windows executable's entry point or its protection loader. The original
+executable can therefore supply metadata without a NoDVD patch. Script-visible
+file reads still use the original mounted bytes, and media and DLL requests
+retain their native failure or success contracts through the selected host.
+
+Extracted discs use a [direct runtime view](buriko-disc-runtime.md) over the
+selected source handles. This browser policy excludes disc-only markers and
+installer files using the engine's integrity catalog without copying the game
+into browser storage. Installed folders retain their complete file tree.
+
+`tools/probe-buriko.mjs` checks production boot without presenting pixels. To
+compare an original backup with the installed executable, use a root filename:
+
+```sh
+npm run build:runtime
+BURIKO_PROBE_EXECUTABLE=BGI.OLD node tools/probe-buriko.mjs /path/to/installation
+```
+
+The override substitutes that file at the selected executable's mounted path
+without changing either disk file. The probe does not use process dumps. Its
+default host lacks a browser font set; reaching a font-configuration error is a
+control-flow boundary, not evidence of disc-protection failure or complete
+playability. Errors include a bounded instruction tail and JavaScript stack
+locations; localized dialog contents and resource bytes remain suppressed.
 
 ## Shared media and platform services
 

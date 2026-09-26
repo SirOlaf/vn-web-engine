@@ -12,9 +12,12 @@ export interface RasterTextBitmap {
   bytesPerPixel: number;
   width: number;
   height: number;
+  /** A presentation owner can isolate control text from neighboring body text. */
+  rasterTextFlow?: string;
 }
 export interface RasterTextGlyph extends Rect {
   id: number;
+  flow?: string;
   text: string;
   clip: Rect;
   size: number;
@@ -46,6 +49,11 @@ const planes = new WeakMap<RasterTextStorage, Plane>();
 let nextGlyph = 0;
 let depth = 0;
 let presentationReplay = false;
+
+/** Clips may differ while one semantic glyph retains the same identity/geometry. */
+export function rasterTextGlyphKey(g: RasterTextGlyph): string {
+  return JSON.stringify([g.flow ?? null, g.id, g.x, g.y, g.width, g.height]);
+}
 
 /** A textless presentation may contain transparent pixels where native ink was
  * nonzero. Kernels can handle that presentation-only degeneracy without changing
@@ -124,7 +132,14 @@ export function readRasterText(bitmap: RasterTextBitmap): RasterTextGlyph[] {
   const output: RasterTextGlyph[] = [];
   for (const glyph of plane.glyphs) {
     const clip = intersection(shifted(glyph.clip, -x, -y), bounds(bitmap));
-    if (clip) output.push({...glyph, x: glyph.x - x, y: glyph.y - y, clip});
+    if (clip)
+      output.push({
+        ...glyph,
+        flow: bitmap.rasterTextFlow ?? glyph.flow,
+        x: glyph.x - x,
+        y: glyph.y - y,
+        clip,
+      });
   }
   return output;
 }
@@ -141,10 +156,18 @@ export function visibleRasterText(bitmap: RasterTextBitmap): RasterTextGlyph[] {
   const original = bitmap.storage,
     alternate = rasterTextBitmap(bitmap).storage;
   if (!original || !alternate || original === alternate) return [];
-  return readRasterText(bitmap).filter((g) => {
-    if (!g.text.trim()) return true;
+  const glyphs = readRasterText(bitmap),
+    visible = new Set<string>();
+  for (const g of glyphs) {
+    const identity = rasterTextGlyphKey(g);
+    if (visible.has(identity)) continue;
+    if (!g.text.trim()) {
+      visible.add(identity);
+      continue;
+    }
     const c = intersection(g.clip, bounds(bitmap));
-    if (!c) return false;
+    if (!c) continue;
+    let ink = false;
     for (
       let y = Math.max(0, Math.floor(c.y));
       y < Math.min(bitmap.height, Math.ceil(c.y + c.height));
@@ -157,10 +180,19 @@ export function visibleRasterText(bitmap: RasterTextBitmap): RasterTextGlyph[] {
         y * bitmap.stride +
         Math.min(bitmap.width, Math.ceil(c.x + c.width)) * bitmap.bytesPerPixel;
       for (let byte = begin; byte < end; byte++)
-        if (original.bytes[byte] !== alternate.bytes[byte]) return true;
+        if (original.bytes[byte] !== alternate.bytes[byte]) {
+          ink = true;
+          break;
+        }
+      if (ink) break;
     }
-    return false;
-  });
+    if (ink) visible.add(identity);
+  }
+  // Damage splits one glyph into multiple clips, including strips containing
+  // only its transparent margins. Visibility belongs to the whole glyph: keep
+  // all retained coverage if any fragment still has ink. Filtering each strip
+  // separately makes unchanged text bounds depend on damage partitioning.
+  return glyphs.filter((g) => visible.has(rasterTextGlyphKey(g)));
 }
 export function releaseRasterText(storage: RasterTextStorage): void {
   planes.delete(storage);
@@ -387,6 +419,7 @@ export function withRasterText<T extends Kernel>(
           (g) =>
             !(
               g.id === item.id &&
+              g.flow === item.flow &&
               g.x === item.x &&
               g.y === item.y &&
               g.clip.x === item.clip.x &&

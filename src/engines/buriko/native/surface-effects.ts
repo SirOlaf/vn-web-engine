@@ -39,7 +39,18 @@ export class BurikoSurfaceEffects {
       mixBurikoBitmaps(output, output, input, level, this.surfaces.compositor.processing, 1);
       return 0;
     }
-    const status = transitionBurikoBitmap(output, x, y, input, matte, parameter, level, 0, false);
+    const status = transitionBurikoBitmap(
+      output,
+      x,
+      y,
+      input,
+      matte,
+      parameter,
+      level,
+      0,
+      false,
+      this.surfaces.compositor.compatibility,
+    );
     switch (status) {
       case 0:
         return 0;

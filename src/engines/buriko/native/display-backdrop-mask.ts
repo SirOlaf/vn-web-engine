@@ -160,6 +160,7 @@ export class BurikoMaskedBackdrop extends BurikoBackdrop {
         blend,
         this.coefficient(),
         true,
+        this.environment.compositor.compatibility,
       );
     } else {
       if (second === null && !fill && blend !== 0) mode = 0xc0;
