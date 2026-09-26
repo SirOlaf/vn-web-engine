@@ -2,42 +2,42 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaSetMusicProcess} from '../dist/engines/buriko/games/aokana/native/set-music-process.js';
-import {createGroupA0MusicLoad} from '../dist/engines/buriko/games/aokana/native/group-a0-music-load.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoSetMusicProcess} from '../dist/engines/buriko/native/set-music-process.js';
+import {createGroupA0MusicLoad} from '../dist/engines/buriko/native/group-a0-music-load.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaScriptFiles} from '../dist/engines/buriko/games/aokana/native/script-files.js';
-import {AokanaSharedLoaderWorker} from '../dist/engines/buriko/games/aokana/native/shared-loader-worker.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoScriptFiles} from '../dist/engines/buriko/native/script-files.js';
+import {BurikoSharedLoaderWorker} from '../dist/engines/buriko/native/shared-loader-worker.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaSpeakerContext} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaAudioChannels} from '../dist/engines/buriko/games/aokana/native/audio/channel-registry.js';
-import {AokanaAudioArchiveCache} from '../dist/engines/buriko/games/aokana/native/audio/archive-cache.js';
-import {AokanaAudioResourceStreams} from '../dist/engines/buriko/games/aokana/native/audio/resource-streams.js';
-import {AokanaAudioMusicResources} from '../dist/engines/buriko/games/aokana/native/audio/resource-music.js';
-import {AokanaAudioStaticResources} from '../dist/engines/buriko/games/aokana/native/audio/resource-static.js';
-import {AokanaAudioLoaderQueues} from '../dist/engines/buriko/games/aokana/native/audio/loader-queues.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
+import {BurikoAudioArchiveCache} from '../dist/engines/buriko/native/audio/archive-cache.js';
+import {BurikoAudioResourceStreams} from '../dist/engines/buriko/native/audio/resource-streams.js';
+import {BurikoAudioMusicResources} from '../dist/engines/buriko/native/audio/resource-music.js';
+import {BurikoAudioStaticResources} from '../dist/engines/buriko/native/audio/resource-static.js';
+import {BurikoAudioLoaderQueues} from '../dist/engines/buriko/native/audio/loader-queues.js';
 
 function pcm() {
   const bytes = new Uint8Array(64 + 5000 * 2),
@@ -58,22 +58,22 @@ function pcm() {
 
 test('A0:11 runs synchronous and queued music through actual mounted PCM and speakers', async () => {
   const caller = {},
-    actors = new AokanaDistributedAllocator(1),
-    locks = new AokanaNativeLocks(actors);
+    actors = new BurikoDistributedAllocator(1),
+    locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
-  const backend = new AokanaMemorySpeakerBackend(1000),
-    channels = new AokanaAudioChannels(
-      new AokanaSpeakerContext(backend),
+  const backend = new BurikoMemorySpeakerBackend(1000),
+    channels = new BurikoAudioChannels(
+      new BurikoSpeakerContext(backend),
       locks,
       actors,
-      new AokanaSystemTicks({now: () => 0}),
+      new BurikoSystemTicks({now: () => 0}),
       {prefer24Bit: false},
     );
   channels.initialize({});
   channels.activate();
   const backing = new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase());
   await backing.commit([{kind: 'write', path: '/game/loose.bw', data: pcm()}]);
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [
         {
           path: '/game/loose.bw',
@@ -89,17 +89,17 @@ test('A0:11 runs synchronous and queued music through actual mounted PCM and spe
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    files = new AokanaProgramFiles(
+    files = new BurikoProgramFiles(
       mounted,
-      new AokanaNativeText(),
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+      new BurikoNativeText(),
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
     ),
     encode = (value) => files.text.encodeWide(value, 1),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, encode('C:\\game\\'), encode('C:\\game\\')),
-    processing = new AokanaDistributedProcessing(actors, 1),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, encode('C:\\game\\'), encode('C:\\game\\')),
+    processing = new BurikoDistributedProcessing(actors, 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -116,30 +116,30 @@ test('A0:11 runs synchronous and queued music through actual mounted PCM and spe
       errors,
       processing,
     ),
-    loading = new AokanaResourceLoadingState(resources),
-    cache = new AokanaAudioArchiveCache(channels, files),
-    streams = new AokanaAudioResourceStreams(channels, cache, files),
-    music = new AokanaAudioMusicResources(resources, streams),
-    staticResources = new AokanaAudioStaticResources(channels),
-    audio = new AokanaAudioLoaderQueues(loading, music, staticResources),
-    scripts = new AokanaScriptFiles(
+    loading = new BurikoResourceLoadingState(resources),
+    cache = new BurikoAudioArchiveCache(channels, files),
+    streams = new BurikoAudioResourceStreams(channels, cache, files),
+    music = new BurikoAudioMusicResources(resources, streams),
+    staticResources = new BurikoAudioStaticResources(channels),
+    audio = new BurikoAudioLoaderQueues(loading, music, staticResources),
+    scripts = new BurikoScriptFiles(
       files,
       actors,
       (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
     ),
-    worker = new AokanaSharedLoaderWorker(loading, audio, scripts),
-    root = new AokanaBpThread({id: 0, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 2, frameCapacity: 0}),
-    scheduler = new AokanaBpScheduler(root, () => 1),
+    worker = new BurikoSharedLoaderWorker(loading, audio, scripts),
+    root = new BurikoBpThread({id: 0, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 2, frameCapacity: 0}),
+    scheduler = new BurikoBpScheduler(root, () => 1),
     node = scheduler.append(thread),
-    memory = new AokanaBpMemory(new Uint8Array(0x300)),
-    context = {thread, actor: caller, memory, diagnostics: new AokanaBpDiagnostics(() => {})},
-    control = new AokanaVmControlState(),
+    memory = new BurikoBpMemory(new Uint8Array(0x300)),
+    context = {thread, actor: caller, memory, diagnostics: new BurikoBpDiagnostics(() => {})},
+    control = new BurikoVmControlState(),
     [slot] = createGroupA0MusicLoad(
       worker,
       scheduler,
-      new AokanaProcedureState(),
-      new AokanaNativeClock(() => 0),
+      new BurikoProcedureState(),
+      new BurikoNativeClock(() => 0),
       control,
     );
   memory.globalMemory.set(encode('unused.arc'), 0x100);
@@ -168,7 +168,7 @@ test('A0:11 runs synchronous and queued music through actual mounted PCM and spe
     control.asynchronousResourceLoads = 1;
     assert.equal(await invoke(1), 2);
     assert.equal(control.asynchronousResourceLoads, 0);
-    assert.ok(node.process instanceof AokanaSetMusicProcess);
+    assert.ok(node.process instanceof BurikoSetMusicProcess);
     assert.equal(loading.activeProcedures, 1);
     node.installProcess(null);
     assert.equal(loading.activeProcedures, 0);
@@ -177,7 +177,7 @@ test('A0:11 runs synchronous and queued music through actual mounted PCM and spe
     control.asynchronousResourceLoads = 1;
     assert.equal(await invoke(1), 2);
     assert.equal(control.asynchronousResourceLoads, 0);
-    assert.ok(node.process instanceof AokanaSetMusicProcess);
+    assert.ok(node.process instanceof BurikoSetMusicProcess);
     assert.equal(node.process.archive.length, 780);
     assert.equal(node.process.name.length, 780);
     assert.equal(Object.hasOwn(node.process.result, 'value'), false);

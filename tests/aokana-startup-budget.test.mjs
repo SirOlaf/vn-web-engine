@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaCpuProfile} from '../dist/engines/buriko/games/aokana/native/cpu-profile.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
+import {BurikoCpuProfile} from '../dist/engines/buriko/native/cpu-profile.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {
-  aokanaDisplayRenderPixelBudget,
-  aokanaStartupCpuLog,
-} from '../dist/engines/buriko/games/aokana/native/startup-budget.js';
+  burikoDisplayRenderPixelBudget,
+  burikoStartupCpuLog,
+} from '../dist/engines/buriko/native/startup-budget.js';
 
 function setup(firstCache, secondCache, count, mask = 3n) {
   let ticks = 0,
     timestamps = 0;
-  const cpu = new AokanaCpuProfile(
+  const cpu = new BurikoCpuProfile(
     {
       cpuid(leaf) {
         switch (leaf) {
@@ -34,7 +34,7 @@ function setup(firstCache, secondCache, count, mask = 3n) {
       logicalProcessorCount: () => count,
       logicalProcessorInformation: () => [{relationship: 0, processorMask: mask}],
     },
-    new AokanaNativeClock(() => (ticks += 125)),
+    new BurikoNativeClock(() => (ticks += 125)),
   );
   assert.equal(cpu.initialize(), true);
   const calls = [];
@@ -48,7 +48,7 @@ function setup(firstCache, secondCache, count, mask = 3n) {
     calls.push('core');
     return coreCount();
   };
-  class Display extends AokanaNativeDisplayState {
+  class Display extends BurikoNativeDisplayState {
     get logicalWidth() {
       calls.push('width');
       return super.logicalWidth;
@@ -72,7 +72,7 @@ test('startup budget consumes the same initialized CPU record in native branch a
   ];
   for (const [l1, l2, count, expected, reads] of cases) {
     const {cpu, display, calls} = setup(l1, l2, count);
-    assert.equal(aokanaDisplayRenderPixelBudget(cpu, display), expected);
+    assert.equal(burikoDisplayRenderPixelBudget(cpu, display), expected);
     assert.deepEqual(calls, reads);
   }
 });
@@ -80,19 +80,19 @@ test('startup budget consumes the same initialized CPU record in native branch a
 test('startup budget uses the current mode and first core topology instead of total CPU count', () => {
   const {cpu, display} = setup(32, 512, 4, 1n);
   display.selectedSizePreset = 6; // 1280 by 720.
-  assert.equal(aokanaDisplayRenderPixelBudget(cpu, display), 38400);
+  assert.equal(burikoDisplayRenderPixelBudget(cpu, display), 38400);
   cpu.host.logicalProcessorInformation = () => [
     {relationship: 3, processorMask: 0xffn},
     {relationship: 0, processorMask: 3n},
     {relationship: 0, processorMask: 0xffn},
   ];
-  assert.equal(aokanaDisplayRenderPixelBudget(cpu, display), 19200);
+  assert.equal(burikoDisplayRenderPixelBudget(cpu, display), 19200);
 });
 
 test('the selected startup logarithm agrees with positive integer logarithms and binary powers', () => {
-  assert.equal(aokanaStartupCpuLog(1), 0);
+  assert.equal(burikoStartupCpuLog(1), 0);
   for (const count of [2, 3, 4, 7, 8, 15, 16, 24, 32, 48, 64, 96, 128])
-    assert.ok(Math.abs(aokanaStartupCpuLog(count) - Math.log(count)) < 2e-15);
+    assert.ok(Math.abs(burikoStartupCpuLog(count) - Math.log(count)) < 2e-15);
   for (let exponent = 0; exponent <= 7; exponent++)
-    assert.equal(Math.floor(aokanaStartupCpuLog(2 ** exponent) / aokanaStartupCpuLog(2)), exponent);
+    assert.equal(Math.floor(burikoStartupCpuLog(2 ** exponent) / burikoStartupCpuLog(2)), exponent);
 });

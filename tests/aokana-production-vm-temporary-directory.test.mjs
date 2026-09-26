@@ -1,14 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBrowserTemporaryFileHost, AokanaTemporaryFileProfile} from '../dist/engines/buriko/games/aokana/native/temporary-directory-probe.js';
+import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {
+  BurikoBrowserTemporaryFileHost,
+  BurikoTemporaryFileProfile,
+} from '../dist/engines/buriko/native/temporary-directory-probe.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('temporary directory callback uses the selected browser mounted-file host by default', async () => {
   const fixture = await createMountedVmFixture();
   try {
     assert.ok(fixture.graph.resource.temporaryDirectoryProbe);
-    assert.ok(fixture.graph.resource.temporaryDirectoryProbe.host instanceof AokanaBrowserTemporaryFileHost);
+    assert.ok(
+      fixture.graph.resource.temporaryDirectoryProbe.host instanceof BurikoBrowserTemporaryFileHost,
+    );
     assert.equal(
       fixture.definitions.some(({primary, secondary}) => primary === 0x81 && secondary === 0x2f),
       true,
@@ -21,7 +26,7 @@ test('temporary directory callback uses the selected browser mounted-file host b
 test('mounted 81:2F probes and removes a temporary file and nested C drive directories', async () => {
   const fixture = await createMountedVmFixture({
     mountDriveC: true,
-    temporaryFileHost: new AokanaTemporaryFileProfile(['BGI0001.tmp']),
+    temporaryFileHost: new BurikoTemporaryFileProfile(['BGI0001.tmp']),
   });
   const {graph, core, memory, diagnostics, child, definitions, mounted, encode} = fixture;
   try {

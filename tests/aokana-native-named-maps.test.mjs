@@ -1,24 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNamedValueMaps} from '../dist/engines/buriko/games/aokana/native/named-value-maps.js';
-import {createGroup80NamedMaps} from '../dist/engines/buriko/games/aokana/native/group-80-named-maps.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNamedValueMaps} from '../dist/engines/buriko/native/named-value-maps.js';
+import {createGroup80NamedMaps} from '../dist/engines/buriko/native/group-80-named-maps.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('80 D0–D4 keep fixed-width maps, native stack order and insertion-order indexed reads', () => {
-  const maps = new AokanaNamedValueMaps(),
+  const maps = new BurikoNamedValueMaps(),
     slots = createGroup80NamedMaps(maps);
   assert.equal(slots.length, 5);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 256,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(1)),
+    memory = new BurikoBpMemory(new Uint8Array(1)),
     context = {thread, memory};
   const call = (secondary, args) => {
     args.forEach((value) => push32(thread, value));
@@ -50,7 +50,7 @@ test('80 D0–D4 keep fixed-width maps, native stack order and insertion-order i
 });
 
 test('native registry clearing resets its counter while normal deletion preserves it', () => {
-  const maps = new AokanaNamedValueMaps(),
+  const maps = new BurikoNamedValueMaps(),
     bytes = new Uint8Array(16),
     output = {bytes, offset: 0},
     view = new DataView(bytes.buffer);

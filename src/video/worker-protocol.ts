@@ -1,11 +1,10 @@
 import type {WorkerSource} from '../core/worker-source.js';
-import type {MovieInfo, MoviePcm} from '../formats/cri/movie.js';
-import type {YuvFrame} from './frame.js';
+import type {MovieInfo, MoviePcm, MovieFrame} from './movie-types.js';
 export type MovieRequest = {type: 'open'; source: WorkerSource; seek: number} | {type: 'pull'};
 export type MovieResponse =
   | {
       type: 'batch';
-      frames: YuvFrame[];
+      frames: MovieFrame[];
       audio: MoviePcm[];
       info: MovieInfo;
       done: boolean;

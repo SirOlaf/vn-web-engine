@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted font enumeration registers the selected face for measurement and pitch', async () => {
@@ -80,7 +80,10 @@ test('mounted font enumeration registers the selected face for measurement and p
       [...new TextEncoder().encode('Synthetic\0')],
     );
     assert.deepEqual(enumerationCalls, [[1, false]]);
-    assert.deepEqual(graph.fonts.registeredNames.map(({wide}) => wide), ['MS Gothic', 'MS Mincho']);
+    assert.deepEqual(
+      graph.fonts.registeredNames.map(({wide}) => wide),
+      ['MS Gothic', 'MS Mincho'],
+    );
     assert.equal(await call(0xb0, 0xc0, [0x100]), 2);
     assert.deepEqual([...graph.fonts.name(2)], [...new TextEncoder().encode('Synthetic')]);
 

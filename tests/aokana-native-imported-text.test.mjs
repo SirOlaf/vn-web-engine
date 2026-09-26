@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaImportedTextMaps} from '../dist/engines/buriko/games/aokana/native/imported-text-maps.js';
-import {createGroup81ImportedText} from '../dist/engines/buriko/games/aokana/native/group-81-imported-text.js';
-import {AokanaNativeText, textBytes} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoImportedTextMaps} from '../dist/engines/buriko/native/imported-text-maps.js';
+import {createGroup81ImportedText} from '../dist/engines/buriko/native/group-81-imported-text.js';
+import {BurikoNativeText, textBytes} from '../dist/engines/buriko/native/text.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const pointer = (bytes) => ({bytes, offset: 0});
 function encodeImport(text, groups) {
@@ -26,8 +26,8 @@ function encodeImport(text, groups) {
 }
 
 test('imported maps retain shared inner references and convert each lookup name to UTF8', () => {
-  const text = new AokanaNativeText(),
-    maps = new AokanaImportedTextMaps(text);
+  const text = new BurikoNativeText(),
+    maps = new BurikoImportedTextMaps(text);
   const first = encodeImport(text, [
     [
       '項目',
@@ -55,19 +55,19 @@ test('imported maps retain shared inner references and convert each lookup name 
 });
 
 test('81 D8/DA preserve import and output stack order, raw UTF8 copying and the length query', () => {
-  const text = new AokanaNativeText(),
-    maps = new AokanaImportedTextMaps(text);
+  const text = new BurikoNativeText(),
+    maps = new BurikoImportedTextMaps(text);
   const definitions = createGroup81ImportedText(maps);
   assert.equal(definitions.length, 2);
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][slot.secondary]);
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 2048,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(1)),
+    memory = new BurikoBpMemory(new Uint8Array(1)),
     context = {thread, memory};
   const put = (address, bytes) => {
     const output = memory.resolve(thread, address);

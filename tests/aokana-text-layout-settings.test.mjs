@@ -1,22 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
-import {createTextLayoutSettings} from '../dist/engines/buriko/games/aokana/native/group-text-layout-settings.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
+import {createTextLayoutSettings} from '../dist/engines/buriko/native/group-text-layout-settings.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 function setup() {
-  const text = new AokanaNativeText(),
-    fonts = new AokanaNativeFonts(text),
-    compositor = new AokanaBitmapCompositor(),
-    surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1)),
-    state = new AokanaTextLayoutState(surfaces);
+  const text = new BurikoNativeText(),
+    fonts = new BurikoNativeFonts(text),
+    compositor = new BurikoBitmapCompositor(),
+    surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1)),
+    state = new BurikoTextLayoutState(surfaces);
   compositor.defaultFormat = 1;
   return {text, fonts, compositor, surfaces, state};
 }
@@ -167,14 +167,14 @@ test('all five reading-font, policy and frame wrappers use real stacks and the s
     ],
   );
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(128));
+    memory = new BurikoBpMemory(new Uint8Array(128));
   async function call(primary, secondary, args, output = false) {
     const before = thread.stackIndex;
     for (const arg of args) push32(thread, arg);

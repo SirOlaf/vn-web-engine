@@ -1,30 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
 import {
-  AokanaFocusedHotkeyRegistration,
-  AokanaPrintScreenHotkeys,
-} from '../dist/engines/buriko/games/aokana/native/print-screen-hotkeys.js';
-import {createGroup81Hotkeys} from '../dist/engines/buriko/games/aokana/native/group-81-hotkeys.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoFocusedHotkeyRegistration,
+  BurikoPrintScreenHotkeys,
+} from '../dist/engines/buriko/native/print-screen-hotkeys.js';
+import {createGroup81Hotkeys} from '../dist/engines/buriko/native/group-81-hotkeys.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 function fixture() {
-  const input = new AokanaNativeInput(
-      new AokanaNativeDisplayState(1280, 720),
-      new AokanaNativeClock(() => 10),
+  const input = new BurikoNativeInput(
+      new BurikoNativeDisplayState(1280, 720),
+      new BurikoNativeClock(() => 10),
     ),
-    messages = new AokanaWindowMessages(input),
-    keyboard = new AokanaKeyboardMessages(messages),
-    registration = new AokanaFocusedHotkeyRegistration(keyboard),
+    messages = new BurikoWindowMessages(input),
+    keyboard = new BurikoKeyboardMessages(messages),
+    registration = new BurikoFocusedHotkeyRegistration(keyboard),
     calls = [];
   input.foreground = true;
   messages.createMainTarget();
-  const hotkeys = new AokanaPrintScreenHotkeys(messages, {
+  const hotkeys = new BurikoPrintScreenHotkeys(messages, {
     register(...args) {
       calls.push(['register', ...args]);
       return registration.register(...args);
@@ -47,10 +47,10 @@ function fixture() {
 
 test('81 69 registers and unregisters all sixteen modifiers in native order on the shared keyboard owner', () => {
   const s = fixture(),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 4, moduleCapacity: 0, frameCapacity: 0}),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 4, moduleCapacity: 0, frameCapacity: 0}),
     slots = createGroup81Hotkeys(s.hotkeys);
   assert.equal(slots.length, 1);
-  assert.equal(slots[0].nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][0x69]);
+  assert.equal(slots[0].nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][0x69]);
   const call = (value) => {
     push32(thread, value);
     assert.equal(slots[0].execute({thread}), 0);
@@ -90,7 +90,7 @@ test('81 69 registers and unregisters all sixteen modifiers in native order on t
 test('FF470 keeps its native latch even when the selected host does not register a combination', () => {
   const s = fixture(),
     calls = [];
-  const hotkeys = new AokanaPrintScreenHotkeys(s.messages, {
+  const hotkeys = new BurikoPrintScreenHotkeys(s.messages, {
     register: (...args) => {
       calls.push(['register', ...args]);
       return false;

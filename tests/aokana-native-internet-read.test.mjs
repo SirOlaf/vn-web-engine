@@ -1,35 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {createGroup81InternetRead} from '../dist/engines/buriko/games/aokana/native/group-81-internet-read.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {createGroup81InternetRead} from '../dist/engines/buriko/native/group-81-internet-read.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
 import {
-  AOKANA_INTERNET_USER_AGENT,
-  AokanaInternetReads,
-} from '../dist/engines/buriko/games/aokana/native/internet-reads.js';
+  BURIKO_INTERNET_USER_AGENT,
+  BurikoInternetReads,
+} from '../dist/engines/buriko/native/internet-reads.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 
 function setup(host) {
-  const text = new AokanaNativeText(),
-    files = new AokanaProgramFiles({}, text, new AokanaProgramMedia()),
+  const text = new BurikoNativeText(),
+    files = new BurikoProgramFiles({}, text, new BurikoProgramMedia()),
     unavailable = () => assert.fail('Successful internet read opened a diagnostic'),
-    resources = new AokanaProgramResources(
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -44,25 +44,25 @@ function setup(host) {
       },
       {show: unavailable},
       {fatal: unavailable, threadFatal: unavailable},
-      new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+      new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
     ),
-    loading = new AokanaResourceLoadingState(resources),
-    reads = new AokanaInternetReads(files, host),
-    thread = new AokanaBpThread({
+    loading = new BurikoResourceLoadingState(resources),
+    reads = new BurikoInternetReads(files, host),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(768)),
-    scheduler = new AokanaBpScheduler(thread, () => 1),
-    control = new AokanaVmControlState(),
+    memory = new BurikoBpMemory(new Uint8Array(768)),
+    scheduler = new BurikoBpScheduler(thread, () => 1),
+    control = new BurikoVmControlState(),
     [definition] = createGroup81InternetRead(
       reads,
       loading,
       scheduler,
-      new AokanaProcedureState(),
-      new AokanaNativeClock(() => 100),
+      new BurikoProcedureState(),
+      new BurikoNativeClock(() => 100),
       control,
     ),
     context = {thread, memory, diagnostics: {}};
@@ -83,7 +83,7 @@ function setup(host) {
 
 function checkRequest(request, state, offset, length) {
   assert.equal(request.url, 'https://example.test/data.bin');
-  assert.equal(request.userAgent, AOKANA_INTERNET_USER_AGENT);
+  assert.equal(request.userAgent, BURIKO_INTERNET_USER_AGENT);
   assert.equal(request.reload, true);
   assert.equal(request.destination.bytes, state.memory.globalMemory);
   assert.equal(request.destination.offset, 512);

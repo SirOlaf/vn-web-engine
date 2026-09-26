@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaLogicalSpatialManager,
-  AokanaLogicalSpatialManagers,
-} from '../dist/engines/buriko/games/aokana/native/logical-spatial.js';
-import {createGroupD0SpatialRecords} from '../dist/engines/buriko/games/aokana/native/group-d0-spatial.js';
-import {aokanaLogicalStatus} from '../dist/engines/buriko/games/aokana/native/logical-status.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+  BurikoLogicalSpatialManager,
+  BurikoLogicalSpatialManagers,
+} from '../dist/engines/buriko/native/logical-spatial.js';
+import {createGroupD0SpatialRecords} from '../dist/engines/buriko/native/group-d0-spatial.js';
+import {burikoLogicalStatus} from '../dist/engines/buriko/native/logical-status.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
-  const manager = new AokanaLogicalSpatialManager(),
+  const manager = new BurikoLogicalSpatialManager(),
     bytes = new Uint8Array(1024),
     view = new DataView(bytes.buffer);
   const pointer = (offset) => ({bytes, offset});
@@ -119,14 +119,14 @@ test('spatial children enumeration stores data first and the count last', () => 
 
 test('spatial VM wrappers preserve float argument order, three-word vectors and release timing', () => {
   const {bytes, view} = fixture(),
-    managers = new AokanaLogicalSpatialManagers();
-  const thread = new AokanaBpThread({
+    managers = new BurikoLogicalSpatialManagers();
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const memory = new AokanaBpMemory(bytes),
+  const memory = new BurikoBpMemory(bytes),
     h = {thread, memory},
     definitions = createGroupD0SpatialRecords(managers);
   const call = (secondary, ...args) => {
@@ -168,13 +168,13 @@ test('spatial VM wrappers preserve float argument order, three-word vectors and 
 });
 
 test('logical status translation retains every native family and unknown statuses', () => {
-  assert.equal(aokanaLogicalStatus(1), 0x1d);
-  for (let i = 0; i <= 11; i++) assert.equal(aokanaLogicalStatus(0x80000000 + i), i + 1);
-  assert.equal(aokanaLogicalStatus(0x90000002), 0x10);
-  assert.equal(aokanaLogicalStatus(0x90000003), 0x11);
+  assert.equal(burikoLogicalStatus(1), 0x1d);
+  for (let i = 0; i <= 11; i++) assert.equal(burikoLogicalStatus(0x80000000 + i), i + 1);
+  assert.equal(burikoLogicalStatus(0x90000002), 0x10);
+  assert.equal(burikoLogicalStatus(0x90000003), 0x11);
   [1, 0x12, 0x13, 0x14, 8, 0x15, 0x16, 0x18, 0x19, 0x1a, 0x1b, 0x1c].forEach((expected, i) =>
-    assert.equal(aokanaLogicalStatus(0xa0000000 + i), expected),
+    assert.equal(burikoLogicalStatus(0xa0000000 + i), expected),
   );
-  assert.equal(aokanaLogicalStatus(0xfffffffe), 0xfffffffe);
-  assert.equal(aokanaLogicalStatus(0x8000000c), 0xffffffff);
+  assert.equal(burikoLogicalStatus(0xfffffffe), 0xfffffffe);
+  assert.equal(burikoLogicalStatus(0x8000000c), 0xffffffff);
 });

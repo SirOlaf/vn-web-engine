@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted B0 modals share the graph title, DOM presenter, BP results and selection output', async () => {

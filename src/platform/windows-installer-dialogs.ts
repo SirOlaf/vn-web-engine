@@ -1,5 +1,6 @@
 /** Structured modal forms used by Windows installers on browser and desktop hosts. */
 export interface WindowsDestinationDialogRequest {
+  readonly title: string;
   readonly template: number;
   readonly path: string;
   readonly pathEditable: boolean;
@@ -19,6 +20,7 @@ export interface WindowsDestinationDialogResult {
 }
 
 export interface WindowsComponentDialogRequest {
+  readonly title: string;
   readonly template: number;
   readonly description: string;
   readonly choices: readonly [string | null, string, string];
@@ -29,7 +31,9 @@ export interface WindowsComponentDialogRequest {
 
 /** Returns native dialog result: -1 cancel, 3 special, or selected choice index. */
 export interface WindowsInstallerDialogHost {
-  chooseDestination(request: WindowsDestinationDialogRequest): Promise<WindowsDestinationDialogResult>;
+  chooseDestination(
+    request: WindowsDestinationDialogRequest,
+  ): Promise<WindowsDestinationDialogResult>;
   chooseComponent(request: WindowsComponentDialogRequest): Promise<number>;
   runProgress(request: WindowsInstallerProgressRequest): Promise<number>;
 }
@@ -43,6 +47,7 @@ export interface WindowsInstallerProgressReport {
 }
 
 export interface WindowsInstallerProgressRequest {
+  readonly title: string;
   readonly template: number;
   readonly cancellable: boolean;
   readonly totalFiles: number;
@@ -56,21 +61,29 @@ export interface WindowsInstallerProgressRequest {
 
 /** Minimal asset-free browser form host. The installer owner handles native validation. */
 export class BrowserWindowsInstallerDialogHost implements WindowsInstallerDialogHost {
-  constructor(readonly document: Document, readonly parent: HTMLElement) {}
+  constructor(
+    readonly document: Document,
+    readonly parent: HTMLElement,
+  ) {}
 
-  private addTitle(dialog: HTMLDialogElement): void {
+  private addTitle(dialog: HTMLDialogElement, value: string): void {
     const title = this.document.createElement('h2');
-    title.textContent = 'BURIKO General Interpreter Integrated Installer';
+    title.textContent = value;
     dialog.append(title);
   }
 
-  async chooseDestination(request: WindowsDestinationDialogRequest): Promise<WindowsDestinationDialogResult> {
+  async chooseDestination(
+    request: WindowsDestinationDialogRequest,
+  ): Promise<WindowsDestinationDialogResult> {
     const dialog = this.document.createElement('dialog');
-    this.addTitle(dialog);
+    this.addTitle(dialog, request.title);
     const path = this.document.createElement('input');
     path.value = request.path;
     path.disabled = !request.pathEditable;
-    path.setAttribute('aria-label', request.template === 0x6c ? 'インストールフォルダ' : 'Installation Folder');
+    path.setAttribute(
+      'aria-label',
+      request.template === 0x6c ? 'インストールフォルダ' : 'Installation Folder',
+    );
     dialog.append(path);
     const browse = this.document.createElement('button');
     browse.textContent = request.template === 0x6c ? '参照' : 'Browse...';
@@ -106,7 +119,12 @@ export class BrowserWindowsInstallerDialogHost implements WindowsInstallerDialog
       const finish = (result: number) => {
         dialog.close();
         dialog.remove();
-        resolve({result, path: path.value, optionA: Number(first.checked), optionB: Number(second.checked)});
+        resolve({
+          result,
+          path: path.value,
+          optionA: Number(first.checked),
+          optionB: Number(second.checked),
+        });
       };
       browse.addEventListener('click', async () => {
         const selected = await request.browseFolder();
@@ -114,14 +132,17 @@ export class BrowserWindowsInstallerDialogHost implements WindowsInstallerDialog
       });
       accept.addEventListener('click', () => finish(1));
       cancel.addEventListener('click', () => finish(0));
-      dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(0); });
+      dialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        finish(0);
+      });
       dialog.showModal();
     });
   }
 
   async chooseComponent(request: WindowsComponentDialogRequest): Promise<number> {
     const dialog = this.document.createElement('dialog');
-    this.addTitle(dialog);
+    this.addTitle(dialog, request.title);
     const description = this.document.createElement('p');
     description.textContent = request.description;
     dialog.append(description);
@@ -150,27 +171,37 @@ export class BrowserWindowsInstallerDialogHost implements WindowsInstallerDialog
     dialog.append(cancel);
     this.parent.append(dialog);
     return new Promise((resolve) => {
-      const finish = (result: number) => { dialog.close(); dialog.remove(); resolve(result); };
+      const finish = (result: number) => {
+        dialog.close();
+        dialog.remove();
+        resolve(result);
+      };
       accept.addEventListener('click', () => {
         const chosen = choices.findIndex((choice) => choice?.checked);
         finish(chosen < 0 ? Math.max(0, request.defaultChoice) : chosen);
       });
       special.addEventListener('click', () => finish(3));
       cancel.addEventListener('click', () => finish(-1));
-      dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(-1); });
+      dialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        finish(-1);
+      });
       dialog.showModal();
     });
   }
 
   async runProgress(request: WindowsInstallerProgressRequest): Promise<number> {
     const dialog = this.document.createElement('dialog');
-    this.addTitle(dialog);
+    this.addTitle(dialog, request.title);
     let askingToCancel = false;
     const requestCancellation = async () => {
       if (askingToCancel) return;
       askingToCancel = true;
-      try { await request.requestCancel(); }
-      finally { askingToCancel = false; }
+      try {
+        await request.requestCancel();
+      } finally {
+        askingToCancel = false;
+      }
     };
     const label = this.document.createElement('p');
     label.textContent = request.template === 0x6f ? 'インストール中…' : 'Installing...';
@@ -186,7 +217,9 @@ export class BrowserWindowsInstallerDialogHost implements WindowsInstallerDialog
     if (request.cancellable) {
       const cancel = this.document.createElement('button');
       cancel.textContent = request.template === 0x6f ? '中止' : 'Cancel';
-      cancel.addEventListener('click', () => { void requestCancellation(); });
+      cancel.addEventListener('click', () => {
+        void requestCancellation();
+      });
       dialog.append(cancel);
     }
     dialog.addEventListener('cancel', (event) => {
@@ -195,16 +228,20 @@ export class BrowserWindowsInstallerDialogHost implements WindowsInstallerDialog
     });
     this.parent.append(dialog);
     try {
-      const completed = await request.run((progress) => {
-        overall.max = Math.max(1, progress.totalFiles);
-        overall.value = progress.completedFiles;
-        detail.max = Math.max(1, progress.totalBlocks);
-        detail.value = progress.completedBlocks;
-        if (progress.fileName !== null)
-          label.textContent = request.template === 0x6f
-            ? `『${progress.fileName}』をインストール中…`
-            : `Installing "${progress.fileName}"...`;
-      }, () => dialog.showModal());
+      const completed = await request.run(
+        (progress) => {
+          overall.max = Math.max(1, progress.totalFiles);
+          overall.value = progress.completedFiles;
+          detail.max = Math.max(1, progress.totalBlocks);
+          detail.value = progress.completedBlocks;
+          if (progress.fileName !== null)
+            label.textContent =
+              request.template === 0x6f
+                ? `『${progress.fileName}』をインストール中…`
+                : `Installing "${progress.fileName}"...`;
+        },
+        () => dialog.showModal(),
+      );
       return Number(completed);
     } finally {
       if (dialog.open) dialog.close();

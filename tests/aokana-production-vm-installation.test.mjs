@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 const bytes = (value) => new TextEncoder().encode(value);
@@ -55,7 +55,7 @@ test('mounted 81:F2 installs through the VM scheduler and shared graph owners', 
     dword(addresses.retries, addresses.retry);
     write(addresses.format, 'Component%.4d.CAD');
     write(addresses.publisher, 'Sprite');
-    write(addresses.product, 'Aokana');
+    write(addresses.product, 'Buriko');
     write(addresses.uninstaller, 'uninstall.exe');
     write(addresses.uninstallerRetry, 'Insert uninstaller');
 
@@ -93,11 +93,14 @@ test('mounted 81:F2 installs through the VM scheduler and shared graph owners', 
 
     const installed = await graph.resource.files.open(encode('C:\\restart\\install\\data.bin'));
     assert.notEqual(installed.source, null);
-    assert.deepEqual(new Uint8Array(await installed.source.read(0, installed.source.size)), payload);
+    assert.deepEqual(
+      new Uint8Array(await installed.source.read(0, installed.source.size)),
+      payload,
+    );
     const key = {
       hive: 'HKLM',
       view: '64',
-      path: 'Software\\Sprite\\Aokana',
+      path: 'Software\\Sprite\\Buriko',
     };
     assert.notEqual(await graph.registry.storage.getValue(key, 'InstalledFolder'), null);
     await fixture.close();

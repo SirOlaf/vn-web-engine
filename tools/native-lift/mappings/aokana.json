@@ -22,11 +22,11 @@
       "id": "aokana.Bitmap",
       "kind": "reference",
       "import": {
-        "module": "src/engines/buriko/games/aokana/native/bitmap.js",
-        "export": "AokanaBitmap",
+        "module": "src/engines/buriko/native/bitmap.js",
+        "export": "BurikoBitmap",
         "source": {
-          "path": "src/engines/buriko/games/aokana/native/bitmap.ts",
-          "sha256": "3672bc640254c1b92ad7018ef0e1e94616045d603ba83e7ac29fea8fcfb33921"
+          "path": "src/engines/buriko/native/bitmap.ts",
+          "sha256": "135606a33feed8e7d5e1c5067f9149c636e994e1946842d541c8af20462c507f"
         }
       },
       "nativeBits": 64,
@@ -37,11 +37,11 @@
       "id": "aokana.Thread",
       "kind": "opaque",
       "import": {
-        "module": "src/engines/buriko/games/aokana/bp/state.js",
-        "export": "AokanaBpThread",
+        "module": "src/engines/buriko/bp/state.js",
+        "export": "BurikoBpThread",
         "source": {
-          "path": "src/engines/buriko/games/aokana/bp/state.ts",
-          "sha256": "feeafdd292baa64fd9af8ce5d66397d2eb53fe560c2aef86f39a8692902fbe7c"
+          "path": "src/engines/buriko/bp/state.ts",
+          "sha256": "b01f5cd11a6d256ca30f23127ae26636ca6e1240a8d8debafa562ecdf872ef71"
         }
       },
       "nullable": false
@@ -56,11 +56,11 @@
       "id": "aokana.Particle",
       "kind": "reference",
       "import": {
-        "module": "src/engines/buriko/games/aokana/native/particle-objects.js",
-        "export": "AokanaParticle",
+        "module": "src/engines/buriko/native/particle-objects.js",
+        "export": "BurikoParticle",
         "source": {
-          "path": "src/engines/buriko/games/aokana/native/particle-objects.ts",
-          "sha256": "0c9d19992af184b506dbc87bcc0a27902ab5fed4a8075c10f63e7f53f73a4967"
+          "path": "src/engines/buriko/native/particle-objects.ts",
+          "sha256": "05ce7e10938e4e649048f392b2636618aab599be9cdc15a6c4c8bc6bd164252c"
         }
       },
       "nativeBits": 64,
@@ -71,11 +71,11 @@
       "id": "aokana.ParticleImages",
       "kind": "reference",
       "import": {
-        "module": "src/engines/buriko/games/aokana/native/particle-images.js",
-        "export": "AokanaParticleImages",
+        "module": "src/engines/buriko/native/particle-images.js",
+        "export": "BurikoParticleImages",
         "source": {
-          "path": "src/engines/buriko/games/aokana/native/particle-images.ts",
-          "sha256": "f94cdd05a47c3331c73845048de2513c775a83b41679312eae58affd31d13a03"
+          "path": "src/engines/buriko/native/particle-images.ts",
+          "sha256": "877c55308a9966216d43fbb7fa993966740686251c07b9375468c77d5c458be4"
         }
       },
       "nativeBits": 64,
@@ -86,11 +86,11 @@
       "id": "aokana.ParticleVariants",
       "kind": "reference",
       "import": {
-        "module": "src/engines/buriko/games/aokana/native/particle-images.js",
-        "export": "AokanaParticleVariants",
+        "module": "src/engines/buriko/native/particle-images.js",
+        "export": "BurikoParticleVariants",
         "source": {
-          "path": "src/engines/buriko/games/aokana/native/particle-images.ts",
-          "sha256": "f94cdd05a47c3331c73845048de2513c775a83b41679312eae58affd31d13a03"
+          "path": "src/engines/buriko/native/particle-images.ts",
+          "sha256": "877c55308a9966216d43fbb7fa993966740686251c07b9375468c77d5c458be4"
         }
       },
       "nativeBits": 64,
@@ -125,11 +125,11 @@
   "implementations": [
     {
       "id": "aokana.nativeVectorAngle",
-      "module": "src/engines/buriko/games/aokana/bp/opcodes/native-math.js",
+      "module": "src/engines/buriko/bp/opcodes/native-math.js",
       "export": "nativeVectorAngle",
       "source": {
-        "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-        "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b"
+        "path": "src/engines/buriko/bp/opcodes/native-math.ts",
+        "sha256": "5a904cc82c4a4916ee6f4577240e9aee813390909a03fe581f8d751bf3d6d98a"
       },
       "signature": {
         "parameters": [
@@ -148,8 +148,8 @@
         "state": "source-assertion",
         "references": [
           {
-            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "path": "src/engines/buriko/bp/opcodes/native-math.ts",
+            "sha256": "5a904cc82c4a4916ee6f4577240e9aee813390909a03fe581f8d751bf3d6d98a",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           }
         ],
@@ -161,11 +161,11 @@
     },
     {
       "id": "aokana.nativeCursorInterpolation",
-      "module": "src/engines/buriko/games/aokana/bp/opcodes/native-math.js",
+      "module": "src/engines/buriko/bp/opcodes/native-math.js",
       "export": "nativeCursorInterpolation",
       "source": {
-        "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-        "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b"
+        "path": "src/engines/buriko/bp/opcodes/native-math.ts",
+        "sha256": "5a904cc82c4a4916ee6f4577240e9aee813390909a03fe581f8d751bf3d6d98a"
       },
       "signature": {
         "parameters": [
@@ -192,8 +192,8 @@
         "state": "source-assertion",
         "references": [
           {
-            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "path": "src/engines/buriko/bp/opcodes/native-math.ts",
+            "sha256": "5a904cc82c4a4916ee6f4577240e9aee813390909a03fe581f8d751bf3d6d98a",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           }
         ],
@@ -228,7 +228,7 @@
           {
             "path": "docs/tooling/evidence/aokana-095bb0.md",
             "sha256": "485abb4802cc619db8e91f967655a98f0bbf47a9e061f835ab5fc4bb3bb4ba45",
-            "section": "Aokana 095bb0 owner-load contract"
+            "section": "Buriko 095bb0 owner-load contract"
           }
         ],
         "notes": [
@@ -262,7 +262,7 @@
           {
             "path": "docs/tooling/evidence/aokana-095be0.md",
             "sha256": "b48214231d6113dfb6a2061965b055a02fedd2d9b89159a9fb3dd82e7fa22a6c",
-            "section": "Aokana 095be0 generational-slot and implementation contract"
+            "section": "Buriko 095be0 generational-slot and implementation contract"
           }
         ],
         "notes": [
@@ -322,8 +322,8 @@
         "state": "source-assertion",
         "references": [
           {
-            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "path": "src/engines/buriko/bp/opcodes/native-math.ts",
+            "sha256": "5a904cc82c4a4916ee6f4577240e9aee813390909a03fe581f8d751bf3d6d98a",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           },
           {
@@ -387,8 +387,8 @@
         "state": "source-assertion",
         "references": [
           {
-            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "path": "src/engines/buriko/bp/opcodes/native-math.ts",
+            "sha256": "5a904cc82c4a4916ee6f4577240e9aee813390909a03fe581f8d751bf3d6d98a",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           },
           {
@@ -482,8 +482,8 @@
         "state": "source-assertion",
         "references": [
           {
-            "path": "src/engines/buriko/games/aokana/bp/opcodes/native-math.ts",
-            "sha256": "1a1190d3f18fc33b3359b491be973920f087c697ffe4db5440762fe41138459b",
+            "path": "src/engines/buriko/bp/opcodes/native-math.ts",
+            "sha256": "5a904cc82c4a4916ee6f4577240e9aee813390909a03fe581f8d751bf3d6d98a",
             "section": "nativeVectorAngle / nativeCursorInterpolation: explicit source declarations and native-address comments"
           }
         ],
@@ -531,7 +531,7 @@
           {
             "path": "docs/tooling/evidence/aokana-095bb0.md",
             "sha256": "485abb4802cc619db8e91f967655a98f0bbf47a9e061f835ab5fc4bb3bb4ba45",
-            "section": "Aokana 095bb0 owner-load contract"
+            "section": "Buriko 095bb0 owner-load contract"
           }
         ],
         "notes": [
@@ -578,7 +578,7 @@
           {
             "path": "docs/tooling/evidence/aokana-095be0.md",
             "sha256": "b48214231d6113dfb6a2061965b055a02fedd2d9b89159a9fb3dd82e7fa22a6c",
-            "section": "Aokana 095be0 generational-slot and implementation contract"
+            "section": "Buriko 095be0 generational-slot and implementation contract"
           }
         ],
         "notes": [
@@ -594,9 +594,18 @@
       "id": "aokana.particle.layout",
       "kind": "struct",
       "type": "aokana.Particle",
-      "size": {"bytes": 64, "kind": "minimum"},
+      "size": {
+        "bytes": 64,
+        "kind": "minimum"
+      },
       "fields": [
-        {"name": "active", "offsetBytes": 16, "sizeBytes": 4, "storage": "inline", "type": "i32"},
+        {
+          "name": "active",
+          "offsetBytes": 16,
+          "sizeBytes": 4,
+          "storage": "inline",
+          "type": "i32"
+        },
         {
           "name": "framePosition",
           "offsetBytes": 36,
@@ -637,7 +646,9 @@
           "offsetBytes": 56,
           "sizeBytes": 8,
           "storage": "pointer",
-          "type": {"named": "aokana.ParticleImages"}
+          "type": {
+            "named": "aokana.ParticleImages"
+          }
         }
       ],
       "evidence": {
@@ -646,19 +657,30 @@
           {
             "path": "docs/tooling/evidence/aokana-native-layouts.md",
             "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
-            "section": "Partial AokanaParticle layout"
+            "section": "Partial BurikoParticle layout"
           }
         ],
-        "notes": ["Only reviewed fields are named; the 0x40-byte size is a minimum."]
+        "notes": [
+          "Only reviewed fields are named; the 0x40-byte size is a minimum."
+        ]
       }
     },
     {
       "id": "aokana.particle-images.layout",
       "kind": "struct",
       "type": "aokana.ParticleImages",
-      "size": {"bytes": 272, "kind": "exact"},
+      "size": {
+        "bytes": 272,
+        "kind": "exact"
+      },
       "fields": [
-        {"name": "count", "offsetBytes": 0, "sizeBytes": 4, "storage": "inline", "type": "u32"}
+        {
+          "name": "count",
+          "offsetBytes": 0,
+          "sizeBytes": 4,
+          "storage": "inline",
+          "type": "u32"
+        }
       ],
       "evidence": {
         "state": "reviewed-contract",
@@ -666,7 +688,7 @@
           {
             "path": "docs/tooling/evidence/aokana-native-layouts.md",
             "sha256": "88ea17d35a6768741d4dbd32875fc482f6ee0a3ed0da6feea58a030378d87f96",
-            "section": "Partial AokanaParticle layout"
+            "section": "Partial BurikoParticle layout"
           }
         ],
         "notes": [
@@ -678,7 +700,10 @@
       "id": "aokana.snow-record.layout",
       "kind": "struct",
       "type": "aokana.SnowParameterRecord",
-      "size": {"bytes": 44, "kind": "exact"},
+      "size": {
+        "bytes": 44,
+        "kind": "exact"
+      },
       "fields": [],
       "evidence": {
         "state": "source-assertion",
@@ -689,14 +714,19 @@
             "section": "Parameter-table globals"
           }
         ],
-        "notes": ["Record width is explicit; individual fields remain unnamed."]
+        "notes": [
+          "Record width is explicit; individual fields remain unnamed."
+        ]
       }
     },
     {
       "id": "aokana.firefly-record.layout",
       "kind": "struct",
       "type": "aokana.FireflyParameterRecord",
-      "size": {"bytes": 72, "kind": "exact"},
+      "size": {
+        "bytes": 72,
+        "kind": "exact"
+      },
       "fields": [],
       "evidence": {
         "state": "source-assertion",
@@ -707,15 +737,22 @@
             "section": "Parameter-table globals"
           }
         ],
-        "notes": ["Record width is explicit; individual fields remain unnamed."]
+        "notes": [
+          "Record width is explicit; individual fields remain unnamed."
+        ]
       }
     },
     {
       "id": "aokana.snow-table.layout",
       "kind": "array",
       "type": "aokana.SnowParameterTable",
-      "size": {"bytes": 2816, "kind": "exact"},
-      "elementType": {"named": "aokana.SnowParameterRecord"},
+      "size": {
+        "bytes": 2816,
+        "kind": "exact"
+      },
+      "elementType": {
+        "named": "aokana.SnowParameterRecord"
+      },
       "elementSizeBytes": 44,
       "count": 64,
       "evidence": {
@@ -727,15 +764,22 @@
             "section": "Parameter-table globals"
           }
         ],
-        "notes": ["The table maps 64 exact-width records."]
+        "notes": [
+          "The table maps 64 exact-width records."
+        ]
       }
     },
     {
       "id": "aokana.firefly-table.layout",
       "kind": "array",
       "type": "aokana.FireflyParameterTable",
-      "size": {"bytes": 4608, "kind": "exact"},
-      "elementType": {"named": "aokana.FireflyParameterRecord"},
+      "size": {
+        "bytes": 4608,
+        "kind": "exact"
+      },
+      "elementType": {
+        "named": "aokana.FireflyParameterRecord"
+      },
       "elementSizeBytes": 72,
       "count": 64,
       "evidence": {
@@ -747,7 +791,9 @@
             "section": "Parameter-table globals"
           }
         ],
-        "notes": ["The table maps 64 exact-width records."]
+        "notes": [
+          "The table maps 64 exact-width records."
+        ]
       }
     }
   ],
@@ -756,10 +802,16 @@
       "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
       "address": "0x1401e08e0",
       "name": "snowParameterTable",
-      "type": {"named": "aokana.SnowParameterTable"},
+      "type": {
+        "named": "aokana.SnowParameterTable"
+      },
       "implementation": {
-        "rootType": {"named": "aokana.ParticleVariants"},
-        "path": ["snowParameters"]
+        "rootType": {
+          "named": "aokana.ParticleVariants"
+        },
+        "path": [
+          "snowParameters"
+        ]
       },
       "evidence": {
         "state": "source-assertion",
@@ -770,17 +822,25 @@
             "section": "Parameter-table globals"
           }
         ],
-        "notes": ["The absolute address maps to the implementation-owned snow parameter array."]
+        "notes": [
+          "The absolute address maps to the implementation-owned snow parameter array."
+        ]
       }
     },
     {
       "binarySha256": "f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a",
       "address": "0x1401d6de0",
       "name": "fireflyParameterTable",
-      "type": {"named": "aokana.FireflyParameterTable"},
+      "type": {
+        "named": "aokana.FireflyParameterTable"
+      },
       "implementation": {
-        "rootType": {"named": "aokana.ParticleVariants"},
-        "path": ["fireflyParameters"]
+        "rootType": {
+          "named": "aokana.ParticleVariants"
+        },
+        "path": [
+          "fireflyParameters"
+        ]
       },
       "evidence": {
         "state": "source-assertion",
@@ -791,7 +851,9 @@
             "section": "Parameter-table globals"
           }
         ],
-        "notes": ["The absolute address maps to the implementation-owned firefly parameter array."]
+        "notes": [
+          "The absolute address maps to the implementation-owned firefly parameter array."
+        ]
       }
     }
   ],
@@ -828,7 +890,7 @@
           {
             "path": "docs/tooling/evidence/aokana-095bb0.md",
             "sha256": "485abb4802cc619db8e91f967655a98f0bbf47a9e061f835ab5fc4bb3bb4ba45",
-            "section": "Aokana 095bb0 owner-load contract"
+            "section": "Buriko 095bb0 owner-load contract"
           }
         ],
         "notes": [

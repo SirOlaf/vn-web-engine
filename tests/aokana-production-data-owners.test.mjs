@@ -2,17 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProductionDataOwners} from '../dist/engines/buriko/games/aokana/native/production-data-owners.js';
-import {AokanaProductionNativeFragments} from '../dist/engines/buriko/games/aokana/native/production-native-fragments.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaWaitTiming} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProductionDataOwners} from '../dist/engines/buriko/native/production-data-owners.js';
+import {BurikoProductionNativeFragments} from '../dist/engines/buriko/native/production-native-fragments.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoWaitTiming} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 class Element {
   constructor(tag) {
@@ -47,21 +47,21 @@ test('one production data bundle binds the actual graph, BP memory and partial w
   const files = new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase());
   const backing = new MountedFileSystem();
   backing.mount('/game', files);
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
     records: [],
     volumes: [{path: '/', identity: {}, writable: true}],
     canonical: (path) => path.toLowerCase(),
     currentFileTime: () => 123n,
     accessTimePolicy: 'disabled',
   });
-  const paths = new AokanaMountedProgramPaths(
+  const paths = new BurikoMountedProgramPaths(
     [
       {native: 'C:\\game', mounted: '/game'},
       {native: 'D:\\Drops', mounted: '/drops'},
     ],
     'C:\\game',
   );
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const encode = (value) => text.encodeWide(value, 1);
   const document = {createElement: (tag) => new Element(tag)};
   const parent = document.createElement('div');
@@ -95,7 +95,7 @@ test('one production data bundle binds the actual graph, BP memory and partial w
       verticalScrollbarWidth: 0,
       horizontalScrollbarHeight: 0,
     },
-    nativeWindowTitle: encode('Aokana'),
+    nativeWindowTitle: encode('Buriko'),
     preferredDialogTitle: null,
     cursorResource: null,
     performance: {now: () => 0},
@@ -128,7 +128,7 @@ test('one production data bundle binds the actual graph, BP memory and partial w
     resource: {
       mounted,
       paths,
-      media: new AokanaProgramMedia(),
+      media: new BurikoProgramMedia(),
       configuration: {
         nativeFileRoot: 'C:\\game\\',
         primaryRoot: encode('C:\\game\\'),
@@ -143,17 +143,17 @@ test('one production data bundle binds the actual graph, BP memory and partial w
       errorDirectory: encode('C:\\game\\'),
       workingDirectory: encode('C:\\game\\'),
       audioRootWide: 'C:\\game\\',
-      backend: new AokanaMemorySpeakerBackend(1000),
+      backend: new BurikoMemorySpeakerBackend(1000),
       output: {prefer24Bit: false},
       resourceWorkerCount: 1,
       sleep: async () => {},
     },
   };
-  const graph = new AokanaProductionDisplayResourceGraph(graphInputs);
+  const graph = new BurikoProductionDisplayResourceGraph(graphInputs);
   try {
-    const memory = new AokanaBpMemory(new Uint8Array(0x1000));
-    const owners = new AokanaProductionDataOwners(graph, memory);
-    const catalog = new AokanaProductionNativeFragments(graph, owners);
+    const memory = new BurikoBpMemory(new Uint8Array(0x1000));
+    const owners = new BurikoProductionDataOwners(graph, memory);
+    const catalog = new BurikoProductionNativeFragments(graph, owners);
     const definitions = catalog.nativeDefinitions();
     const keys = definitions.map(({primary, secondary}) => `${primary}:${secondary}`);
     assert.equal(new Set(keys).size, keys.length);
@@ -171,14 +171,14 @@ test('one production data bundle binds the actual graph, BP memory and partial w
     assert.equal(graph.particleFrames.particles, graph.particles);
     assert.equal(graph.manager.locks, graph.resource.locks);
     assert.equal(graph.surfaces.allocator, graph.allocator);
-    const secondGraph = new AokanaProductionDisplayResourceGraph({
+    const secondGraph = new BurikoProductionDisplayResourceGraph({
       ...graphInputs,
       parent: document.createElement('div'),
       canvas: document.createElement('canvas'),
       drop: {mountedRoot: '/drops2', nativeRoot: 'E:\\Drops'},
       resource: {
         ...graphInputs.resource,
-        paths: new AokanaMountedProgramPaths(
+        paths: new BurikoMountedProgramPaths(
           [
             {native: 'C:\\game', mounted: '/game'},
             {native: 'E:\\Drops', mounted: '/drops2'},
@@ -189,22 +189,22 @@ test('one production data bundle binds the actual graph, BP memory and partial w
     });
     try {
       assert.throws(
-        () => new AokanaProductionDataOwners(secondGraph, memory),
+        () => new BurikoProductionDataOwners(secondGraph, memory),
         /memory already belongs to another production graph/,
       );
-      const secondMemory = new AokanaBpMemory(new Uint8Array(0x1000));
-      const secondOwners = new AokanaProductionDataOwners(secondGraph, secondMemory);
+      const secondMemory = new BurikoBpMemory(new Uint8Array(0x1000));
+      const secondOwners = new BurikoProductionDataOwners(secondGraph, secondMemory);
       assert.equal(secondOwners.memory, secondMemory);
       assert.equal(secondOwners.procedures.manager, secondGraph.manager);
       assert.throws(
-        () => new AokanaProductionNativeFragments(secondGraph, owners),
+        () => new BurikoProductionNativeFragments(secondGraph, owners),
         /same production graph/,
       );
     } finally {
       await secondGraph.shutdown();
     }
 
-    const thread = new AokanaBpThread({
+    const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 512,
@@ -223,11 +223,11 @@ test('one production data bundle binds the actual graph, BP memory and partial w
     };
     invoke(0x80, 0x74, [0x87654321]);
     assert.equal(owners.save.cipher, 0x87654321);
-    memory.globalMemory.set(new TextEncoder().encode('Aokana\0'), 0x200);
+    memory.globalMemory.set(new TextEncoder().encode('Buriko\0'), 0x200);
     invoke(0x80, 0xea, [0x200]);
     assert.deepEqual(
       graph.externalMutexName.readAnsiName(),
-      new TextEncoder().encode('Uninstaller for Aokana is executing.\0'),
+      new TextEncoder().encode('Uninstaller for Buriko is executing.\0'),
     );
     invoke(0x80, 0xe8, [0x400]);
     assert.deepEqual(
@@ -286,7 +286,7 @@ test('one production data bundle binds the actual graph, BP memory and partial w
       (entry) => entry.primary === 0x80 && entry.secondary === 0x50,
     );
     assert.ok(procedureControl);
-    const firstWait = new AokanaWaitTiming(thread, owners.procedureState, graph.clock, 100);
+    const firstWait = new BurikoWaitTiming(thread, owners.procedureState, graph.clock, 100);
     assert.equal(firstWait.poll(), 0);
     push32(thread, 0);
     assert.equal(procedureControl.execute({thread, memory}), 1);
@@ -297,7 +297,7 @@ test('one production data bundle binds the actual graph, BP memory and partial w
     assert.equal(procedureControl.execute({thread, memory}), 1);
     assert.equal(thread.stackIndex, 0);
     assert.equal(owners.procedureState.enabled, 0x87654321);
-    const secondWait = new AokanaWaitTiming(thread, owners.procedureState, graph.clock, 100);
+    const secondWait = new BurikoWaitTiming(thread, owners.procedureState, graph.clock, 100);
     assert.equal(secondWait.poll(), 0);
     const nextId = owners.procedureState.nextId;
     assert.equal(
@@ -306,7 +306,7 @@ test('one production data bundle binds the actual graph, BP memory and partial w
     );
     assert.equal(owners.procedureState.enabled, 1);
     assert.equal(owners.procedureState.nextId, nextId);
-    const thirdWait = new AokanaWaitTiming(thread, owners.procedureState, graph.clock, 100);
+    const thirdWait = new BurikoWaitTiming(thread, owners.procedureState, graph.clock, 100);
     assert.equal(thirdWait.poll(), 0);
     firstWait.dispose();
     secondWait.dispose();

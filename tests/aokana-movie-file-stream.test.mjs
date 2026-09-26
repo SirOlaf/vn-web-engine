@@ -2,16 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaMovieFileStream} from '../dist/engines/buriko/games/aokana/native/movie-file-stream.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoMovieFileStream} from '../dist/engines/buriko/native/movie-file-stream.js';
 function setup(source, clock = () => 100) {
   const filesystem = new SourceFileSystem();
   filesystem.attach('/movie', source);
-  return new AokanaMovieFileStream(
-    new AokanaProgramFiles(filesystem, new AokanaNativeText(), new AokanaProgramMedia()),
+  return new BurikoMovieFileStream(
+    new BurikoProgramFiles(filesystem, new BurikoNativeText(), new BurikoProgramMedia()),
     clock,
   );
 }

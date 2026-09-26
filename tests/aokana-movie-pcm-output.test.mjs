@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMemoryMoviePcmOutput} from '../dist/engines/buriko/games/aokana/native/movie-pcm-output.js';
-import {aokanaIsoTime} from '../dist/engines/buriko/games/aokana/native/movie-iso-timeline.js';
-const f = aokanaIsoTime.fraction;
+import {BurikoMemoryMoviePcmOutput} from '../dist/engines/buriko/native/movie-pcm-output.js';
+import {burikoIsoTime} from '../dist/engines/buriko/native/movie-iso-timeline.js';
+const f = burikoIsoTime.fraction;
 const span = (values, rate, start, editIndex) => ({
   planes: [Float32Array.from(values)],
   sampleRate: rate,
@@ -11,10 +11,10 @@ const span = (values, rate, start, editIndex) => ({
   endFrame: values.length,
   editIndex,
   start,
-  end: aokanaIsoTime.add(start, f(BigInt(values.length), BigInt(rate))),
+  end: burikoIsoTime.add(start, f(BigInt(values.length), BigInt(rate))),
 });
 test('movie PCM core consumes committed gaps, overlaps and resampled actual planes across transport changes', () => {
-  const output = new AokanaMemoryMoviePcmOutput({channels: 1, capacityFrames: 8}, 4);
+  const output = new BurikoMemoryMoviePcmOutput({channels: 1, capacityFrames: 8}, 4);
   const complete = [],
     progress = [];
   output.onComplete((status) => complete.push(status));

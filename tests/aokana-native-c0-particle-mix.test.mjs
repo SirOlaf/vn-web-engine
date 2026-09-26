@@ -1,25 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {allocateBurikoBitmap, fillBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {mixBurikoBitmaps} from '../dist/engines/buriko/native/bitmap-mix.js';
 import {
-  allocateAokanaBitmap,
-  fillAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
+  burikoBitmapStripPlan,
+  burikoBitmapOperationStrips,
+} from '../dist/engines/buriko/native/bitmap-operation-jobs.js';
 import {
-  bitmapRead32,
-  bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {mixAokanaBitmaps} from '../dist/engines/buriko/games/aokana/native/bitmap-mix.js';
-import {
-  aokanaBitmapStripPlan,
-  aokanaBitmapOperationStrips,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-operation-jobs.js';
-import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 
 function bitmap(format, pixels) {
-  const result = allocateAokanaBitmap(pixels.length, 1, format);
+  const result = allocateBurikoBitmap(pixels.length, 1, format);
   pixels.forEach((value, i) => bitmapWrite32(result, i * 4, value));
   return result;
 }
@@ -30,9 +24,9 @@ function pixels(bitmap) {
 test('native RGB mixing interpolates all bytes with arithmetic flooring in pair and tail paths', () => {
   const a = bitmap(1, [0x003b829d, 0x007ffa13, 0x00337799]);
   const b = bitmap(1, [0x006bfc2c, 0x0089bdec, 0x00115588]);
-  const output = allocateAokanaBitmap(3, 1, 1);
+  const output = allocateBurikoBitmap(3, 1, 1);
   for (const factor of [0, 1, 63, 128, 201, 256]) {
-    assert.equal(mixAokanaBitmaps(output, a, b, factor), 0);
+    assert.equal(mixBurikoBitmaps(output, a, b, factor), 0);
     const expected = pixels(a).map((first, index) => {
       const second = pixels(b)[index];
       let pixel = 0;
@@ -51,8 +45,8 @@ test('native RGB mixing interpolates all bytes with arithmetic flooring in pair 
 test('native alpha mixing weights colors by coverage and retains reciprocal-table quantization', () => {
   const a = bitmap(2, [0xfffefcf8, 0x400a0c0e, 0x00ffffff]);
   const b = bitmap(2, [0xff000000, 0xc0a0a0a0, 0x00012345]);
-  const output = allocateAokanaBitmap(3, 1, 2);
-  assert.equal(mixAokanaBitmaps(output, a, b, 128), 0);
+  const output = allocateBurikoBitmap(3, 1, 2);
+  assert.equal(mixBurikoBitmaps(output, a, b, 128), 0);
   const result = pixels(output);
   assert.deepEqual(
     result.map((value) => value >>> 24),
@@ -65,15 +59,15 @@ test('native alpha mixing weights colors by coverage and retains reciprocal-tabl
 });
 
 test('bitmap operation strips use actual worker capacity and complete every normal draw job', () => {
-  const processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(3), 3);
-  const first = allocateAokanaBitmap(65, 101, 1),
-    second = allocateAokanaBitmap(65, 101, 1);
-  const output = allocateAokanaBitmap(65, 101, 1);
-  fillAokanaBitmap(first, 0x00102030);
-  fillAokanaBitmap(second, 0x00b08060);
-  const plan = aokanaBitmapStripPlan(processing, first, 0);
+  const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(3), 3);
+  const first = allocateBurikoBitmap(65, 101, 1),
+    second = allocateBurikoBitmap(65, 101, 1);
+  const output = allocateBurikoBitmap(65, 101, 1);
+  fillBurikoBitmap(first, 0x00102030);
+  fillBurikoBitmap(second, 0x00b08060);
+  const plan = burikoBitmapStripPlan(processing, first, 0);
   assert.deepEqual(plan, {count: 3, increment: Math.floor((101 * 65536) / 3)});
-  const strips = aokanaBitmapOperationStrips([first, second, output], plan, 0);
+  const strips = burikoBitmapOperationStrips([first, second, output], plan, 0);
   assert.deepEqual(
     strips.map((job) => job[0].height),
     [33, 34, 34],
@@ -82,7 +76,7 @@ test('bitmap operation strips use actual worker capacity and complete every norm
     strips.map((job) => job[0].offset),
     [0, 33 * 260, 67 * 260],
   );
-  assert.equal(mixAokanaBitmaps(output, first, second, 128, processing), 0);
+  assert.equal(mixBurikoBitmaps(output, first, second, 128, processing), 0);
   for (let row = 0; row < 101; row++)
     for (let column = 0; column < 65; column++)
       assert.equal(bitmapRead32(output, row * output.stride + column * 4), 0x00605048);

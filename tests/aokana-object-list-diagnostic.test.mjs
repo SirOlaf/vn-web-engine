@@ -1,27 +1,27 @@
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeCursor} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {createGroupE0ObjectList} from '../dist/engines/buriko/games/aokana/native/group-e0-object-list.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaSelectionDialog} from '../dist/engines/buriko/games/aokana/native/selection-dialog.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeCursor} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {createGroupE0ObjectList} from '../dist/engines/buriko/native/group-e0-object-list.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoSelectionDialog} from '../dist/engines/buriko/native/selection-dialog.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const rectangle = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, values = []) => ({
-  storage: new AokanaBitmapStorage(
+  storage: new BurikoBitmapStorage(
     new Uint8Array(
       new Uint32Array(Array.from({length: width * height}, (_, index) => values[index] ?? 0))
         .buffer,
@@ -37,22 +37,22 @@ const bitmap = (width, height, values = []) => ({
 });
 
 function fixture() {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
   const bounds = rectangle(0, 0, 7, 3),
     output = bitmap(8, 4),
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(16, {...bounds}),
+      new BurikoDisplayDamage(16, {...bounds}),
     );
   environment.displayContext = {bitmap: output, bounds};
-  const allocator = new AokanaDistributedAllocator(2),
-    text = new AokanaNativeText(),
-    surfaces = new AokanaSurfaces(new AokanaNativeFonts(text), compositor, allocator),
-    manager = new AokanaDisplayManager(
+  const allocator = new BurikoDistributedAllocator(2),
+    text = new BurikoNativeText(),
+    surfaces = new BurikoSurfaces(new BurikoNativeFonts(text), compositor, allocator),
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     );
   return {allocator, compositor, environment, manager, output, surfaces, text};
 }
@@ -69,12 +69,12 @@ test('ordinary object list uses real layer ordering and the shared native select
   manager.resolve(second).setActivation(0);
   manager.setRenderPixelBudget(1024);
   manager.initializeObjectRenderer();
-  const clock = new AokanaNativeClock(() => 100),
-    input = new AokanaNativeInput(manager.displayState, clock);
-  const cursor = new AokanaNativeCursor({style: {cursor: ''}});
+  const clock = new BurikoNativeClock(() => 100),
+    input = new BurikoNativeInput(manager.displayState, clock);
+  const cursor = new BurikoNativeCursor({style: {cursor: ''}});
   cursor.setVisible(0);
   const events = [];
-  const dialogs = new AokanaEngineDialogs(
+  const dialogs = new BurikoEngineDialogs(
     {
       chooseFont: async (message) => {
         assert.equal(cursor.requestedVisibility, 1);
@@ -92,14 +92,14 @@ test('ordinary object list uses real layer ordering and the shared native select
     null,
     new TextEncoder().encode('Fallback\0'),
   );
-  const selection = new AokanaSelectionDialog(dialogs, text);
+  const selection = new BurikoSelectionDialog(dialogs, text);
   const caption = new TextEncoder().encode('Engine\0');
   const [slot] = createGroupE0ObjectList(manager, selection, caption);
   assert.deepEqual(
     [slot.primary, slot.secondary, slot.nativeAddress],
-    [0xe0, 0, AOKANA_NATIVE_SLOT_ADDRESSES[0xe0][0]],
+    [0xe0, 0, BURIKO_NATIVE_SLOT_ADDRESSES[0xe0][0]],
   );
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
     moduleCapacity: 0,

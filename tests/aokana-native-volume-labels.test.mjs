@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {createGroup81VolumeLabels} from '../dist/engines/buriko/games/aokana/native/group-81-volume-labels.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {createGroup81VolumeLabels} from '../dist/engines/buriko/native/group-81-volume-labels.js';
 import {
-  AokanaVolumeLabelProfile,
-  AokanaVolumeLabels,
-} from '../dist/engines/buriko/games/aokana/native/volume-labels.js';
+  BurikoVolumeLabelProfile,
+  BurikoVolumeLabels,
+} from '../dist/engines/buriko/native/volume-labels.js';
 
 test('81 3D uses only the first drive byte, the exact ANSI root and raw host result', () => {
-  const profile = new AokanaVolumeLabelProfile([[0xe9, Uint8Array.of(0x82, 0xa0, 0)]]);
+  const profile = new BurikoVolumeLabelProfile([[0xe9, Uint8Array.of(0x82, 0xa0, 0)]]);
   const calls = [];
   const host = {
     readVolumeLabel(root, output, capacity) {
@@ -18,18 +18,18 @@ test('81 3D uses only the first drive byte, the exact ANSI root and raw host res
       return profile.readVolumeLabel(root, output, capacity) === 0 ? 0 : 0xf0000001;
     },
   };
-  const labels = new AokanaVolumeLabels(host);
+  const labels = new BurikoVolumeLabels(host);
   const [definition] = createGroup81VolumeLabels(labels);
   const bytes = new Uint8Array(1024).fill(0xa5);
   bytes.set([0xe9, 0x58, 0x59, 0], 16);
-  const memory = new AokanaBpMemory(bytes);
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(bytes);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 16,
     frameCapacity: 16,
   });
-  const context = {thread, memory, diagnostics: new AokanaBpDiagnostics(() => {})};
+  const context = {thread, memory, diagnostics: new BurikoBpDiagnostics(() => {})};
 
   push32(thread, 128);
   push32(thread, 16);
@@ -43,7 +43,7 @@ test('81 3D uses only the first drive byte, the exact ANSI root and raw host res
 
   const untouched = new Uint8Array([1, 2, 3, 4]);
   assert.equal(
-    new AokanaVolumeLabels(new AokanaVolumeLabelProfile([])).read(
+    new BurikoVolumeLabels(new BurikoVolumeLabelProfile([])).read(
       {bytes: untouched, offset: 0},
       {bytes: Uint8Array.of(67), offset: 0},
     ),

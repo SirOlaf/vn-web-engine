@@ -1,36 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup81SyntheticMouse} from '../dist/engines/buriko/games/aokana/native/group-81-synthetic-mouse.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaKnobDisplays} from '../dist/engines/buriko/games/aokana/native/knob-displays.js';
-import {AokanaMainWindowMessageReceiver} from '../dist/engines/buriko/games/aokana/native/main-window-messages.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
-import {AokanaWindowMessages as AokanaWaitWindowMessages} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaSyntheticMouse} from '../dist/engines/buriko/games/aokana/native/synthetic-mouse.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup81SyntheticMouse} from '../dist/engines/buriko/native/group-81-synthetic-mouse.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoKnobDisplays} from '../dist/engines/buriko/native/knob-displays.js';
+import {BurikoMainWindowMessageReceiver} from '../dist/engines/buriko/native/main-window-messages.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
+import {BurikoWindowMessages as BurikoWaitWindowMessages} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoSyntheticMouse} from '../dist/engines/buriko/native/synthetic-mouse.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
 
 function fixture() {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
   const bounds = {left: 0, top: 0, right: 799, bottom: 599},
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(64, {...bounds}),
+      new BurikoDisplayDamage(64, {...bounds}),
     );
   environment.displayContext = {
     bitmap: {
@@ -44,30 +44,30 @@ function fixture() {
     },
     bounds,
   };
-  const allocator = new AokanaDistributedAllocator(1),
-    processing = new AokanaDistributedProcessing(allocator, 1),
-    surfaces = new AokanaSurfaces(
-      new AokanaNativeFonts(new AokanaNativeText()),
+  const allocator = new BurikoDistributedAllocator(1),
+    processing = new BurikoDistributedProcessing(allocator, 1),
+    surfaces = new BurikoSurfaces(
+      new BurikoNativeFonts(new BurikoNativeText()),
       compositor,
       allocator,
     ),
-    display = new AokanaNativeDisplayState(1920, 1080);
+    display = new BurikoNativeDisplayState(1920, 1080);
   compositor.processing = processing;
   display.requestedWidth = display.logicalWidth;
   display.requestedHeight = display.logicalHeight;
-  const manager = new AokanaDisplayManager(environment, surfaces, display),
-    input = new AokanaNativeInput(display, {read: () => 0n}),
-    notifications = new AokanaNativeNotifications(),
-    knobs = new AokanaKnobDisplays(manager, input, notifications),
-    messages = new AokanaWindowMessages(input),
-    waits = new AokanaWaitWindowMessages(),
+  const manager = new BurikoDisplayManager(environment, surfaces, display),
+    input = new BurikoNativeInput(display, {read: () => 0n}),
+    notifications = new BurikoNativeNotifications(),
+    knobs = new BurikoKnobDisplays(manager, input, notifications),
+    messages = new BurikoWindowMessages(input),
+    waits = new BurikoWaitWindowMessages(),
     order = [],
     focus = {focus: () => order.push('focus')};
   messages.createMainTarget();
-  new AokanaMainWindowMessageReceiver(messages, waits, input, notifications, focus, knobs);
-  const mouse = new AokanaSyntheticMouse(input, messages),
+  new BurikoMainWindowMessageReceiver(messages, waits, input, notifications, focus, knobs);
+  const mouse = new BurikoSyntheticMouse(input, messages),
     [definition] = createGroup81SyntheticMouse(mouse),
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
@@ -75,7 +75,7 @@ function fixture() {
     }),
     context = {
       thread,
-      memory: new AokanaBpMemory(new Uint8Array(0)),
+      memory: new BurikoBpMemory(new Uint8Array(0)),
       diagnostics: {},
     };
   return {definition, input, messages, notifications, order, thread, context, waits};
@@ -83,13 +83,13 @@ function fixture() {
 
 test('81:1E synchronously sends exact left and X2 pairs through the shared receiver', () => {
   const s = fixture(),
-    waiter = new AokanaBpThread({
+    waiter = new BurikoBpThread({
       id: 2,
       operandCapacity: 4,
       moduleCapacity: 0,
       frameCapacity: 0,
     });
-  assert.equal(s.definition.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][0x1e]);
+  assert.equal(s.definition.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][0x1e]);
   for (const message of [0x201, 0x202, 0x20b, 0x20c]) s.waits.register(waiter, message);
 
   const queries = [],

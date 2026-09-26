@@ -1,33 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {createGroup81DiskFreeSpace} from '../dist/engines/buriko/games/aokana/native/group-81-disk-free-space.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {createGroup81DiskFreeSpace} from '../dist/engines/buriko/native/group-81-disk-free-space.js';
 import {
-  AokanaDiskFreeSpaceProfile,
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoDiskFreeSpaceProfile,
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 test('81 37 normalizes the path and writes truncated caller-available MiB', () => {
-  const media = new AokanaProgramMedia();
+  const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles({}, new AokanaNativeText(), media);
+  const files = new BurikoProgramFiles({}, new BurikoNativeText(), media);
   const freeBytes = ((1n << 32n) + 5n) << 20n;
-  const host = new AokanaDiskFreeSpaceProfile([['C:\\game\\', freeBytes]]);
+  const host = new BurikoDiskFreeSpaceProfile([['C:\\game\\', freeBytes]]);
   const [definition] = createGroup81DiskFreeSpace(files, host);
   const bytes = new Uint8Array(128).fill(0xa5);
   bytes.set(new TextEncoder().encode('C:\\game\0'), 16);
-  const memory = new AokanaBpMemory(bytes);
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(bytes);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 16,
     frameCapacity: 16,
   });
-  const context = {thread, memory, diagnostics: new AokanaBpDiagnostics(() => {})};
+  const context = {thread, memory, diagnostics: new BurikoBpDiagnostics(() => {})};
 
   push32(thread, 96);
   push32(thread, 16);
@@ -40,9 +40,9 @@ test('81 37 normalizes the path and writes truncated caller-available MiB', () =
 });
 
 test('disk-free-space failures preserve output and do not query unavailable media', () => {
-  const media = new AokanaProgramMedia();
+  const media = new BurikoProgramMedia();
   media.setDriveType(3, 5);
-  const files = new AokanaProgramFiles({}, new AokanaNativeText(), media);
+  const files = new BurikoProgramFiles({}, new BurikoNativeText(), media);
   const calls = [];
   const host = {
     readFreeBytesAvailable(path) {

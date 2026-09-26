@@ -2,25 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {createGroup81TemporaryDirectory} from '../dist/engines/buriko/games/aokana/native/group-81-temporary-directory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {createGroup81TemporaryDirectory} from '../dist/engines/buriko/native/group-81-temporary-directory.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
 import {
-  AokanaTemporaryDirectoryProbe,
-  AokanaTemporaryFileProfile,
-} from '../dist/engines/buriko/games/aokana/native/temporary-directory-probe.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoTemporaryDirectoryProbe,
+  BurikoTemporaryFileProfile,
+} from '../dist/engines/buriko/native/temporary-directory-probe.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 
-class RecordingMetadata extends AokanaMountedFileMetadata {
+class RecordingMetadata extends BurikoMountedFileMetadata {
   constructor(backing, profile, events) {
     super(backing, profile);
     this.events = events;
@@ -75,14 +75,14 @@ test('81 2F creates nested directories, round-trips one real BGI file and rolls 
     },
     events,
   );
-  const paths = new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\');
-  const files = new AokanaProgramFiles(
+  const paths = new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\');
+  const files = new BurikoProgramFiles(
     metadata,
-    new AokanaNativeText(),
-    new AokanaProgramMedia(),
+    new BurikoNativeText(),
+    new BurikoProgramMedia(),
     paths,
   );
-  const profile = new AokanaTemporaryFileProfile(['BGI0001.tmp']);
+  const profile = new BurikoTemporaryFileProfile(['BGI0001.tmp']);
   const host = {
     async createTemporaryFile(owner, directory, prefix) {
       events.push(['temp', directory, prefix]);
@@ -93,18 +93,18 @@ test('81 2F creates nested directories, round-trips one real BGI file and rolls 
       return profile.deleteTemporaryFile(owner, path);
     },
   };
-  const probe = new AokanaTemporaryDirectoryProbe(files, host);
+  const probe = new BurikoTemporaryDirectoryProbe(files, host);
   const [definition] = createGroup81TemporaryDirectory(probe);
   const memoryBytes = new Uint8Array(128);
   memoryBytes.set(bytes('C:\\existing\\new\\child\0'), 16);
-  const memory = new AokanaBpMemory(memoryBytes);
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(memoryBytes);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 16,
     frameCapacity: 16,
   });
-  const context = {thread, memory, diagnostics: new AokanaBpDiagnostics(() => {})};
+  const context = {thread, memory, diagnostics: new BurikoBpDiagnostics(() => {})};
 
   push32(thread, 16);
   assert.equal(await definition.execute(context), 0);

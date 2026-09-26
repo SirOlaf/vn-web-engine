@@ -1,56 +1,56 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeCursor} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaCursorPolicy} from '../dist/engines/buriko/games/aokana/native/cursor-policy.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaIndependentProcedures} from '../dist/engines/buriko/games/aokana/native/independent-procedure.js';
-import {AokanaIndependentIconState} from '../dist/engines/buriko/games/aokana/native/independent-icon.js';
-import {createGroup90IndependentIcons} from '../dist/engines/buriko/games/aokana/native/group-90-independent-icons.js';
-import {createGroup91IndependentIconEx} from '../dist/engines/buriko/games/aokana/native/group-91-independent-icon-ex.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeCursor} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoCursorPolicy} from '../dist/engines/buriko/native/cursor-policy.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoIndependentProcedures} from '../dist/engines/buriko/native/independent-procedure.js';
+import {BurikoIndependentIconState} from '../dist/engines/buriko/native/independent-icon.js';
+import {createGroup90IndependentIcons} from '../dist/engines/buriko/native/group-90-independent-icons.js';
+import {createGroup91IndependentIconEx} from '../dist/engines/buriko/native/group-91-independent-icon-ex.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('IconEx animates and moves actual Window inner Sprites through VM groups and independent messages', async () => {
-  const text = new AokanaNativeText(),
-    compositor = new AokanaBitmapCompositor();
+  const text = new BurikoNativeText(),
+    compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(text),
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(text),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
   const bounds = {left: 0, top: 0, right: 63, bottom: 31},
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(128, bounds),
+      new BurikoDisplayDamage(128, bounds),
     );
-  const display = new AokanaNativeDisplayState(64, 32),
-    manager = new AokanaDisplayManager(environment, surfaces, display);
+  const display = new BurikoNativeDisplayState(64, 32),
+    manager = new BurikoDisplayManager(environment, surfaces, display);
   assert.equal(display.setSizePreset(display.selectedSizePreset, 64, 32), 0);
   display.requestedWidth = 64;
   display.requestedHeight = 32;
   display.refreshPointerStep();
-  manager.bindDisplayContext({bitmap: allocateAokanaBitmap(64, 32, 1), bounds});
-  const windows = new AokanaWindowDisplayState(manager);
+  manager.bindDisplayContext({bitmap: allocateBurikoBitmap(64, 32, 1), bounds});
+  const windows = new BurikoWindowDisplayState(manager);
   const created = manager.createConfigured(
     'window',
-    (order) => new AokanaWindowDisplayObject(windows, order),
+    (order) => new BurikoWindowDisplayObject(windows, order),
     (window) => window.configureInitial(32, 32),
   );
   assert.equal(created.result, 0);
@@ -66,22 +66,22 @@ test('IconEx animates and moves actual Window inner Sprites through VM groups an
     surfaces.fill(id, color);
   }
   let now = 100;
-  const clock = new AokanaNativeClock(() => now),
-    input = new AokanaNativeInput(display, clock),
-    priorities = new AokanaProcedureState();
+  const clock = new BurikoNativeClock(() => now),
+    input = new BurikoNativeInput(display, clock),
+    priorities = new BurikoProcedureState();
   input.foreground = true;
   input.pointerAvailable = true;
   input.pointerClientX = 3;
   input.pointerClientY = 4;
   input.resetCaptures();
-  const cursor = new AokanaCursorPolicy(
+  const cursor = new BurikoCursorPolicy(
     manager,
     input,
     clock,
-    new AokanaNativeCursor({style: {cursor: ''}}),
+    new BurikoNativeCursor({style: {cursor: ''}}),
   );
-  const shared = new AokanaIndependentProcedures(manager),
-    settings = new AokanaIndependentIconState();
+  const shared = new BurikoIndependentProcedures(manager),
+    settings = new BurikoIndependentIconState();
   const errors = {
     files: {text},
     threadFatal() {
@@ -103,13 +103,13 @@ test('IconEx animates and moves actual Window inner Sprites through VM groups an
       assert.fail('ordinary Icon fixture');
     },
   });
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(1024));
+    memory = new BurikoBpMemory(new Uint8Array(1024));
   const view = new DataView(memory.globalMemory.buffer),
     context = {thread, memory, diagnostics: {}};
   const words = (offset, values) =>
@@ -118,7 +118,7 @@ test('IconEx animates and moves actual Window inner Sprites through VM groups an
     const slot = (primary === 0x91 ? exSlots : slots).find((s) => s.secondary === secondary);
     assert.deepEqual(
       [slot.primary, slot.nativeAddress],
-      [primary, AOKANA_NATIVE_SLOT_ADDRESSES[primary][secondary]],
+      [primary, BURIKO_NATIVE_SLOT_ADDRESSES[primary][secondary]],
     );
     args.forEach((v) => push32(thread, v));
     assert.equal(slot.execute(context), 0);

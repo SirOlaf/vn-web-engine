@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted font raster settings change ordinary upright and italic glyph layout', async () => {

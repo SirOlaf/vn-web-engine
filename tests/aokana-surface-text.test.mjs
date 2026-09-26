@@ -1,22 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {createGroup92SurfaceText} from '../dist/engines/buriko/games/aokana/native/group-92-surface-text.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {createGroup92SurfaceText} from '../dist/engines/buriko/native/group-92-surface-text.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {readRasterText} from '../dist/text/raster-text.js';
 
 test('registered surface text draws multiline width and wrapped line metrics through the shared font cache', async () => {
-  const text = new AokanaNativeText(),
+  const text = new BurikoNativeText(),
     created = [];
-  const fonts = new AokanaNativeFonts(text, {
+  const fonts = new BurikoNativeFonts(text, {
     async queryCharset() {
       return 1;
     },
@@ -45,9 +45,9 @@ test('registered surface text draws multiline width and wrapped line metrics thr
   });
   fonts.rasterSettings.setQuality(-1);
   const font = fonts.registerName(text.encodeWide('SurfaceSynthetic', 0), 0);
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
   const initialize = (id, width, height) =>
     assert.equal(
       surfaces.importRaw(id, width, height, 1, {
@@ -59,30 +59,30 @@ test('registered surface text draws multiline width and wrapped line metrics thr
   initialize(1, 24, 24);
   initialize(2, 16, 32);
   initialize(3, 16, 32);
-  const errors = new AokanaEngineErrors(
+  const errors = new BurikoEngineErrors(
     {text},
     {show: () => assert.fail('Unexpected ordinary surface text error')},
     Uint8Array.of(0),
     Uint8Array.of(0),
   );
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(256));
+  const memory = new BurikoBpMemory(new Uint8Array(256));
   memory.globalMemory.set(text.encodeWide('A\nBC', 1), 32);
   memory.globalMemory.set(text.encodeWide('ABCDE', 1), 96);
   const context = {
     thread,
     memory,
-    diagnostics: new AokanaBpDiagnostics(() => assert.fail('Unexpected diagnostic')),
+    diagnostics: new BurikoBpDiagnostics(() => assert.fail('Unexpected diagnostic')),
   };
   const definitions = createGroup92SurfaceText(surfaces, errors);
   const slots = new Map(definitions.map((slot) => [slot.secondary, slot]));
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x92][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x92][slot.secondary]);
   const run = async (secondary, values, expected) => {
     for (const value of values) push32(thread, value);
     assert.equal(await slots.get(secondary).execute(context), 0);

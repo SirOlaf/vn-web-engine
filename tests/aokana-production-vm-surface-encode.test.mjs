@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {decodeCompressedBgLegacy} from '../dist/formats/buriko/compressed-bg.js';
-import {decodeAokanaCompressedBgV2} from '../dist/engines/buriko/games/aokana/native/compressed-bg-v2.js';
+import {decodeBurikoCompressedBgV2} from '../dist/engines/buriko/native/compressed-bg-v2.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM raw-exports and compresses graph surfaces into BP output buffers', async () => {
@@ -72,7 +72,7 @@ test('mounted VM raw-exports and compresses graph surfaces into BP output buffer
     const modernLength = view.getUint32(0x288, true);
     assert.ok(modernLength > 48 && modernLength < 0x9000);
     const modern = memory.globalMemory.subarray(0x6000, 0x6000 + modernLength);
-    const decoded = await decodeAokanaCompressedBgV2(modern, graph.resource.processing);
+    const decoded = await decodeBurikoCompressedBgV2(modern, graph.resource.processing);
     assert.equal(decoded.initializedLength, 16 + 64 * 16 * 4);
     const expectedPixels = new Uint8Array(64 * 16 * 4);
     for (let index = 0; index < 64 * 16; index++)

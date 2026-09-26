@@ -2,19 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {createGroup80InstallerShortcutCleanup} from '../dist/engines/buriko/games/aokana/native/group-80-installer-shortcut-cleanup.js';
-import {AokanaInstallerShortcutCleanup} from '../dist/engines/buriko/games/aokana/native/installer-shortcut-cleanup.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {createGroup80InstallerShortcutCleanup} from '../dist/engines/buriko/native/group-80-installer-shortcut-cleanup.js';
+import {BurikoInstallerShortcutCleanup} from '../dist/engines/buriko/native/installer-shortcut-cleanup.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaSpecialFolders} from '../dist/engines/buriko/games/aokana/native/special-folders.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeRegistry} from '../dist/engines/buriko/games/aokana/native/windows-registry.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoSpecialFolders} from '../dist/engines/buriko/native/special-folders.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeRegistry} from '../dist/engines/buriko/native/windows-registry.js';
 
 const shortcutPaths = [
   '/desktop/main.lnk',
@@ -29,7 +29,7 @@ async function mountedShortcuts() {
     {kind: 'write', path: '/programs/sibling.lnk', data: new Uint8Array([77])},
   ]);
   const directories = ['/desktop', '/programs', '/programs/aokana'];
-  const metadata = new AokanaMountedFileMetadata(backing, {
+  const metadata = new BurikoMountedFileMetadata(backing, {
     records: [
       ...directories.map((path) => ({
         path,
@@ -53,16 +53,16 @@ async function mountedShortcuts() {
     currentFileTime: () => 0n,
     accessTimePolicy: 'disabled',
   });
-  const text = new AokanaNativeText();
-  const files = new AokanaProgramFiles(
+  const text = new BurikoNativeText();
+  const files = new BurikoProgramFiles(
     metadata,
     text,
-    new AokanaProgramMedia(),
-    new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+    new BurikoProgramMedia(),
+    new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
   );
-  const folders = new AokanaSpecialFolders(
+  const folders = new BurikoSpecialFolders(
     text,
-    new AokanaNativeRegistry(new MemoryStore()),
+    new BurikoNativeRegistry(new MemoryStore()),
     {primaryRoot: text.encodeWide('C:\\', 1), secondaryRoot: null},
     {
       shellAllocatorAvailable: true,
@@ -86,8 +86,8 @@ async function mountedShortcuts() {
 }
 
 async function invoke(cleanup, text, removeFolder) {
-  const memory = new AokanaBpMemory(new Uint8Array(1024));
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(new Uint8Array(1024));
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
     moduleCapacity: 0,
@@ -95,7 +95,7 @@ async function invoke(cleanup, text, removeFolder) {
   });
   memory.globalMemory.set(text.encodeWide('Main.lnk', 1), 64);
   memory.globalMemory.set(text.encodeWide('Uninstall.lnk', 1), 192);
-  memory.globalMemory.set(text.encodeWide('Aokana', 1), 320);
+  memory.globalMemory.set(text.encodeWide('Buriko', 1), 320);
   const [slot] = createGroup80InstallerShortcutCleanup(cleanup);
   assert.deepEqual([slot.primary, slot.secondary, slot.nativeAddress], [0x80, 0xf6, 0x1400e6160]);
   for (const argument of [64, 192, 320, removeFolder]) push32(thread, argument);
@@ -105,7 +105,7 @@ async function invoke(cleanup, text, removeFolder) {
 
 test('F6 removes three installer shortcuts through shared mounted folder and metadata owners', async () => {
   const {backing, metadata, files, folders, text} = await mountedShortcuts();
-  const cleanup = new AokanaInstallerShortcutCleanup(folders, files);
+  const cleanup = new BurikoInstallerShortcutCleanup(folders, files);
   assert.equal(cleanup.metadata, metadata);
   const order = [];
   const query = folders.query.bind(folders);
@@ -123,8 +123,8 @@ test('F6 removes three installer shortcuts through shared mounted folder and met
     'folder:1',
     'delete:/Desktop/Main.lnk',
     'folder:2',
-    'delete:/Programs/Aokana/Main.lnk',
-    'delete:/Programs/Aokana/Uninstall.lnk',
+    'delete:/Programs/Buriko/Main.lnk',
+    'delete:/Programs/Buriko/Uninstall.lnk',
   ]);
   for (const path of shortcutPaths) await assert.rejects(backing.open(path), /NOT_FOUND/);
   await assert.rejects(metadata.stat('/programs/aokana'), /NOT_FOUND/);
@@ -138,7 +138,7 @@ test('F6 removes three installer shortcuts through shared mounted folder and met
 
 test('F6 flag zero keeps the now-empty Programs subfolder', async () => {
   const {backing, metadata, files, folders, text} = await mountedShortcuts();
-  await invoke(new AokanaInstallerShortcutCleanup(folders, files), text, 0);
+  await invoke(new BurikoInstallerShortcutCleanup(folders, files), text, 0);
   for (const path of shortcutPaths) await assert.rejects(backing.open(path), /NOT_FOUND/);
   assert.equal((await metadata.stat('/programs/aokana')).kind, 'directory');
 });

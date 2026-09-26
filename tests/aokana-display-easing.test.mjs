@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nativeEasingPower} from '../dist/engines/buriko/games/aokana/bp/opcodes/native-easing-power.js';
-import {nativeDisplayEasing} from '../dist/engines/buriko/games/aokana/bp/opcodes/native-math.js';
+import {nativeEasingPower} from '../dist/engines/buriko/bp/opcodes/native-easing-power.js';
+import {nativeDisplayEasing} from '../dist/engines/buriko/bp/opcodes/native-math.js';
 import {
   referencePower,
   referenceEasing,

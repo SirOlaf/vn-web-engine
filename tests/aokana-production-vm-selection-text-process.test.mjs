@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted text selections draw and complete through one graph Window and shared owners', async () => {
@@ -91,7 +91,7 @@ test('mounted text selections draw and complete through one graph Window and sha
     await call(0x90, 0x80, [32, 32], 0, 1);
     const handle = pop32(child.state);
     const window = graph.manager.find('window', handle);
-    assert.ok(window instanceof AokanaWindowDisplayObject);
+    assert.ok(window instanceof BurikoWindowDisplayObject);
     await call(0x91, 0x88, [handle, font, 8, 100, 0, 0, 0]);
     await call(0x90, 0x88, [handle, 0, 0, 32, 16]);
 

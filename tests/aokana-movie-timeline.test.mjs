@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createAokanaIsoTimeline,
-  aokanaIsoDecodeStart,
-} from '../dist/engines/buriko/games/aokana/native/movie-iso-timeline.js';
+  createBurikoIsoTimeline,
+  burikoIsoDecodeStart,
+} from '../dist/engines/buriko/native/movie-iso-timeline.js';
 
 const movie = {timescale: 1000};
 const track = (edits = [], changes = {}) => ({
@@ -20,7 +20,7 @@ const track = (edits = [], changes = {}) => ({
 });
 
 test('ISO edits preserve gaps, clipped sample boundaries and exact rational times', () => {
-  const timeline = createAokanaIsoTimeline(
+  const timeline = createBurikoIsoTimeline(
     movie,
     track([
       {duration: 250n, mediaTime: -1n, rate: 65536},
@@ -42,7 +42,7 @@ test('ISO edits preserve gaps, clipped sample boundaries and exact rational time
 });
 
 test('ISO dwell, reverse and non-unit rates preserve actual source selection', () => {
-  const timeline = createAokanaIsoTimeline(
+  const timeline = createBurikoIsoTimeline(
     movie,
     track([
       {duration: 1000n, mediaTime: 72000n, rate: 0},
@@ -71,18 +71,18 @@ test('ISO dwell, reverse and non-unit rates preserve actual source selection', (
 
 test('ISO unknown durations use sample extent and decode seeks retain keyframe preroll', () => {
   const source = track([], {movieDuration: 0n, duration: 0xffffffffffffffffn});
-  assert.equal(createAokanaIsoTimeline(movie, source).duration, 30000000n);
-  assert.equal(aokanaIsoDecodeStart(source, 1), 0);
-  assert.equal(aokanaIsoDecodeStart(source, 2), 2);
-  assert.throws(() => aokanaIsoDecodeStart(source, 3), /outside/);
+  assert.equal(createBurikoIsoTimeline(movie, source).duration, 30000000n);
+  assert.equal(burikoIsoDecodeStart(source, 1), 0);
+  assert.equal(burikoIsoDecodeStart(source, 2), 2);
+  assert.throws(() => burikoIsoDecodeStart(source, 3), /outside/);
   assert.throws(
-    () => aokanaIsoDecodeStart({...source, samples: [{sync: false}]}, 0),
+    () => burikoIsoDecodeStart({...source, samples: [{sync: false}]}, 0),
     /random-access/,
   );
 });
 
 test('ISO composition order is independent of decode order, and point samples remain points', () => {
-  const timeline = createAokanaIsoTimeline(
+  const timeline = createBurikoIsoTimeline(
     movie,
     track([], {
       timescale: 3,

@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
-import {AokanaMainDomInput} from '../dist/engines/buriko/games/aokana/native/main-dom-input.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
+import {BurikoMainDomInput} from '../dist/engines/buriko/native/main-dom-input.js';
 
 class Element {
   constructor(parent = null) {
@@ -54,10 +54,10 @@ function fixture() {
   document.focused = true;
   document.hasFocus = () => document.focused;
   document.defaultView = new Element();
-  const display = new AokanaNativeDisplayState(640, 480),
-    input = new AokanaNativeInput(display, new AokanaNativeClock(() => 0)),
-    messages = new AokanaWindowMessages(input),
-    keyboard = new AokanaKeyboardMessages(messages);
+  const display = new BurikoNativeDisplayState(640, 480),
+    input = new BurikoNativeInput(display, new BurikoNativeClock(() => 0)),
+    messages = new BurikoWindowMessages(input),
+    keyboard = new BurikoKeyboardMessages(messages);
   messages.createMainTarget();
   const host = {
     document,
@@ -69,7 +69,7 @@ function fixture() {
       document.visibilityState !== 'hidden' &&
       parent.contains(document.activeElement),
   };
-  const ingress = new AokanaMainDomInput(host, input, messages, keyboard);
+  const ingress = new BurikoMainDomInput(host, input, messages, keyboard);
   const key = (code, keyCode, type = 'keydown') => {
     return canvas.fire(type, {code, keyCode, repeat: false, getModifierState: () => false});
   };

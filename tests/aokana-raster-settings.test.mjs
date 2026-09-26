@@ -1,30 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  AokanaBitmapStorage,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {
-  bitmapRead32,
-  bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {displaceAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-displacement.js';
-import {AokanaBitmapText} from '../dist/engines/buriko/games/aokana/native/font-bitmap.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
-import {createGroup91RasterSettings} from '../dist/engines/buriko/games/aokana/native/group-91-raster-settings.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {displaceBurikoBitmap} from '../dist/engines/buriko/native/bitmap-displacement.js';
+import {BurikoBitmapText} from '../dist/engines/buriko/native/font-bitmap.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
+import {createGroup91RasterSettings} from '../dist/engines/buriko/native/group-91-raster-settings.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('raster opcodes affect actual additive, displacement and cached font consumers', async () => {
-  const text = new AokanaNativeText(),
+  const text = new BurikoNativeText(),
     created = [],
     sampled = [],
     pitchQueries = [];
-  const fonts = new AokanaNativeFonts(text, {
+  const fonts = new BurikoNativeFonts(text, {
     async queryCharset() {
       return 1;
     },
@@ -57,27 +51,27 @@ test('raster opcodes affect actual additive, displacement and cached font consum
     },
     dispose() {},
   });
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
-  const definitions = createGroup91RasterSettings(compositor, fonts, new AokanaVmControlState());
+  const definitions = createGroup91RasterSettings(compositor, fonts, new BurikoVmControlState());
   const slots = new Map(definitions.map((slot) => [slot.secondary, slot]));
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array()), diagnostics: {}};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array()), diagnostics: {}};
   const run = (secondary, values, hasResult = true) => {
     for (const value of values) push32(thread, value);
     assert.equal(slots.get(secondary).execute(context), 0);
     if (hasResult) assert.equal(pop32(thread), 1);
     assert.equal(thread.stackIndex, 0);
   };
-  const source = allocateAokanaBitmap(1, 1, 2),
-    target = allocateAokanaBitmap(1, 1, 2);
+  const source = allocateBurikoBitmap(1, 1, 2),
+    target = allocateBurikoBitmap(1, 1, 2);
   bitmapWrite32(source, source.offset, 0x80402010);
   for (const [property, expected] of [
     [0, 0x80201008],
@@ -91,16 +85,16 @@ test('raster opcodes affect actual additive, displacement and cached font consum
 
   // An ordinary horizontal displacement can wrap to the next initialized row
   // under linear clipping; rectangular clipping clips that border sample.
-  const full = allocateAokanaBitmap(4, 2, 2);
+  const full = allocateBurikoBitmap(4, 2, 2);
   for (let y = 0; y < 2; y++)
     for (let x = 0; x < 4; x++)
       bitmapWrite32(full, full.offset + y * full.stride + x * 4, 1 + y * 4 + x);
   const cropped = {...full, offset: full.offset + 4, width: 3, height: 1};
-  const displaced = allocateAokanaBitmap(3, 1, 2);
+  const displaced = allocateBurikoBitmap(3, 1, 2);
   const mapBytes = new Uint8Array(18);
   new DataView(mapBytes.buffer).setInt16(12, 4, true);
   const map = {
-    storage: new AokanaBitmapStorage(mapBytes, true),
+    storage: new BurikoBitmapStorage(mapBytes, true),
     offset: 0,
     stride: 18,
     width: 3,
@@ -114,7 +108,7 @@ test('raster opcodes affect actual additive, displacement and cached font consum
   ]) {
     run(0x0a, [0x80111600, property]);
     assert.equal(
-      displaceAokanaBitmap(
+      displaceBurikoBitmap(
         compositor,
         displaced,
         cropped,
@@ -133,8 +127,8 @@ test('raster opcodes affect actual additive, displacement and cached font consum
 
   const first = await fonts.get(text.encodeWide('RasterOne', 0), 8, 100, 0);
   assert.equal(first.result, 0);
-  const bitmapText = new AokanaBitmapText(fonts, compositor);
-  const glyphTarget = allocateAokanaBitmap(4, 8, 2);
+  const bitmapText = new BurikoBitmapText(fonts, compositor);
+  const glyphTarget = allocateBurikoBitmap(4, 8, 2);
   const draw = (value, alpha) => {
     const output = {value: 0};
     assert.equal(

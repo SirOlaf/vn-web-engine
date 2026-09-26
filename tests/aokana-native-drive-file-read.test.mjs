@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {createGroup81DriveFileRead} from '../dist/engines/buriko/games/aokana/native/group-81-drive-file-read.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {createGroup81DriveFileRead} from '../dist/engines/buriko/native/group-81-drive-file-read.js';
 import {
-  AokanaDriveGeometryProfile,
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoDriveGeometryProfile,
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
 
@@ -34,10 +34,10 @@ function setup() {
       cwd: 'C:\\game',
       mounts: [{windows: 'C:\\', virtual: '/'}],
     }),
-    files = new AokanaProgramFiles(fileSystem, new AokanaNativeText(), new AokanaProgramMedia()),
+    files = new BurikoProgramFiles(fileSystem, new BurikoNativeText(), new BurikoProgramMedia()),
     sectors = Array(26).fill(null);
   sectors[2] = 4;
-  const profile = new AokanaDriveGeometryProfile(sectors),
+  const profile = new BurikoDriveGeometryProfile(sectors),
     roots = [],
     host = {
       readBytesPerSector(root) {
@@ -47,14 +47,14 @@ function setup() {
     },
     [definition] = createGroup81DriveFileRead(files, host),
     memoryBytes = new Uint8Array(1024).fill(0xa5),
-    memory = new AokanaBpMemory(memoryBytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(memoryBytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    context = {thread, memory, diagnostics: new AokanaBpDiagnostics(() => {})};
+    context = {thread, memory, diagnostics: new BurikoBpDiagnostics(() => {})};
   let nextText = 16;
   return {
     definition,
@@ -98,7 +98,7 @@ test('81 32 reads a requested prefix through the lowercase drive root and aligne
   assert.equal(state.memoryBytes[destination + 5], 0xa5);
   assert.equal(state.definition.primary, 0x81);
   assert.equal(state.definition.secondary, 0x32);
-  assert.equal(state.definition.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][0x32]);
+  assert.equal(state.definition.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][0x32]);
 });
 
 test('81 32 treats zero as whole-file length and clamps a longer request at EOF', async () => {

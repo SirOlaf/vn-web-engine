@@ -2,17 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {createGroup81FileTimestamps} from '../dist/engines/buriko/games/aokana/native/group-81-file-timestamps.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {createGroup81FileTimestamps} from '../dist/engines/buriko/native/group-81-file-timestamps.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const bytes = (text) => new TextEncoder().encode(text),
   ticks = (iso) => BigInt(Date.parse(iso)) * 10000n + 116444736000000000n,
@@ -22,7 +22,7 @@ async function fixture(accessTimePolicy = 'disabled') {
     backing = new StoredFileSystem(new MemoryStore(), canonical);
   await backing.commit([{kind: 'write', path: '/existing', data: bytes('preserved content')}]);
   const clock = {now: base + 30000000n},
-    metadata = new AokanaMountedFileMetadata(backing, {
+    metadata = new BurikoMountedFileMetadata(backing, {
       canonical,
       volumes: [{path: '/', identity: {}, writable: true}],
       records: [
@@ -46,11 +46,11 @@ async function fixture(accessTimePolicy = 'disabled') {
       currentFileTime: () => clock.now,
       accessTimePolicy,
     }),
-    paths = new AokanaMountedProgramPaths([{native: 'C:\\Game', mounted: '/'}], 'C:\\Game'),
-    files = new AokanaProgramFiles(
+    paths = new BurikoMountedProgramPaths([{native: 'C:\\Game', mounted: '/'}], 'C:\\Game'),
+    files = new BurikoProgramFiles(
       metadata,
-      new AokanaNativeText(),
-      new AokanaProgramMedia(),
+      new BurikoNativeText(),
+      new BurikoProgramMedia(),
       paths,
     );
   return {backing, clock, metadata, files};
@@ -101,8 +101,8 @@ test('one mounted metadata owner follows normal writes, attributes and persisten
 
 test('both timestamp wrappers preserve file bytes and convert the three UTC records in native order', async () => {
   const {backing, metadata, files} = await fixture(),
-    memory = new AokanaBpMemory(new Uint8Array()),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(new Uint8Array()),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 256,
@@ -110,7 +110,7 @@ test('both timestamp wrappers preserve file bytes and convert the three UTC reco
     }),
     slots = createGroup81FileTimestamps(files);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][slot.secondary]);
   const path = 0x100000d0,
     creation = 0x10000020,
     access = 0x10000040,
@@ -205,14 +205,14 @@ test('imported empty directories stay removed through the shared snapshot and ca
       currentFileTime: () => base + 10000n,
       accessTimePolicy: 'disabled',
     },
-    original = new AokanaMountedFileMetadata(imported, profile);
+    original = new BurikoMountedFileMetadata(imported, profile);
   assert.deepEqual(
     (await original.list('/')).map((info) => info.path),
     ['/imported'],
   );
   await original.removeDirectory('/imported');
   assert.deepEqual(await original.list('/'), []);
-  const restored = new AokanaMountedFileMetadata(imported, {
+  const restored = new BurikoMountedFileMetadata(imported, {
     ...profile,
     ...original.snapshotState(),
   });

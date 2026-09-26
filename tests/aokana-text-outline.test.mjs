@@ -1,26 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {clearAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
 import {
-  AokanaFontRaster,
-  AokanaFontRasterSettings,
-  aokanaFontGeometry,
-} from '../dist/engines/buriko/games/aokana/native/font-raster.js';
-import {aokanaTextOutlineWeightTables} from '../dist/engines/buriko/games/aokana/native/font-outline.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoFontRaster,
+  BurikoFontRasterSettings,
+  burikoFontGeometry,
+} from '../dist/engines/buriko/native/font-raster.js';
+import {burikoTextOutlineWeightTables} from '../dist/engines/buriko/native/font-outline.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 function setup() {
-  const text = new AokanaNativeText();
-  const fonts = new AokanaNativeFonts(text);
-  const compositor = new AokanaBitmapCompositor();
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
-  return {surfaces, state: new AokanaTextLayoutState(surfaces)};
+  const text = new BurikoNativeText();
+  const fonts = new BurikoNativeFonts(text);
+  const compositor = new BurikoBitmapCompositor();
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
+  return {surfaces, state: new BurikoTextLayoutState(surfaces)};
 }
 
 function pixels(bitmap) {
@@ -32,9 +32,9 @@ function pixels(bitmap) {
 }
 
 function syntheticFont(character = 65) {
-  const settings = new AokanaFontRasterSettings();
+  const settings = new BurikoFontRasterSettings();
   settings.setQuality(-1);
-  const geometry = aokanaFontGeometry(4, 100, null, settings);
+  const geometry = burikoFontGeometry(4, 100, null, settings);
   const face = {
     ascent: 4,
     abc() {
@@ -47,7 +47,7 @@ function syntheticFont(character = 65) {
       return {stride: width, bytes: new Uint8Array(width * height)};
     },
   };
-  const raster = new AokanaFontRaster(geometry, face, settings, 2);
+  const raster = new BurikoFontRaster(geometry, face, settings, 2);
   const glyph = raster.glyph(character);
   return {
     glyph,
@@ -72,8 +72,8 @@ function pixel(alpha, color) {
 }
 
 test('startup exposes five distinct radial Q16 tables with the native discontinuous weights', () => {
-  const tables = aokanaTextOutlineWeightTables();
-  assert.equal(aokanaTextOutlineWeightTables(), tables);
+  const tables = burikoTextOutlineWeightTables();
+  assert.equal(burikoTextOutlineWeightTables(), tables);
   assert.deepEqual(
     tables.map((table) => table.length),
     [9, 25, 49, 81, 121],
@@ -106,7 +106,7 @@ test('ordinary equal-radius outline reads the cached glyph table path and ORs th
   const {font, glyph, geometry} = syntheticFont();
   glyph.pixels.fill(0);
   glyph.pixels[geometry.stride + 1] = 255;
-  const destination = allocateAokanaBitmap(5, 5, 2);
+  const destination = allocateBurikoBitmap(5, 5, 2);
   const color = 0x80010203;
   state.drawGlyphOutline(destination, 65, font, 1, 1, color);
   const expected = Array(25).fill(color);
@@ -122,7 +122,7 @@ test('ordinary unequal positive radii use the binary64 ellipse path', () => {
   const {font, glyph} = syntheticFont();
   glyph.pixels.fill(0);
   glyph.pixels[0] = 255;
-  const destination = allocateAokanaBitmap(5, 3, 2);
+  const destination = allocateBurikoBitmap(5, 3, 2);
   const color = 0x123456;
   state.drawGlyphOutline(destination, 65, font, 2, 1, color);
   assert.deepEqual(
@@ -140,7 +140,7 @@ test('unfitted custom outline sums the shared format-three bitmap over the shift
     1,
   );
   assert.equal(state.customGlyphs.register(0xff01, 7, 0, 0, 2, 2), 0);
-  const destination = allocateAokanaBitmap(4, 4, 2);
+  const destination = allocateBurikoBitmap(4, 4, 2);
   const font = {size: 4, widthPercent: 100, raster: null};
   state.drawGlyphOutline(destination, 0xf001, font, 1, 1, 0x102030);
   assert.deepEqual(
@@ -162,8 +162,8 @@ test('fitted custom outline sums the alpha produced by the actual shared glyph d
   assert.equal(state.customGlyphs.register(0xff02, 8, 0, 0, 16, 16), 0);
   state.field1D1D94 = 1;
   const font = {size: 4, widthPercent: 100, raster: null};
-  const fitted = allocateAokanaBitmap(4, 4, 2);
-  clearAokanaBitmap(fitted);
+  const fitted = allocateBurikoBitmap(4, 4, 2);
+  clearBurikoBitmap(fitted);
   const glyph = state.customGlyphs.draw(fitted, 0xf002, font, 0, state.field1D1D94);
   const fittedWidth = glyph.right + 1;
   const fittedHeight = glyph.bottom + 1;
@@ -177,7 +177,7 @@ test('fitted custom outline sums the alpha produced by the actual shared glyph d
       expected.push(pixel(Math.min(sum, 255), 0x050607));
     }
   assert.ok(new Set(expected).size > 1);
-  const destination = allocateAokanaBitmap(4, 4, 2);
+  const destination = allocateBurikoBitmap(4, 4, 2);
   state.drawGlyphOutline(destination, 0xf002, font, 1, 1, 0x050607);
   assert.deepEqual(pixels(destination), expected);
   fitted.storage.release();

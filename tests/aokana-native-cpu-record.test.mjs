@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaCpuProfile} from '../dist/engines/buriko/games/aokana/native/cpu-profile.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {createGroupCpu} from '../dist/engines/buriko/games/aokana/native/group-cpu.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoCpuProfile} from '../dist/engines/buriko/native/cpu-profile.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {createGroupCpu} from '../dist/engines/buriko/native/group-cpu.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
 
 function words(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -27,7 +27,7 @@ function fixture({
     affinity = [];
   let raw = 0,
     timestamp = 0;
-  const cpu = new AokanaCpuProfile(
+  const cpu = new BurikoCpuProfile(
     {
       cpuid(leaf, subleaf) {
         calls.push([leaf, subleaf]);
@@ -61,7 +61,7 @@ function fixture({
         {relationship: 0, processorMask: 0xffffn},
       ],
     },
-    new AokanaNativeClock(() => (raw += 125)),
+    new BurikoNativeClock(() => (raw += 125)),
   );
   return {cpu, calls, affinity};
 }
@@ -178,7 +178,7 @@ test('CPU wrappers copy the same 64-byte record and return the normalized brand 
   cpu.initialize();
   const output = new Uint8Array(96);
   output.fill(0xcc);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 4,
     moduleCapacity: 0,
@@ -186,7 +186,7 @@ test('CPU wrappers copy the same 64-byte record and return the normalized brand 
   });
   const context = {thread, memory: {resolve: (_thread, value) => ({bytes: output, offset: value})}};
   for (const slot of createGroupCpu(cpu)) {
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
     push32(thread, slot.primary === 0x80 ? 0 : 64);
     assert.equal(slot.execute(context), 0);
     if (slot.primary === 0x81) assert.equal(pop32(thread), 1);

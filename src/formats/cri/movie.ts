@@ -5,27 +5,8 @@ import {HcaDecoder} from './hca/decoder.js';
 import {hcaHeaderSize, parseHcaHeader} from './hca/header.js';
 import type {HcaHeader} from './hca/header.js';
 import {UsmReader, usmTable} from './usm.js';
-export interface MovieInfo {
-  width: number;
-  height: number;
-  frameRate: number;
-  frameCount: number;
-  duration: number;
-  sampleRate: number;
-  channels: number;
-  sampleCount: number;
-}
-export interface MoviePcm {
-  start: number;
-  channels: Float32Array[];
-}
-export interface MovieBatch {
-  frames: YuvFrame[];
-  audio: MoviePcm[];
-  info?: MovieInfo;
-  done: boolean;
-  progress: number;
-}
+import type {MovieInfo, MoviePcm, MovieBatch} from '../../video/movie-types.js';
+export type {MovieInfo, MoviePcm, MovieBatch} from '../../video/movie-types.js';
 /** Demultiplexing/orchestration only; both elementary codecs remain independent of USM. */
 export class CriMovie {
   readonly video = new Mpeg1Decoder();

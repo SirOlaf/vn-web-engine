@@ -1,34 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readRasterText} from '../dist/text/raster-text.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
+import {blendBurikoMaskColor} from '../dist/engines/buriko/native/bitmap-mask-color.js';
 import {
-  allocateAokanaBitmap,
-  AokanaBitmapStorage,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {clearAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
-import {blendAokanaMaskColor} from '../dist/engines/buriko/games/aokana/native/bitmap-mask-color.js';
-import {
-  decodeAokanaEmbeddedText,
-  isAokanaCustomGlyphCode,
-  readAokanaEmbeddedCharacter,
-} from '../dist/engines/buriko/games/aokana/native/custom-text-glyphs.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createCustomTextGlyphSettings} from '../dist/engines/buriko/games/aokana/native/group-text-layout-settings.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  decodeBurikoEmbeddedText,
+  isBurikoCustomGlyphCode,
+  readBurikoEmbeddedCharacter,
+} from '../dist/engines/buriko/native/custom-text-glyphs.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createCustomTextGlyphSettings} from '../dist/engines/buriko/native/group-text-layout-settings.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 function setup() {
-  const text = new AokanaNativeText();
-  const fonts = new AokanaNativeFonts(text);
-  const compositor = new AokanaBitmapCompositor();
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
-  const state = new AokanaTextLayoutState(surfaces);
+  const text = new BurikoNativeText();
+  const fonts = new BurikoNativeFonts(text);
+  const compositor = new BurikoBitmapCompositor();
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
+  const state = new BurikoTextLayoutState(surfaces);
   return {text, fonts, compositor, surfaces, state};
 }
 
@@ -44,7 +41,7 @@ function bitmap(width, height, values, format, padding = 4) {
       else view.setUint32(y * stride + x * 4, value, true);
     }
   return {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride,
     width,
@@ -142,7 +139,7 @@ test('mask-color dispatcher preserves RGB pair/tail coefficients and RGBA recipr
   const rgbInput = [0x00112233, 0x7f445566, 0xff102030, 0x40123456, 0x7fabcdef];
   const rgbCoverage = [0, 1, 2, 128, 255];
   const rgb = bitmap(5, 1, rgbInput, 1);
-  blendAokanaMaskColor(rgb, bitmap(5, 1, rgbCoverage, 3), color);
+  blendBurikoMaskColor(rgb, bitmap(5, 1, rgbCoverage, 3), color);
   assert.deepEqual(
     pixels(rgb),
     rgbInput.map((pixel, index) => rgbMaskReference(pixel, color, rgbCoverage[index])),
@@ -152,7 +149,7 @@ test('mask-color dispatcher preserves RGB pair/tail coefficients and RGBA recipr
   const alphaInput = [0x00112233, 0x80445566, 0xff102030, 0x40123456, 0x7fabcdef];
   const alphaCoverage = [0, 64, 255, 7, 128];
   const alpha = bitmap(5, 1, alphaInput, 2);
-  blendAokanaMaskColor(alpha, bitmap(5, 1, alphaCoverage, 3), color);
+  blendBurikoMaskColor(alpha, bitmap(5, 1, alphaCoverage, 3), color);
   assert.deepEqual(pixels(alpha), [
     rgbaPairReference(alphaInput[0], color, alphaCoverage[0]),
     rgbaPairReference(alphaInput[1], color, alphaCoverage[1]),
@@ -190,8 +187,8 @@ test('custom glyph fitting colorizes a mask, reduces once and reports native fit
     1,
   );
   assert.equal(state.customGlyphs.register(0xff01, 4, 0, 0, 16, 16), 0);
-  const destination = allocateAokanaBitmap(4, 4, 2);
-  clearAokanaBitmap(destination);
+  const destination = allocateBurikoBitmap(4, 4, 2);
+  clearBurikoBitmap(destination);
   const glyph = state.customGlyphs.draw(
     destination,
     0xf001,
@@ -217,11 +214,11 @@ test('custom glyph fitting colorizes a mask, reduces once and reports native fit
 
 test('embedded decoding retains CP932 pairs and substitutes all three numeric character forms', () => {
   const {text, state} = setup();
-  assert.deepEqual(readAokanaEmbeddedCharacter(text, Uint8Array.of(0xf8, 0x80, 0x12, 0x34), 0), {
+  assert.deepEqual(readBurikoEmbeddedCharacter(text, Uint8Array.of(0xf8, 0x80, 0x12, 0x34), 0), {
     value: 0x1234,
     length: 4,
   });
-  assert.deepEqual(readAokanaEmbeddedCharacter(text, Uint8Array.of(0xf8, 0xe2, 0x98, 0x83), 0), {
+  assert.deepEqual(readBurikoEmbeddedCharacter(text, Uint8Array.of(0xf8, 0xe2, 0x98, 0x83), 0), {
     value: 0x2603,
     length: 4,
   });
@@ -247,7 +244,7 @@ test('embedded decoding retains CP932 pairs and substitutes all three numeric ch
   assert.equal(state.customGlyphs.decode({bytes: source, offset: 0}), 'Aあ\uef40\uf012\u1234☃Z');
   const control = Uint8Array.of(3, 0xc2, 0xa2, 0);
   assert.equal(text.detectEncoding(control, 0, true), 0);
-  assert.equal(decodeAokanaEmbeddedText(text, {bytes: control, offset: 0}), '\u0003¢');
+  assert.equal(decodeBurikoEmbeddedText(text, {bytes: control, offset: 0}), '\u0003¢');
 });
 
 test('90 9E and 92 98 consume their native stack shapes without pushing results', async () => {
@@ -265,15 +262,15 @@ test('90 9E and 92 98 consume their native stack shapes without pushing results'
     ],
   );
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
   assert.equal(surfaces.importRaw(9, 4, 1, 3, {bytes: Uint8Array.of(1, 2, 3, 4), offset: 0}), 1);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array(16))};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array(16))};
   async function call(primary, secondary, args) {
     const before = thread.stackIndex;
     for (const argument of args) push32(thread, argument);
@@ -291,9 +288,9 @@ test('90 9E and 92 98 consume their native stack shapes without pushing results'
   await call(0x92, 0x98, [0xf003, 9, 0, 0, 1, 1]);
   assert.equal(state.customGlyphs.count, 3);
   assert.deepEqual(pixels(state.customGlyphs.snapshot(0x8000f003)), [1]);
-  assert.equal(isAokanaCustomGlyphCode(0xff01), true);
-  assert.equal(isAokanaCustomGlyphCode(0x8000f7ff), true);
-  assert.equal(isAokanaCustomGlyphCode(0x8000f800), false);
+  assert.equal(isBurikoCustomGlyphCode(0xff01), true);
+  assert.equal(isBurikoCustomGlyphCode(0x8000f7ff), true);
+  assert.equal(isBurikoCustomGlyphCode(0x8000f800), false);
   await call(0x90, 0x9e, [0, 0xffffffff]);
   assert.equal(state.customGlyphs.count, 0);
 });

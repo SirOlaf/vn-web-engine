@@ -3,19 +3,20 @@
 A browser runtime for Windows visual novel engines. The source tree contains no game assets; use files from your own installation. Native game executables are read only for resources, never run in the browser.
 
 ## Quick setup
+
 Use the [hosted page](https://webvn.sillydrain.com/).
 
 Zero setup. Visit the page and select your local game files, optionally install as PWA. That's it.
 
-
 ## Supported games
 
-| Game                                  | Engine      | Current state                                                                                  |
-| ------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------- |
-| CHAOS;HEAD NOAH (Windows GOG release) | MAGES / SC3 | Complete                                                                                       |
-| Aokana                                | BURIKO      | Complete                                                                                       |
+| Game                                  | Engine      | Current state                                                                                      |
+| ------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
+| CHAOS;HEAD NOAH (Windows GOG release) | MAGES / SC3 | Complete                                                                                           |
+| Aokana                                | BURIKO      | Complete                                                                                           |
 
-The games share browser services for files, storage, audio, video, graphics, and input. Game-specific behavior lives under `src/engines/`.
+The games share browser services for files, storage, audio, video, graphics, and input. Reusable interpreters live under `src/engines/`; installation identity and explicit game compatibility profiles are selected separately.
+See [BGI compatibility](docs/buriko-compatibility.md) for revision selection, optional metadata, native evidence, and current verification limits.
 
 ## Dev setup
 
@@ -27,18 +28,18 @@ npm run build
 npm start
 ```
 
-Open the [library](http://127.0.0.1:8000), select a game, and open its player. Choose the installation folder from your device, then use **Play** to start the loaded game. The library also manages browser save files. Direct player links: [Aokana](http://127.0.0.1:8000/aokana.html) and [CHAOS;HEAD NOAH](http://127.0.0.1:8000/noah.html).
+Open the [library](http://127.0.0.1:8000), select a game, and open its player. Choose the installation folder from your device, then use **Play** to start the loaded game. The library also manages browser save files. Direct player links: [BGI / Buriko](http://127.0.0.1:8000/buriko.html) and [CHAOS;HEAD NOAH](http://127.0.0.1:8000/noah.html).
 
 - **CHAOS;HEAD NOAH:** Choose the installation folder containing `Game.exe` and `Data/*.cpk`.
-- **Aokana:** Choose the game folder containing `system.arc`, the other root-level `.arc` files, `BGI.gdb`, and one game `.exe`. The executable supplies the game's cursor resource.
+- **BGI / Buriko:** Choose the game folder containing `system.arc`, the other archives, and the game interpreter executable. Auxiliary executables may remain in the folder. Existing saves, executable cursor resources, and matching process dumps are optional. When executable product metadata is unavailable, the player can recover it from a provable boot-script comparison. Native versions 1.520.6 / compatibility 1.69 and 1.685.3 / compatibility 1.72 select separate bytecode ABIs. Unknown revisions still require verification, and archive files should come from a readable installation or mounted disc.
 
 Game files selected through the browser stay on your device. The website serves only the engine; it does not upload or stream your installation.
 Both players remember a successfully selected game folder on supporting browsers and reopen it after refresh. If access expires, use **Reconnect remembered folder**; **Forget remembered folder** removes the reference without deleting files or saves. This stores only a folder handle, with no installation copy. Both players offer **Add files** and **Add one file** when folder selection is unavailable or incomplete, and **Keep game files in browser** to save a complete installation locally before playing. Use **Open saved game files** on later visits. Input-based selections and individually added files cannot retain live folder access; iOS Safari may make a temporary copy. See [mobile files and audio](docs/mobile-compatibility.md) for browser limits, cache controls and audio recovery.
 Ogg Vorbis playback uses a shared WebAssembly decoder to preserve native PCM boundaries and playback waits. Decoder-only WebKit comparisons lost boundary samples (4,109 → 3,981 frames for a synthetic stream; 64,892 → 64,832 for Aokana's `ASUKA` clip, with its first 128 samples missing). The fix decodes those samples without silence padding or timing changes; physical iPhone verification is still pending.
-During Aokana startup, **Skip startup sequence** appears under **Game options → Playback**; select it again to stop skipping.
+During BGI startup, **Skip startup sequence** appears under **Game options → Playback**; select it again to stop skipping.
 Both players support **Game options → Text rendering → DOM text** for selection, copying, and browser dictionaries. See [DOM text coverage and limitations](docs/dom-text.md).
 Its native window size uses device pixels, so it appears smaller on high-DPI displays. Use **Game options → Display** to expand the browser view; see the [startup sizing investigation](docs/aokana-window-sizing.md) for the native configuration trace.
-The Aokana library and player controls can import and export `BGI.gdb` and numbered `BGI*.cad` browser saves. Close the player before importing a save.
+The BGI library and player controls select a game before importing or exporting `BGI.gdb` and numbered `BGI*.cad` browser saves. Close the player before importing a save.
 
 ### HTTPS from another device
 
@@ -56,7 +57,7 @@ WebAssembly support is required for the shared Vorbis decoder. Some optional acc
 
 Browser saves and settings are stored in IndexedDB for the current origin and browser profile. Clearing site data removes them. The viewer provides save import and export for CHAOS;HEAD NOAH.
 
-The [CHAOS;HEAD NOAH asset laboratory](assets.html) and [Aokana asset laboratory](aokana-assets.html) are separate inspection tools.
+The [CHAOS;HEAD NOAH asset laboratory](assets.html) and [BGI asset laboratory](buriko-assets.html) are separate inspection tools.
 
 ## Static hosting
 
@@ -81,3 +82,4 @@ npm test
 
 This is an unofficial compatibility and preservation project, unaffiliated with the games' developers or publishers. Game files are not included and should not be redistributed with this source tree.
 The bundled Vorbis decoder's dependency attribution and notices are in [third_party/ogg-vorbis](third_party/ogg-vorbis/README.md); the build also distributes them with the decoder.
+The shared MPEG-1 Layer II decoder's source attribution and MIT license are in [src/formats/mp2](src/formats/mp2/README.md).

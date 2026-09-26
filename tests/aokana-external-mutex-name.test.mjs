@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {AokanaExternalMutexName} from '../dist/engines/buriko/games/aokana/native/external-mutex-name.js';
-import {AokanaExternalProcesses} from '../dist/engines/buriko/games/aokana/native/external-process.js';
-import {createGroup80ExternalMutexName} from '../dist/engines/buriko/games/aokana/native/group-80-external-mutex-name.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoExternalMutexName} from '../dist/engines/buriko/native/external-mutex-name.js';
+import {BurikoExternalProcesses} from '../dist/engines/buriko/native/external-process.js';
+import {createGroup80ExternalMutexName} from '../dist/engines/buriko/native/group-80-external-mutex-name.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 
 test('EA ANSI global is reread for each E2 mutex attempt without launching a process', async () => {
-  const name = new AokanaExternalMutexName();
+  const name = new BurikoExternalMutexName();
   const [slot] = createGroup80ExternalMutexName(name);
-  const memory = new AokanaBpMemory(new Uint8Array(256));
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(new Uint8Array(256));
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
     moduleCapacity: 0,
@@ -33,7 +33,7 @@ test('EA ANSI global is reread for each E2 mutex attempt without launching a pro
   assert.deepEqual(first, bytes('Uninstaller for First title is executing.\0'));
 
   const events = [];
-  const handle = {aokanaExternalProcessHandle: true};
+  const handle = {burikoExternalProcessHandle: true};
   const host = {
     async openMutexA(access, inherit, current) {
       events.push(['open', access, inherit, current.slice()]);
@@ -50,7 +50,7 @@ test('EA ANSI global is reread for each E2 mutex attempt without launching a pro
       events.push(['sleep', milliseconds]);
     },
   };
-  const processes = new AokanaExternalProcesses(null, null, null, host, null, name);
+  const processes = new BurikoExternalProcesses(null, null, null, host, null, name);
   await processes.waitForGlobalMutex();
 
   assert.deepEqual(events, [

@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 import {
   createGroup81Clock,
   createGroup81Random,
-} from '../dist/engines/buriko/games/aokana/native/group-81-clock.js';
+} from '../dist/engines/buriko/native/group-81-clock.js';
 
 test('81 clock setters affect the shared native gap and suspension state', () => {
   let tick = 100;
-  const clock = new AokanaNativeClock(() => tick);
-  const thread = new AokanaBpThread({
+  const clock = new BurikoNativeClock(() => tick);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 64,
@@ -48,7 +48,7 @@ test('81 random keeps native modulo bias, signed bounds and zero entropy-call sk
       return output;
     },
   });
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 64,

@@ -2,42 +2,42 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaFileChecksum} from '../dist/engines/buriko/games/aokana/native/file-checksum.js';
-import {createGroup80FileChecksum} from '../dist/engines/buriko/games/aokana/native/group-80-file-checksum.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoFileChecksum} from '../dist/engines/buriko/native/file-checksum.js';
+import {createGroup80FileChecksum} from '../dist/engines/buriko/native/group-80-file-checksum.js';
 
 test('80:E9 streams an actual file beyond64KiB through primary-root and qualified paths into the shared checksum', async () => {
   const fs = new StoredFileSystem(new MemoryStore(), (p) => p.toLowerCase()),
     payload = Uint8Array.from({length: 65536 + 137}, (_, i) => (i * 17 + (i >>> 8)) & 255),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),
-    media = new AokanaProgramMedia();
+    media = new BurikoProgramMedia();
   await fs.commit([{kind: 'write', path: '/assets/content.bin', data: payload}]);
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       fs,
       text,
       media,
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
     ),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, encode('C:\\save\\'), encode('C:\\')),
-    processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, encode('C:\\save\\'), encode('C:\\')),
+    processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\other\\',
@@ -54,9 +54,9 @@ test('80:E9 streams an actual file beyond64KiB through primary-root and qualifie
       errors,
       processing,
     ),
-    [slot] = createGroup80FileChecksum(new AokanaFileChecksum(resources)),
-    memory = new AokanaBpMemory(new Uint8Array(0x1000)),
-    thread = new AokanaBpThread({
+    [slot] = createGroup80FileChecksum(new BurikoFileChecksum(resources)),
+    memory = new BurikoBpMemory(new Uint8Array(0x1000)),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 4096,

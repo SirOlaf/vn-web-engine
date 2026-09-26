@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {AokanaBrowserSpeakerBuffer} from '../dist/engines/buriko/games/aokana/native/audio/browser-speaker-backend.js';
-import {AokanaBrowserMoviePcmOutput} from '../dist/engines/buriko/games/aokana/native/movie-pcm-output.js';
-import {aokanaIsoTime} from '../dist/engines/buriko/games/aokana/native/movie-iso-timeline.js';
+import {BurikoBrowserSpeakerBuffer} from '../dist/engines/buriko/native/audio/browser-speaker-backend.js';
+import {BurikoBrowserMoviePcmOutput} from '../dist/engines/buriko/native/movie-pcm-output.js';
+import {burikoIsoTime} from '../dist/engines/buriko/native/movie-iso-timeline.js';
 import {subscribeRuntimeAdvisories} from '../dist/platform/runtime-advisories.js';
 
 test('worklet and LAN HTTP audio hosts preserve PCM, render-owned cursors, notifications, and movie completion', async () => {
@@ -39,7 +39,7 @@ test('worklet and LAN HTTP audio hosts preserve PCM, render-owned cursors, notif
     registerProcessor: (name, processor) => processors.set(name, processor),
     sampleRate: 48000,
   });
-  const f = aokanaIsoTime.fraction;
+  const f = burikoIsoTime.fraction;
   const snapshots = [];
   const advisories = [];
   const unsubscribe = subscribeRuntimeAdvisories((advisory) => advisories.push(advisory));
@@ -70,7 +70,7 @@ test('worklet and LAN HTTP audio hosts preserve PCM, render-owned cursors, notif
         },
       };
       context.destination = {context};
-      const buffer = await AokanaBrowserSpeakerBuffer.create(context, {
+      const buffer = await BurikoBrowserSpeakerBuffer.create(context, {
         sampleRate: 48000,
         channels: 1,
         bits: 16,
@@ -102,7 +102,7 @@ test('worklet and LAN HTTP audio hosts preserve PCM, render-owned cursors, notif
         await buffer.dispose();
       }
 
-      const movie = await AokanaBrowserMoviePcmOutput.create(context, {
+      const movie = await BurikoBrowserMoviePcmOutput.create(context, {
         channels: 1,
         capacityFrames: 8,
       });

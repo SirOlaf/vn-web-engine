@@ -1,19 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {
-  bitmapRead32,
-  bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {createGroup90SurfaceCentered} from '../dist/engines/buriko/games/aokana/native/group-90-surface-centered.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {createGroup90SurfaceCentered} from '../dist/engines/buriko/native/group-90-surface-centered.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 const pixels = (bitmap) =>
   Array.from({length: bitmap.width * bitmap.height}, (_, i) =>
     bitmapRead32(
@@ -27,12 +24,12 @@ const fill = (bitmap, pixel) => {
       bitmapWrite32(bitmap, bitmap.offset + y * bitmap.stride + x * 4, pixel(x, y));
 };
 test('centered surface wrappers crop stretch output and preserve the live rotation angle', () => {
-  const compositor = new AokanaBitmapCompositor(),
-    text = new AokanaNativeText();
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(text),
+  const compositor = new BurikoBitmapCompositor(),
+    text = new BurikoNativeText();
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(text),
     compositor,
-    new AokanaDistributedAllocator(2),
+    new BurikoDistributedAllocator(2),
   );
   const slots = createGroup90SurfaceCentered(surfaces, {
     files: {text},
@@ -47,23 +44,23 @@ test('centered surface wrappers crop stretch output and preserve the live rotati
       [0x90, 0x1d],
     ],
   );
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array(0)), diagnostics: {}};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array(0)), diagnostics: {}};
   const call = (secondary, args) => {
     const slot = slots.find((s) => s.secondary === secondary);
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][secondary]);
     args.forEach((v) => push32(thread, v));
     assert.equal(slot.execute(context), 0);
     assert.equal(thread.stackIndex, 0);
   };
   const expect = (bitmap, expected) => {
     assert.deepEqual(pixels(bitmap), expected);
-    const output = allocateAokanaBitmap(bitmap.width, bitmap.height, 1);
+    const output = allocateBurikoBitmap(bitmap.width, bitmap.height, 1);
     fill(output, () => 0xabcdef);
     compositor.copy(output, bitmap);
     assert.deepEqual(pixels(output), expected);

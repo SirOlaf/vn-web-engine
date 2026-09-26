@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  bitmapRead32,
-  bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
+import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 const pixels = (bitmap) =>

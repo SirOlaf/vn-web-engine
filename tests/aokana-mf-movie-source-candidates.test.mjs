@@ -3,20 +3,20 @@ import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaMfMovieSourceCandidates} from '../dist/engines/buriko/games/aokana/native/movie-mf-source-candidates.js';
-import {AokanaMfMovieDocuments} from '../dist/engines/buriko/games/aokana/native/movie-mf-document.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoMfMovieSourceCandidates} from '../dist/engines/buriko/native/movie-mf-source-candidates.js';
+import {BurikoMfMovieDocuments} from '../dist/engines/buriko/native/movie-mf-document.js';
 import {BlobSource, SliceSource} from '../dist/core/source.js';
 
 function arc(name, data) {
@@ -39,19 +39,19 @@ test('MF movie candidates keep qualified/direct/search order and physical archiv
     {kind: 'write', path: '/game/video/search.bin', data: Uint8Array.of(4)},
     {kind: 'write', path: '/game/movie.arc', data: arc('member.bin', Uint8Array.of(5, 6, 7))},
   ]);
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const encode = (value) => text.encodeWide(value, 1);
   const pointer = (value) => ({bytes: encode(value), offset: 0});
-  const media = new AokanaProgramMedia();
+  const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
     fs,
     text,
     media,
-    new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+    new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
   );
-  const dialogs = new AokanaEngineDialogs();
-  const resources = new AokanaProgramResources(
+  const dialogs = new BurikoEngineDialogs();
+  const resources = new BurikoProgramResources(
     files,
     {
       nativeFileRoot: 'C:\\game\\',
@@ -65,10 +65,10 @@ test('MF movie candidates keep qualified/direct/search order and physical archiv
       quitConfirmation: Uint8Array.of(0),
     },
     dialogs,
-    new AokanaEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
-    new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+    new BurikoEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
+    new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
   );
-  const candidates = new AokanaMfMovieSourceCandidates(resources);
+  const candidates = new BurikoMfMovieSourceCandidates(resources);
 
   assert.equal(
     files.path((await candidates.direct(pointer('primary.bin'))).path),
@@ -96,7 +96,7 @@ test('MF movie candidates keep qualified/direct/search order and physical archiv
     Array.from(await files.read(opened.source, archive.offset, archive.length)),
     [5, 6, 7],
   );
-  const documents = new AokanaMfMovieDocuments(candidates, files, 1024);
+  const documents = new BurikoMfMovieDocuments(candidates, files, 1024);
   const materialized = await documents.read(archive, new AbortController().signal);
   assert.equal(materialized.kind, 'archive');
   assert.deepEqual([...new Uint8Array(await materialized.blob.arrayBuffer())], [5, 6, 7]);
@@ -111,7 +111,7 @@ test('browser movies use exact local file regions without reading them into Java
       throw new Error('Local movie preparation must retain file backing');
     },
   };
-  const documents = new AokanaMfMovieDocuments({resources: {files}}, files, 5);
+  const documents = new BurikoMfMovieDocuments({resources: {files}}, files, 5);
   const signal = new AbortController().signal;
   const path = new Uint8Array();
   const direct = await documents.read({kind: 'direct', path}, signal);

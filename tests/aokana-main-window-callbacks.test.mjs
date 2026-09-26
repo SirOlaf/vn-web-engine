@@ -1,45 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaMainWindowCallbackBinding} from '../dist/engines/buriko/games/aokana/native/main-window-callbacks.js';
-import {AokanaBrowserMainWindow} from '../dist/engines/buriko/games/aokana/native/browser-main-window.js';
-import {AokanaDisplayController} from '../dist/engines/buriko/games/aokana/native/display-controller.js';
-import {AokanaDisplayFrames} from '../dist/engines/buriko/games/aokana/native/display-frames.js';
-import {AokanaDisplayAdapters} from '../dist/engines/buriko/games/aokana/native/display-adapters.js';
-import {AokanaDisplayDevice} from '../dist/engines/buriko/games/aokana/native/display-device.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaBitmapText} from '../dist/engines/buriko/games/aokana/native/font-bitmap.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
+import {BurikoMainWindowCallbackBinding} from '../dist/engines/buriko/native/main-window-callbacks.js';
+import {BurikoBrowserMainWindow} from '../dist/engines/buriko/native/browser-main-window.js';
+import {BurikoDisplayController} from '../dist/engines/buriko/native/display-controller.js';
+import {BurikoDisplayFrames} from '../dist/engines/buriko/native/display-frames.js';
+import {BurikoDisplayAdapters} from '../dist/engines/buriko/native/display-adapters.js';
+import {BurikoDisplayDevice} from '../dist/engines/buriko/native/display-device.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoBitmapText} from '../dist/engines/buriko/native/font-bitmap.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
 import {
-  AokanaEngineDialogs,
-  AokanaNativeCursor,
-} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaDiagnosticDialogs} from '../dist/engines/buriko/games/aokana/native/modal.js';
-import {AokanaInlineTextControl} from '../dist/engines/buriko/games/aokana/native/inline-text-control.js';
-import {AokanaChildWindows} from '../dist/engines/buriko/games/aokana/native/child-windows.js';
-import {AokanaNativeRegistry} from '../dist/engines/buriko/games/aokana/native/windows-registry.js';
-import {AokanaDisplayMouseTrails} from '../dist/engines/buriko/games/aokana/native/display-mouse-trails.js';
-import {AokanaLocalizedMessages} from '../dist/engines/buriko/games/aokana/native/localized-messages.js';
-import {AokanaNativeLanguage} from '../dist/engines/buriko/games/aokana/native/group-81-language.js';
-import {AokanaImportedTextMaps} from '../dist/engines/buriko/games/aokana/native/imported-text-maps.js';
-import {AokanaFullscreenMovieState} from '../dist/engines/buriko/games/aokana/native/movie-fullscreen-state.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
-import {AokanaCpuProfile} from '../dist/engines/buriko/games/aokana/native/cpu-profile.js';
-import {AokanaFrameMetrics} from '../dist/engines/buriko/games/aokana/native/frame-metrics.js';
-import {AokanaBrowserPerformanceCounter} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {AokanaMovieRegistry} from '../dist/engines/buriko/games/aokana/native/movie-registry.js';
+  BurikoEngineDialogs,
+  BurikoNativeCursor,
+} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoDiagnosticDialogs} from '../dist/engines/buriko/native/modal.js';
+import {BurikoInlineTextControl} from '../dist/engines/buriko/native/inline-text-control.js';
+import {BurikoChildWindows} from '../dist/engines/buriko/native/child-windows.js';
+import {BurikoNativeRegistry} from '../dist/engines/buriko/native/windows-registry.js';
+import {BurikoDisplayMouseTrails} from '../dist/engines/buriko/native/display-mouse-trails.js';
+import {BurikoLocalizedMessages} from '../dist/engines/buriko/native/localized-messages.js';
+import {BurikoNativeLanguage} from '../dist/engines/buriko/native/group-81-language.js';
+import {BurikoImportedTextMaps} from '../dist/engines/buriko/native/imported-text-maps.js';
+import {BurikoFullscreenMovieState} from '../dist/engines/buriko/native/movie-fullscreen-state.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
+import {BurikoCpuProfile} from '../dist/engines/buriko/native/cpu-profile.js';
+import {BurikoFrameMetrics} from '../dist/engines/buriko/native/frame-metrics.js';
+import {BurikoBrowserPerformanceCounter} from '../dist/engines/buriko/native/system-timing.js';
+import {BurikoMovieRegistry} from '../dist/engines/buriko/native/movie-registry.js';
 
 test('main-window callbacks bind the same actual controller and frames after host construction', async () => {
   const document = {defaultView: null, activeElement: null},
@@ -60,27 +60,27 @@ test('main-window callbacks bind the same actual controller and frames after hos
         assert.fail('uninitialized frame forwarding must not draw');
       },
     },
-    display = new AokanaNativeDisplayState(1920, 1080);
+    display = new BurikoNativeDisplayState(1920, 1080);
   display.monitors = [[0, 0, 1920, 1080]];
   display.requestedWidth = 800;
   display.requestedHeight = 600;
   display.windowMoveImmediate = 1;
 
-  const clock = new AokanaNativeClock(() => 0),
-    ticks = new AokanaSystemTicks({now: () => 0}),
-    text = new AokanaNativeText(),
-    fonts = new AokanaNativeFonts(text),
-    compositor = new AokanaBitmapCompositor(),
-    allocator = new AokanaDistributedAllocator(1),
-    surfaces = new AokanaSurfaces(fonts, compositor, allocator),
-    environment = new AokanaDisplayObjectEnvironment(
+  const clock = new BurikoNativeClock(() => 0),
+    ticks = new BurikoSystemTicks({now: () => 0}),
+    text = new BurikoNativeText(),
+    fonts = new BurikoNativeFonts(text),
+    compositor = new BurikoBitmapCompositor(),
+    allocator = new BurikoDistributedAllocator(1),
+    surfaces = new BurikoSurfaces(fonts, compositor, allocator),
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(64, {left: 0, top: 0, right: 799, bottom: 599}),
+      new BurikoDisplayDamage(64, {left: 0, top: 0, right: 799, bottom: 599}),
     ),
-    manager = new AokanaDisplayManager(environment, surfaces, display),
-    callbacks = new AokanaMainWindowCallbackBinding(display),
-    host = new AokanaBrowserMainWindow(document, parent, canvas, manager, callbacks),
-    adapters = new AokanaDisplayAdapters(
+    manager = new BurikoDisplayManager(environment, surfaces, display),
+    callbacks = new BurikoMainWindowCallbackBinding(display),
+    host = new BurikoBrowserMainWindow(document, parent, canvas, manager, callbacks),
+    adapters = new BurikoDisplayAdapters(
       display,
       [
         {
@@ -92,24 +92,24 @@ test('main-window callbacks bind the same actual controller and frames after hos
       0,
       () => [display.windowX, display.windowY, display.windowX + 800, display.windowY + 600],
     ),
-    device = new AokanaDisplayDevice(canvas, manager, clock, adapters),
-    input = new AokanaNativeInput(display, clock),
-    messages = new AokanaWindowMessages(input),
-    keyboard = new AokanaKeyboardMessages(messages),
-    dialogs = new AokanaEngineDialogs(
-      new AokanaDiagnosticDialogs(document, parent),
+    device = new BurikoDisplayDevice(canvas, manager, clock, adapters),
+    input = new BurikoNativeInput(display, clock),
+    messages = new BurikoWindowMessages(input),
+    keyboard = new BurikoKeyboardMessages(messages),
+    dialogs = new BurikoEngineDialogs(
+      new BurikoDiagnosticDialogs(document, parent),
       text,
       clock,
       input,
-      new AokanaNativeCursor(canvas),
+      new BurikoNativeCursor(canvas),
       device,
       display,
       null,
       new Uint8Array(),
     ),
-    inline = new AokanaInlineTextControl(host, fonts, dialogs, messages, keyboard),
-    fullscreenMovie = new AokanaFullscreenMovieState(),
-    cpu = new AokanaCpuProfile(
+    inline = new BurikoInlineTextControl(host, fonts, dialogs, messages, keyboard),
+    fullscreenMovie = new BurikoFullscreenMovieState(),
+    cpu = new BurikoCpuProfile(
       {
         cpuid: () => [0, 0, 0, 0],
         readTimestampCounter: () => 0n,
@@ -119,32 +119,32 @@ test('main-window callbacks bind the same actual controller and frames after hos
       },
       clock,
     ),
-    controller = new AokanaDisplayController(
+    controller = new BurikoDisplayController(
       manager,
       device,
       adapters,
       host,
       cpu,
       ticks,
-      new AokanaDisplayMouseTrails(new AokanaNativeRegistry(new MemoryStore()), dialogs),
-      new AokanaLocalizedMessages(
+      new BurikoDisplayMouseTrails(new BurikoNativeRegistry(new MemoryStore()), dialogs),
+      new BurikoLocalizedMessages(
         text,
-        new AokanaNativeLanguage(() => 0x409),
-        new AokanaImportedTextMaps(text),
+        new BurikoNativeLanguage(() => 0x409),
+        new BurikoImportedTextMaps(text),
       ),
       messages,
       fullscreenMovie,
       inline,
-      new AokanaNativeNotifications(),
+      new BurikoNativeNotifications(),
     ),
-    children = new AokanaChildWindows(
+    children = new BurikoChildWindows(
       document,
       parent,
       {},
       text,
       surfaces,
       compositor,
-      new AokanaBitmapText(fonts, compositor),
+      new BurikoBitmapText(fonts, compositor),
       dialogs,
       messages,
       keyboard,
@@ -152,20 +152,20 @@ test('main-window callbacks bind the same actual controller and frames after hos
       new Uint8Array(),
       canvas,
     ),
-    frames = new AokanaDisplayFrames(
+    frames = new BurikoDisplayFrames(
       manager,
       device,
       clock,
       ticks,
-      new AokanaFrameMetrics(new AokanaBrowserPerformanceCounter({now: () => 0}), clock, device),
-      new AokanaMovieRegistry(),
+      new BurikoFrameMetrics(new BurikoBrowserPerformanceCounter({now: () => 0}), clock, device),
+      new BurikoMovieRegistry(),
       fullscreenMovie,
       inline,
       children,
     );
 
-  const otherDevice = new AokanaDisplayDevice(canvas, manager, clock, adapters);
-  const mismatchedFrames = new AokanaDisplayFrames(
+  const otherDevice = new BurikoDisplayDevice(canvas, manager, clock, adapters);
+  const mismatchedFrames = new BurikoDisplayFrames(
     manager,
     otherDevice,
     clock,

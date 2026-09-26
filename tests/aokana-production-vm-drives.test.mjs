@@ -1,19 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaDriveTypeProfile,
-  AokanaDiskFreeSpaceProfile,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaVolumeLabelProfile} from '../dist/engines/buriko/games/aokana/native/volume-labels.js';
+  BurikoDriveTypeProfile,
+  BurikoDiskFreeSpaceProfile,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoVolumeLabelProfile} from '../dist/engines/buriko/native/volume-labels.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 const driveSlots = [0x36, 0x37, 0x3d];
 
 test('mounted drive callbacks share the selected media, files and volume-label host', async () => {
-  const types = new AokanaDriveTypeProfile([0, 0, 3, 5, ...Array(22).fill(0)]);
-  const free = new AokanaDiskFreeSpaceProfile([['C:\\game\\', ((1n << 32n) + 5n) << 20n]]);
-  const labels = new AokanaVolumeLabelProfile([[67, new TextEncoder().encode('GAME\0')]]);
+  const types = new BurikoDriveTypeProfile([0, 0, 3, 5, ...Array(22).fill(0)]);
+  const free = new BurikoDiskFreeSpaceProfile([['C:\\game\\', ((1n << 32n) + 5n) << 20n]]);
+  const labels = new BurikoVolumeLabelProfile([[67, new TextEncoder().encode('GAME\0')]]);
   const roots = [];
   const freePaths = [];
   const labelRoots = [];

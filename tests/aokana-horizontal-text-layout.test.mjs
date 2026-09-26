@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {releaseAokanaHorizontalTextLayout} from '../dist/engines/buriko/games/aokana/native/text-layout-horizontal.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {releaseBurikoHorizontalTextLayout} from '../dist/engines/buriko/native/text-layout-horizontal.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 function pointer(value) {
   const encoded = new TextEncoder().encode(value);
@@ -17,7 +17,7 @@ function pointer(value) {
 
 async function setup(size = 8) {
   const created = [];
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const browser = {
     async queryCharset() {
       return 1;
@@ -43,14 +43,14 @@ async function setup(size = 8) {
     },
     dispose() {},
   };
-  const fonts = new AokanaNativeFonts(text, browser);
+  const fonts = new BurikoNativeFonts(text, browser);
   fonts.rasterSettings.setQuality(-1);
   const selected = await fonts.get(new TextEncoder().encode('Synthetic'), size, 100, 0);
   assert.equal(selected.result, 0);
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
-  const state = new AokanaTextLayoutState(surfaces);
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
+  const state = new BurikoTextLayoutState(surfaces);
   return {created, fonts, state, fontId: selected.id};
 }
 
@@ -118,7 +118,7 @@ test('horizontal preparation expands formatting, timing, events, and transient f
     assert.ok(created.some((parameters) => parameters.width === 8));
     assert.equal(fonts.records.length, 1);
   } finally {
-    releaseAokanaHorizontalTextLayout(result.nodes);
+    releaseBurikoHorizontalTextLayout(result.nodes);
   }
 });
 
@@ -142,7 +142,7 @@ test('horizontal preparation handles carriage reset, paired ruby, and one escape
     assert.equal(result.nodes[3].annotationKey, null);
     assert.deepEqual(result.cursor, {x: 16, y: 0});
   } finally {
-    releaseAokanaHorizontalTextLayout(result.nodes);
+    releaseBurikoHorizontalTextLayout(result.nodes);
   }
 });
 
@@ -170,7 +170,7 @@ test('horizontal wrapping keeps closing punctuation in the hanging margin after 
       {lineCount: 2, outputCount: 2, cursor: {x: 4, y: 8}},
     );
   } finally {
-    releaseAokanaHorizontalTextLayout(result.nodes);
+    releaseBurikoHorizontalTextLayout(result.nodes);
   }
 });
 
@@ -216,7 +216,7 @@ test('horizontal preparation preserves newline indentation, one-use ruby, and li
     assert.equal(firstPixel(result.nodes[3].bitmap), 0xff102030);
     assert.equal(state.currentInlineColor, 0x445566);
   } finally {
-    releaseAokanaHorizontalTextLayout(result.nodes);
+    releaseBurikoHorizontalTextLayout(result.nodes);
   }
 });
 
@@ -250,6 +250,6 @@ test('positive-radius ordinary outline nodes publish dynamic per-line heights', 
     assert.equal(result.outputCount, 1);
     assert.deepEqual(state.lineHeightLayouts.get(result.outputCount), [8]);
   } finally {
-    releaseAokanaHorizontalTextLayout(result.nodes);
+    releaseBurikoHorizontalTextLayout(result.nodes);
   }
 });

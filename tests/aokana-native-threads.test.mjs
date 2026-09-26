@@ -1,44 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 import {
-  AokanaVmControlState,
+  BurikoVmControlState,
   createGroup80Threads,
   createGroup80InputWait,
-} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
+} from '../dist/engines/buriko/native/group-80-threads.js';
 import {
-  AokanaProcedureState,
-  AokanaWaitTiming,
-  AokanaWaitWindowMessage,
-  AokanaWindowMessages,
-} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
+  BurikoProcedureState,
+  BurikoWaitTiming,
+  BurikoWaitWindowMessage,
+  BurikoWindowMessages,
+} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 
 function setup() {
-  const control = new AokanaVmControlState();
-  const root = new AokanaBpThread({
+  const control = new BurikoVmControlState();
+  const root = new BurikoBpThread({
     id: control.allocateThreadId(),
     operandCapacity: 0,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const scheduler = new AokanaBpScheduler(root, () => 1);
-  const thread = new AokanaBpThread({
+  const scheduler = new BurikoBpScheduler(root, () => 1);
+  const thread = new BurikoBpThread({
     id: control.allocateThreadId(),
     operandCapacity: 32,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
   const current = scheduler.append(thread);
-  const memory = new AokanaBpMemory(new Uint8Array(64));
+  const memory = new BurikoBpMemory(new Uint8Array(64));
   let tick = 0;
-  const clock = new AokanaNativeClock(() => tick);
-  const procedures = new AokanaProcedureState();
-  const messages = new AokanaWindowMessages();
+  const clock = new BurikoNativeClock(() => tick);
+  const procedures = new BurikoProcedureState();
+  const messages = new BurikoWindowMessages();
   const dialogs = {
     show() {
       throw new Error('Unexpected dialog');
@@ -134,20 +134,20 @@ test('thread deadlines wrap signed DWORD differences; expired wait returns revis
 test('procedure stop consumes through the first stop only, and message3 overrides global disable', () => {
   const s = setup();
   s.procedures.enabled = 0;
-  const first = new AokanaWaitTiming(s.thread, s.procedures, s.clock, 100);
+  const first = new BurikoWaitTiming(s.thread, s.procedures, s.clock, 100);
   first.enqueueMessage({code: 3, value1: 0, value2: 0});
   assert.equal(first.poll(), 0);
   first.enqueueMessage({code: 0, value1: 0, value2: 0});
   first.enqueueMessage({code: 3, value1: 0, value2: 0});
   assert.equal(first.poll(), 1);
-  const second = new AokanaWaitTiming(s.thread, s.procedures, s.clock, 100);
+  const second = new BurikoWaitTiming(s.thread, s.procedures, s.clock, 100);
   assert.equal(second.poll(), 1);
   assert.equal(second.id, first.id + 1);
 });
 
 test('window messages broadcast and overwrite each matching registration, then consume received state', () => {
   const s = setup();
-  const process = new AokanaWaitWindowMessage(
+  const process = new BurikoWaitWindowMessage(
     s.thread,
     s.procedures,
     s.clock,
@@ -184,7 +184,7 @@ test('missing window registration awaits the actual dialog before process comple
       });
     },
   };
-  const process = new AokanaWaitWindowMessage(
+  const process = new BurikoWaitWindowMessage(
     s.thread,
     s.procedures,
     s.clock,
@@ -223,7 +223,7 @@ test('native control slots write persistent state and return exact scheduler cod
 
 test('input-sensitive wait consumes capture setup and distinguishes input from procedure completion', () => {
   const s = setup();
-  const input = new AokanaNativeInput(new AokanaNativeDisplayState(1920, 1080), s.clock);
+  const input = new BurikoNativeInput(new BurikoNativeDisplayState(1920, 1080), s.clock);
   input.foreground = input.inputActive = true;
   const slot = createGroup80InputWait(s.scheduler, s.clock, s.procedures, input)[0];
   const start = (enabled) => {

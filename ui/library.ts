@@ -6,7 +6,7 @@ import {BrowserInstallationDirectoryStore} from '../src/platform/installation-di
 import {installationDirectoryPermission} from '../src/platform/installation-picker.js';
 import {NOAH_PATHS, NOAH_WINDOWS} from '../src/engines/mages/games/chaos-head-noah/paths.js';
 
-export type GameId = 'aokana' | 'noah';
+export type GameId = 'buriko' | 'noah';
 export interface InstallationStatus {
   ready: boolean;
   label: string;
@@ -14,7 +14,7 @@ export interface InstallationStatus {
 }
 
 export async function installationStatus(game: GameId): Promise<InstallationStatus> {
-  const key = game === 'aokana' ? 'aokana' : 'chaos-head-noah-gog';
+  const key = game === 'buriko' ? 'buriko' : 'chaos-head-noah-gog';
   const directory = await new BrowserInstallationDirectoryStore().get(key).catch(() => null);
   if (
     directory &&
@@ -40,7 +40,7 @@ export async function installationStatus(game: GameId): Promise<InstallationStat
   try {
     const cached = await new BrowserInstallationCache().open(key);
     if (!cached) return unavailable;
-    const title = game === 'aokana' ? 'game files' : 'game archives';
+    const title = game === 'buriko' ? 'game files' : 'game archives';
     return {
       ready: true,
       label: 'Browser copy ready',

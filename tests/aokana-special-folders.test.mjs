@@ -1,23 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaSpecialFolders} from '../dist/engines/buriko/games/aokana/native/special-folders.js';
-import {AokanaNativeRegistry} from '../dist/engines/buriko/games/aokana/native/windows-registry.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoSpecialFolders} from '../dist/engines/buriko/native/special-folders.js';
+import {BurikoNativeRegistry} from '../dist/engines/buriko/native/windows-registry.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
 import {
-  AokanaDiagnosticCounts,
-  AokanaPooledAllocationDiagnostics,
-} from '../dist/engines/buriko/games/aokana/native/diagnostic-records.js';
-import {createGroupE0Files} from '../dist/engines/buriko/games/aokana/native/group-e0-files.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoDiagnosticCounts,
+  BurikoPooledAllocationDiagnostics,
+} from '../dist/engines/buriko/native/diagnostic-records.js';
+import {createGroupE0Files} from '../dist/engines/buriko/native/group-e0-files.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const ascii = (value) => new TextEncoder().encode(value);
 const pointer = (value = 784) => ({
@@ -27,8 +27,8 @@ const pointer = (value = 784) => ({
 const string = (value) =>
   new TextDecoder().decode(value.bytes.subarray(value.offset)).split('\0')[0];
 function fixture() {
-  const text = new AokanaNativeText(),
-    registry = new AokanaNativeRegistry(new MemoryStore());
+  const text = new BurikoNativeText(),
+    registry = new BurikoNativeRegistry(new MemoryStore());
   const currentUser = {
     desktop: 'C:\\Users\\Current\\Desktop',
     programs: 'C:\\Users\\Current\\Programs',
@@ -53,12 +53,12 @@ function fixture() {
     shellAccountName: 'Shell',
   };
   const roots = {primaryRoot: ascii('C:\\Game\\'), secondaryRoot: Uint8Array.of(0)};
-  const folders = new AokanaSpecialFolders(text, registry, roots, profile);
+  const folders = new BurikoSpecialFolders(text, registry, roots, profile);
   return {text, registry, profile, roots, folders};
 }
 
 test('mounted DOS and UNC paths retain explicit drive directories and longest mount selection', () => {
-  const paths = new AokanaMountedProgramPaths(
+  const paths = new BurikoMountedProgramPaths(
     [
       {native: 'C:\\', mounted: '/drive'},
       {native: 'C:\\Game', mounted: '/game'},
@@ -157,19 +157,19 @@ test('native path combination converts CP932 separately and preserves an aliasin
 function writerFixture() {
   const f = fixture(),
     filesystem = new StoredFileSystem(new MemoryStore());
-  const paths = new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/drive'}], 'C:\\Game');
-  const files = new AokanaProgramFiles(filesystem, f.text, new AokanaProgramMedia(), paths);
+  const paths = new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/drive'}], 'C:\\Game');
+  const files = new BurikoProgramFiles(filesystem, f.text, new BurikoProgramMedia(), paths);
   files.specialFolders = f.folders;
-  const counts = new AokanaDiagnosticCounts(),
-    allocations = new AokanaPooledAllocationDiagnostics();
+  const counts = new BurikoDiagnosticCounts(),
+    allocations = new BurikoPooledAllocationDiagnostics();
   const slots = createGroupE0Files(files, f.folders, counts, allocations);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(1024));
+  const memory = new BurikoBpMemory(new Uint8Array(1024));
   const execute = async (slot, name, selector) => {
     memory.globalMemory.set(ascii(name + '\0'), 64);
     push32(thread, 64);
@@ -201,7 +201,7 @@ test('E0 count files keep bank order, full hexadecimal widths and signed decimal
   assert.equal(await execute(0x92, 'counts.log', 0), 0);
   assert.equal(await read('/drive/Game/counts.log'), '0x18001 : -1\n0x180100 : 3\n');
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
 });
 
 test('E0 output creates empty files, writes stored byte order and ignores individual write failures', async () => {

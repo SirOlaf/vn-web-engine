@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaBootInputNotificationResetSegment} from '../dist/engines/buriko/games/aokana/native/boot-input-notification-reset-segment.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoBootInputNotificationResetSegment} from '../dist/engines/buriko/native/boot-input-notification-reset-segment.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 
 class Element {
   constructor(tag) {
@@ -42,26 +42,26 @@ class Element {
 test('ECB90 notification and input reset uses the graph owners in native order', async () => {
   const backing = new MountedFileSystem();
   backing.mount('/game', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [],
       volumes: [{path: '/', identity: {}, writable: true}],
       canonical: (path) => path.toLowerCase(),
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    paths = new AokanaMountedProgramPaths(
+    paths = new BurikoMountedProgramPaths(
       [
         {native: 'C:\\game', mounted: '/game'},
         {native: 'D:\\Drops', mounted: '/drops'},
       ],
       'C:\\game',
     ),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
     document = {createElement: (tag) => new Element(tag)},
     parent = document.createElement('div'),
     canvas = document.createElement('canvas');
-  const graph = new AokanaProductionDisplayResourceGraph({
+  const graph = new BurikoProductionDisplayResourceGraph({
       document,
       parent,
       canvas,
@@ -90,7 +90,7 @@ test('ECB90 notification and input reset uses the graph owners in native order',
         verticalScrollbarWidth: 0,
         horizontalScrollbarHeight: 0,
       },
-      nativeWindowTitle: encode('Aokana'),
+      nativeWindowTitle: encode('Buriko'),
       preferredDialogTitle: null,
       cursorResource: null,
       performance: {now: () => 100},
@@ -123,7 +123,7 @@ test('ECB90 notification and input reset uses the graph owners in native order',
       resource: {
         mounted,
         paths,
-        media: new AokanaProgramMedia(),
+        media: new BurikoProgramMedia(),
         configuration: {
           nativeFileRoot: 'C:\\game\\',
           primaryRoot: encode('C:\\game\\'),
@@ -138,13 +138,13 @@ test('ECB90 notification and input reset uses the graph owners in native order',
         errorDirectory: encode('C:\\game\\'),
         workingDirectory: encode('C:\\game\\'),
         audioRootWide: 'C:\\game\\',
-        backend: new AokanaMemorySpeakerBackend(1000),
+        backend: new BurikoMemorySpeakerBackend(1000),
         output: {prefer24Bit: false},
         resourceWorkerCount: 1,
         sleep: async () => {},
       },
     }),
-    segment = new AokanaBootInputNotificationResetSegment(graph),
+    segment = new BurikoBootInputNotificationResetSegment(graph),
     seen = [];
   try {
     graph.notifications.push(0x42, 7, 8);

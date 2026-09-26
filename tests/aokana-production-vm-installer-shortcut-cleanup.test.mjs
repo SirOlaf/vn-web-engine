@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {push32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 const folderProfile = {
@@ -22,8 +22,8 @@ const folderProfile = {
 
 const shortcutPaths = [
   'C:\\game\\Desktop\\Main.lnk',
-  'C:\\game\\Programs\\Aokana\\Main.lnk',
-  'C:\\game\\Programs\\Aokana\\Uninstall.lnk',
+  'C:\\game\\Programs\\Buriko\\Main.lnk',
+  'C:\\game\\Programs\\Buriko\\Uninstall.lnk',
 ];
 
 async function seededFixture() {
@@ -32,7 +32,7 @@ async function seededFixture() {
     const {mounted, graph, encode} = fixture;
     await mounted.createDirectory('/game/Desktop');
     await mounted.createDirectory('/game/Programs');
-    await mounted.createDirectory('/game/Programs/Aokana');
+    await mounted.createDirectory('/game/Programs/Buriko');
     for (const path of shortcutPaths)
       assert.equal(await graph.resource.files.write(encode(path), Uint8Array.of(42)), 1);
     assert.equal(
@@ -62,7 +62,7 @@ for (const removeFolder of [1, 0]) {
       assert.equal(slot.nativeAddress, 0x1400e6160);
       memory.globalMemory.set(encode('Main.lnk'), 0x100);
       memory.globalMemory.set(encode('Uninstall.lnk'), 0x200);
-      memory.globalMemory.set(encode('Aokana'), 0x300);
+      memory.globalMemory.set(encode('Buriko'), 0x300);
       for (const arg of [0x100, 0x200, 0x300, removeFolder]) push32(child.state, arg);
       const call = slot.execute({thread: child.state, memory, diagnostics});
       assert.ok(call instanceof Promise);
@@ -75,8 +75,8 @@ for (const removeFolder of [1, 0]) {
       assert.equal(child.process, null);
       for (const path of shortcutPaths)
         await assert.rejects(mounted.stat(graph.resource.files.mountedPath(path)), /NOT_FOUND/);
-      if (removeFolder) await assert.rejects(mounted.stat('/game/Programs/Aokana'), /NOT_FOUND/);
-      else assert.equal((await mounted.stat('/game/Programs/Aokana')).kind, 'directory');
+      if (removeFolder) await assert.rejects(mounted.stat('/game/Programs/Buriko'), /NOT_FOUND/);
+      else assert.equal((await mounted.stat('/game/Programs/Buriko')).kind, 'directory');
       assert.equal((await mounted.stat('/game/Desktop')).kind, 'directory');
       assert.equal((await mounted.stat('/game/Programs')).kind, 'directory');
       assert.equal((await mounted.stat('/game/Programs/Other.lnk')).kind, 'file');

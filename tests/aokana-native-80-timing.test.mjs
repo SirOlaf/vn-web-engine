@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaCrtRandom,
-  AokanaVmFrameHistory,
-  AokanaBrowserPerformanceCounter,
+  BurikoCrtRandom,
+  BurikoVmFrameHistory,
+  BurikoBrowserPerformanceCounter,
   nativeNanoseconds,
-} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+} from '../dist/engines/buriko/native/system-timing.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 
 test('CRT random uses one shared 32-bit generator and exactly three draws for positive bounds', () => {
-  const random = new AokanaCrtRandom();
+  const random = new BurikoCrtRandom();
   assert.deepEqual(
     Array.from({length: 5}, () => random.next()),
     [41, 18467, 6334, 26500, 19169],
@@ -30,7 +30,7 @@ test('CRT random uses one shared 32-bit generator and exactly three draws for po
 });
 
 test('frame history keeps newest order across ring wrap, DWORD tick wrap and native restart', () => {
-  const history = new AokanaVmFrameHistory(0xfffffffe),
+  const history = new BurikoVmFrameHistory(0xfffffffe),
     bytes = new Uint8Array(2400),
     pointer = {bytes, offset: 0};
   history.record(2);
@@ -58,7 +58,7 @@ test('frame history keeps newest order across ring wrap, DWORD tick wrap and nat
 });
 
 test('performance timer preserves double operation order, separate fallbacks and CVTT overflow', () => {
-  const clock = new AokanaNativeClock(() => 123);
+  const clock = new BurikoNativeClock(() => 123);
   assert.equal(
     nativeNanoseconds({queryCounter: () => 3n, queryFrequency: () => 7n}, clock),
     428571428n,
@@ -75,7 +75,7 @@ test('performance timer preserves double operation order, separate fallbacks and
     nativeNanoseconds({queryCounter: () => 1n, queryFrequency: () => 0n}, clock),
     -(1n << 63n),
   );
-  const browser = new AokanaBrowserPerformanceCounter({now: () => 12.34567});
+  const browser = new BurikoBrowserPerformanceCounter({now: () => 12.34567});
   assert.equal(browser.queryCounter(), 12345n);
   assert.equal(browser.queryFrequency(), 1000000n);
 });

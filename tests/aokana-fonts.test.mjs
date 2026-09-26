@@ -1,25 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaFontResources} from '../dist/engines/buriko/games/aokana/native/font-resources.js';
-import {AokanaBrowserFonts} from '../dist/engines/buriko/games/aokana/native/font-browser.js';
-import {createGroupB0Fonts} from '../dist/engines/buriko/games/aokana/native/group-b0-fonts.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoFontResources} from '../dist/engines/buriko/native/font-resources.js';
+import {BurikoBrowserFonts} from '../dist/engines/buriko/native/font-browser.js';
+import {createGroupB0Fonts} from '../dist/engines/buriko/native/group-b0-fonts.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {
-  AokanaFontRaster,
-  AokanaFontRasterSettings,
-  aokanaFontGeometry,
-  aokanaGlyphText,
-} from '../dist/engines/buriko/games/aokana/native/font-raster.js';
-import {AokanaSelectionDialog} from '../dist/engines/buriko/games/aokana/native/selection-dialog.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
+  BurikoFontRaster,
+  BurikoFontRasterSettings,
+  burikoFontGeometry,
+  burikoGlyphText,
+} from '../dist/engines/buriko/native/font-raster.js';
+import {BurikoSelectionDialog} from '../dist/engines/buriko/native/selection-dialog.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
 import {
-  aokanaCrtWideLower,
-  aokanaCrtWidePrefixEqual,
-} from '../dist/engines/buriko/games/aokana/native/crt-case.js';
+  burikoCrtWideLower,
+  burikoCrtWidePrefixEqual,
+} from '../dist/engines/buriko/native/crt-case.js';
 
 const bytes = (value) => new TextEncoder().encode(value + '\0');
 const pointer = (value) => ({bytes: bytes(value), offset: 0});
@@ -33,14 +33,14 @@ const mainProcessing = () => ({
 });
 
 test('reachable native CRT case handling folds only ASCII UTF-16 units', () => {
-  assert.equal(aokanaCrtWideLower('FONTÄİΣＡ\ud800'), 'fontÄİΣＡ\ud800');
-  assert.equal(aokanaCrtWidePrefixEqual('ms GOTHIC Extra', 'MS Gothic'), true);
-  assert.equal(aokanaCrtWidePrefixEqual('Äfont', 'ä'), false);
-  assert.equal(aokanaCrtWidePrefixEqual('MS Goth', 'MS Gothic'), false);
+  assert.equal(burikoCrtWideLower('FONTÄİΣＡ\ud800'), 'fontÄİΣＡ\ud800');
+  assert.equal(burikoCrtWidePrefixEqual('ms GOTHIC Extra', 'MS Gothic'), true);
+  assert.equal(burikoCrtWidePrefixEqual('Äfont', 'ä'), false);
+  assert.equal(burikoCrtWidePrefixEqual('MS Goth', 'MS Gothic'), false);
 });
 
 test('font pitch callback keeps character-set precedence, family names and ASCII-only case folding', async () => {
-  const browser = new AokanaBrowserFonts();
+  const browser = new BurikoBrowserFonts();
   const face = (family, bit, fixedPitch) => ({
     family,
     fullName: family + ' Bold',
@@ -75,9 +75,9 @@ test('font B0 bindings preserve NULL enumeration queries, outputs and cached arc
         return name === 'Found' ? 2 : null;
       },
     };
-  const text = new AokanaNativeText(),
-    fonts = new AokanaNativeFonts(text, browser);
-  const resources = new AokanaFontResources(fonts, {
+  const text = new BurikoNativeText(),
+    fonts = new BurikoNativeFonts(text, browser);
+  const resources = new BurikoFontResources(fonts, {
     mainProcessing: mainProcessing(),
     configuration: {nativeFileRoot: ''},
     files: {
@@ -96,15 +96,15 @@ test('font B0 bindings preserve NULL enumeration queries, outputs and cached arc
   const definitions = createGroupB0Fonts(resources, {value: 0x409});
   assert.equal(definitions.length, 10);
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0xb0][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0xb0][slot.secondary]);
   const slots = new Map(definitions.map((slot) => [slot.secondary, slot]));
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 128,
     frameCapacity: 128,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(512)),
+  const memory = new BurikoBpMemory(new Uint8Array(512)),
     h = {thread, memory};
   const run = async (id, values) => {
     for (const value of values) push32(thread, value);
@@ -144,7 +144,7 @@ test('font file cache excludes archive identity and preserves wide-root path ide
       calls.push(['remove', token]);
     },
   };
-  const fonts = new AokanaNativeFonts(new AokanaNativeText(), browser);
+  const fonts = new BurikoNativeFonts(new BurikoNativeText(), browser);
   const native = {
     mainProcessing: mainProcessing(),
     configuration: {nativeFileRoot: 'root\ud800/'},
@@ -171,7 +171,7 @@ test('font file cache excludes archive identity and preserves wide-root path ide
       return {result: 2, bytes: Uint8Array.of(6, 7)};
     },
   };
-  const resources = new AokanaFontResources(fonts, native);
+  const resources = new BurikoFontResources(fonts, native);
   assert.equal(await resources.load(null, bytes('AbC.ttf')), 0);
   assert.equal(await resources.load(bytes('other.arc'), bytes('ABC.TTF')), 0);
   assert.deepEqual(calls, [
@@ -190,7 +190,7 @@ test('font file cache excludes archive identity and preserves wide-root path ide
 });
 
 test('font resource status distinguishes absent, changed, and invalid native resources', async () => {
-  const fonts = new AokanaNativeFonts(new AokanaNativeText(), {
+  const fonts = new BurikoNativeFonts(new BurikoNativeText(), {
     async loadResource() {
       return null;
     },
@@ -212,7 +212,7 @@ test('font resource status distinguishes absent, changed, and invalid native res
       return {result: count, bytes: Uint8Array.of(1, 2)};
     },
   };
-  const resources = new AokanaFontResources(fonts, native);
+  const resources = new BurikoFontResources(fonts, native);
   assert.equal(await resources.load(null, bytes('font')), 0x8000001a);
   assert.equal(await resources.load(bytes('arc'), bytes('font')), 0x80000019);
   measured = 3;
@@ -222,14 +222,14 @@ test('font resource status distinguishes absent, changed, and invalid native res
 });
 
 test('enumeration uses prefix matching and appends raw defaults only for exact charset 128', async () => {
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const faces = ['ms gothic Extra'];
-  const fonts = new AokanaNativeFonts(text, {
+  const fonts = new BurikoNativeFonts(text, {
     async enumerate() {
       return faces;
     },
   });
-  const resources = new AokanaFontResources(fonts, {});
+  const resources = new BurikoFontResources(fonts, {});
   const result = await resources.enumerate(128, false);
   assert.deepEqual(
     result.names.map((value) => text.decodeAuto({bytes: value, offset: 0})),
@@ -251,8 +251,8 @@ test('enumeration uses prefix matching and appends raw defaults only for exact c
 });
 
 test('font geometry preserves automatic-fit, independent sample settings, and UTF-16 substitutions', () => {
-  const settings = new AokanaFontRasterSettings();
-  const native = aokanaFontGeometry(20, 100, null, settings);
+  const settings = new BurikoFontRasterSettings();
+  const native = burikoFontGeometry(20, 100, null, settings);
   assert.deepEqual(
     [
       native.width,
@@ -264,21 +264,21 @@ test('font geometry preserves automatic-fit, independent sample settings, and UT
     ],
     [40, 30, 160, 120, 80, 40],
   );
-  const auto = aokanaFontGeometry(20, 100, [0, 0, 0, 0, 0], settings);
+  const auto = burikoFontGeometry(20, 100, [0, 0, 0, 0, 0], settings);
   assert.deepEqual([auto.dibHeight, auto.fontHeight, auto.fontWidth], [240, -80, 0]);
   settings.useOutline();
   assert.deepEqual([settings.quality, settings.sampleScale, settings.sampleShift], [1, 1, 0]);
   assert.equal(settings.setQuality(-5), true);
   assert.equal(settings.setQuality(4), false);
-  assert.equal(aokanaGlyphText(0x7f).text, '\x7f');
-  assert.equal(aokanaGlyphText(0xef40).text, '——');
-  assert.equal(aokanaGlyphText(0xd800).text, null);
+  assert.equal(burikoGlyphText(0x7f).text, '\x7f');
+  assert.equal(burikoGlyphText(0xef40).text, '——');
+  assert.equal(burikoGlyphText(0xd800).text, null);
 });
 
 test('cache eviction reuses native coverage storage and keeps glyph descriptors separate', () => {
-  const settings = new AokanaFontRasterSettings();
+  const settings = new BurikoFontRasterSettings();
   settings.setQuality(-1);
-  const geometry = aokanaFontGeometry(4, 100, null, settings);
+  const geometry = burikoFontGeometry(4, 100, null, settings);
   const face = {
     ascent: 4,
     abc() {
@@ -291,7 +291,7 @@ test('cache eviction reuses native coverage storage and keeps glyph descriptors 
       return {stride: width, bytes: new Uint8Array(width * height).fill(text.charCodeAt(0))};
     },
   };
-  const raster = new AokanaFontRaster(geometry, face, settings, 2);
+  const raster = new BurikoFontRaster(geometry, face, settings, 2);
   const a = raster.glyph(65),
     b = raster.glyph(66);
   assert.equal(raster.glyph(65), a);
@@ -303,7 +303,7 @@ test('cache eviction reuses native coverage storage and keeps glyph descriptors 
 });
 
 test('list selection omits empty lines, retains CR, and leaves cancellation output untouched', async () => {
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const requests = [];
   let accepted = false;
   const dialogs = {
@@ -315,7 +315,7 @@ test('list selection omits empty lines, retains CR, and leaves cancellation outp
       return {accepted, index: 1};
     },
   };
-  const selection = new AokanaSelectionDialog(dialogs, text);
+  const selection = new BurikoSelectionDialog(dialogs, text);
   const output = {bytes: new Uint8Array(30).fill(0xa5), offset: 2};
   assert.equal(await selection.select(output, null, null, pointer('\nFirst\r\n\nSecond\n')), 0);
   assert.equal(output.bytes[2], 0xa5);
@@ -333,9 +333,9 @@ test('list selection omits empty lines, retains CR, and leaves cancellation outp
 
 test('native modal restoration occurs after operation, in cursor/input/clock/display order', async () => {
   const events = [];
-  const dialogs = new AokanaEngineDialogs(
+  const dialogs = new BurikoEngineDialogs(
     {},
-    new AokanaNativeText(),
+    new BurikoNativeText(),
     {
       beginSuspension(value) {
         events.push(['clock+', value]);
@@ -402,7 +402,7 @@ test('native fallback rechecks aliases recursively and clears the transform on r
       };
     },
   };
-  const fonts = new AokanaNativeFonts(new AokanaNativeText(), browser);
+  const fonts = new BurikoNativeFonts(new BurikoNativeText(), browser);
   fonts.setAlias(bytes('A'), bytes('Expected A'));
   fonts.setFallback(bytes('A'), bytes('B'));
   fonts.setAlias(bytes('B'), bytes('Expected B'));
@@ -424,7 +424,7 @@ test('native fallback rechecks aliases recursively and clears the transform on r
 });
 
 test('null font names follow native empty-table validation and populated-table strcmp faults', async () => {
-  const fonts = new AokanaNativeFonts(new AokanaNativeText(), {});
+  const fonts = new BurikoNativeFonts(new BurikoNativeText(), {});
   assert.deepEqual(await fonts.get(null, 20, 100, 0), {result: 0x80000004, id: 0});
   fonts.setCacheCapacity(null, 0, 0, 0, 1);
   assert.deepEqual(await fonts.get(null, 20, 100, 0), {result: 0x80000001, id: 0});

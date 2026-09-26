@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {
-  revealAokanaBitmap,
-  blendRevealedAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-reveal.js';
+  revealBurikoBitmap,
+  blendRevealedBurikoBitmap,
+} from '../dist/engines/buriko/native/bitmap-reveal.js';
 
 function bitmap(width, height, values, format = 2) {
   const bytesPerPixel = format === 3 ? 1 : 4;
@@ -18,7 +18,7 @@ function bitmap(width, height, values, format = 2) {
       else view.setUint32(y * stride + x * 4, values[y * width + x] ?? 0, true);
     }
   return {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride,
     width,
@@ -37,11 +37,11 @@ function pixels(bitmap) {
 const mask = () => bitmap(7, 1, [0, 32, 64, 96, 128, 192, 255], 3);
 
 test('mask reveal retains the 255 ramp ceiling in four-pixel and scalar groups', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   for (const format of [1, 2]) {
     const source = bitmap(7, 1, Array(7).fill(0x80123456), format);
     const output = bitmap(7, 1, Array(7).fill(0));
-    revealAokanaBitmap(compositor, output, source, mask(), 2, 64);
+    revealBurikoBitmap(compositor, output, source, mask(), 2, 64);
     const alphas = format === 1 ? [255, 192, 64, 0, 0, 0, 0] : [127, 96, 32, 0, 0, 0, 0];
     assert.deepEqual(
       pixels(output),
@@ -52,21 +52,21 @@ test('mask reveal retains the 255 ramp ceiling in four-pixel and scalar groups',
 });
 
 test('mask reveal clear and copy endpoints use the existing concrete bitmap operations', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   const source = bitmap(7, 1, Array(7).fill(0x00123456), 1);
   const output = bitmap(7, 1, Array(7).fill(0x55123456));
-  revealAokanaBitmap(compositor, output, source, mask(), 2, 0);
+  revealBurikoBitmap(compositor, output, source, mask(), 2, 0);
   assert.deepEqual(pixels(output), Array(7).fill(0));
-  revealAokanaBitmap(compositor, output, source, mask(), 2, 256);
+  revealBurikoBitmap(compositor, output, source, mask(), 2, 256);
   assert.deepEqual(pixels(output), Array(7).fill(0xff123456));
 });
 
 test('direct RGB reveal retains the 129-entry blend table and source alpha quantization', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   for (const format of [1, 2]) {
     const source = bitmap(7, 1, Array(7).fill(0x80f0f0f0), format);
     const output = bitmap(7, 1, Array(7).fill(0x05101010), 1);
-    blendRevealedAokanaBitmap(compositor, output, source, mask(), 2, 64, 64);
+    blendRevealedBurikoBitmap(compositor, output, source, mask(), 2, 64, 64);
     const components =
       format === 1 ? [184, 142, 58, 16, 16, 16, 16] : [100, 79, 37, 16, 16, 16, 16];
     assert.deepEqual(

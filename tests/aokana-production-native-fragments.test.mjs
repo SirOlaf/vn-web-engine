@@ -2,16 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProductionDataOwners} from '../dist/engines/buriko/games/aokana/native/production-data-owners.js';
-import {AokanaProductionNativeFragments} from '../dist/engines/buriko/games/aokana/native/production-native-fragments.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProductionDataOwners} from '../dist/engines/buriko/native/production-data-owners.js';
+import {BurikoProductionNativeFragments} from '../dist/engines/buriko/native/production-native-fragments.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 class Element {
   constructor(tag) {
@@ -89,7 +89,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
   ]);
   const backing = new MountedFileSystem();
   backing.mount('/game', files);
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
     records: [],
     volumes: [{path: '/', identity: {}, writable: true}],
     canonical: (path) => path.toLowerCase(),
@@ -110,14 +110,14 @@ test('partial production catalog routes BP calls through graph and mounted resou
       copyDeleteFailure: 'success-retain-source',
     },
   });
-  const paths = new AokanaMountedProgramPaths(
+  const paths = new BurikoMountedProgramPaths(
     [
       {native: 'C:\\game', mounted: '/game'},
       {native: 'D:\\Drops', mounted: '/drops'},
     ],
     'C:\\game',
   );
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const encode = (value) => text.encodeWide(value, 1);
   let frameMilliseconds = 0;
   const document = {createElement: (tag) => new Element(tag)};
@@ -152,7 +152,8 @@ test('partial production catalog routes BP calls through graph and mounted resou
       verticalScrollbarWidth: 0,
       horizontalScrollbarHeight: 0,
     },
-    nativeWindowTitle: encode('Aokana'),
+    nativeWindowTitle: encode('Buriko'),
+    productIdentity: encode('AoNoKanataNoFourRhythmUEDL'),
     preferredDialogTitle: null,
     cursorResource: null,
     performance: {now: () => frameMilliseconds},
@@ -190,7 +191,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
     resource: {
       mounted,
       paths,
-      media: new AokanaProgramMedia(),
+      media: new BurikoProgramMedia(),
       configuration: {
         nativeFileRoot: 'C:\\game\\',
         primaryRoot: encode('C:\\game\\'),
@@ -205,7 +206,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
       errorDirectory: encode('C:\\game\\'),
       workingDirectory: encode('C:\\game\\'),
       audioRootWide: 'C:\\game\\',
-      backend: new AokanaMemorySpeakerBackend(1000),
+      backend: new BurikoMemorySpeakerBackend(1000),
       output: {prefer24Bit: false},
       resourceWorkerCount: 1,
       sleep: async () => {},
@@ -213,25 +214,25 @@ test('partial production catalog routes BP calls through graph and mounted resou
   };
   assert.throws(
     () =>
-      new AokanaProductionDisplayResourceGraph({...graphInputs, specialFolderProfile: undefined}),
+      new BurikoProductionDisplayResourceGraph({...graphInputs, specialFolderProfile: undefined}),
     /folder inputs/,
   );
   assert.throws(
     () =>
-      new AokanaProductionDisplayResourceGraph({
+      new BurikoProductionDisplayResourceGraph({
         ...graphInputs,
         specialFolderProfile: {...graphInputs.specialFolderProfile, currentUser: {}},
       }),
     /folder inputs/,
   );
-  const graph = new AokanaProductionDisplayResourceGraph(graphInputs);
+  const graph = new BurikoProductionDisplayResourceGraph(graphInputs);
   let titlePanel = null;
   let titleEditorId = null;
   let titleEditorTarget = null;
   try {
-    const memory = new AokanaBpMemory(new Uint8Array(0x1000));
-    const owners = new AokanaProductionDataOwners(graph, memory);
-    const catalog = new AokanaProductionNativeFragments(graph, owners);
+    const memory = new BurikoBpMemory(new Uint8Array(0x1000));
+    const owners = new BurikoProductionDataOwners(graph, memory);
+    const catalog = new BurikoProductionNativeFragments(graph, owners);
     const definitions = catalog.nativeDefinitions();
     const keys = definitions.map(({primary, secondary}) => `${primary}:${secondary}`);
     assert.equal(new Set(keys).size, keys.length);
@@ -245,7 +246,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
         .map(({secondary}) => secondary),
       [0x0b, 0x66, 0x6d, 0x6f],
     );
-    const thread = new AokanaBpThread({
+    const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 512,
@@ -275,7 +276,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
     assert.ok(setTitle);
     push32(thread, 0x900);
     assert.throws(
-      () => setTitle.execute({thread, memory: new AokanaBpMemory(new Uint8Array(0x1000))}),
+      () => setTitle.execute({thread, memory: new BurikoBpMemory(new Uint8Array(0x1000))}),
       /aggregate BP memory/,
     );
     assert.equal(pop32(thread), 0x900);
@@ -312,14 +313,14 @@ test('partial production catalog routes BP calls through graph and mounted resou
     );
     for (const address of [0xd00, 0xd40, 0xd80]) push32(thread, address);
     assert.throws(
-      () => readAdapter.execute({thread, memory: new AokanaBpMemory(new Uint8Array(0x1000))}),
+      () => readAdapter.execute({thread, memory: new BurikoBpMemory(new Uint8Array(0x1000))}),
       /aggregate BP memory/,
     );
     assert.deepEqual([pop32(thread), pop32(thread), pop32(thread)], [0xd80, 0xd40, 0xd00]);
     assert.equal(thread.stackIndex, 0);
 
     const identifier = graph.display.adapterIdentifier;
-    identifier.set(new TextEncoder().encode('  Aokana   Adapter  \0'), 0x200);
+    identifier.set(new TextEncoder().encode('  Buriko   Adapter  \0'), 0x200);
     const identifierWords = new DataView(identifier.buffer);
     [0x1122, 0x3344, 0x5566, 0x7788].forEach((value, index) =>
       identifierWords.setUint16(0x420 + index * 2, value, true),
@@ -328,7 +329,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
     await invoke(0x81, 0x0b, [0xd00, 0xd40, 0xd80]);
     assert.deepEqual(
       [...memory.globalMemory.subarray(0xd00, 0xd10)],
-      [...new TextEncoder().encode('Aokana Adapter\0'), 0xa5],
+      [...new TextEncoder().encode('Buriko Adapter\0'), 0xa5],
     );
     assert.deepEqual(
       [0, 4, 8, 12].map((offset) =>
@@ -340,14 +341,14 @@ test('partial production catalog routes BP calls through graph and mounted resou
 
     await invoke(0x81, 0x66, [7]);
     assert.equal(graph.display.windowStyleOption, 7);
-    assert.equal(parent['data-aokana-window-style'], '90ce0000');
+    assert.equal(parent['data-buriko-window-style'], '90ce0000');
     graph.display.fullscreen = 1;
     await invoke(0x81, 0x66, [0]);
     assert.equal(graph.display.windowStyleOption, 0);
-    assert.equal(parent['data-aokana-window-style'], '90ce0000');
+    assert.equal(parent['data-buriko-window-style'], '90ce0000');
     graph.display.fullscreen = 0;
     await invoke(0x81, 0x66, [0]);
-    assert.equal(parent['data-aokana-window-style'], '90ca0000');
+    assert.equal(parent['data-buriko-window-style'], '90ca0000');
 
     assert.equal(await invoke(0x81, 0x6d, [], true), 0);
     assert.equal(await invoke(0x81, 0x6f, [2], true), 1);
@@ -437,7 +438,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
     assert.equal(graph.printScreenHotkeys.messages, graph.messages);
     assert.equal(graph.printScreenHotkeys.registration, graph.focusedHotkeyRegistration);
     assert.equal(graph.focusedHotkeyRegistration.scope, 'focused-title-window');
-    const hotkeyWaiter = new AokanaBpThread({
+    const hotkeyWaiter = new BurikoBpThread({
       id: 3,
       operandCapacity: 4,
       moduleCapacity: 0,
@@ -493,7 +494,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
     assert.equal(graph.syntheticMouse.input, graph.input);
     assert.equal(graph.syntheticMouse.messages, graph.messages);
     assert.equal(graph.receiver.waits, graph.waits);
-    const waiter = new AokanaBpThread({
+    const waiter = new BurikoBpThread({
       id: 2,
       operandCapacity: 4,
       moduleCapacity: 0,

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted immediate BMP load joins its callback and exposes bottom-up pixels', async () => {

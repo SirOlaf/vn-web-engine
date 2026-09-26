@@ -2,43 +2,43 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaResourceFilePresence} from '../dist/engines/buriko/games/aokana/native/resource-file-presence.js';
-import {createGroup80FilePresence} from '../dist/engines/buriko/games/aokana/native/group-80-file-presence.js';
-import {AokanaLocalizedMessages} from '../dist/engines/buriko/games/aokana/native/localized-messages.js';
-import {AokanaImportedTextMaps} from '../dist/engines/buriko/games/aokana/native/imported-text-maps.js';
-import {AokanaNativeLanguage} from '../dist/engines/buriko/games/aokana/native/group-81-language.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoResourceFilePresence} from '../dist/engines/buriko/native/resource-file-presence.js';
+import {createGroup80FilePresence} from '../dist/engines/buriko/native/group-80-file-presence.js';
+import {BurikoLocalizedMessages} from '../dist/engines/buriko/native/localized-messages.js';
+import {BurikoImportedTextMaps} from '../dist/engines/buriko/native/imported-text-maps.js';
+import {BurikoNativeLanguage} from '../dist/engines/buriko/native/group-81-language.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
 
 test('80:3c sees an ordinary empty file under the shared wide resource root without consuming unused modal pointers', async () => {
   const fs = new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase());
   await fs.commit([{kind: 'write', path: '/native/資料.bin', data: new Uint8Array()}]);
-  const text = new AokanaNativeText(),
-    media = new AokanaProgramMedia();
+  const text = new BurikoNativeText(),
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       fs,
       text,
       media,
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
     ),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
-    processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1);
-  const resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
+    processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1);
+  const resources = new BurikoProgramResources(
     files,
     {
       nativeFileRoot: 'C:\\native\\',
@@ -55,16 +55,16 @@ test('80:3c sees an ordinary empty file under the shared wide resource root with
     errors,
     processing,
   );
-  const messages = new AokanaLocalizedMessages(
+  const messages = new BurikoLocalizedMessages(
       text,
-      new AokanaNativeLanguage(() => 0x411),
-      new AokanaImportedTextMaps(text),
+      new BurikoNativeLanguage(() => 0x411),
+      new BurikoImportedTextMaps(text),
     ),
-    presence = new AokanaResourceFilePresence(resources, messages),
+    presence = new BurikoResourceFilePresence(resources, messages),
     [slot] = createGroup80FilePresence(presence),
     bytes = new Uint8Array(128),
-    memory = new AokanaBpMemory(bytes),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0});
+    memory = new BurikoBpMemory(bytes),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0});
   bytes.set(text.encodeWide('資料.bin', 0), 16);
   // Actual engine/localized owners are composed; this existing-file branch never opens UI.
   push32(thread, 16);

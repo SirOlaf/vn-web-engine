@@ -1,6 +1,6 @@
 import {checkRange} from '../../core/binary.js';
 import {signature, view} from './binary.js';
-/** Aokana readscrfile._bp +0x18 PRNG and +0x57 BSE transform (decoded file offsets). */
+/** Buriko readscrfile._bp +0x18 PRNG and +0x57 BSE transform (decoded file offsets). */
 export function decodeBse(bytes: Uint8Array): Uint8Array {
   checkRange(bytes.length, 0, 80);
   if (!signature(bytes, 'BSE 1.1\0') || view(bytes).getUint16(8, true) !== 0x101)

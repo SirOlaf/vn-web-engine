@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted extended horizontal Window messages use bound layout timing and notifications', async () => {
@@ -89,7 +89,7 @@ test('mounted extended horizontal Window messages use bound layout timing and no
     await call(0x90, 0x80, [32, 16], 0, 1);
     const handle = pop32(child.state);
     const window = graph.manager.find('window', handle);
-    assert.ok(window instanceof AokanaWindowDisplayObject);
+    assert.ok(window instanceof BurikoWindowDisplayObject);
     await call(0x91, 0x88, [handle, font, 8, 100, 0, 0, 0]);
     await call(0x91, 0x98, [2, 4, 0, 25, 0, 0]);
     assert.equal(graph.windowState.textLayout.field1C9100, 2);

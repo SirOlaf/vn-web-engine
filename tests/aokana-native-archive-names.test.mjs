@@ -1,19 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {createGroup81ArchiveNames} from '../dist/engines/buriko/games/aokana/native/group-81-archive-names.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {createGroup81ArchiveNames} from '../dist/engines/buriko/native/group-81-archive-names.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
 
@@ -41,12 +41,12 @@ function setup(packed) {
     cwd: 'C:\\game',
     mounts: [{windows: 'C:\\', virtual: '/'}],
   });
-  const text = new AokanaNativeText();
-  const media = new AokanaProgramMedia();
+  const text = new BurikoNativeText();
+  const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(fileSystem, text, media);
+  const files = new BurikoProgramFiles(fileSystem, text, media);
   const unavailable = () => assert.fail('Archive-name enumeration opened an unexpected dialog');
-  const resources = new AokanaProgramResources(
+  const resources = new BurikoProgramResources(
     files,
     {
       nativeFileRoot: 'C:\\game\\',
@@ -61,12 +61,12 @@ function setup(packed) {
     },
     {show: unavailable},
     {fatal: unavailable, threadFatal: unavailable},
-    new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+    new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
   );
   sources.attach('/game/data.arc', new BlobSource(new Blob([archive(['Zeta', 'Alpha'], packed)])));
   const memoryBytes = new Uint8Array(1024).fill(0xa5);
-  const memory = new AokanaBpMemory(memoryBytes);
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(memoryBytes);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,

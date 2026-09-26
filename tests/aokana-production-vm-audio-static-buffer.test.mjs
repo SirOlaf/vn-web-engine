@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted static duration reads registered PCM from the shared inactive speaker', async () => {
@@ -14,7 +14,7 @@ test('mounted static duration reads registered PCM from the shared inactive spea
     assert.equal(resource.channels.actors, graph.allocator);
     assert.equal(resource.channels.locks, graph.manager.locks);
     assert.equal(resource.errors.files, resource.files);
-    assert.ok(backend instanceof AokanaMemorySpeakerBackend);
+    assert.ok(backend instanceof BurikoMemorySpeakerBackend);
     assert.deepEqual(
       definitions
         .filter(
@@ -88,7 +88,7 @@ test('mounted A0 sound loads serially pass decoded PCM through the shared resour
   const {resource} = graph;
   const backend = resource.channels.context.backend;
   try {
-    assert.ok(backend instanceof AokanaMemorySpeakerBackend);
+    assert.ok(backend instanceof BurikoMemorySpeakerBackend);
     assert.equal(resource.worker.loading, resource.loading);
     assert.equal(resource.worker.audio, resource.audio);
     assert.equal(resource.audio.staticResources, resource.statics);

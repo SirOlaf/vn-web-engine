@@ -2,30 +2,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaResourceRanges} from '../dist/engines/buriko/games/aokana/native/resource-ranges.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaResourceFileServices} from '../dist/engines/buriko/games/aokana/native/resource-file-services.js';
-import {createGroup80ResourceFiles} from '../dist/engines/buriko/games/aokana/native/group-80-resource-files.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoResourceRanges} from '../dist/engines/buriko/native/resource-ranges.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoResourceFileServices} from '../dist/engines/buriko/native/resource-file-services.js';
+import {createGroup80ResourceFiles} from '../dist/engines/buriko/native/group-80-resource-files.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
 
 test('80:32–34 share configured wide roots, real output lifetime, media and archive availability', async () => {
   const canonical = (p) => p.toLowerCase(),
     backing = new StoredFileSystem(new MemoryStore(), canonical);
-  const metadata = new AokanaMountedFileMetadata(backing, {
+  const metadata = new BurikoMountedFileMetadata(backing, {
     canonical,
     volumes: [{path: '/', identity: {}, writable: true}],
     records: [
@@ -43,24 +43,24 @@ test('80:32–34 share configured wide roots, real output lifetime, media and ar
   });
   for (const path of ['/save', '/save/extra', '/archives', '/disc'])
     await metadata.createDirectory(path);
-  const text = new AokanaNativeText(),
-    media = new AokanaProgramMedia();
+  const text = new BurikoNativeText(),
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
     metadata,
     text,
     media,
-    new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+    new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
   );
   // These services never invoke a modal. Real error/dialog owners are retained, without a fake answer provider.
-  const dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(
+  const dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(
       files,
       dialogs,
       text.encodeWide('C:\\save\\', 1),
       text.encodeWide('C:\\save\\', 1),
     );
-  const processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1);
+  const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1);
   const config = {
     nativeFileRoot: 'C:\\save\\',
     primaryRoot: text.encodeWide('C:\\archives\\', 1),
@@ -72,17 +72,17 @@ test('80:32–34 share configured wide roots, real output lifetime, media and ar
     retryMessage: Uint8Array.of(0),
     quitConfirmation: Uint8Array.of(0),
   };
-  const resources = new AokanaProgramResources(files, config, dialogs, errors, processing),
-    ranges = new AokanaResourceRanges(resources);
+  const resources = new BurikoProgramResources(files, config, dialogs, errors, processing),
+    ranges = new BurikoResourceRanges(resources);
   const bytes = new Uint8Array(4096),
-    memory = new AokanaBpMemory(bytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(bytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 16,
       frameCapacity: 16,
     }),
-    slots = createGroup80ResourceFiles(new AokanaResourceFileServices(resources));
+    slots = createGroup80ResourceFiles(new BurikoResourceFileServices(resources));
   const put = (offset, value) => bytes.set(text.encodeWide(value, 1), offset);
   const invoke = async (slot, ...args) => {
     for (const value of args) push32(thread, value);

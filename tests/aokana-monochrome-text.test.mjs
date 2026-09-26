@@ -1,20 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaBrowserFontFace} from '../dist/engines/buriko/games/aokana/native/font-browser.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaMonochromeSurfaceText} from '../dist/engines/buriko/games/aokana/native/surface-monochrome-text.js';
-import {createGroup92MonochromeText} from '../dist/engines/buriko/games/aokana/native/group-92-monochrome-text.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoBrowserFontFace} from '../dist/engines/buriko/native/font-browser.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoMonochromeSurfaceText} from '../dist/engines/buriko/native/surface-monochrome-text.js';
+import {createGroup92MonochromeText} from '../dist/engines/buriko/native/group-92-monochrome-text.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('monochrome cache renders mixed-width text with percentage lines and wrapping', async () => {
-  const text = new AokanaNativeText();
-  const fonts = new AokanaNativeFonts(text, {
+  const text = new BurikoNativeText();
+  const fonts = new BurikoNativeFonts(text, {
     async queryCharset() {
       return 128;
     },
@@ -39,17 +39,17 @@ test('monochrome cache renders mixed-width text with percentage lines and wrappi
           else assert.fail('ordinary fixture glyph');
           return {bytes, stride: width};
         },
-        rasterMonochrome: AokanaBrowserFontFace.prototype.rasterMonochrome,
+        rasterMonochrome: BurikoBrowserFontFace.prototype.rasterMonochrome,
       };
     },
   });
   const registeredFont = fonts.registerName(text.encodeWide('等幅', 0), 0);
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
   assert.equal(surfaces.allocate(1, 16, 16, 1), 1);
   surfaces.fill(1, 0);
-  const service = new AokanaMonochromeSurfaceText(surfaces);
+  const service = new BurikoMonochromeSurfaceText(surfaces);
   const [slot] = createGroup92MonochromeText(service, {
     threadFatal() {
       assert.fail('ordinary monochrome text operation');
@@ -57,14 +57,14 @@ test('monochrome cache renders mixed-width text with percentage lines and wrappi
   });
   assert.equal(slot.primary, 0x92);
   assert.equal(slot.secondary, 0x1e);
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x92][0x1e]);
-  const thread = new AokanaBpThread({
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x92][0x1e]);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(128));
+  const memory = new BurikoBpMemory(new Uint8Array(128));
   memory.globalMemory.set(text.encodeWide('A\x03\x32\n漢\x04AA', 1), 16);
   const context = {thread, memory, diagnostics: {}};
   for (const value of [1, 0, 0, 16, registeredFont, 8, 1, 1, 0x203040]) push32(thread, value);

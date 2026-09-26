@@ -3,21 +3,21 @@ import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaMovieSources} from '../dist/engines/buriko/games/aokana/native/movie-sources.js';
-import {AokanaMovieSourceDocument} from '../dist/engines/buriko/games/aokana/native/movie-source-document.js';
-import {aokanaIsoSampleBytes} from '../dist/engines/buriko/games/aokana/native/movie-iso-samples.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoMovieSources} from '../dist/engines/buriko/native/movie-sources.js';
+import {BurikoMovieSourceDocument} from '../dist/engines/buriko/native/movie-source-document.js';
+import {burikoIsoSampleBytes} from '../dist/engines/buriko/native/movie-iso-samples.js';
 
 function join(...parts) {
   const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -113,21 +113,21 @@ test('selected direct and archive movie regions retain source identity and real 
       ]),
     },
   ]);
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const encode = (value) => text.encodeWide(value, 1);
   const pointer = (value) => ({bytes: encode(value), offset: 0});
-  const media = new AokanaProgramMedia();
+  const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
     fs,
     text,
     media,
-    new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+    new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
   );
-  const dialogs = new AokanaEngineDialogs();
-  const errors = new AokanaEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0));
-  const processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1);
-  const resources = new AokanaProgramResources(
+  const dialogs = new BurikoEngineDialogs();
+  const errors = new BurikoEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0));
+  const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1);
+  const resources = new BurikoProgramResources(
     files,
     {
       nativeFileRoot: 'C:\\game\\',
@@ -148,12 +148,12 @@ test('selected direct and archive movie regions retain source identity and real 
     await resources.archives.registerComplex(pointer('virtual'), [pointer('physical.arc')]),
     1,
   );
-  const sources = new AokanaMovieSources(resources);
+  const sources = new BurikoMovieSources(resources);
   const actor = {},
     nextActor = {},
     actors = {currentActor: actor};
 
-  const directPending = AokanaMovieSourceDocument.open(
+  const directPending = BurikoMovieSourceDocument.open(
     sources,
     null,
     pointer('direct.iso'),
@@ -170,7 +170,7 @@ test('selected direct and archive movie regions retain source identity and real 
   assert.equal(direct.movie.tracks[0].handler, 'vide');
   assert.deepEqual(
     [
-      ...aokanaIsoSampleBytes(
+      ...burikoIsoSampleBytes(
         direct.movie,
         direct.movie.tracks[0],
         direct.movie.tracks[0].samples[0],
@@ -179,7 +179,7 @@ test('selected direct and archive movie regions retain source identity and real 
     [...directSample],
   );
 
-  const archive = await AokanaMovieSourceDocument.open(
+  const archive = await BurikoMovieSourceDocument.open(
     sources,
     pointer('virtual'),
     pointer('archived.iso'),
@@ -194,7 +194,7 @@ test('selected direct and archive movie regions retain source identity and real 
   assert.equal(archive.movie.tracks[0].samples[0].offset, 8n);
   assert.deepEqual(
     [
-      ...aokanaIsoSampleBytes(
+      ...burikoIsoSampleBytes(
         archive.movie,
         archive.movie.tracks[0],
         archive.movie.tracks[0].samples[0],

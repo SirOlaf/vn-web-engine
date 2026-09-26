@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaGdbRestore} from '../dist/engines/buriko/games/aokana/native/gdb-restore.js';
-import {createGroup81GdbRestore} from '../dist/engines/buriko/games/aokana/native/group-81-gdb-restore.js';
-import {AokanaNamedBitArrays} from '../dist/engines/buriko/games/aokana/native/named-bit-arrays.js';
-import {AokanaStringLists} from '../dist/engines/buriko/games/aokana/native/string-lists.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoGdbRestore} from '../dist/engines/buriko/native/gdb-restore.js';
+import {createGroup81GdbRestore} from '../dist/engines/buriko/native/group-81-gdb-restore.js';
+import {BurikoNamedBitArrays} from '../dist/engines/buriko/native/named-bit-arrays.js';
+import {BurikoStringLists} from '../dist/engines/buriko/native/string-lists.js';
 
 const text = (value) => new TextEncoder().encode(value);
 const strings = (...values) => text(values.join('\0') + '\0');
@@ -95,16 +95,16 @@ test('81 80 restores ordinary GDB regions, reserved strings, and named bits thro
     second = Uint8Array.of(13, 17, 19),
     encoded = sdc(gdb(first, second)),
     sourceAddress = 0x101000,
-    memory = new AokanaBpMemory(new Uint8Array(sourceAddress + encoded.byteLength + 64).fill(0x5a)),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(new Uint8Array(sourceAddress + encoded.byteLength + 64).fill(0x5a)),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    stringsOwner = new AokanaStringLists(),
-    bits = new AokanaNamedBitArrays(),
-    restore = new AokanaGdbRestore(stringsOwner, bits),
+    stringsOwner = new BurikoStringLists(),
+    bits = new BurikoNamedBitArrays(),
+    restore = new BurikoGdbRestore(stringsOwner, bits),
     [definition] = createGroup81GdbRestore(restore),
     firstCapacity = 0x40,
     secondCapacity = 0x44,

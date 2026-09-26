@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeTouch} from '../dist/engines/buriko/games/aokana/native/touch-input.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaMainWindowMessageReceiver} from '../dist/engines/buriko/games/aokana/native/main-window-messages.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeTouch} from '../dist/engines/buriko/native/touch-input.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoMainWindowMessageReceiver} from '../dist/engines/buriko/native/main-window-messages.js';
 import {
-  AokanaBrowserTouchWindow,
-  AokanaMainTouchInput,
-} from '../dist/engines/buriko/games/aokana/native/main-touch-input.js';
-import {AokanaMainMouseInput} from '../dist/engines/buriko/games/aokana/native/main-mouse-input.js';
+  BurikoBrowserTouchWindow,
+  BurikoMainTouchInput,
+} from '../dist/engines/buriko/native/main-touch-input.js';
+import {BurikoMainMouseInput} from '../dist/engines/buriko/native/main-mouse-input.js';
 
 class Element {
   constructor() {
@@ -68,9 +68,9 @@ function fixture(available = true) {
     parent = new Element(),
     document = new Element();
   document.visibilityState = 'visible';
-  const display = new AokanaNativeDisplayState(640, 480),
-    input = new AokanaNativeInput(display, new AokanaNativeClock(() => 77)),
-    messages = new AokanaWindowMessages(input);
+  const display = new BurikoNativeDisplayState(640, 480),
+    input = new BurikoNativeInput(display, new BurikoNativeClock(() => 77)),
+    messages = new BurikoWindowMessages(input);
   messages.createMainTarget();
   const host = {
     surface: canvas,
@@ -93,11 +93,11 @@ function fixture(available = true) {
       };
     },
   };
-  const touchWindow = new AokanaBrowserTouchWindow(host, available),
-    touch = new AokanaNativeTouch(input, new AokanaNativeClock(() => 77), touchWindow),
+  const touchWindow = new BurikoBrowserTouchWindow(host, available),
+    touch = new BurikoNativeTouch(input, new BurikoNativeClock(() => 77), touchWindow),
     waits = [],
     broadcastTouchCounts = [],
-    receiver = new AokanaMainWindowMessageReceiver(
+    receiver = new BurikoMainWindowMessageReceiver(
       messages,
       {
         dispatch: (message) => {
@@ -115,8 +115,8 @@ function fixture(available = true) {
       null,
       touch,
     );
-  const ingress = new AokanaMainTouchInput(host, input, messages, touch, touchWindow),
-    mouse = new AokanaMainMouseInput(host, input, messages, null, (event) =>
+  const ingress = new BurikoMainTouchInput(host, input, messages, touch, touchWindow),
+    mouse = new BurikoMainMouseInput(host, input, messages, null, (event) =>
       ingress.suppressCompatibilityMouse(event),
     );
   return {

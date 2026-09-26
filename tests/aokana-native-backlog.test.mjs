@@ -2,40 +2,40 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaBacklog} from '../dist/engines/buriko/games/aokana/native/backlog.js';
-import {createGroup80Backlog} from '../dist/engines/buriko/games/aokana/native/group-80-backlog.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoBacklog} from '../dist/engines/buriko/native/backlog.js';
+import {createGroup80Backlog} from '../dist/engines/buriko/native/group-80-backlog.js';
 
 test('80:90/91/94–97 share copied backlog records with bounded history and retained optional output', async () => {
   const fs = new StoredFileSystem(new MemoryStore(), (p) => p.toLowerCase()),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),
-    media = new AokanaProgramMedia(),
-    files = new AokanaProgramFiles(
+    media = new BurikoProgramMedia(),
+    files = new BurikoProgramFiles(
       fs,
       text,
       media,
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
     ),
-    errors = new AokanaEngineErrors(
+    errors = new BurikoEngineErrors(
       files,
-      new AokanaEngineDialogs(),
+      new BurikoEngineDialogs(),
       encode('C:\\save\\'),
       encode('C:\\'),
     ),
-    backlog = new AokanaBacklog(),
+    backlog = new BurikoBacklog(),
     slots = createGroup80Backlog(backlog, errors),
-    memory = new AokanaBpMemory(new Uint8Array(0x1000)),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(new Uint8Array(0x1000)),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
       moduleCapacity: 4096,

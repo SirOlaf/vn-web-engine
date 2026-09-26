@@ -1,38 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup90SelectionProcess} from '../dist/engines/buriko/games/aokana/native/group-90-selection-process.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup90SelectionProcess} from '../dist/engines/buriko/native/group-90-selection-process.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
 
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeCursorMotion} from '../dist/engines/buriko/games/aokana/native/cursor-motion.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeCursorMotion} from '../dist/engines/buriko/native/cursor-motion.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
 import {
-  AokanaProcedureState,
-  AokanaWindowMessages,
-} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaSelectionState} from '../dist/engines/buriko/games/aokana/native/selection-state.js';
+  BurikoProcedureState,
+  BurikoWindowMessages,
+} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoSelectionState} from '../dist/engines/buriko/native/selection-state.js';
 
 test('selection procedure uses real capture, timed highlighting, cursor motion and scheduler completion', async () => {
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const createdFonts = [];
-  const fonts = new AokanaNativeFonts(text, {
+  const fonts = new BurikoNativeFonts(text, {
     async queryCharset() {
       return 1;
     },
@@ -60,26 +60,26 @@ test('selection procedure uses real capture, timed highlighting, cursor motion a
     dispose() {},
   });
   fonts.rasterSettings.setQuality(-1);
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
   const bounds = {left: 0, top: 0, right: 63, bottom: 31};
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(128, bounds),
+    new BurikoDisplayDamage(128, bounds),
   );
-  const display = new AokanaNativeDisplayState(64, 32),
-    manager = new AokanaDisplayManager(environment, surfaces, display);
+  const display = new BurikoNativeDisplayState(64, 32),
+    manager = new BurikoDisplayManager(environment, surfaces, display);
   // Constructor dimensions describe the desktop; configure the actual client/logical transform.
   assert.equal(display.setSizePreset(display.selectedSizePreset, 64, 32), 0);
   display.requestedWidth = 64;
   display.requestedHeight = 32;
   display.refreshPointerStep();
-  manager.bindDisplayContext({bitmap: allocateAokanaBitmap(64, 32, 1), bounds});
-  const windows = new AokanaWindowDisplayState(manager);
+  manager.bindDisplayContext({bitmap: allocateBurikoBitmap(64, 32, 1), bounds});
+  const windows = new BurikoWindowDisplayState(manager);
   const created = manager.createConfigured(
     'window',
-    (order) => new AokanaWindowDisplayObject(windows, order),
+    (order) => new BurikoWindowDisplayObject(windows, order),
     (window) => window.configureInitial(32, 32),
   );
   assert.equal(created.result, 0);
@@ -90,14 +90,14 @@ test('selection procedure uses real capture, timed highlighting, cursor motion a
 
   window.setLayer(3);
   let tick = 0;
-  const clock = new AokanaNativeClock(() => tick),
-    input = new AokanaNativeInput(display, clock);
+  const clock = new BurikoNativeClock(() => tick),
+    input = new BurikoNativeInput(display, clock);
   input.foreground = true;
   input.pointerAvailable = true;
   input.pointerClientX = 2;
   input.pointerClientY = 1;
   const moves = [];
-  const cursor = new AokanaNativeCursorMotion(input, clock, {
+  const cursor = new BurikoNativeCursorMotion(input, clock, {
     setClientPosition(x, y) {
       moves.push([x, y]);
       input.pointerClientX = x;
@@ -105,22 +105,22 @@ test('selection procedure uses real capture, timed highlighting, cursor motion a
       return true;
     },
   });
-  const procedures = new AokanaProcedureState(),
-    waits = new AokanaWindowMessages(),
-    notifications = new AokanaNativeNotifications(),
-    settings = new AokanaSelectionState();
-  const thread = new AokanaBpThread({
+  const procedures = new BurikoProcedureState(),
+    waits = new BurikoWindowMessages(),
+    notifications = new BurikoNativeNotifications(),
+    settings = new BurikoSelectionState();
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const scheduler = new AokanaBpScheduler(
-    new AokanaBpThread({id: 0, operandCapacity: 0, moduleCapacity: 0, frameCapacity: 0}),
+  const scheduler = new BurikoBpScheduler(
+    new BurikoBpThread({id: 0, operandCapacity: 0, moduleCapacity: 0, frameCapacity: 0}),
     () => 0,
   );
   const node = scheduler.append(thread),
-    memory = new AokanaBpMemory(new Uint8Array(512)),
+    memory = new BurikoBpMemory(new Uint8Array(512)),
     view = new DataView(memory.globalMemory.buffer);
   for (let i = 0; i < 3; i++) {
     memory.globalMemory.set(text.encodeWide(String.fromCharCode(65 + i), 1), 32 + i * 8);
@@ -143,7 +143,7 @@ test('selection procedure uses real capture, timed highlighting, cursor motion a
     },
   );
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
   const call = async (secondary, args, result = 0) => {
     args.forEach((value) => push32(thread, value));
     assert.equal(

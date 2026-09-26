@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaLogicalSpatialManager,
-  AokanaLogicalSpatialManagers,
-} from '../dist/engines/buriko/games/aokana/native/logical-spatial.js';
-import {AokanaLogicalSpatialDensity} from '../dist/engines/buriko/games/aokana/native/logical-spatial-density.js';
-import {createGroupD0SpatialDensity} from '../dist/engines/buriko/games/aokana/native/group-d0-spatial-density.js';
-import {createGroupD0SpatialRecords} from '../dist/engines/buriko/games/aokana/native/group-d0-spatial.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+  BurikoLogicalSpatialManager,
+  BurikoLogicalSpatialManagers,
+} from '../dist/engines/buriko/native/logical-spatial.js';
+import {BurikoLogicalSpatialDensity} from '../dist/engines/buriko/native/logical-spatial-density.js';
+import {createGroupD0SpatialDensity} from '../dist/engines/buriko/native/group-d0-spatial-density.js';
+import {createGroupD0SpatialRecords} from '../dist/engines/buriko/native/group-d0-spatial.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
-  const manager = new AokanaLogicalSpatialManager(),
-    density = new AokanaLogicalSpatialDensity(manager);
+  const manager = new BurikoLogicalSpatialManager(),
+    density = new BurikoLogicalSpatialDensity(manager);
   const bytes = new Uint8Array(256),
     output = {bytes, offset: 100},
     words = () => [...new Int32Array(bytes.buffer, 100, 4)];
@@ -77,14 +77,14 @@ test('coarse cell arithmetic retains signed-word saturation and width truncation
 test('D07B consumes twelve scalars plus output and preserves four discarded arguments', () => {
   const {bytes} = fixture(),
     view = new DataView(bytes.buffer),
-    managers = new AokanaLogicalSpatialManagers();
-  const thread = new AokanaBpThread({
+    managers = new BurikoLogicalSpatialManagers();
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const h = {thread, memory: new AokanaBpMemory(bytes)};
+  const h = {thread, memory: new BurikoBpMemory(bytes)};
   const definitions = [
     ...createGroupD0SpatialRecords(managers),
     ...createGroupD0SpatialDensity(managers),

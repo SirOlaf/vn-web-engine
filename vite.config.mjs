@@ -13,7 +13,15 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: false,
     rolldownOptions: {
-      input: ['index.html', 'aokana.html', 'noah.html', 'assets.html', 'aokana-assets.html'],
+      input: [
+        'index.html',
+        'buriko.html',
+        'aokana.html',
+        'noah.html',
+        'assets.html',
+        'buriko-assets.html',
+        'aokana-assets.html',
+      ],
     },
   },
 });

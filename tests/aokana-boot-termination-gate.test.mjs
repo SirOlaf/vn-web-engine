@@ -3,25 +3,25 @@ import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
 import {MountedFileSystem, SourceFileSystem} from '../dist/platform/filesystem.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaBpThread} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
-import {AokanaBootProgramLoader} from '../dist/engines/buriko/games/aokana/native/boot-program-loader.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaBootTerminationGate} from '../dist/engines/buriko/games/aokana/native/boot-termination-gate.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
+import {BurikoBootProgramLoader} from '../dist/engines/buriko/native/boot-program-loader.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoBootTerminationGate} from '../dist/engines/buriko/native/boot-termination-gate.js';
 import {singleArchive} from './aokana-resource-direct-fixtures.mjs';
 
 test('ECB90 lower distinguishes selected restart, quit and live procedure retirement', async () => {
@@ -35,20 +35,20 @@ test('ECB90 lower distinguishes selected restart, quit and live procedure retire
   const mounted = new MountedFileSystem();
   mounted.mount('/game', source);
 
-  const text = new AokanaNativeText(),
-    media = new AokanaProgramMedia(),
-    paths = new AokanaMountedProgramPaths([{native: 'C:\\game', mounted: '/game'}], 'C:\\game');
+  const text = new BurikoNativeText(),
+    media = new BurikoProgramMedia(),
+    paths = new BurikoMountedProgramPaths([{native: 'C:\\game', mounted: '/game'}], 'C:\\game');
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(mounted, text, media, paths),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(
+  const files = new BurikoProgramFiles(mounted, text, media, paths),
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(
       files,
       dialogs,
       text.encodeWide('C:\\game\\', 1),
       text.encodeWide('C:\\game\\', 1),
     ),
-    processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
-    resources = new AokanaProgramResources(
+    processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -65,23 +65,23 @@ test('ECB90 lower distinguishes selected restart, quit and live procedure retire
       errors,
       processing,
     ),
-    loading = new AokanaResourceLoadingState(resources),
-    control = new AokanaVmControlState(),
-    scheduler = new AokanaBpScheduler(
-      new AokanaBpThread({
+    loading = new BurikoResourceLoadingState(resources),
+    control = new BurikoVmControlState(),
+    scheduler = new BurikoBpScheduler(
+      new BurikoBpThread({
         id: control.allocateThreadId(),
         operandCapacity: 0,
         moduleCapacity: 0,
         frameCapacity: 0,
       }),
     ),
-    loader = new AokanaBootProgramLoader(
+    loader = new BurikoBootProgramLoader(
       resources,
       control,
       scheduler,
-      new AokanaBpDiagnostics(() => {}),
+      new BurikoBpDiagnostics(() => {}),
     ),
-    gate = new AokanaBootTerminationGate(scheduler, loading),
+    gate = new BurikoBootTerminationGate(scheduler, loading),
     archive = text.encodeWide('system.arc', 1),
     name = text.encodeWide('ipl._bp', 1);
   try {

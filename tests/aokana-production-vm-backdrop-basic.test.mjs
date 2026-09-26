@@ -1,19 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaNormalBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop.js';
-import {AokanaBlendBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop-blend.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoNormalBackdrop} from '../dist/engines/buriko/native/display-backdrop.js';
+import {BurikoBlendBackdrop} from '../dist/engines/buriko/native/display-backdrop-blend.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM normal and blend backdrops draw graph surfaces in software', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke} = fixture;
-  const output = allocateAokanaBitmap(3, 2, 1);
+  const output = allocateBurikoBitmap(3, 2, 1);
   const call = async (secondary, args) => {
     assert.equal(await invoke(0x90, secondary, args, 0), 0);
     assert.equal(child.state.stackIndex, 0);
@@ -23,7 +20,7 @@ test('mounted VM normal and blend backdrops draw graph surfaces in software', as
     Array.from({length: 6}, (_, index) =>
       bitmapRead32(output, output.offset + Math.floor(index / 3) * output.stride + (index % 3) * 4),
     );
-  const draw = () => graph.manager.backdrop.draw(output, aokanaBitmapRectangle(output), 0);
+  const draw = () => graph.manager.backdrop.draw(output, burikoBitmapRectangle(output), 0);
   try {
     assert.deepEqual(
       definitions
@@ -47,7 +44,7 @@ test('mounted VM normal and blend backdrops draw graph surfaces in software', as
     await call(0x4c, [1, 1]);
     await call(0x40, [0]);
     const normal = graph.manager.backdrop;
-    assert.ok(normal instanceof AokanaNormalBackdrop);
+    assert.ok(normal instanceof BurikoNormalBackdrop);
     assert.equal(graph.manager.backdropRenderType, 1);
     draw();
     assert.deepEqual(pixels(), Array(6).fill(0x204060));
@@ -55,7 +52,7 @@ test('mounted VM normal and blend backdrops draw graph surfaces in software', as
     graph.damage.clear();
     await call(0x41, [0, 1, 128]);
     const blended = graph.manager.backdrop;
-    assert.ok(blended instanceof AokanaBlendBackdrop);
+    assert.ok(blended instanceof BurikoBlendBackdrop);
     assert.notEqual(blended, normal);
     assert.deepEqual(
       [blended.activation, blended.contentEnabled, graph.manager.backdropRenderType],

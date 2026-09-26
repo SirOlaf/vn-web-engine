@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaLogicalGridManager} from '../dist/engines/buriko/games/aokana/native/logical-grid.js';
-import {buildGridAbilityMaps} from '../dist/engines/buriko/games/aokana/native/logical-grid-derived.js';
+import {BurikoLogicalGridManager} from '../dist/engines/buriko/native/logical-grid.js';
+import {buildGridAbilityMaps} from '../dist/engines/buriko/native/logical-grid-derived.js';
 import {
   gridEvaluatorAbilityRequest,
   gridEvaluatorAffinity,
   gridEvaluatorEffect,
   gridEvaluatorFacing,
   gridEvaluatorModifiers,
-} from '../dist/engines/buriko/games/aokana/native/grid-evaluator-math.js';
-import {AokanaGridEvaluatorRecords} from '../dist/engines/buriko/games/aokana/native/grid-evaluator-records.js';
-import {chooseGridEvaluatorTarget} from '../dist/engines/buriko/games/aokana/native/grid-evaluator-targets.js';
-import {prepareGridEvaluation} from '../dist/engines/buriko/games/aokana/native/grid-evaluator-jobs.js';
+} from '../dist/engines/buriko/native/grid-evaluator-math.js';
+import {BurikoGridEvaluatorRecords} from '../dist/engines/buriko/native/grid-evaluator-records.js';
+import {chooseGridEvaluatorTarget} from '../dist/engines/buriko/native/grid-evaluator-targets.js';
+import {prepareGridEvaluation} from '../dist/engines/buriko/native/grid-evaluator-jobs.js';
 
 function data(size) {
   const bytes = new Uint8Array(size),
@@ -20,7 +20,7 @@ function data(size) {
 }
 
 test('grid sorted cells retain CRT equal-cost permutation, metric status and neighbor write order', () => {
-  const manager = new AokanaLogicalGridManager(1),
+  const manager = new BurikoLogicalGridManager(1),
     storage = data(1024);
   manager.setCells(3, 3, data(144).ptr());
   manager.createAgent(storage.ptr());
@@ -46,7 +46,7 @@ test('grid sorted cells retain CRT equal-cost permutation, metric status and nei
 });
 
 test('grid ability maps deduplicate exact requests and separate extended movement without changing cloned counters', () => {
-  const manager = new AokanaLogicalGridManager(1),
+  const manager = new BurikoLogicalGridManager(1),
     storage = data(2048),
     requests = data(60);
   manager.setCells(5, 1, data(80).ptr());
@@ -163,10 +163,10 @@ test('grid evaluator native modifier outputs, record requests and arithmetic ove
 });
 
 test('grid evaluator record initialization, target choice and candidates keep copied state and native metadata', () => {
-  const grid = new AokanaLogicalGridManager(1),
+  const grid = new BurikoLogicalGridManager(1),
     storage = data(64),
     actors = data(0x834 * 2),
-    state = new AokanaGridEvaluatorRecords();
+    state = new BurikoGridEvaluatorRecords();
   grid.setCells(5, 1, data(80).ptr());
   for (let i = 0; i < 2; i++) {
     grid.createAgent(storage.ptr());

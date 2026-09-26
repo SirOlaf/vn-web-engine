@@ -2,16 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaBpThread} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBootTerminationGate} from '../dist/engines/buriko/games/aokana/native/boot-termination-gate.js';
-import {AokanaBootResetPrelude} from '../dist/engines/buriko/games/aokana/native/boot-reset-prelude.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBootTerminationGate} from '../dist/engines/buriko/native/boot-termination-gate.js';
+import {BurikoBootResetPrelude} from '../dist/engines/buriko/native/boot-reset-prelude.js';
 
 class Element {
   constructor(tag) {
@@ -46,26 +46,26 @@ class Element {
 test('ECB90 initial reset prefix and audio continuation use one live graph', async () => {
   const backing = new MountedFileSystem();
   backing.mount('/game', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [],
       volumes: [{path: '/', identity: {}, writable: true}],
       canonical: (path) => path.toLowerCase(),
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    paths = new AokanaMountedProgramPaths(
+    paths = new BurikoMountedProgramPaths(
       [
         {native: 'C:\\game', mounted: '/game'},
         {native: 'D:\\Drops', mounted: '/drops'},
       ],
       'C:\\game',
     ),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
     document = {createElement: (tag) => new Element(tag)},
     parent = document.createElement('div'),
     canvas = document.createElement('canvas'),
-    graph = new AokanaProductionDisplayResourceGraph({
+    graph = new BurikoProductionDisplayResourceGraph({
       document,
       parent,
       canvas,
@@ -94,7 +94,7 @@ test('ECB90 initial reset prefix and audio continuation use one live graph', asy
         verticalScrollbarWidth: 0,
         horizontalScrollbarHeight: 0,
       },
-      nativeWindowTitle: encode('Aokana'),
+      nativeWindowTitle: encode('Buriko'),
       preferredDialogTitle: null,
       cursorResource: null,
       performance: {now: () => 0},
@@ -127,7 +127,7 @@ test('ECB90 initial reset prefix and audio continuation use one live graph', asy
       resource: {
         mounted,
         paths,
-        media: new AokanaProgramMedia(),
+        media: new BurikoProgramMedia(),
         configuration: {
           nativeFileRoot: 'C:\\game\\',
           primaryRoot: encode('C:\\game\\'),
@@ -142,17 +142,17 @@ test('ECB90 initial reset prefix and audio continuation use one live graph', asy
         errorDirectory: encode('C:\\game\\'),
         workingDirectory: encode('C:\\game\\'),
         audioRootWide: 'C:\\game\\',
-        backend: new AokanaMemorySpeakerBackend(1000),
+        backend: new BurikoMemorySpeakerBackend(1000),
         output: {prefer24Bit: false},
         resourceWorkerCount: 1,
         sleep: async () => {},
       },
     });
-  const scheduler = new AokanaBpScheduler(
-      new AokanaBpThread({id: 1, operandCapacity: 0, moduleCapacity: 0, frameCapacity: 0}),
+  const scheduler = new BurikoBpScheduler(
+      new BurikoBpThread({id: 1, operandCapacity: 0, moduleCapacity: 0, frameCapacity: 0}),
     ),
-    gate = new AokanaBootTerminationGate(scheduler, graph.resource.loading),
-    prelude = new AokanaBootResetPrelude(graph, gate),
+    gate = new BurikoBootTerminationGate(scheduler, graph.resource.loading),
+    prelude = new BurikoBootResetPrelude(graph, gate),
     keyList = new Uint8Array(8),
     preloadName = Uint8Array.of(0x62, 0x6d, 0x70, 0);
   new DataView(keyList.buffer).setUint32(0, 0x41, true);

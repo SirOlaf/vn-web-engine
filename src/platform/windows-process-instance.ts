@@ -11,16 +11,18 @@ export interface WindowsProcessInstanceHost {
  * OS-backed host; browser execution cannot acquire a Windows kernel mutex. */
 export class BrowserWindowsProcessInstanceHost implements WindowsProcessInstanceHost {
   private static readonly held = new Set<string>();
+  constructor(private readonly scope = '') {}
 
   async acquire(name: string): Promise<WindowsProcessInstanceLease | null> {
-    if (BrowserWindowsProcessInstanceHost.held.has(name)) return null;
-    BrowserWindowsProcessInstanceHost.held.add(name);
+    const key = JSON.stringify([this.scope, name]);
+    if (BrowserWindowsProcessInstanceHost.held.has(key)) return null;
+    BrowserWindowsProcessInstanceHost.held.add(key);
     let released = false;
     return {
       release: () => {
         if (released) return;
         released = true;
-        BrowserWindowsProcessInstanceHost.held.delete(name);
+        BrowserWindowsProcessInstanceHost.held.delete(key);
       },
     };
   }

@@ -1,0 +1,92 @@
+import type {BurikoBpPointer} from '../bp/memory.js';
+import type {BurikoBpThread} from '../bp/state.js';
+import type {BurikoBpDiagnostics} from './diagnostics.js';
+import {BurikoEngineDialogs, BurikoNativeExit} from './engine-dialogs.js';
+import {BurikoProgramFiles, terminatedNativeBytes} from './program-files.js';
+import {copyText, textBytes, textLength} from './text.js';
+import {BurikoSaveRoot} from './save-root.js';
+
+/** 1400b8f00/1400b9570 fatal dialog, first-error capture, BGIError.txt, and native unwind code. */
+export class BurikoEngineErrors {
+  captureEnabled = 0;
+  captured: Uint8Array | null = null;
+  readonly saveRoot: BurikoSaveRoot;
+  constructor(
+    readonly files: BurikoProgramFiles,
+    readonly dialogs: BurikoEngineDialogs,
+    errorDirectory: Uint8Array | BurikoSaveRoot,
+    public workingDirectory: Uint8Array,
+  ) {
+    this.saveRoot =
+      errorDirectory instanceof BurikoSaveRoot
+        ? errorDirectory
+        : new BurikoSaveRoot(files, errorDirectory);
+  }
+
+  get errorDirectory(): Uint8Array {
+    return this.saveRoot.bytes;
+  }
+  set errorDirectory(value: Uint8Array) {
+    this.saveRoot.bytes = value;
+  }
+
+  async show(message: Uint8Array): Promise<void> {
+    await this.dialogs.show(message, Uint8Array.of(69, 114, 114, 111, 114, 33, 33, 0), 0x1010);
+  }
+
+  /** B9070 stores the complete incoming DWORD without normalizing it to a Boolean. */
+  setCaptureEnabled(value: number): void {
+    this.captureEnabled = value >>> 0;
+  }
+
+  /** B9060 returns the same raw capture-enable DWORD. */
+  getCaptureEnabled(): number {
+    return this.captureEnabled >>> 0;
+  }
+
+  /** B8F80 keeps only the first message and owns its terminating NUL. */
+  captureFirst(message: Uint8Array): number {
+    if (this.captured !== null) return 0;
+    this.captured = terminatedNativeBytes(message).slice();
+    return 1;
+  }
+
+  /** B8FE0 optionally copies the first captured message and includes NUL in its length. */
+  readCaptured(output: BurikoBpPointer | null): number {
+    if (this.captured === null) return 0;
+    const source = {bytes: this.captured, offset: 0},
+      length = (textLength(source) + 1) >>> 0;
+    if (output !== null) copyText(output, source);
+    return length;
+  }
+
+  /** B9030 clears the single captured-message owner. */
+  clearCaptured(): void {
+    this.captured = null;
+  }
+
+  async fatal(message: Uint8Array): Promise<never> {
+    if (this.readCaptured(null) === 0) await this.show(message);
+    if (this.getCaptureEnabled() !== 0) this.captureFirst(message);
+    throw new BurikoNativeExit(0x7fffffff, this.files.path(message));
+  }
+
+  async threadFatal(
+    thread: BurikoBpThread,
+    diagnostics: BurikoBpDiagnostics,
+    message: Uint8Array,
+  ): Promise<never> {
+    const formatted = diagnostics.formatThreadMessage(
+      thread,
+      textBytes({bytes: terminatedNativeBytes(message), offset: 0}),
+    );
+    const name = new TextEncoder().encode('BGIError.txt\0');
+    let path = this.saveRoot.path(name);
+    if (path[0] !== 92 && path[1] !== 58) {
+      const prefix = this.files.path(this.workingDirectory);
+      path = this.files.text.encodeWide(prefix + this.files.path(path), 1);
+    }
+    await this.files.write(path, formatted);
+    return this.fatal(formatted);
+  }
+}

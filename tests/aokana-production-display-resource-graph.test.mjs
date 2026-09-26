@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {aokanaIsoSampleBytes} from '../dist/engines/buriko/games/aokana/native/movie-iso-samples.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {burikoIsoSampleBytes} from '../dist/engines/buriko/native/movie-iso-samples.js';
 
 function join(...parts) {
   const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -158,7 +158,7 @@ test('one partial production graph joins real display/window and mounted resourc
   ]);
   const backing = new MountedFileSystem();
   backing.mount('/game', files);
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [
         {
           path: '/game/document',
@@ -190,14 +190,14 @@ test('one partial production graph joins real display/window and mounted resourc
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    paths = new AokanaMountedProgramPaths(
+    paths = new BurikoMountedProgramPaths(
       [
         {native: 'C:\\game', mounted: '/game'},
         {native: 'D:\\Drops', mounted: '/drops'},
       ],
       'C:\\game',
     ),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
     document = {
       createElement: (tag) => new Element(tag),
@@ -206,7 +206,7 @@ test('one partial production graph joins real display/window and mounted resourc
     },
     parent = document.createElement('div'),
     canvas = document.createElement('canvas'),
-    graph = new AokanaProductionDisplayResourceGraph({
+    graph = new BurikoProductionDisplayResourceGraph({
       document,
       parent,
       canvas,
@@ -244,7 +244,7 @@ test('one partial production graph joins real display/window and mounted resourc
         verticalScrollbarWidth: 0,
         horizontalScrollbarHeight: 0,
       },
-      nativeWindowTitle: encode('Aokana'),
+      nativeWindowTitle: encode('Buriko'),
       preferredDialogTitle: null,
       cursorResource: null,
       performance: moviePerformance,
@@ -277,7 +277,7 @@ test('one partial production graph joins real display/window and mounted resourc
       resource: {
         mounted,
         paths,
-        media: new AokanaProgramMedia(),
+        media: new BurikoProgramMedia(),
         configuration: {
           nativeFileRoot: 'C:\\game\\',
           primaryRoot: encode('C:\\game\\'),
@@ -292,7 +292,7 @@ test('one partial production graph joins real display/window and mounted resourc
         errorDirectory: encode('C:\\game\\'),
         workingDirectory: encode('C:\\game\\'),
         audioRootWide: 'C:\\game\\',
-        backend: new AokanaMemorySpeakerBackend(1000),
+        backend: new BurikoMemorySpeakerBackend(1000),
         output: {prefer24Bit: false},
         resourceWorkerCount: 1,
         sleep: async () => {},
@@ -438,7 +438,7 @@ test('one partial production graph joins real display/window and mounted resourc
     const track = movie.movie.tracks[0];
     assert.equal(track.handler, 'vide');
     assert.deepEqual(
-      [...aokanaIsoSampleBytes(movie.movie, track, track.samples[0])],
+      [...burikoIsoSampleBytes(movie.movie, track, track.samples[0])],
       [...selectedSample],
     );
     assert.equal(
@@ -457,7 +457,7 @@ test('one partial production graph joins real display/window and mounted resourc
     assert.deepEqual([archived.source.offset, archived.source.length], [275, archivedMovie.length]);
     assert.deepEqual(
       [
-        ...aokanaIsoSampleBytes(
+        ...burikoIsoSampleBytes(
           archived.movie,
           archived.movie.tracks[0],
           archived.movie.tracks[0].samples[0],

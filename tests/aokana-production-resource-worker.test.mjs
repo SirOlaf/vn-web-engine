@@ -2,31 +2,31 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaProductionResourceWorker} from '../dist/engines/buriko/games/aokana/native/production-resource-worker.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayAdapters} from '../dist/engines/buriko/games/aokana/native/display-adapters.js';
-import {AokanaDisplayDevice} from '../dist/engines/buriko/games/aokana/native/display-device.js';
-import {AokanaBrowserMainWindow} from '../dist/engines/buriko/games/aokana/native/browser-main-window.js';
+import {BurikoProductionResourceWorker} from '../dist/engines/buriko/native/production-resource-worker.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayAdapters} from '../dist/engines/buriko/native/display-adapters.js';
+import {BurikoDisplayDevice} from '../dist/engines/buriko/native/display-device.js';
+import {BurikoBrowserMainWindow} from '../dist/engines/buriko/native/browser-main-window.js';
 import {
-  AokanaNativeCursor,
-  AokanaEngineDialogs,
-} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaDiagnosticDialogs} from '../dist/engines/buriko/games/aokana/native/modal.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+  BurikoNativeCursor,
+  BurikoEngineDialogs,
+} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoDiagnosticDialogs} from '../dist/engines/buriko/native/modal.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 
 class Element {
   constructor(tag) {
@@ -68,7 +68,7 @@ test('one production owner shares mounted resource, audio and script identities 
   await backing.commit([
     {kind: 'write', path: '/game/document', data: Uint8Array.of(11, 22, 33, 44)},
   ]);
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [
         {
           path: '/game/document',
@@ -84,22 +84,22 @@ test('one production owner shares mounted resource, audio and script identities 
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    paths = new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
-    text = new AokanaNativeText(),
-    media = new AokanaProgramMedia(),
-    allocator = new AokanaDistributedAllocator(1),
-    display = new AokanaNativeDisplayState(16, 8),
-    clock = new AokanaNativeClock(() => 0),
-    ticks = new AokanaSystemTicks({now: () => 0}),
-    input = new AokanaNativeInput(display, clock),
-    messages = new AokanaWindowMessages(input),
-    compositor = new AokanaBitmapCompositor(),
-    manager = new AokanaDisplayManager(
-      new AokanaDisplayObjectEnvironment(
+    paths = new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+    text = new BurikoNativeText(),
+    media = new BurikoProgramMedia(),
+    allocator = new BurikoDistributedAllocator(1),
+    display = new BurikoNativeDisplayState(16, 8),
+    clock = new BurikoNativeClock(() => 0),
+    ticks = new BurikoSystemTicks({now: () => 0}),
+    input = new BurikoNativeInput(display, clock),
+    messages = new BurikoWindowMessages(input),
+    compositor = new BurikoBitmapCompositor(),
+    manager = new BurikoDisplayManager(
+      new BurikoDisplayObjectEnvironment(
         compositor,
-        new AokanaDisplayDamage(64, {left: 0, top: 0, right: 15, bottom: 7}),
+        new BurikoDisplayDamage(64, {left: 0, top: 0, right: 15, bottom: 7}),
       ),
-      new AokanaSurfaces(null, compositor, allocator),
+      new BurikoSurfaces(null, compositor, allocator),
       display,
     ),
     document = {createElement: (tag) => new Element(tag)},
@@ -107,7 +107,7 @@ test('one production owner shares mounted resource, audio and script identities 
     canvas = document.createElement('canvas');
   display.monitors = [[0, 0, 16, 8]];
   messages.createMainTarget();
-  const adapters = new AokanaDisplayAdapters(
+  const adapters = new BurikoDisplayAdapters(
       display,
       [
         {
@@ -119,26 +119,26 @@ test('one production owner shares mounted resource, audio and script identities 
       0,
       () => [0, 0, 16, 8],
     ),
-    device = new AokanaDisplayDevice(canvas, manager, clock, adapters),
-    host = new AokanaBrowserMainWindow(document, parent, canvas, manager, {
+    device = new BurikoDisplayDevice(canvas, manager, clock, adapters),
+    host = new BurikoBrowserMainWindow(document, parent, canvas, manager, {
       isReady: () => messages.mainTarget() !== null,
       presentTransient: () => 0,
       inlinePaintSuppressed: () => false,
       geometryChanged() {},
     }),
-    dialogs = new AokanaEngineDialogs(
-      new AokanaDiagnosticDialogs(document, parent),
+    dialogs = new BurikoEngineDialogs(
+      new BurikoDiagnosticDialogs(document, parent),
       text,
       clock,
       input,
-      new AokanaNativeCursor(canvas),
+      new BurikoNativeCursor(canvas),
       device,
       display,
       null,
       Uint8Array.of(0),
     ),
     encode = (value) => text.encodeWide(value, 1),
-    owner = new AokanaProductionResourceWorker({
+    owner = new BurikoProductionResourceWorker({
       mounted,
       paths,
       text,
@@ -158,7 +158,7 @@ test('one production owner shares mounted resource, audio and script identities 
       errorDirectory: encode('C:\\game\\'),
       workingDirectory: encode('C:\\game\\'),
       audioRootWide: 'C:\\game\\',
-      backend: new AokanaMemorySpeakerBackend(1000),
+      backend: new BurikoMemorySpeakerBackend(1000),
       output: {prefer24Bit: false},
       ticks,
       allocator,

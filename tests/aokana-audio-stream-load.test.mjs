@@ -1,32 +1,32 @@
 import test from 'node:test';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaAudioMusicResources} from '../dist/engines/buriko/games/aokana/native/audio/resource-music.js';
-import {createGroupA0StreamLoad} from '../dist/engines/buriko/games/aokana/native/group-a0-stream-load.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoAudioMusicResources} from '../dist/engines/buriko/native/audio/resource-music.js';
+import {createGroupA0StreamLoad} from '../dist/engines/buriko/native/group-a0-stream-load.js';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaSpeakerContext} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaAudioChannels} from '../dist/engines/buriko/games/aokana/native/audio/channel-registry.js';
-import {AokanaAudioArchiveCache} from '../dist/engines/buriko/games/aokana/native/audio/archive-cache.js';
-import {AokanaAudioResourceStreams} from '../dist/engines/buriko/games/aokana/native/audio/resource-streams.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
+import {BurikoAudioArchiveCache} from '../dist/engines/buriko/native/audio/archive-cache.js';
+import {BurikoAudioResourceStreams} from '../dist/engines/buriko/native/audio/resource-streams.js';
 
 function arc(sample) {
   const bytes = new Uint8Array(144 + 64 + 5000 * 2),
@@ -51,21 +51,21 @@ function arc(sample) {
 test('A0:10 loads actual BP name through music roots into an initialized PCM speaker', async () => {
   const actor = {},
     actors = {currentActor: actor},
-    locks = new AokanaNativeLocks(actors);
+    locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
-  const backend = new AokanaMemorySpeakerBackend(1000),
-    channels = new AokanaAudioChannels(
-      new AokanaSpeakerContext(backend),
+  const backend = new BurikoMemorySpeakerBackend(1000),
+    channels = new BurikoAudioChannels(
+      new BurikoSpeakerContext(backend),
       locks,
       actors,
-      new AokanaSystemTicks({now: () => 0}),
+      new BurikoSystemTicks({now: () => 0}),
       {prefer24Bit: false},
     );
   channels.initialize({});
   channels.activate();
   const backing = new StoredFileSystem(new MemoryStore(), (p) => p.toLowerCase());
   await backing.commit([{kind: 'write', path: '/game/loose.bw', data: arc(16384).slice(144)}]);
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
     records: ['loose.bw'].map((name) => ({
       path: `/game/${name}`,
       kind: 'file',
@@ -79,19 +79,19 @@ test('A0:10 loads actual BP name through music roots into an initialized PCM spe
     currentFileTime: () => 123n,
     accessTimePolicy: 'disabled',
   });
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       mounted,
-      new AokanaNativeText(),
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+      new BurikoNativeText(),
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
     ),
-    cache = new AokanaAudioArchiveCache(channels, files);
+    cache = new BurikoAudioArchiveCache(channels, files);
   cache.rootWide = 'C:\\game\\';
-  const streams = new AokanaAudioResourceStreams(channels, cache, files),
+  const streams = new BurikoAudioResourceStreams(channels, cache, files),
     encode = (s) => files.text.encodeWide(s, 1),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, encode('C:\\game\\'), encode('C:\\game\\')),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, encode('C:\\game\\'), encode('C:\\game\\')),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -106,11 +106,11 @@ test('A0:10 loads actual BP name through music roots into an initialized PCM spe
       },
       dialogs,
       errors,
-      new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+      new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
     ),
-    music = new AokanaAudioMusicResources(resources, streams),
-    memory = new AokanaBpMemory(new Uint8Array(256)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
+    music = new BurikoAudioMusicResources(resources, streams),
+    memory = new BurikoBpMemory(new Uint8Array(256)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
     [slot] = createGroupA0StreamLoad(music, errors);
   memory.globalMemory.set(encode('loose.bw'), 16);
   try {

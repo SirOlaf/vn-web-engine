@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {encodeAokanaCompressedBgV2} from '../dist/engines/buriko/games/aokana/native/compressed-bg-modern-encode.js';
-import {decodeAokanaCompressedBgV2} from '../dist/engines/buriko/games/aokana/native/compressed-bg-v2.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {encodeBurikoCompressedBgV2} from '../dist/engines/buriko/native/compressed-bg-modern-encode.js';
+import {decodeBurikoCompressedBgV2} from '../dist/engines/buriko/native/compressed-bg-v2.js';
 import {randomByteGenerator} from '../dist/formats/buriko/binary.js';
 
 // Gray128 at quality25 produces zero coefficients; gray64 at quality75 also
@@ -16,9 +16,9 @@ import {randomByteGenerator} from '../dist/formats/buriko/binary.js';
 test('modern BG encoder emits RGB streams and decodes RGBA with real worker passes', async () => {
   const width = 64,
     height = 16;
-  const allocator = new AokanaDistributedAllocator(2),
-    processing = new AokanaDistributedProcessing(allocator, 2);
-  const ticks = new AokanaSystemTicks({now: () => 1234});
+  const allocator = new BurikoDistributedAllocator(2),
+    processing = new BurikoDistributedProcessing(allocator, 2);
+  const ticks = new BurikoSystemTicks({now: () => 1234});
   for (const depth of [24, 32])
     for (const quality of [25, 75]) {
       const channels = depth >>> 3,
@@ -35,11 +35,11 @@ test('modern BG encoder emits RGB streams and decodes RGBA with real worker pass
           raw.set([color, color, color], at);
           if (channels === 4) raw[at + 3] = 64 + (x % 32) * 4;
         }
-      const output = new AokanaBitmapStorage(
+      const output = new BurikoBitmapStorage(
         new Uint8Array(width * height * channels * 4 + 48),
         false,
       );
-      const result = encodeAokanaCompressedBgV2(raw, output, quality, processing, ticks);
+      const result = encodeBurikoCompressedBgV2(raw, output, quality, processing, ticks);
       assert.equal(result.status, 0);
       output.range(0, result.length, true);
       const encoded = output.bytes.subarray(0, result.length),
@@ -71,7 +71,7 @@ test('modern BG encoder emits RGB streams and decodes RGBA with real worker pass
         );
         continue;
       }
-      const decoded = await decodeAokanaCompressedBgV2(encoded, processing);
+      const decoded = await decodeBurikoCompressedBgV2(encoded, processing);
       assert.deepEqual(decoded.bytes.subarray(0, 16), raw.subarray(0, 16));
       const written = 16 + width * height * channels;
       assert.equal(decoded.initializedLength, written);

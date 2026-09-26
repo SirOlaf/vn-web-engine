@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMovieVideoDecoder} from '../dist/engines/buriko/games/aokana/native/movie-video-decoder.js';
+import {BurikoMovieVideoDecoder} from '../dist/engines/buriko/native/movie-video-decoder.js';
 import {
-  AokanaMovieVideoSamples,
-  aokanaCopyMoviePicture,
-} from '../dist/engines/buriko/games/aokana/native/movie-video-samples.js';
+  BurikoMovieVideoSamples,
+  burikoCopyMoviePicture,
+} from '../dist/engines/buriko/native/movie-video-samples.js';
 
 function description(profile = 100) {
   const bytes = new Uint8Array(101),
@@ -124,7 +124,7 @@ function install(t, {order, fail = false, hold = false} = {}) {
 test('AVC preserves real output ordering, duplicate ISO times and missing picture outputs', async (t) => {
   const decoders = install(t, {order: [1, 0, 3, 4]}),
     {movie, track} = fixture();
-  const decoder = await AokanaMovieVideoDecoder.create(movie, track),
+  const decoder = await BurikoMovieVideoDecoder.create(movie, track),
     output = [];
   for (;;) {
     const picture = await decoder.next();
@@ -151,7 +151,7 @@ test('AVC preserves real output ordering, duplicate ISO times and missing pictur
 test('AVC seek cancels in-flight flush, discards queued pictures and resumes at sync', async (t) => {
   const decoders = install(t, {hold: true}),
     {movie, track} = fixture();
-  const decoder = await AokanaMovieVideoDecoder.create(movie, track);
+  const decoder = await BurikoMovieVideoDecoder.create(movie, track);
   const pending = decoder.next();
   while (!decoders[0].abortFlush) await Promise.resolve();
   assert.equal(decoder.seek(4), 3);
@@ -172,7 +172,7 @@ test('AVC flushes the previous sample description before configuring the next', 
   const decoders = install(t),
     {movie, track} = fixture(2);
   track.samples[1] = {...track.samples[1], description: 2, sync: true};
-  const decoder = await AokanaMovieVideoDecoder.create(movie, track);
+  const decoder = await BurikoMovieVideoDecoder.create(movie, track);
   for (;;) {
     const picture = await decoder.next();
     if (picture === null) break;
@@ -188,7 +188,7 @@ test('AVC flushes the previous sample description before configuring the next', 
 test('AVC capability rejection creates no decoder and never substitutes a successful source', async (t) => {
   const decoders = install(t, {fail: true}),
     {movie, track} = fixture();
-  await assert.rejects(AokanaMovieVideoDecoder.create(movie, track), {name: 'NotSupportedError'});
+  await assert.rejects(BurikoMovieVideoDecoder.create(movie, track), {name: 'NotSupportedError'});
   assert.equal(decoders.length, 0);
 });
 
@@ -206,7 +206,7 @@ test('video splitter applies forward, reverse and dwell edits to actual codec ou
     {duration: 20n, mediaTime: 40n, rate: -65536},
     {duration: 5n, mediaTime: 5n, rate: 0},
   ];
-  const source = await AokanaMovieVideoSamples.create(movie, track),
+  const source = await BurikoMovieVideoSamples.create(movie, track),
     outputs = [];
   for (;;) {
     const output = await source.next();
@@ -250,7 +250,7 @@ test('video splitter seek preserves negative preroll sample times relative to se
     sample.compositionTime = BigInt(index * 10);
     sample.duration = 10;
   });
-  const source = await AokanaMovieVideoSamples.create(movie, track);
+  const source = await BurikoMovieVideoSamples.create(movie, track);
   source.seek(50000n);
   const first = await source.next();
   assert.deepEqual(first.sample.time, {start: -50000n, end: 50000n});
@@ -264,7 +264,7 @@ test('video splitter seek preserves negative preroll sample times relative to se
 
 test('RGB conversion uses the explicit browser color conversion and rejects absent visible data', async () => {
   await assert.rejects(
-    aokanaCopyMoviePicture({visibleRect: null}, {start: 0n, end: 1n}, 1n, false),
+    burikoCopyMoviePicture({visibleRect: null}, {start: 0n, end: 1n}, 1n, false),
     {name: 'InvalidStateError'},
   );
 });

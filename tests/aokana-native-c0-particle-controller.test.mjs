@@ -1,38 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaParticleController,
-  sortAokanaParticlesByDepth,
-} from '../dist/engines/buriko/games/aokana/native/particle-controller.js';
-import {AokanaParticleVariants} from '../dist/engines/buriko/games/aokana/native/particle-images.js';
-import {AokanaThreadedCrtRandom} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
+  BurikoParticleController,
+  sortBurikoParticlesByDepth,
+} from '../dist/engines/buriko/native/particle-controller.js';
+import {BurikoParticleVariants} from '../dist/engines/buriko/native/particle-images.js';
+import {BurikoThreadedCrtRandom} from '../dist/engines/buriko/native/system-timing.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {
-  allocateAokanaBitmap,
-  fillAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {allocateBurikoBitmap, fillBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
 
 function fixture(workerCount = 3) {
   let tick = 100;
-  const allocator = new AokanaDistributedAllocator(workerCount);
-  const processing = new AokanaDistributedProcessing(allocator, workerCount);
-  const random = new AokanaThreadedCrtRandom(() => allocator.currentActor);
-  const variants = new AokanaParticleVariants();
-  const image = allocateAokanaBitmap(32, 32, 2);
-  fillAokanaBitmap(image, 0xff112233);
+  const allocator = new BurikoDistributedAllocator(workerCount);
+  const processing = new BurikoDistributedProcessing(allocator, workerCount);
+  const random = new BurikoThreadedCrtRandom(() => allocator.currentActor);
+  const variants = new BurikoParticleVariants();
+  const image = allocateBurikoBitmap(32, 32, 2);
+  fillBurikoBitmap(image, 0xff112233);
   variants.configureImages('snow', 0, [image], 1, 0, 0);
   variants.configureSnow(0, [0, 10 * 65536, 0, 65536, 0, 0, 0, 0, 0, 0]);
-  const controller = new AokanaParticleController(
+  const controller = new BurikoParticleController(
     variants,
     random,
-    new AokanaNativeClock(() => tick),
-    new AokanaBitmapCompositor(),
+    new BurikoNativeClock(() => tick),
+    new BurikoBitmapCompositor(),
     processing,
   );
   return {
@@ -109,10 +106,10 @@ test('particle projection and actual worker drawing preserve camera rotation, la
     projected.map(({x, y, z}) => ({x, y, z})),
     [{x: -2560, y: 0, z: 25600}],
   );
-  const front = allocateAokanaBitmap(64, 64, 2),
-    rear = allocateAokanaBitmap(64, 64, 2);
-  fillAokanaBitmap(front, 0);
-  fillAokanaBitmap(rear, 0);
+  const front = allocateBurikoBitmap(64, 64, 2),
+    rear = allocateBurikoBitmap(64, 64, 2);
+  fillBurikoBitmap(front, 0);
+  fillBurikoBitmap(rear, 0);
   const damage = c.draw([front, rear], [25599, 25600], 32, 32);
   assert.deepEqual(damage, [{left: 19, top: 24, right: 34, bottom: 39}]);
   assert.equal(bitmapRead32(front, 24 * front.stride + 19 * 4), 0);
@@ -124,7 +121,7 @@ test('particle projection and actual worker drawing preserve camera rotation, la
 
 test('native particle depth ordering retains equal-depth swaps', () => {
   const points = [5, 3, 5, 1, 3].map((z, tag) => ({x: 0, y: 0, z, particle: {tag}}));
-  sortAokanaParticlesByDepth(points);
+  sortBurikoParticlesByDepth(points);
   assert.deepEqual(
     points.map((p) => p.z),
     [5, 5, 3, 3, 1],

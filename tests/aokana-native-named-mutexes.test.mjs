@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {createGroup81NamedMutexes} from '../dist/engines/buriko/games/aokana/native/group-81-named-mutexes.js';
-import {AokanaNamedMutexes} from '../dist/engines/buriko/games/aokana/native/named-mutexes.js';
-import {textBytes} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {createGroup81NamedMutexes} from '../dist/engines/buriko/native/group-81-named-mutexes.js';
+import {BurikoNamedMutexes} from '../dist/engines/buriko/native/named-mutexes.js';
+import {textBytes} from '../dist/engines/buriko/native/text.js';
 
 function deterministicHost() {
   const owned = new Map(),
@@ -42,9 +42,9 @@ function writeName(bytes, offset, value) {
 
 test('named mutex owner keeps copied newest-first nodes, rejects duplicates and preserves IDs', () => {
   const {host, calls, owned} = deterministicHost(),
-    mutexes = new AokanaNamedMutexes(host),
+    mutexes = new BurikoNamedMutexes(host),
     bytes = new Uint8Array(64),
-    memory = new AokanaBpMemory(bytes);
+    memory = new BurikoBpMemory(bytes);
   writeName(bytes, 8, 'alpha');
   writeName(bytes, 24, 'beta');
 
@@ -77,18 +77,18 @@ test('named mutex owner keeps copied newest-first nodes, rejects duplicates and 
 
 test('81 EC/ED preserve native argument pops and raw result pushes', () => {
   const {host} = deterministicHost(),
-    mutexes = new AokanaNamedMutexes(host),
+    mutexes = new BurikoNamedMutexes(host),
     definitions = createGroup81NamedMutexes(mutexes),
     handlers = new Map(definitions.map((slot) => [slot.secondary, slot.execute])),
     bytes = new Uint8Array(64),
-    memory = new AokanaBpMemory(bytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(bytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 16,
       frameCapacity: 16,
     }),
-    context = {thread, memory, diagnostics: new AokanaBpDiagnostics(() => {})},
+    context = {thread, memory, diagnostics: new BurikoBpDiagnostics(() => {})},
     call = (secondary, argument) => {
       push32(thread, argument);
       assert.equal(handlers.get(secondary)(context), 0);

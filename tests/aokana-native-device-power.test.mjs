@@ -1,24 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaDevicePower,
-  AokanaDevicePowerProfile,
-} from '../dist/engines/buriko/games/aokana/native/device-power.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {createGroup81DevicePower} from '../dist/engines/buriko/games/aokana/native/group-81-device-power.js';
+  BurikoDevicePower,
+  BurikoDevicePowerProfile,
+} from '../dist/engines/buriko/native/device-power.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {createGroup81DevicePower} from '../dist/engines/buriko/native/group-81-device-power.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaSystemProfile} from '../dist/engines/buriko/games/aokana/native/system-profile.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoSystemProfile} from '../dist/engines/buriko/native/system-profile.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const ansi = (value) => new TextEncoder().encode(value);
 
 function system(platform) {
-  return new AokanaSystemProfile({
+  return new BurikoSystemProfile({
     readUserName: () => null,
     readComputerName: () => null,
     readVersion: () => ({major: 6, minor: 1, build: 7601, platform, servicePack: ansi('')}),
@@ -28,7 +28,7 @@ function system(platform) {
 }
 
 function recordingHost(entries) {
-  const profile = new AokanaDevicePowerProfile(entries);
+  const profile = new BurikoDevicePowerProfile(entries);
   const calls = [];
   return {
     calls,
@@ -64,19 +64,19 @@ function recordingHost(entries) {
 
 function fixture(platform, entries) {
   const recording = recordingHost(entries);
-  const files = new AokanaProgramFiles({}, new AokanaNativeText(), new AokanaProgramMedia());
-  const power = new AokanaDevicePower(system(platform), files, recording.host);
+  const files = new BurikoProgramFiles({}, new BurikoNativeText(), new BurikoProgramMedia());
+  const power = new BurikoDevicePower(system(platform), files, recording.host);
   const [definition] = createGroup81DevicePower(power);
   const bytes = new Uint8Array(256).fill(0xa5);
   bytes.set(ansi('C:\\device\0'), 16);
-  const memory = new AokanaBpMemory(bytes);
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(bytes);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 16,
     frameCapacity: 16,
   });
-  const context = {thread, memory, diagnostics: new AokanaBpDiagnostics(() => {})};
+  const context = {thread, memory, diagnostics: new BurikoBpDiagnostics(() => {})};
   const invoke = (output = 128) => {
     push32(thread, output);
     push32(thread, 16);

@@ -2,17 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProductionDataOwners} from '../dist/engines/buriko/games/aokana/native/production-data-owners.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaProductionVmCore} from '../dist/engines/buriko/games/aokana/native/production-vm-core.js';
-import {AokanaVmFrameHistory} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProductionDataOwners} from '../dist/engines/buriko/native/production-data-owners.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoProductionVmCore} from '../dist/engines/buriko/native/production-vm-core.js';
+import {BurikoVmFrameHistory} from '../dist/engines/buriko/native/system-timing.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 class Element {
   constructor(tag) {
@@ -46,25 +46,25 @@ class Element {
 test('production VM retains one frame-history ring seeded before root construction', async () => {
   const backing = new MountedFileSystem();
   backing.mount('/game', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
     records: [],
     volumes: [{path: '/', identity: {}, writable: true}],
     canonical: (path) => path.toLowerCase(),
     currentFileTime: () => 123n,
     accessTimePolicy: 'disabled',
   });
-  const paths = new AokanaMountedProgramPaths(
+  const paths = new BurikoMountedProgramPaths(
     [
       {native: 'C:\\game', mounted: '/game'},
       {native: 'D:\\Drops', mounted: '/drops'},
     ],
     'C:\\game',
   );
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const encode = (value) => text.encodeWide(value, 1);
   const document = {createElement: (tag) => new Element(tag)};
   let milliseconds = 100;
-  const graph = new AokanaProductionDisplayResourceGraph({
+  const graph = new BurikoProductionDisplayResourceGraph({
     document,
     parent: document.createElement('div'),
     canvas: document.createElement('canvas'),
@@ -93,7 +93,7 @@ test('production VM retains one frame-history ring seeded before root constructi
       verticalScrollbarWidth: 0,
       horizontalScrollbarHeight: 0,
     },
-    nativeWindowTitle: encode('Aokana'),
+    nativeWindowTitle: encode('Buriko'),
     preferredDialogTitle: null,
     cursorResource: null,
     performance: {now: () => milliseconds},
@@ -126,7 +126,7 @@ test('production VM retains one frame-history ring seeded before root constructi
     resource: {
       mounted,
       paths,
-      media: new AokanaProgramMedia(),
+      media: new BurikoProgramMedia(),
       configuration: {
         nativeFileRoot: 'C:\\game\\',
         primaryRoot: encode('C:\\game\\'),
@@ -141,7 +141,7 @@ test('production VM retains one frame-history ring seeded before root constructi
       errorDirectory: encode('C:\\game\\'),
       workingDirectory: encode('C:\\game\\'),
       audioRootWide: 'C:\\game\\',
-      backend: new AokanaMemorySpeakerBackend(1000),
+      backend: new BurikoMemorySpeakerBackend(1000),
       output: {prefer24Bit: false},
       resourceWorkerCount: 1,
       sleep: async () => {},
@@ -149,10 +149,10 @@ test('production VM retains one frame-history ring seeded before root constructi
   });
   let core;
   try {
-    const data = new AokanaProductionDataOwners(graph, new AokanaBpMemory(new Uint8Array(4096)));
-    core = new AokanaProductionVmCore(graph, data, new AokanaBpDiagnostics(() => {}));
+    const data = new BurikoProductionDataOwners(graph, new BurikoBpMemory(new Uint8Array(4096)));
+    core = new BurikoProductionVmCore(graph, data, new BurikoBpDiagnostics(() => {}));
     const history = core.frameHistory;
-    assert.ok(history instanceof AokanaVmFrameHistory);
+    assert.ok(history instanceof BurikoVmFrameHistory);
     assert.equal(core.frameHistory, history);
     assert.equal(core.scheduler.root.state, core.root);
     assert.equal(

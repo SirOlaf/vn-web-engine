@@ -1,28 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {
-  bitmapRead32,
-  bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {applyAokanaEffectorVectorMap} from '../dist/engines/buriko/games/aokana/native/bitmap-display-filters.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {createGroup91DisplacementGenerators} from '../dist/engines/buriko/games/aokana/native/group-91-displacement-generators.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {applyBurikoEffectorVectorMap} from '../dist/engines/buriko/native/bitmap-display-filters.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {createGroup91DisplacementGenerators} from '../dist/engines/buriko/native/group-91-displacement-generators.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('four displacement generators feed actual nearest map sampling', () => {
-  const compositor = new AokanaBitmapCompositor(),
-    text = new AokanaNativeText();
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(text),
+  const compositor = new BurikoBitmapCompositor(),
+    text = new BurikoNativeText();
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(text),
     compositor,
-    new AokanaDistributedAllocator(2),
+    new BurikoDistributedAllocator(2),
   );
   const slots = createGroup91DisplacementGenerators(surfaces, {
     files: {text},
@@ -30,18 +27,18 @@ test('four displacement generators feed actual nearest map sampling', () => {
       assert.fail('ordinary displacement generator');
     },
   });
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array(0)), diagnostics: {}};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array(0)), diagnostics: {}};
   assert.deepEqual(
     slots.map((s) => s.secondary),
     [0x12, 0x15, 0x16, 0x17],
   );
-  const source = allocateAokanaBitmap(3, 3, 1);
+  const source = allocateBurikoBitmap(3, 3, 1);
   const colors = [
     0x102030, 0x203040, 0x304050, 0x405060, 0x506070, 0x607080, 0x708090, 0x8090a0, 0x90a0b0,
   ];
@@ -103,13 +100,13 @@ test('four displacement generators feed actual nearest map sampling', () => {
     const entry = cases[i],
       slot = slots.find((s) => s.secondary === entry.slot);
     assert.equal(slot.primary, 0x91);
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x91][entry.slot]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x91][entry.slot]);
     assert.equal(surfaces.allocate(i, entry.w, entry.h, 4), 1);
     [i, ...entry.args].forEach((value) => push32(thread, value));
     assert.equal(slot.execute(context), 0);
     assert.equal(thread.stackIndex, 0);
     const map = surfaces.snapshot(i),
-      output = allocateAokanaBitmap(entry.w, entry.h, 1);
+      output = allocateBurikoBitmap(entry.w, entry.h, 1);
     assert.deepEqual(
       Array.from({length: entry.w * entry.h}, (_, index) => {
         const at = map.offset + Math.floor(index / entry.w) * map.stride + (index % entry.w) * 4;
@@ -118,7 +115,7 @@ test('four displacement generators feed actual nearest map sampling', () => {
       }),
       entry.words,
     );
-    assert.equal(applyAokanaEffectorVectorMap(compositor, output, source, map, null, 256, 0), 0);
+    assert.equal(applyBurikoEffectorVectorMap(compositor, output, source, map, null, 256, 0), 0);
     assert.deepEqual(
       Array.from({length: entry.w * entry.h}, (_, index) =>
         bitmapRead32(

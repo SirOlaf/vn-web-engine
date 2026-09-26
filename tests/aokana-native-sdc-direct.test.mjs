@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {createGroup80SdcDecode} from '../dist/engines/buriko/games/aokana/native/group-80-sdc-decode.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {createGroup80SdcDecode} from '../dist/engines/buriko/native/group-80-sdc-decode.js';
 
 test('80:C1 expands independent literal and overlapping-repeat tokens into actual caller storage', () => {
   const encoded = new Uint8Array(41),
@@ -14,8 +14,8 @@ test('80:C1 expands independent literal and overlapping-repeat tokens into actua
   header.setUint16(30, 203, true);
   // Seed0: literal AB, repeat17/distance2, repeat17/distance2, repeat4/distance2.
   encoded.set([1, 155, 196, 222, 66, 128, 205, 75, 15], 32);
-  const memory = new AokanaBpMemory(new Uint8Array(0x1000)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 64, frameCapacity: 0}),
+  const memory = new BurikoBpMemory(new Uint8Array(0x1000)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 64, frameCapacity: 0}),
     [slot] = createGroup80SdcDecode();
   memory.globalMemory.set(encoded, 0x100);
   thread.moduleMemory.fill(0xa5);

@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {updateNativeChecksum} from '../dist/engines/buriko/games/aokana/native/group-81-hash.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProductionDataOwners} from '../dist/engines/buriko/games/aokana/native/production-data-owners.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaProductionVmCore} from '../dist/engines/buriko/games/aokana/native/production-vm-core.js';
-import {AokanaProductionVmFragments} from '../dist/engines/buriko/games/aokana/native/production-vm-fragments.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {updateNativeChecksum} from '../dist/engines/buriko/native/group-81-hash.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProductionDataOwners} from '../dist/engines/buriko/native/production-data-owners.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoProductionVmCore} from '../dist/engines/buriko/native/production-vm-core.js';
+import {BurikoProductionVmFragments} from '../dist/engines/buriko/native/production-vm-fragments.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {singleArchive} from './aokana-resource-direct-fixtures.mjs';
 
 function checkedArchive(name, payload) {
@@ -75,10 +75,20 @@ class Element {
     this.open = true;
     this.onDialogShown?.(this);
   }
+  cancel() {
+    const listener = this.listeners.get('cancel');
+    if (listener === undefined) return;
+    listener({preventDefault() {}});
+  }
   close() {
     this.open = false;
   }
-  focus() {}
+  focus() {
+    if (this.ownerDocument) this.ownerDocument.activeElement = this;
+  }
+  contains(element) {
+    return element === this || this.children.some((child) => child.contains(element));
+  }
   select() {
     this.selectionStart = 0;
     this.selectionEnd = this.value.length;
@@ -148,6 +158,12 @@ export async function createMountedVmFixture({
   driveHost,
   driveGeometryHost,
   onDialogShown,
+  sourceFiles,
+  seedBootArchive = true,
+  executablePathWide = 'C:\\game\\aokana.exe',
+  commandLineTailWide = '. "Execute as a launcher."',
+  productIdentity,
+  engineVersion,
   specialFolderProfile = {
     shellAllocatorAvailable: false,
     windows: null,
@@ -161,21 +177,24 @@ export async function createMountedVmFixture({
   },
 } = {}) {
   const backing = new MountedFileSystem();
-  backing.mount('/game', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
+  backing.mount(
+    '/game',
+    sourceFiles ?? new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()),
+  );
   backing.mount('/restart', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
   if (mountDriveC)
     backing.mount(
       '/drive-c',
       new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()),
     );
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
     records: [],
     volumes: [{path: '/', identity: {}, writable: true}],
     canonical: (path) => path.toLowerCase(),
     currentFileTime: () => 123n,
     accessTimePolicy: 'disabled',
   });
-  const paths = new AokanaMountedProgramPaths(
+  const paths = new BurikoMountedProgramPaths(
     [
       {native: 'C:\\game', mounted: '/game'},
       {native: 'C:\\restart', mounted: '/restart'},
@@ -184,10 +203,17 @@ export async function createMountedVmFixture({
     ],
     'C:\\game',
   );
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const encode = (value) => text.encodeWide(value, 1);
   const document = {
-    createElement: (tag) => new Element(tag, onDialogShown),
+    createElement: (tag) => {
+      const element = new Element(tag, onDialogShown);
+      element.ownerDocument = document;
+      return element;
+    },
+    visibilityState: 'visible',
+    activeElement: null,
+    hasFocus: () => true,
     createTextNode: (value) => {
       const node = new Element('#text');
       node.textContent = value;
@@ -203,9 +229,9 @@ export async function createMountedVmFixture({
       return canvas2dContext;
     };
   }
-  const media = new AokanaProgramMedia();
+  const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const graph = new AokanaProductionDisplayResourceGraph({
+  const graph = new BurikoProductionDisplayResourceGraph({
     document,
     parent: document.createElement('div'),
     canvas,
@@ -235,7 +261,9 @@ export async function createMountedVmFixture({
       verticalScrollbarWidth: 0,
       horizontalScrollbarHeight: 0,
     },
-    nativeWindowTitle: encode('Aokana'),
+    nativeWindowTitle: encode('Buriko'),
+    productIdentity: productIdentity === undefined ? undefined : encode(productIdentity),
+    engineVersion,
     engineCaption,
     preferredDialogTitle: null,
     cursorResource: null,
@@ -273,8 +301,8 @@ export async function createMountedVmFixture({
     readUserDefaultUiLanguage: () => 0x409,
     localizedText: null,
     processorCount: 1,
-    executablePathWide: 'C:\\game\\aokana.exe',
-    commandLineTailWide: '. "Execute as a launcher."',
+    executablePathWide,
+    commandLineTailWide,
     drop: {mountedRoot: '/drops', nativeRoot: 'D:\\Drops'},
     resource: {
       mounted,
@@ -296,7 +324,7 @@ export async function createMountedVmFixture({
       errorDirectory: encode('C:\\game\\'),
       workingDirectory: encode('C:\\game\\'),
       audioRootWide: 'C:\\game\\',
-      backend: new AokanaMemorySpeakerBackend(1000),
+      backend: new BurikoMemorySpeakerBackend(1000),
       output: {prefer24Bit: false},
       resourceWorkerCount,
       sleep,
@@ -319,15 +347,17 @@ export async function createMountedVmFixture({
     return closing;
   };
   try {
-    const module = new Uint8Array(12);
-    const header = new DataView(module.buffer);
-    header.setUint32(0, 8, true);
-    header.setUint32(4, 4, true);
-    module.set([0x11, 0x22, 0x33, 0x44], 8);
-    await graph.resource.files.write(
-      encode('C:\\game\\system.arc'),
-      singleArchive('ipl._bp', module),
-    );
+    if (seedBootArchive) {
+      const module = new Uint8Array(12);
+      const header = new DataView(module.buffer);
+      header.setUint32(0, 8, true);
+      header.setUint32(4, 4, true);
+      module.set([0x11, 0x22, 0x33, 0x44], 8);
+      await graph.resource.files.write(
+        encode('C:\\game\\system.arc'),
+        singleArchive('ipl._bp', module),
+      );
+    }
     if (seedCoreArchives) {
       const resourcePayload = Uint8Array.of(41, 43, 47, 53, 59);
       await graph.resource.files.write(
@@ -349,13 +379,14 @@ export async function createMountedVmFixture({
     const selectedArchive = new Uint8Array(784);
     const selectedModule = new Uint8Array(784);
     graph.launchSelection.copyBootNames(selectedArchive, selectedModule);
-    const memory = new AokanaBpMemory(new Uint8Array(0x10000));
-    const data = new AokanaProductionDataOwners(graph, memory);
-    const diagnostics = new AokanaBpDiagnostics(() =>
+    const memory = new BurikoBpMemory(new Uint8Array(0x10000), graph.engineVersion.bpAbi);
+    const data = new BurikoProductionDataOwners(graph, memory);
+    const diagnostics = new BurikoBpDiagnostics(() =>
       assert.fail('ordinary boot load must not report a write watch'),
+      graph.engineVersion.bpAbi,
     );
-    core = new AokanaProductionVmCore(graph, data, diagnostics);
-    const fragments = new AokanaProductionVmFragments(core);
+    core = new BurikoProductionVmCore(graph, data, diagnostics);
+    const fragments = new BurikoProductionVmFragments(core);
     const definitions = fragments.nativeDefinitions();
     const bootChild = async () => {
       assert.equal(child, undefined, 'boot child already appended');

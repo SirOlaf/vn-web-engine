@@ -1,27 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaStringLists} from '../dist/engines/buriko/games/aokana/native/string-lists.js';
-import {createGroup80StringLists} from '../dist/engines/buriko/games/aokana/native/group-80-string-lists.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoStringLists} from '../dist/engines/buriko/native/string-lists.js';
+import {createGroup80StringLists} from '../dist/engines/buriko/native/group-80-string-lists.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const strings = (...values) => new TextEncoder().encode(values.join('\0') + '\0');
 const pointer = (bytes) => ({bytes, offset: 0});
 
 test('80 D8–DE preserve native list replacement, duplicate append indices, bytes and wrapper order', () => {
-  const lists = new AokanaStringLists(),
+  const lists = new BurikoStringLists(),
     slots = createGroup80StringLists(lists);
   assert.equal(slots.length, 7);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 1024,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(1)),
+    memory = new BurikoBpMemory(new Uint8Array(1)),
     context = {thread, memory};
   const put = (address, bytes) => {
     const output = memory.resolve(thread, address);
@@ -60,7 +60,7 @@ test('80 D8–DE preserve native list replacement, duplicate append indices, byt
 });
 
 test('numbered lists own copied bytes and reset follows live links around the reserved list', () => {
-  const lists = new AokanaStringLists(),
+  const lists = new BurikoStringLists(),
     source = strings('one', 'two');
   lists.append(1, pointer(strings('first')));
   lists.append(0x80000000, pointer(strings('reserved')));

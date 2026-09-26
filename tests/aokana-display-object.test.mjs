@@ -1,27 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayObjectLists} from '../dist/engines/buriko/games/aokana/native/display-object-lists.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayObjectLists} from '../dist/engines/buriko/native/display-object-lists.js';
 import {
-  AokanaDisplayDamage,
-  AokanaDisplayDamageLifetimeError,
-} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaMemoryDx} from '../dist/engines/buriko/games/aokana/native/memory-dx.js';
+  BurikoDisplayDamage,
+  BurikoDisplayDamageLifetimeError,
+} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoMemoryDx} from '../dist/engines/buriko/native/memory-dx.js';
 const rect = (left, top, right, bottom) => ({left, top, right, bottom});
 const environment = () =>
-  new AokanaDisplayObjectEnvironment(
-    new AokanaBitmapCompositor(),
-    new AokanaDisplayDamage(64, rect(-1000, -1000, 1000, 1000)),
+  new BurikoDisplayObjectEnvironment(
+    new BurikoBitmapCompositor(),
+    new BurikoDisplayDamage(64, rect(-1000, -1000, 1000, 1000)),
   );
-const object = (env = environment(), category = 0) => new AokanaDisplayObject(env, category, 0, 1);
+const object = (env = environment(), category = 0) => new BurikoDisplayObject(env, category, 0, 1);
 
 test('CMemoryDX retains allocation ownership independently of descriptor geometry', () => {
-  const memory = new AokanaMemoryDx();
+  const memory = new BurikoMemoryDx();
   const zero = memory.allocate(0);
   assert.ok(zero);
   assert.equal(memory.active, 1);
@@ -53,7 +53,7 @@ test('base visibility, masked propagation, and child virtual dispatch preserve s
   const parent = object(env);
   let activated = 0,
     secondary = 0;
-  class Child extends AokanaDisplayObject {
+  class Child extends BurikoDisplayObject {
     setActivation(v) {
       activated++;
       super.setActivation(v);
@@ -143,7 +143,7 @@ test('hit masks retain native format tests and raw bit return values', () => {
   view.setUint32(7 * 4, 0x10000000, true);
   view.setUint32(8 * 4, 0x00112233, true);
   const source = {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride: 36,
     width: 9,
@@ -185,7 +185,7 @@ test('property return codes and unwritten field124 are not converted to invented
 test('draw wrapper crops actual target bytes and translates its virtual draw rectangle to object-local coordinates', () => {
   const env = environment();
   let invocation;
-  class Draw extends AokanaDisplayObject {
+  class Draw extends BurikoDisplayObject {
     draw(bitmap, rectangle, key) {
       invocation = {bitmap, rectangle: {...rectangle}, key};
     }
@@ -196,7 +196,7 @@ test('draw wrapper crops actual target bytes and translates its virtual draw rec
   obj.setActivation(1);
   const context = {
     bitmap: {
-      storage: new AokanaBitmapStorage(new Uint8Array(64), true),
+      storage: new BurikoBitmapStorage(new Uint8Array(64), true),
       offset: 0,
       stride: 16,
       width: 4,
@@ -216,7 +216,7 @@ test('draw wrapper crops actual target bytes and translates its virtual draw rec
 
 test('ordinary list keys are unsigned and stable with duplicate objects', () => {
   const env = environment(),
-    lists = new AokanaDisplayObjectLists(),
+    lists = new BurikoDisplayObjectLists(),
     a = object(env),
     b = object(env),
     c = object(env);
@@ -243,8 +243,8 @@ test('ordinary list keys are unsigned and stable with duplicate objects', () => 
 
 test('expanded lists retain root order and insertion cursor even for descending input keys', () => {
   const env = environment(),
-    lists = new AokanaDisplayObjectLists();
-  class Expanded extends AokanaDisplayObject {
+    lists = new BurikoDisplayObjectLists();
+  class Expanded extends BurikoDisplayObject {
     hasExpandedSortKeys() {
       return 1;
     }
@@ -277,7 +277,7 @@ test('expanded lists retain root order and insertion cursor even for descending 
 
 test('resort returns child removal failure after successfully reinserting its parent', () => {
   const env = environment(),
-    lists = new AokanaDisplayObjectLists(),
+    lists = new BurikoDisplayObjectLists(),
     parent = object(env),
     child = object(env);
   parent.addChild(child, 0, 0);
@@ -289,7 +289,7 @@ test('resort returns child removal failure after successfully reinserting its pa
 });
 
 test('damage clips the caller in place and capacity preserves earlier nodes', () => {
-  const damage = new AokanaDisplayDamage(1, rect(0, 0, 9, 9));
+  const damage = new BurikoDisplayDamage(1, rect(0, 0, 9, 9));
   const first = rect(-2, 2, 4, 4);
   damage.record(9, first);
   assert.deepEqual(first, rect(0, 2, 4, 4));
@@ -310,7 +310,7 @@ test('damage clips the caller in place and capacity preserves earlier nodes', ()
 test('failed hit-mask construction retains row clearing order and unwritten future rows', () => {
   const obj = object();
   const source = {
-    storage: new AokanaBitmapStorage(Uint8Array.of(1), true),
+    storage: new BurikoBitmapStorage(Uint8Array.of(1), true),
     offset: 0,
     stride: 1,
     width: 1,

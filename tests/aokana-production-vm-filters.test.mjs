@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaDisplayFilter} from '../dist/engines/buriko/games/aokana/native/display-filter.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoDisplayFilter} from '../dist/engines/buriko/native/display-filter.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM filter callbacks share the graph manager pool and ordered display list', async () => {
@@ -27,8 +27,8 @@ test('mounted VM filter callbacks share the graph manager pool and ordered displ
     assert.deepEqual([firstHandle, secondHandle], [0x90000000, 0x90000001]);
     const first = graph.manager.find('filter', firstHandle);
     const second = graph.manager.find('filter', secondHandle);
-    assert.ok(first instanceof AokanaDisplayFilter);
-    assert.ok(second instanceof AokanaDisplayFilter);
+    assert.ok(first instanceof BurikoDisplayFilter);
+    assert.ok(second instanceof BurikoDisplayFilter);
     assert.equal(graph.manager.categoryCount(1), 2);
     assert.equal(first.surfaces, graph.surfaces);
     assert.equal(second.surfaces, graph.surfaces);

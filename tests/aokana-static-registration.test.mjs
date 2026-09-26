@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaSpeakerContext} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaAudioChannels} from '../dist/engines/buriko/games/aokana/native/audio/channel-registry.js';
-import {AokanaAudioStaticResources} from '../dist/engines/buriko/games/aokana/native/audio/resource-static.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
+import {BurikoAudioStaticResources} from '../dist/engines/buriko/native/audio/resource-static.js';
 
 test('static registration publishes actual PCM and persistent native duration consumed by a speaker', async () => {
   const bytes = new Uint8Array(72),
@@ -22,17 +22,17 @@ test('static registration publishes actual PCM and persistent native duration co
     header.setUint32(offset, value, true);
   [0, 16384, 0, -16384].forEach((value, index) => header.setInt16(64 + index * 2, value, true));
   const actors = {currentActor: {}},
-    locks = new AokanaNativeLocks(actors);
+    locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
-  const backend = new AokanaMemorySpeakerBackend(1000),
-    channels = new AokanaAudioChannels(
-      new AokanaSpeakerContext(backend),
+  const backend = new BurikoMemorySpeakerBackend(1000),
+    channels = new BurikoAudioChannels(
+      new BurikoSpeakerContext(backend),
       locks,
       actors,
-      new AokanaSystemTicks({now: () => 0}),
+      new BurikoSystemTicks({now: () => 0}),
       {prefer24Bit: false},
     ),
-    resources = new AokanaAudioStaticResources(channels);
+    resources = new BurikoAudioStaticResources(channels);
   channels.initialize({});
   channels.activate();
   try {

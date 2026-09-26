@@ -1,23 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaLogicalSpatialManager,
-  AokanaLogicalSpatialManagers,
-} from '../dist/engines/buriko/games/aokana/native/logical-spatial.js';
-import {AokanaLogicalSpatialSearch} from '../dist/engines/buriko/games/aokana/native/logical-spatial-search.js';
-import {createGroupD0SpatialSearch} from '../dist/engines/buriko/games/aokana/native/group-d0-spatial-search.js';
+  BurikoLogicalSpatialManager,
+  BurikoLogicalSpatialManagers,
+} from '../dist/engines/buriko/native/logical-spatial.js';
+import {BurikoLogicalSpatialSearch} from '../dist/engines/buriko/native/logical-spatial-search.js';
+import {createGroupD0SpatialSearch} from '../dist/engines/buriko/native/group-d0-spatial-search.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture(capacity = 3) {
-  const manager = new AokanaLogicalSpatialManager(),
-    allocator = new AokanaDistributedAllocator(capacity),
-    pool = new AokanaDistributedProcessing(allocator, capacity),
-    search = new AokanaLogicalSpatialSearch(manager, pool),
+  const manager = new BurikoLogicalSpatialManager(),
+    allocator = new BurikoDistributedAllocator(capacity),
+    pool = new BurikoDistributedProcessing(allocator, capacity),
+    search = new BurikoLogicalSpatialSearch(manager, pool),
     bytes = new Uint8Array(256).fill(0x55),
     pointer = {bytes, offset: 16};
   manager.createRecord(0, [0, 0, 0, 0, 0, 0, 1, 0, 0], 1, 7);
@@ -73,11 +73,11 @@ test('D072 preserves native single-worker undefined wake ownership instead of in
 });
 
 test('D072 wrapper converts its two fixed arguments and consumes eleven native values', () => {
-  const managers = new AokanaLogicalSpatialManagers(),
-    pool = new AokanaDistributedProcessing(new AokanaDistributedAllocator(2), 2),
+  const managers = new BurikoLogicalSpatialManagers(),
+    pool = new BurikoDistributedProcessing(new BurikoDistributedAllocator(2), 2),
     bytes = new Uint8Array(256),
-    memory = new AokanaBpMemory(bytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(bytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 64,
       moduleCapacity: 64,

@@ -1,19 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaDifferenceBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop-difference.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoDifferenceBackdrop} from '../dist/engines/buriko/native/display-backdrop-difference.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted difference backdrop tracks source changes and draws through shared software surfaces', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke, memory} = fixture;
-  const output = allocateAokanaBitmap(32, 24, 1);
-  const bounds = aokanaBitmapRectangle(output);
+  const output = allocateBurikoBitmap(32, 24, 1);
+  const bounds = burikoBitmapRectangle(output);
   const call = async (secondary, args) => {
     assert.equal(await invoke(0x90, secondary, args, 0), 0);
     assert.equal(child.state.stackIndex, 0);
@@ -75,7 +72,7 @@ test('mounted difference backdrop tracks source changes and draws through shared
     graph.damage.clear();
     await call(0x44, [2, 0x100, 0]);
     const selected = graph.manager.backdrop;
-    assert.ok(selected instanceof AokanaDifferenceBackdrop);
+    assert.ok(selected instanceof BurikoDifferenceBackdrop);
     assert.equal(selected.surfaces, graph.surfaces);
     assert.deepEqual(
       [selected.activation, selected.contentEnabled, graph.manager.backdropRenderType],

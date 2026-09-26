@@ -11,7 +11,7 @@
     {
       "address": "0x1400de050",
       "entryAddress": "0x1400de050",
-      "name": "AokanaNative90_01_SetPresentationEnabled",
+      "name": "BurikoNative90_01_SetPresentationEnabled",
       "bodyRanges": [
         {
           "start": "0x1400de050",

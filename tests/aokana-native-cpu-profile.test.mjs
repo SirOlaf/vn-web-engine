@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {
-  aokanaRosettaSseReciprocal,
-  aokanaRosettaSseReciprocalSqrt,
-} from '../dist/engines/buriko/games/aokana/native/cpu-numerical-profile.js';
+  burikoRosettaSseReciprocal,
+  burikoRosettaSseReciprocalSqrt,
+} from '../dist/engines/buriko/native/cpu-numerical-profile.js';
 
 const bits = new DataView(new ArrayBuffer(4));
 function number(value) {
@@ -23,15 +23,15 @@ test('reciprocal seeds match all 2048 measured bins and signed exponent scaling'
     view = new DataView(outputs.buffer);
   for (let i = 0; i < 2048; i++) {
     const input = 0x3f800000 + i * 4096;
-    const expected = aokanaRosettaSseReciprocal(number(input));
+    const expected = burikoRosettaSseReciprocal(number(input));
     view.setFloat32(i * 4, expected, true);
-    assert.equal(aokanaRosettaSseReciprocal(number(input + 4095)), expected);
+    assert.equal(burikoRosettaSseReciprocal(number(input + 4095)), expected);
     for (const exponent of [-32, -17, -16, -1, 0, 15, 16, 31, 32, 33]) {
       const scaledInput = number(input + exponent * 0x800000);
       const scaled = number(encoding(expected) - exponent * 0x800000);
-      assert.equal(aokanaRosettaSseReciprocal(scaledInput), scaled);
+      assert.equal(burikoRosettaSseReciprocal(scaledInput), scaled);
       if (exponent >= -16 && exponent <= 15)
-        assert.equal(aokanaRosettaSseReciprocal(-scaledInput), -scaled);
+        assert.equal(burikoRosettaSseReciprocal(-scaledInput), -scaled);
     }
   }
   assert.equal(
@@ -50,13 +50,13 @@ test('reciprocal-square-root seeds match every measured parity bin and exponent 
       view = new DataView(outputs.buffer);
     for (let i = 0; i < 1024; i++) {
       const input = 0x3f800000 + parity * 0x800000 + i * 8192;
-      const expected = aokanaRosettaSseReciprocalSqrt(number(input));
+      const expected = burikoRosettaSseReciprocalSqrt(number(input));
       view.setFloat32(i * 4, expected, true);
-      assert.equal(aokanaRosettaSseReciprocalSqrt(number(input + 8191)), expected);
+      assert.equal(burikoRosettaSseReciprocalSqrt(number(input + 8191)), expected);
       for (const exponent of [-32 + parity, -2 + parity, 30 + parity, 32 + parity]) {
         const scaledInput = number(input + (exponent - parity) * 0x800000);
         const scaled = number(encoding(expected) - ((exponent - parity) / 2) * 0x800000);
-        assert.equal(aokanaRosettaSseReciprocalSqrt(scaledInput), scaled);
+        assert.equal(burikoRosettaSseReciprocalSqrt(scaledInput), scaled);
       }
     }
     assert.equal(createHash('sha256').update(outputs).digest('hex'), hashes[parity]);

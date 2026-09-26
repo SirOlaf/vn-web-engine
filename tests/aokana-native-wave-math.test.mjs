@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nativeWaveSineRadians} from '../dist/engines/buriko/games/aokana/bp/opcodes/native-math.js';
+import {nativeWaveSineRadians} from '../dist/engines/buriko/bp/opcodes/native-math.js';
 import {referenceSineCosine} from './aokana-trig-reference.mjs';
 
 test('wave sine covers the signed phase and positive unsigned period domain through all three table windows', () => {

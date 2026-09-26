@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
-import {AokanaVerticalTextDisplayProcess} from '../dist/engines/buriko/games/aokana/native/text-display-vertical-process.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
+import {BurikoVerticalTextDisplayProcess} from '../dist/engines/buriko/native/text-display-vertical-process.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted directed Window message uses bound vertical direction and cursor', async () => {
@@ -86,7 +86,7 @@ test('mounted directed Window message uses bound vertical direction and cursor',
     await call(0x90, 0x80, [32, 16], 0, 1);
     const handle = pop32(child.state);
     const window = graph.manager.find('window', handle);
-    assert.ok(window instanceof AokanaWindowDisplayObject);
+    assert.ok(window instanceof BurikoWindowDisplayObject);
     await call(0x91, 0x88, [handle, font, 8, 100, 0, 0, 0]);
     await call(0x91, 0x8a, [handle, 1]);
     await call(0x91, 0x8c, [handle, 16, 0]);
@@ -95,7 +95,7 @@ test('mounted directed Window message uses bound vertical direction and cursor',
     const initialCaptures = captures();
 
     await call(0x92, 0x90, [handle, 0x180, 0xffffff, 0, 0xffffff, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1], 2);
-    assert.ok(child.process instanceof AokanaVerticalTextDisplayProcess);
+    assert.ok(child.process instanceof BurikoVerticalTextDisplayProcess);
     assert.deepEqual(window.getTextCursor(), {x: 16, y: 8});
     assert.equal(graph.input.keyCaptureAllowed(1), false);
     assert.notDeepEqual(captures(), initialCaptures);

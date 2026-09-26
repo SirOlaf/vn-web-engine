@@ -1,35 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {nativeDisplayEasing} from '../dist/engines/buriko/games/aokana/bp/opcodes/native-math.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {nativeDisplayEasing} from '../dist/engines/buriko/bp/opcodes/native-math.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {
-  applyAokanaEffectorBlur,
-  applyAokanaEffectorVectorMap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-display-filters.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayEffector} from '../dist/engines/buriko/games/aokana/native/display-effector.js';
-import {AokanaDisplayFilter} from '../dist/engines/buriko/games/aokana/native/display-filter.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaFilterDisplays} from '../dist/engines/buriko/games/aokana/native/filter-displays.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup90Filters} from '../dist/engines/buriko/games/aokana/native/group-90-filters.js';
-import {createGroup91Effectors} from '../dist/engines/buriko/games/aokana/native/group-91-effectors.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  applyBurikoEffectorBlur,
+  applyBurikoEffectorVectorMap,
+} from '../dist/engines/buriko/native/bitmap-display-filters.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayEffector} from '../dist/engines/buriko/native/display-effector.js';
+import {BurikoDisplayFilter} from '../dist/engines/buriko/native/display-filter.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoFilterDisplays} from '../dist/engines/buriko/native/filter-displays.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup90Filters} from '../dist/engines/buriko/native/group-90-filters.js';
+import {createGroup91Effectors} from '../dist/engines/buriko/native/group-91-effectors.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 function fixture(width = 3, height = 1) {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
   const bounds = {left: 0, top: 0, right: width - 1, bottom: height - 1},
     output = {
-      storage: new AokanaBitmapStorage(new Uint8Array(width * height * 4), true),
+      storage: new BurikoBitmapStorage(new Uint8Array(width * height * 4), true),
       offset: 0,
       stride: width * 4,
       width,
@@ -37,20 +37,20 @@ function fixture(width = 3, height = 1) {
       format: 1,
       bytesPerPixel: 4,
     },
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(16, {...bounds}),
+      new BurikoDisplayDamage(16, {...bounds}),
     );
   environment.displayContext = {bitmap: output, bounds};
-  const allocator = new AokanaDistributedAllocator(1),
-    text = new AokanaNativeText(),
-    surfaces = new AokanaSurfaces(new AokanaNativeFonts(text), compositor, allocator),
-    manager = new AokanaDisplayManager(
+  const allocator = new BurikoDistributedAllocator(1),
+    text = new BurikoNativeText(),
+    surfaces = new BurikoSurfaces(new BurikoNativeFonts(text), compositor, allocator),
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     ),
-    filters = new AokanaFilterDisplays(manager),
+    filters = new BurikoFilterDisplays(manager),
     errors = {
       files: {text: {encodeWide: (message) => message}},
       threadFatal() {
@@ -61,7 +61,7 @@ function fixture(width = 3, height = 1) {
       ...createGroup90Filters(filters, errors),
       ...createGroup91Effectors(filters, errors),
     ],
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
       moduleCapacity: 0,
@@ -69,7 +69,7 @@ function fixture(width = 3, height = 1) {
     }),
     context = {
       thread,
-      memory: new AokanaBpMemory(new Uint8Array(0)),
+      memory: new BurikoBpMemory(new Uint8Array(0)),
       diagnostics: {},
     },
     call = (primary, secondary, args, pushed = 0) => {
@@ -102,7 +102,7 @@ function allocateSurface(surfaces, slot, width, height, format) {
 
 function bitmapDescriptor(width, height, format) {
   return {
-    storage: new AokanaBitmapStorage(new Uint8Array(width * height * 4), true),
+    storage: new BurikoBitmapStorage(new Uint8Array(width * height * 4), true),
     offset: 0,
     stride: width * 4,
     width,
@@ -135,14 +135,14 @@ test('thirteen Filter and Effector wrappers preserve ordinary stack, pool and mo
   for (const definition of s.definitions)
     assert.equal(
       definition.nativeAddress,
-      AOKANA_NATIVE_SLOT_ADDRESSES[definition.primary][definition.secondary],
+      BURIKO_NATIVE_SLOT_ADDRESSES[definition.primary][definition.secondary],
     );
 
   s.call(0x90, 0x60, [], 1);
   const filterHandle = pop32(s.thread),
     filter = s.manager.find('filter', filterHandle);
   assert.equal(filterHandle, 0x90000000);
-  assert.ok(filter instanceof AokanaDisplayFilter);
+  assert.ok(filter instanceof BurikoDisplayFilter);
   s.call(0x90, 0x65, [filterHandle, 0x304050, 0x80, 2]);
   s.call(0x90, 0x64, [filterHandle, 1]);
 
@@ -162,7 +162,7 @@ test('thirteen Filter and Effector wrappers preserve ordinary stack, pool and mo
   const effectorHandle = pop32(s.thread),
     effector = s.manager.find('effector', effectorHandle);
   assert.equal(effectorHandle, 0x91000000);
-  assert.ok(effector instanceof AokanaDisplayEffector);
+  assert.ok(effector instanceof BurikoDisplayEffector);
 
   const primaryMap = allocateSurface(s.surfaces, 4, 3, 1, 4),
     secondaryMap = allocateSurface(s.surfaces, 5, 3, 1, 4);
@@ -214,7 +214,7 @@ test('Filter partial drawing crops its nonuniform screen mask to the same rectan
   const filterHandle = pop32(s.thread),
     filter = s.manager.find('filter', filterHandle),
     mask = allocateSurface(s.surfaces, 3, 3, 2, 3);
-  assert.ok(filter instanceof AokanaDisplayFilter);
+  assert.ok(filter instanceof BurikoDisplayFilter);
   mask.storage.bytes.set([2, 0, 0, 2, 0, 2]);
   mask.storage.written(0, mask.storage.bytes.length);
   s.call(0x90, 0x66, [filterHandle, 0, 0x010203, 3, 8, 1, 4]);
@@ -238,7 +238,7 @@ test('Filter partial drawing crops its nonuniform screen mask to the same rectan
 });
 
 test('Effector render lowers keep vector bounds rectangular and return blur mismatch status', () => {
-  const compositor = new AokanaBitmapCompositor(),
+  const compositor = new BurikoBitmapCompositor(),
     source = bitmapDescriptor(2, 2, 1),
     vectorMap = bitmapDescriptor(1, 1, 4);
   source.storage.view.setUint32(4, 0x11223344, true);
@@ -252,7 +252,7 @@ test('Effector render lowers keep vector bounds rectangular and return blur mism
       const destination = bitmapDescriptor(1, 1, 1);
       destination.storage.view.setUint32(0, 0xaabbccdd, true);
       assert.equal(
-        applyAokanaEffectorVectorMap(
+        applyBurikoEffectorVectorMap(
           compositor,
           destination,
           source,
@@ -268,11 +268,11 @@ test('Effector render lowers keep vector bounds rectangular and return blur mism
   }
 
   assert.equal(
-    applyAokanaEffectorBlur(compositor, bitmapDescriptor(1, 1, 1), bitmapDescriptor(2, 1, 1), 0, 0),
+    applyBurikoEffectorBlur(compositor, bitmapDescriptor(1, 1, 1), bitmapDescriptor(2, 1, 1), 0, 0),
     0xf,
   );
   assert.equal(
-    applyAokanaEffectorBlur(compositor, bitmapDescriptor(1, 1, 2), bitmapDescriptor(1, 1, 1), 0, 0),
+    applyBurikoEffectorBlur(compositor, bitmapDescriptor(1, 1, 2), bitmapDescriptor(1, 1, 1), 0, 0),
     0xf,
   );
 });

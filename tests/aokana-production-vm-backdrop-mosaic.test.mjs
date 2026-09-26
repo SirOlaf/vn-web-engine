@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaMosaicBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop-mosaic.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoMosaicBackdrop} from '../dist/engines/buriko/native/display-backdrop-mosaic.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 const gray = (value) => value * 0x010101;
@@ -14,7 +11,7 @@ const gray = (value) => value * 0x010101;
 test('mounted VM mosaic backdrop samples and averages graph surface pixels', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke, memory} = fixture;
-  const output = allocateAokanaBitmap(3, 3, 1);
+  const output = allocateBurikoBitmap(3, 3, 1);
   const call = async (secondary, args) => {
     assert.equal(await invoke(0x90, secondary, args, 0), 0);
     assert.equal(child.state.stackIndex, 0);
@@ -29,7 +26,7 @@ test('mounted VM mosaic backdrop samples and averages graph surface pixels', asy
           (index % bitmap.width) * 4,
       ),
     );
-  const draw = () => graph.manager.backdrop.draw(output, aokanaBitmapRectangle(output), 0);
+  const draw = () => graph.manager.backdrop.draw(output, burikoBitmapRectangle(output), 0);
   const values = [10, 30, 50, 50, 70, 90, 90, 110, 0];
   try {
     assert.deepEqual(
@@ -57,7 +54,7 @@ test('mounted VM mosaic backdrop samples and averages graph surface pixels', asy
     graph.damage.clear();
     await call(0x4a, [0, 1, 0, 1, 0]);
     const selected = graph.manager.backdrop;
-    assert.ok(selected instanceof AokanaMosaicBackdrop);
+    assert.ok(selected instanceof BurikoMosaicBackdrop);
     assert.deepEqual(
       [selected.activation, selected.contentEnabled, graph.manager.backdropRenderType],
       [1, 1, 11],

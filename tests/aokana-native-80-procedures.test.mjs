@@ -1,52 +1,52 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
 import {
-  AokanaIndependentProcedure,
-  AokanaIndependentProcedures,
-} from '../dist/engines/buriko/games/aokana/native/independent-procedure.js';
-import {createGroup80Procedures} from '../dist/engines/buriko/games/aokana/native/group-80-procedures.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoIndependentProcedure,
+  BurikoIndependentProcedures,
+} from '../dist/engines/buriko/native/independent-procedure.js';
+import {createGroup80Procedures} from '../dist/engines/buriko/native/group-80-procedures.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('80 A8/A9/AC/AF use the actual shared procedure state, copied FIFO and controller polling phase', async () => {
-  const compositor = new AokanaBitmapCompositor(),
-    environment = new AokanaDisplayObjectEnvironment(
+  const compositor = new BurikoBitmapCompositor(),
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(32, {left: 0, top: 0, right: 799, bottom: 599}),
+      new BurikoDisplayDamage(32, {left: 0, top: 0, right: 799, bottom: 599}),
     ),
-    manager = new AokanaDisplayManager(
+    manager = new BurikoDisplayManager(
       environment,
-      new AokanaSurfaces(null, compositor, new AokanaDistributedAllocator(1)),
-      new AokanaNativeDisplayState(800, 600),
+      new BurikoSurfaces(null, compositor, new BurikoDistributedAllocator(1)),
+      new BurikoNativeDisplayState(800, 600),
     ),
-    registry = new AokanaIndependentProcedures(manager),
-    procedure = new AokanaIndependentProcedure(
+    registry = new BurikoIndependentProcedures(manager),
+    procedure = new BurikoIndependentProcedure(
       registry,
-      new AokanaDisplayObject(environment, 1, 0, 1),
+      new BurikoDisplayObject(environment, 1, 0, 1),
     );
   registry.register(procedure);
   const slots = createGroup80Procedures(registry);
   assert.equal(slots.length, 4);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 64,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(1)),
+    memory = new BurikoBpMemory(new Uint8Array(1)),
     context = {thread, memory};
   const call = (secondary, args) => {
     args.forEach((value) => push32(thread, value));

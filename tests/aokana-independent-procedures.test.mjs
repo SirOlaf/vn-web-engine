@@ -1,48 +1,48 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {
-  AokanaIndependentProcedure,
-  AokanaIndependentProcedures,
-} from '../dist/engines/buriko/games/aokana/native/independent-procedure.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoIndependentProcedure,
+  BurikoIndependentProcedures,
+} from '../dist/engines/buriko/native/independent-procedure.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 function setup() {
-  const compositor = new AokanaBitmapCompositor();
-  const environment = new AokanaDisplayObjectEnvironment(
+  const compositor = new BurikoBitmapCompositor();
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(32, {left: 0, top: 0, right: 799, bottom: 599}),
+    new BurikoDisplayDamage(32, {left: 0, top: 0, right: 799, bottom: 599}),
   );
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     environment,
     surfaces,
-    new AokanaNativeDisplayState(1920, 1080),
+    new BurikoNativeDisplayState(1920, 1080),
   );
-  const registry = new AokanaIndependentProcedures(manager);
-  return {manager, registry, object: () => new AokanaDisplayObject(environment, 1, 0, 1)};
+  const registry = new BurikoIndependentProcedures(manager);
+  return {manager, registry, object: () => new BurikoDisplayObject(environment, 1, 0, 1)};
 }
 
 test('independent procedures share native manager aliases, constructor IDs and object associations', () => {
   const {manager, registry, object} = setup();
   const firstObject = object(),
     secondObject = object();
-  const first = new AokanaIndependentProcedure(registry, firstObject),
-    second = new AokanaIndependentProcedure(registry, secondObject);
+  const first = new BurikoIndependentProcedure(registry, firstObject),
+    second = new BurikoIndependentProcedure(registry, secondObject);
   assert.deepEqual([first.id, second.id], [1, 2]);
   assert.equal(first.category, 0x80);
   assert.equal(first.getEnabled(), 1);
@@ -66,14 +66,14 @@ test('independent procedures share native manager aliases, constructor IDs and o
   assert.equal(secondObject.getOwner(), null);
   assert.equal(registry.registrationCount, 0);
   assert.equal(registry.pollingPhase, 1);
-  const third = new AokanaIndependentProcedure(registry, object());
+  const third = new BurikoIndependentProcedure(registry, object());
   assert.equal(third.id, 3);
 });
 
 test('the DWORD FIFO copies commands and drains through disable before deciding whether to redraw', async () => {
   const {manager, registry, object} = setup();
   const seen = [];
-  class Procedure extends AokanaIndependentProcedure {
+  class Procedure extends BurikoIndependentProcedure {
     handleMessage(words) {
       seen.push(Array.from(words));
       return 77; // 08e000 ignores the handler return.
@@ -106,7 +106,7 @@ test('the DWORD FIFO copies commands and drains through disable before deciding 
 test('registry traversal is newest first, waits for each poll and resets through the native base virtual', async () => {
   const {registry, object} = setup();
   const seen = [];
-  class Procedure extends AokanaIndependentProcedure {
+  class Procedure extends BurikoIndependentProcedure {
     result = 0;
     async poll() {
       seen.push(`start ${this.id}`);
@@ -145,7 +145,7 @@ test('registry traversal is newest first, waits for each poll and resets through
 test('dirty redraw uses the live unsigned sort threshold and clears even when below it', async () => {
   const {manager, registry, object} = setup();
   const associated = object();
-  const procedure = new AokanaIndependentProcedure(registry, associated);
+  const procedure = new BurikoIndependentProcedure(registry, associated);
   manager.setMinimumLayer(1);
   procedure.dirty = 1;
   assert.equal(procedure.redrawEligible(), false);

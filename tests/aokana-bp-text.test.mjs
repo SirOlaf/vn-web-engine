@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaNativeText,
+  BurikoNativeText,
   classifyUtf8,
   copyText,
   isNativeCp932Lead,
@@ -9,26 +9,26 @@ import {
   readNativeUtf8,
   textBytes,
   writeNativeUtf8,
-} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {formatVmText} from '../dist/engines/buriko/games/aokana/native/text-format.js';
-import {createTextOpcodes} from '../dist/engines/buriko/games/aokana/bp/opcodes/text.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
+} from '../dist/engines/buriko/native/text.js';
+import {formatVmText} from '../dist/engines/buriko/native/text-format.js';
+import {createTextOpcodes} from '../dist/engines/buriko/bp/opcodes/text.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 
 const bytes = (value) =>
   typeof value === 'string' ? new TextEncoder().encode(value + '\0') : Uint8Array.from(value);
 const pointer = (value) => ({bytes: bytes(value), offset: 0});
 function context(notice = () => {}) {
   return {
-    thread: new AokanaBpThread({
+    thread: new BurikoBpThread({
       id: 1,
       operandCapacity: 64,
       moduleCapacity: 4096,
       frameCapacity: 4096,
     }),
-    memory: new AokanaBpMemory(new Uint8Array(4096)),
-    diagnostics: new AokanaBpDiagnostics(notice),
+    memory: new BurikoBpMemory(new Uint8Array(4096)),
+    diagnostics: new BurikoBpDiagnostics(notice),
   };
 }
 function put(h, offset, value) {
@@ -38,15 +38,15 @@ function put(h, offset, value) {
 function push(h, ...values) {
   for (const value of values) push32(h.thread, value);
 }
-function format(value, operands, text = new AokanaNativeText()) {
+function format(value, operands, text = new BurikoNativeText()) {
   const h = context();
   push(h, ...operands.slice().reverse());
   return formatVmText(h, pointer(value), text);
 }
 const ascii = (value) => new TextDecoder().decode(value.subarray(0, value.length - 1));
 
-test('Aokana encoding detection retains six-sequence cutoff and permissive legacy forms', () => {
-  const text = new AokanaNativeText();
+test('Buriko encoding detection retains six-sequence cutoff and permissive legacy forms', () => {
+  const text = new BurikoNativeText();
   assert.equal(text.mode, 0);
   assert.equal(text.codePage, 932);
   assert.equal(text.selectMode(2), false);
@@ -72,8 +72,8 @@ test('Aokana encoding detection retains six-sequence cutoff and permissive legac
   assert.equal(writeNativeUtf8(0x80000000).length, 0);
 });
 
-test('Aokana Win32 CP932 profile preserves private single bytes, best-fit mappings, and malformed-pair consumption', () => {
-  const text = new AokanaNativeText();
+test('Buriko Win32 CP932 profile preserves private single bytes, best-fit mappings, and malformed-pair consumption', () => {
+  const text = new BurikoNativeText();
   assert.equal(text.decodeCp932(Uint8Array.of(0xa0, 0xfd, 0xfe, 0xff)), '\uf8f0\uf8f1\uf8f2\uf8f3');
   assert.equal(text.decodeCp932(Uint8Array.of(0xe0, 0x35, 0x41)), '\u30fbA');
   assert.equal(text.decodeCp932(Uint8Array.of(0x81)), '\u30fb');
@@ -86,8 +86,8 @@ test('Aokana Win32 CP932 profile preserves private single bytes, best-fit mappin
   assert.deepEqual(text.encodeWide('\ud800', 1), Uint8Array.of(0xef, 0xbf, 0xbd, 0));
 });
 
-test('Aokana native character decode differs from Windows conversion and combines encoded surrogate pairs', () => {
-  const text = new AokanaNativeText();
+test('Buriko native character decode differs from Windows conversion and combines encoded surrogate pairs', () => {
+  const text = new BurikoNativeText();
   assert.equal(isNativeCp932Lead(0xff), true);
   assert.equal(isNativeCp932Lead(0xfd), false);
   assert.deepEqual(text.readCharacter(Uint8Array.of(0x81, 0x40), 0, 0), {
@@ -106,8 +106,8 @@ test('Aokana native character decode differs from Windows conversion and combine
   assert.equal(nativeCp932CharacterToWide(0xff01), 0xf001);
 });
 
-test('Aokana mixed decoder preserves run heuristics and faults only when native output is unwritten', () => {
-  const text = new AokanaNativeText();
+test('Buriko mixed decoder preserves run heuristics and faults only when native output is unwritten', () => {
+  const text = new BurikoNativeText();
   assert.equal(text.decodeMixed(pointer('ASCII')), 'ASCII');
   assert.equal(text.decodeMixed(pointer([0x82, 0xa0, 0])), 'あ');
   assert.equal(text.decodeMixed(pointer([0xe3, 0x81, 0x82, 0x82, 0xa0, 0])), 'ああ');
@@ -119,8 +119,8 @@ test('Aokana mixed decoder preserves run heuristics and faults only when native 
   assert.throws(() => text.decodeMixed(pointer('😀')), /unwritten native allocation/);
 });
 
-test('Aokana search preserves multibyte mismatch reset and forward-copy aliasing', () => {
-  const text = new AokanaNativeText();
+test('Buriko search preserves multibyte mismatch reset and forward-copy aliasing', () => {
+  const text = new BurikoNativeText();
   assert.equal(text.find(pointer('aaab'), pointer('aab')), 1);
   assert.equal(text.find(pointer('aaab'), pointer('aab'), 1), null);
   assert.equal(text.find(pointer('AあB'), pointer('あ')), 1);
@@ -134,7 +134,7 @@ test('Aokana search preserves multibyte mismatch reset and forward-copy aliasing
   assert.deepEqual(input, Uint8Array.of(97, 97, 97, 97));
 });
 
-test('Aokana VM formatting implements native decimal, hex, precision, padding, and legacy rounding', () => {
+test('Buriko VM formatting implements native decimal, hex, precision, padding, and legacy rounding', () => {
   assert.equal(
     ascii(format('%08X %08x %.0d % 6d', [0xabcdef, 0xabcdef, 0, 12])),
     '00ABCDEF 00abcdef      12',
@@ -148,7 +148,7 @@ test('Aokana VM formatting implements native decimal, hex, precision, padding, a
   assert.equal(ascii(format('%100.9%', [])), '%');
 });
 
-test('Aokana VM formatter consumes byte characters after codepage encoding and rejects native invalid formats', () => {
+test('Buriko VM formatter consumes byte characters after codepage encoding and rejects native invalid formats', () => {
   assert.deepEqual(format('%cX%c', [0, 0x81]), Uint8Array.of(0, 88, 0x81, 0));
   assert.throws(() => format('%+d', [1]), /rejects conversion/);
   assert.throws(() => format('%', [1]), /unfinished conversion/);
@@ -156,16 +156,16 @@ test('Aokana VM formatter consumes byte characters after codepage encoding and r
   assert.throws(() => format('%s', [0]), /null %s operand/);
   assert.throws(() => format('%65536d', [1]), /65536-wchar/);
   const h = context(),
-    text = new AokanaNativeText();
+    text = new BurikoNativeText();
   text.selectMode(1);
   const source = put(h, 100, [0x82, 0xa0, 0]);
   push(h, source);
   assert.equal(ascii(formatVmText(h, pointer('%3.1s'), text)), '  あ');
 });
 
-test('Aokana string opcodes keep source encoding conversion, byte offsets, and native stack order', () => {
+test('Buriko string opcodes keep source encoding conversion, byte offsets, and native stack order', () => {
   const h = context(),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     op = createTextOpcodes(text);
   const source = put(h, 100, [0x82, 0xa0, 65, 0x82, 0xa0, 0]),
     needle = put(h, 200, [0x82, 0xa0, 0]),
@@ -201,10 +201,10 @@ test('Aokana string opcodes keep source encoding conversion, byte offsets, and n
   assert.equal(ascii(textBytes(h.memory.resolve(h.thread, lower), true)), 'aあz');
 });
 
-test('Aokana strcpy watch precedes writes and format watch follows all writes', () => {
+test('Buriko strcpy watch precedes writes and format watch follows all writes', () => {
   const notices = [],
     h = context((notice) => notices.push(h.memory.readCString(h.thread, notice.address).slice())),
-    op = createTextOpcodes(new AokanaNativeText());
+    op = createTextOpcodes(new BurikoNativeText());
   h.diagnostics.writeWatchEnabled = true;
   const destination = put(h, 100, 'old'),
     source = put(h, 200, 'new'),
@@ -217,9 +217,9 @@ test('Aokana strcpy watch precedes writes and format watch follows all writes', 
   assert.deepEqual(notices, [bytes('old').subarray(0, 3), bytes('42').subarray(0, 2)]);
 });
 
-test('Aokana concatenate measures its first source after copying and wraps with current text mode', () => {
+test('Buriko concatenate measures its first source after copying and wraps with current text mode', () => {
   const h = context(),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     op = createTextOpcodes(text);
   const first = put(h, 100, 'ab'),
     second = put(h, 200, 'cd');

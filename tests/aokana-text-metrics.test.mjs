@@ -1,19 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
-import {createGroup91TextSettings} from '../dist/engines/buriko/games/aokana/native/group-91-text-settings.js';
-import {createGroup91TextMetrics} from '../dist/engines/buriko/games/aokana/native/group-91-text-metrics.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
+import {createGroup91TextSettings} from '../dist/engines/buriko/native/group-91-text-settings.js';
+import {createGroup91TextMetrics} from '../dist/engines/buriko/native/group-91-text-metrics.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('91 annotation collection and registered text measurement share drawing owners and bearing policy', async () => {
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   let created = 0;
   const browser = {
     async queryCharset() {
@@ -40,24 +40,24 @@ test('91 annotation collection and registered text measurement share drawing own
     },
     dispose() {},
   };
-  const fonts = new AokanaNativeFonts(text, browser);
+  const fonts = new BurikoNativeFonts(text, browser);
   fonts.rasterSettings.setQuality(-1);
   const registered = fonts.registerName(text.encodeWide('Synthetic', 1), 1);
-  const surfaces = new AokanaSurfaces(
+  const surfaces = new BurikoSurfaces(
     fonts,
-    new AokanaBitmapCompositor(),
-    new AokanaDistributedAllocator(1),
+    new BurikoBitmapCompositor(),
+    new BurikoDistributedAllocator(1),
   );
-  const state = new AokanaTextLayoutState(surfaces),
+  const state = new BurikoTextLayoutState(surfaces),
     slots = createGroup91TextMetrics(state);
   const registration = createGroup91TextSettings(state, {}).find((slot) => slot.secondary === 0x94);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(2048)),
+  const memory = new BurikoBpMemory(new Uint8Array(2048)),
     context = {thread, memory, diagnostics: {}};
   let nextText = 32;
   const put = (value) => {
@@ -74,7 +74,7 @@ test('91 annotation collection and registered text measurement share drawing own
     ).execute(context);
   };
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
   const key = put('AB'),
     reading = put('reading'),
     source = put('AB AB'),

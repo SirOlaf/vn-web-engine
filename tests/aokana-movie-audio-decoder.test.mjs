@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMovieAudioDecoder} from '../dist/engines/buriko/games/aokana/native/movie-audio-decoder.js';
+import {BurikoMovieAudioDecoder} from '../dist/engines/buriko/native/movie-audio-decoder.js';
 
 function description() {
   const asc = [5, 2, 0x12, 0x10],
@@ -107,7 +107,7 @@ function install(t, {extra = false, fail = false} = {}) {
 test('AAC uses real codec timestamps, restores unique ISO origins and keeps actual extra output times', async (t) => {
   const decoders = install(t, {extra: true}),
     {movie, track} = fixture(),
-    decoder = await AokanaMovieAudioDecoder.create(movie, track);
+    decoder = await BurikoMovieAudioDecoder.create(movie, track);
   const outputs = [];
   for (;;) {
     const data = await decoder.next();
@@ -134,7 +134,7 @@ test('AAC uses real codec timestamps, restores unique ISO origins and keeps actu
 test('AAC cannot invent fractional identity when distinct ISO origins collapse to the same API timestamp', async (t) => {
   install(t);
   const {movie, track} = fixture(10000000, [1n, 2n]);
-  const decoder = await AokanaMovieAudioDecoder.create(movie, track);
+  const decoder = await BurikoMovieAudioDecoder.create(movie, track);
   assert.deepEqual((await decoder.next()).mediaStart, {numerator: 0n, denominator: 1000000n});
   decoder.dispose();
 });
@@ -142,7 +142,7 @@ test('AAC cannot invent fractional identity when distinct ISO origins collapse t
 test('AAC reset cancels old reads and closes late codec outputs', async (t) => {
   const decoders = install(t),
     {movie, track} = fixture(),
-    decoder = await AokanaMovieAudioDecoder.create(movie, track);
+    decoder = await BurikoMovieAudioDecoder.create(movie, track);
   const pending = decoder.next();
   decoder.reset();
   await assert.rejects(pending, {name: 'AbortError'});
@@ -155,6 +155,6 @@ test('AAC reset cancels old reads and closes late codec outputs', async (t) => {
 test('AAC support failure remains a real failed graph capability', async (t) => {
   const decoders = install(t, {fail: true}),
     {movie, track} = fixture();
-  await assert.rejects(AokanaMovieAudioDecoder.create(movie, track), {name: 'NotSupportedError'});
+  await assert.rejects(BurikoMovieAudioDecoder.create(movie, track), {name: 'NotSupportedError'});
   assert.equal(decoders.length, 0);
 });

@@ -1,24 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
   createGroup81Text,
   nativeWordSimilarity,
-} from '../dist/engines/buriko/games/aokana/native/group-81-text.js';
+} from '../dist/engines/buriko/native/group-81-text.js';
 
 function fixture() {
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 128,
     frameCapacity: 128,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(1024));
-  const diagnostics = new AokanaBpDiagnostics(() => {}),
-    text = new AokanaNativeText();
+  const memory = new BurikoBpMemory(new Uint8Array(1024));
+  const diagnostics = new BurikoBpDiagnostics(() => {}),
+    text = new BurikoNativeText();
   const handlers = new Map(createGroup81Text(text).map((slot) => [slot.secondary, slot.execute]));
   const h = {thread, memory, diagnostics};
   return {

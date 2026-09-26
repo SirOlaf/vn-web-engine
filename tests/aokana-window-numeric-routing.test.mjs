@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
-import {AokanaInlineTextControl} from '../dist/engines/buriko/games/aokana/native/inline-text-control.js';
-import {AokanaChildWindows} from '../dist/engines/buriko/games/aokana/native/child-windows.js';
-import {AokanaPropertyEditors} from '../dist/engines/buriko/games/aokana/native/property-editor.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaBitmapText} from '../dist/engines/buriko/games/aokana/native/font-bitmap.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
+import {BurikoInlineTextControl} from '../dist/engines/buriko/native/inline-text-control.js';
+import {BurikoChildWindows} from '../dist/engines/buriko/native/child-windows.js';
+import {BurikoPropertyEditors} from '../dist/engines/buriko/native/property-editor.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoBitmapText} from '../dist/engines/buriko/native/font-bitmap.js';
 
 class Element {
   constructor(tagName, document) {
@@ -89,10 +89,10 @@ test('queued numeric messages reach live inline, child, and property owners; syn
         return 0;
       },
     },
-    messages = new AokanaWindowMessages(input),
-    keyboard = new AokanaKeyboardMessages(messages),
-    text = new AokanaNativeText(),
-    fonts = new AokanaNativeFonts(text, {
+    messages = new BurikoWindowMessages(input),
+    keyboard = new BurikoKeyboardMessages(messages),
+    text = new BurikoNativeText(),
+    fonts = new BurikoNativeFonts(text, {
       async create() {
         return {cssFamily: 'Fixture Sans', emSize: 18, horizontalScale: 1};
       },
@@ -108,7 +108,7 @@ test('queued numeric messages reach live inline, child, and property owners; syn
     },
   });
   const dialogs = {transition() {}},
-    display = new AokanaNativeDisplayState(800, 600),
+    display = new BurikoNativeDisplayState(800, 600),
     host = {
       display,
       document: dom,
@@ -116,22 +116,22 @@ test('queued numeric messages reach live inline, child, and property owners; syn
       focus() {},
       invalidateInline() {},
     },
-    inline = new AokanaInlineTextControl(host, fonts, dialogs, messages, keyboard);
+    inline = new BurikoInlineTextControl(host, fonts, dialogs, messages, keyboard);
   assert.equal(await inline.create(10, 20, 120, 20, 0, 20, 16, 1), 0);
   const inlineTarget = inline.target;
   assert.equal(messages.hasTarget(inlineTarget), true);
 
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
-  const children = new AokanaChildWindows(
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
+  const children = new BurikoChildWindows(
     dom,
     parent,
     {clipboard: {async writeText() {}}},
     text,
     surfaces,
     compositor,
-    new AokanaBitmapText(fonts, compositor),
+    new BurikoBitmapText(fonts, compositor),
     dialogs,
     messages,
     keyboard,
@@ -149,7 +149,7 @@ test('queued numeric messages reach live inline, child, and property owners; syn
     childTarget = inlineTarget + 1;
   assert.equal(messages.hasTarget(childTarget), true);
 
-  const properties = new AokanaPropertyEditors(
+  const properties = new BurikoPropertyEditors(
     dom,
     parent,
     text,

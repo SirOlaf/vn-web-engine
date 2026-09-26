@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('selected process and logical-drive slots use the graph resource owner and queued pump', async () => {
@@ -11,8 +11,8 @@ test('selected process and logical-drive slots use the graph resource owner and 
     readFreeBytesAvailable: () => 0n,
     readVolumeLabel: () => 0,
   };
-  const processHandle = {aokanaExternalProcessHandle: true, name: 'process'};
-  const threadHandle = {aokanaExternalProcessHandle: true, name: 'thread'};
+  const processHandle = {burikoExternalProcessHandle: true, name: 'process'};
+  const threadHandle = {burikoExternalProcessHandle: true, name: 'thread'};
   let fixture;
   let waitCount = 0;
   const processHost = {

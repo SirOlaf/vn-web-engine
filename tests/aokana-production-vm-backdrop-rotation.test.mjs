@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaRotationBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop-rotation.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoRotationBackdrop} from '../dist/engines/buriko/native/display-backdrop-rotation.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM rotation backdrop applies base angle and scale envelope to graph pixels', async () => {
@@ -19,9 +16,9 @@ test('mounted VM rotation backdrop applies base angle and scale envelope to grap
   };
   const colors = [0x102030, 0x204060, 0x406080, 0x6080a0, 0x80a0c0, 0xa0c0e0];
   const draw = () => {
-    const output = allocateAokanaBitmap(2, 2, 1);
+    const output = allocateBurikoBitmap(2, 2, 1);
     try {
-      graph.manager.backdrop.draw(output, aokanaBitmapRectangle(output), 0);
+      graph.manager.backdrop.draw(output, burikoBitmapRectangle(output), 0);
       return Array.from({length: 4}, (_, index) =>
         bitmapRead32(
           output,
@@ -70,7 +67,7 @@ test('mounted VM rotation backdrop applies base angle and scale envelope to grap
     graph.damage.clear();
     await call(0x49, [0, 65536, 0]);
     const selected = graph.manager.backdrop;
-    assert.ok(selected instanceof AokanaRotationBackdrop);
+    assert.ok(selected instanceof BurikoRotationBackdrop);
     assert.deepEqual(
       [selected.activation, selected.contentEnabled, graph.manager.backdropRenderType],
       [1, 1, 10],

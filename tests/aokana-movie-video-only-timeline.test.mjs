@@ -3,24 +3,24 @@ import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaMovieSources} from '../dist/engines/buriko/games/aokana/native/movie-sources.js';
-import {AokanaMovieSourceDocument} from '../dist/engines/buriko/games/aokana/native/movie-source-document.js';
-import {AokanaMovieSourceTracks} from '../dist/engines/buriko/games/aokana/native/movie-source-tracks.js';
-import {AokanaMovieReferenceClock} from '../dist/engines/buriko/games/aokana/native/movie-render-events.js';
-import {AokanaMovieVideoOnlyTimeline} from '../dist/engines/buriko/games/aokana/native/movie-video-only-timeline.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoMovieSources} from '../dist/engines/buriko/native/movie-sources.js';
+import {BurikoMovieSourceDocument} from '../dist/engines/buriko/native/movie-source-document.js';
+import {BurikoMovieSourceTracks} from '../dist/engines/buriko/native/movie-source-tracks.js';
+import {BurikoMovieReferenceClock} from '../dist/engines/buriko/native/movie-render-events.js';
+import {BurikoMovieVideoOnlyTimeline} from '../dist/engines/buriko/native/movie-video-only-timeline.js';
 
 function join(...parts) {
   const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -97,20 +97,20 @@ test('selected mounted video-only timeline anchors real reference time without d
   const bytes = videoOnlyIso(),
     fs = new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase());
   await fs.commit([{kind: 'write', path: '/game/video/clip.iso', data: bytes}]);
-  const text = new AokanaNativeText(),
+  const text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
     pointer = (value) => ({bytes: encode(value), offset: 0}),
-    media = new AokanaProgramMedia();
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       fs,
       text,
       media,
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
     ),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -125,10 +125,10 @@ test('selected mounted video-only timeline anchors real reference time without d
       },
       dialogs,
       errors,
-      new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+      new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
     ),
-    sources = new AokanaMovieSources(resources),
-    document = await AokanaMovieSourceDocument.open(
+    sources = new BurikoMovieSources(resources),
+    document = await BurikoMovieSourceDocument.open(
       sources,
       null,
       pointer('clip.iso'),
@@ -137,9 +137,9 @@ test('selected mounted video-only timeline anchors real reference time without d
       bytes.length,
     );
   assert.ok(document);
-  const tracks = AokanaMovieSourceTracks.prepare(document, 7, null),
-    clock = new AokanaMovieReferenceClock(),
-    timeline = new AokanaMovieVideoOnlyTimeline(tracks, clock);
+  const tracks = BurikoMovieSourceTracks.prepare(document, 7, null),
+    clock = new BurikoMovieReferenceClock(),
+    timeline = new BurikoMovieVideoOnlyTimeline(tracks, clock);
   assert.strictEqual(timeline.tracks, tracks);
   assert.strictEqual(timeline.clock, clock);
   assert.strictEqual(timeline.tracks.document, document);

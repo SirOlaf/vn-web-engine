@@ -15,7 +15,8 @@ export class BrowserWindowsTemporaryFileHost {
     directory: string,
     prefix: string,
   ): Promise<string | null> {
-    if (prefix !== 'BGI') throw new RangeError('Aokana temporary file requires the BGI prefix');
+    // GetTempFileNameW uses up to the first three UTF-16 characters, stopping at NUL.
+    prefix = prefix.split('\0', 1)[0]!.slice(0, 3);
     if (this.random === null) return null;
     const seed = this.random.getRandomValues(new Uint16Array(1))[0]!;
     for (let offset = 0; offset < 0x10000; offset++) {

@@ -1,41 +1,41 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaRainDisplayState} from '../dist/engines/buriko/games/aokana/native/display-rain.js';
-import {AokanaRainDisplays} from '../dist/engines/buriko/games/aokana/native/rain-displays.js';
-import {AokanaRainFrames} from '../dist/engines/buriko/games/aokana/native/rain-frames.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaCrtRandom} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoRainDisplayState} from '../dist/engines/buriko/native/display-rain.js';
+import {BurikoRainDisplays} from '../dist/engines/buriko/native/rain-displays.js';
+import {BurikoRainFrames} from '../dist/engines/buriko/native/rain-frames.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoCrtRandom} from '../dist/engines/buriko/native/system-timing.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 
 function setup() {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 3}),
+    new BurikoDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 3}),
   );
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     environment,
-    new AokanaSurfaces(null, compositor, {currentActor: {}}),
-    new AokanaNativeDisplayState(1920, 1080),
+    new BurikoSurfaces(null, compositor, {currentActor: {}}),
+    new BurikoNativeDisplayState(1920, 1080),
   );
   let now = 0,
     reads = 0;
-  const rain = new AokanaRainDisplays(
+  const rain = new BurikoRainDisplays(
     manager,
-    new AokanaRainDisplayState(),
-    new AokanaCrtRandom(),
-    new AokanaSystemTicks({now: () => now}),
+    new BurikoRainDisplayState(),
+    new BurikoCrtRandom(),
+    new BurikoSystemTicks({now: () => now}),
   );
-  const frames = new AokanaRainFrames(
+  const frames = new BurikoRainFrames(
     rain,
-    new AokanaNativeClock(() => {
+    new BurikoNativeClock(() => {
       reads++;
       return now;
     }),

@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  readAokanaIsoMovie,
-  aokanaIsoSampleBytes,
-  AokanaIsoSampleError,
-} from '../dist/engines/buriko/games/aokana/native/movie-iso-samples.js';
+  readBurikoIsoMovie,
+  burikoIsoSampleBytes,
+  BurikoIsoSampleError,
+} from '../dist/engines/buriko/native/movie-iso-samples.js';
 import {
-  aokanaIsoAvcConfiguration,
-  aokanaIsoAacConfiguration,
-} from '../dist/engines/buriko/games/aokana/native/movie-iso-codecs.js';
+  burikoIsoAvcConfiguration,
+  burikoIsoAacConfiguration,
+} from '../dist/engines/buriko/native/movie-iso-codecs.js';
 
 const join = (...parts) => {
   const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -106,7 +106,7 @@ test('ISO ordinary sample extraction preserves decode order, signed composition 
       u32(0),
     ),
   );
-  const movie = readAokanaIsoMovie(join(media, movieHeader(track(tables, {edits}))));
+  const movie = readBurikoIsoMovie(join(media, movieHeader(track(tables, {edits}))));
   const video = movie.tracks[0];
   assert.deepEqual(
     video.samples.map(({decodeTime, compositionTime, duration, sync, flags}) => [
@@ -123,7 +123,7 @@ test('ISO ordinary sample extraction preserves decode order, signed composition 
     ],
   );
   assert.deepEqual(
-    video.samples.map((sample) => [...aokanaIsoSampleBytes(movie, video, sample)]),
+    video.samples.map((sample) => [...burikoIsoSampleBytes(movie, video, sample)]),
     [
       [10, 11],
       [12, 13, 14],
@@ -156,7 +156,7 @@ test('ISO compact sample sizes cover packed nibbles, bytes and words with 64-bit
       full('stz2', 0, u32(bits, 3), packed),
       full('co64', 0, u32(1), u64(0x100000000n)),
     );
-    const movie = readAokanaIsoMovie(movieHeader(track(tables)));
+    const movie = readBurikoIsoMovie(movieHeader(track(tables)));
     assert.deepEqual(
       movie.tracks[0].samples.map(({offset, size}) => [offset, size]),
       [
@@ -166,7 +166,7 @@ test('ISO compact sample sizes cover packed nibbles, bytes and words with 64-bit
       ],
     );
     assert.throws(
-      () => aokanaIsoSampleBytes(movie, movie.tracks[0], movie.tracks[0].samples[0]),
+      () => burikoIsoSampleBytes(movie, movie.tracks[0], movie.tracks[0].samples[0]),
       /beyond the encoded file/,
     );
   }
@@ -199,7 +199,7 @@ test('ISO fragments retain defaults, explicit base offsets, signed trun offsets 
       full('trun', 0x701, u32(1, -3, 50, 4, 0x10000)),
     ),
   );
-  const movie = readAokanaIsoMovie(join(moov, first, second));
+  const movie = readBurikoIsoMovie(join(moov, first, second));
   const video = movie.tracks[0],
     base = BigInt(moov.length + 200);
   assert.deepEqual(
@@ -231,9 +231,9 @@ test('ISO external references remain explicit and malformed timing/sample mappin
     full('stsz', 0, u32(1, 1)),
     table('stco', [0], 1),
   );
-  const movie = readAokanaIsoMovie(movieHeader(track(tables, {external: true})));
+  const movie = readBurikoIsoMovie(movieHeader(track(tables, {external: true})));
   assert.throws(
-    () => aokanaIsoSampleBytes(movie, movie.tracks[0], movie.tracks[0].samples[0]),
+    () => burikoIsoSampleBytes(movie, movie.tracks[0], movie.tracks[0].samples[0]),
     /external/,
   );
   const extra = join(
@@ -242,10 +242,10 @@ test('ISO external references remain explicit and malformed timing/sample mappin
     full('stsz', 0, u32(1, 1)),
     table('stco', [0], 1),
   );
-  assert.throws(() => readAokanaIsoMovie(movieHeader(track(extra))), /extra samples/);
+  assert.throws(() => readBurikoIsoMovie(movieHeader(track(extra))), /extra samples/);
   assert.throws(
-    () => readAokanaIsoMovie(new Uint8Array([0, 0, 0, 1, 109, 111, 111, 118])),
-    AokanaIsoSampleError,
+    () => readBurikoIsoMovie(new Uint8Array([0, 0, 0, 1, 109, 111, 111, 118])),
+    BurikoIsoSampleError,
   );
 });
 
@@ -260,7 +260,7 @@ test('AVC configuration preserves the raw decoder record and exact reduced pixel
     box('avcC', new Uint8Array([1, 100, 16, 40, 255, 224, 0])),
     box('pasp', u32(4, 3)),
   );
-  const config = aokanaIsoAvcConfiguration({type: 'avc3', headerSize: 8, dataReference: 1, bytes});
+  const config = burikoIsoAvcConfiguration({type: 'avc3', headerSize: 8, dataReference: 1, bytes});
   assert.equal(config.codec, 'avc3.641028');
   assert.equal(config.codedWidth, 1920);
   assert.equal(config.codedHeight, 1080);
@@ -293,7 +293,7 @@ test('AAC ES descriptors retain optional dependency, URL, OCR and escaped object
     );
     const esds = full('esds', 0, stream),
       bytes = box('mp4a', header, version === 1 ? box('wave', esds) : esds);
-    const config = aokanaIsoAacConfiguration({
+    const config = burikoIsoAacConfiguration({
       type: 'mp4a',
       headerSize: 8,
       dataReference: 1,

@@ -1,23 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
-import {createGroup81SharedThreads} from '../dist/engines/buriko/games/aokana/native/group-81-shared-threads.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
+import {createGroup81SharedThreads} from '../dist/engines/buriko/native/group-81-shared-threads.js';
 
 test('81 44 creates one owner-backed shared child in native stack and scheduler order', () => {
-  const control = new AokanaVmControlState();
-  const root = new AokanaBpThread({
+  const control = new BurikoVmControlState();
+  const root = new BurikoBpThread({
     id: control.allocateThreadId(),
     operandCapacity: 0,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const scheduler = new AokanaBpScheduler(root, () => 1);
-  const owner = new AokanaBpThread({
+  const scheduler = new BurikoBpScheduler(root, () => 1);
+  const owner = new BurikoBpThread({
     id: control.allocateThreadId(),
     operandCapacity: 16,
     moduleCapacity: 128,
@@ -25,12 +25,12 @@ test('81 44 creates one owner-backed shared child in native stack and scheduler 
   });
   owner.moduleSize = 32;
   const ownerNode = scheduler.append(owner);
-  const errors = new AokanaEngineErrors({}, {}, Uint8Array.of(0), Uint8Array.of(0));
+  const errors = new BurikoEngineErrors({}, {}, Uint8Array.of(0), Uint8Array.of(0));
   const [definition] = createGroup81SharedThreads(scheduler, control, errors);
   const context = {
     thread: owner,
-    memory: new AokanaBpMemory(new Uint8Array()),
-    diagnostics: new AokanaBpDiagnostics(() => {}),
+    memory: new BurikoBpMemory(new Uint8Array()),
+    diagnostics: new BurikoBpDiagnostics(() => {}),
   };
 
   assert.equal(definition.primary, 0x81);

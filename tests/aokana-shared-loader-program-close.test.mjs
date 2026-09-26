@@ -2,38 +2,38 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaSpeakerContext} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaAudioChannels} from '../dist/engines/buriko/games/aokana/native/audio/channel-registry.js';
-import {AokanaAudioArchiveCache} from '../dist/engines/buriko/games/aokana/native/audio/archive-cache.js';
-import {AokanaAudioResourceStreams} from '../dist/engines/buriko/games/aokana/native/audio/resource-streams.js';
-import {AokanaAudioMusicResources} from '../dist/engines/buriko/games/aokana/native/audio/resource-music.js';
-import {AokanaAudioStaticResources} from '../dist/engines/buriko/games/aokana/native/audio/resource-static.js';
-import {AokanaAudioLoaderQueues} from '../dist/engines/buriko/games/aokana/native/audio/loader-queues.js';
-import {AokanaScriptFiles} from '../dist/engines/buriko/games/aokana/native/script-files.js';
-import {AokanaSharedLoaderWorker} from '../dist/engines/buriko/games/aokana/native/shared-loader-worker.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
+import {BurikoAudioArchiveCache} from '../dist/engines/buriko/native/audio/archive-cache.js';
+import {BurikoAudioResourceStreams} from '../dist/engines/buriko/native/audio/resource-streams.js';
+import {BurikoAudioMusicResources} from '../dist/engines/buriko/native/audio/resource-music.js';
+import {BurikoAudioStaticResources} from '../dist/engines/buriko/native/audio/resource-static.js';
+import {BurikoAudioLoaderQueues} from '../dist/engines/buriko/native/audio/loader-queues.js';
+import {BurikoScriptFiles} from '../dist/engines/buriko/native/script-files.js';
+import {BurikoSharedLoaderWorker} from '../dist/engines/buriko/native/shared-loader-worker.js';
 
 test('per-program script close leaves one mounted loader alive until final stop', async () => {
   const backing = new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase());
   await backing.commit([{kind: 'write', path: '/game/document', data: Uint8Array.of(11, 22, 33)}]);
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [
         {
           path: '/game/document',
@@ -49,19 +49,19 @@ test('per-program script close leaves one mounted loader alive until final stop'
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    allocator = new AokanaDistributedAllocator(1),
-    processing = new AokanaDistributedProcessing(allocator, 1),
-    text = new AokanaNativeText(),
-    files = new AokanaProgramFiles(
+    allocator = new BurikoDistributedAllocator(1),
+    processing = new BurikoDistributedProcessing(allocator, 1),
+    text = new BurikoNativeText(),
+    files = new BurikoProgramFiles(
       mounted,
       text,
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
     ),
     encode = (value) => text.encodeWide(value, 1),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, encode('C:\\game\\'), encode('C:\\game\\')),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, encode('C:\\game\\'), encode('C:\\game\\')),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -78,27 +78,27 @@ test('per-program script close leaves one mounted loader alive until final stop'
       errors,
       processing,
     ),
-    loading = new AokanaResourceLoadingState(resources),
-    channels = new AokanaAudioChannels(
-      new AokanaSpeakerContext(new AokanaMemorySpeakerBackend(1000)),
-      new AokanaNativeLocks(allocator),
+    loading = new BurikoResourceLoadingState(resources),
+    channels = new BurikoAudioChannels(
+      new BurikoSpeakerContext(new BurikoMemorySpeakerBackend(1000)),
+      new BurikoNativeLocks(allocator),
       allocator,
-      new AokanaSystemTicks({now: () => 0}),
+      new BurikoSystemTicks({now: () => 0}),
       {prefer24Bit: false},
     ),
-    cache = new AokanaAudioArchiveCache(channels, files),
-    streams = new AokanaAudioResourceStreams(channels, cache, files),
-    audio = new AokanaAudioLoaderQueues(
+    cache = new BurikoAudioArchiveCache(channels, files),
+    streams = new BurikoAudioResourceStreams(channels, cache, files),
+    audio = new BurikoAudioLoaderQueues(
       loading,
-      new AokanaAudioMusicResources(resources, streams),
-      new AokanaAudioStaticResources(channels),
+      new BurikoAudioMusicResources(resources, streams),
+      new BurikoAudioStaticResources(channels),
     ),
-    scripts = new AokanaScriptFiles(
+    scripts = new BurikoScriptFiles(
       files,
       allocator,
       (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
     ),
-    worker = new AokanaSharedLoaderWorker(loading, audio, scripts),
+    worker = new BurikoSharedLoaderWorker(loading, audio, scripts),
     caller = {};
   try {
     worker.start({automatic: false});

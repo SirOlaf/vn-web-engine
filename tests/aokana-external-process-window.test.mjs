@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaExternalProcessWindow} from '../dist/engines/buriko/games/aokana/native/external-process-window.js';
+import {BurikoExternalProcessWindow} from '../dist/engines/buriko/native/external-process-window.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('external process window pumps the shared queued main and numeric targets', async () => {
@@ -20,7 +20,7 @@ test('external process window pumps the shared queued main and numeric targets',
   });
   const {graph} = fixture;
   try {
-    const window = new AokanaExternalProcessWindow(graph.showState, graph.queuedDispatcher);
+    const window = new BurikoExternalProcessWindow(graph.showState, graph.queuedDispatcher);
     const received = [];
     const numeric = graph.messages.createTarget();
     graph.messages.bindQueuedNumericTarget(numeric, (message) => {
@@ -30,7 +30,11 @@ test('external process window pumps the shared queued main and numeric targets',
     graph.messages.post({target: numeric, message: 0x9001, wParam: 0, lParam: 0});
     graph.waits.register(fixture.core.root, 0x102);
     graph.keyboard.post('main', {
-      type: 'keydown', code: 'KeyA', keyCode: 65, key: 'a', repeat: false,
+      type: 'keydown',
+      code: 'KeyA',
+      keyCode: 65,
+      key: 'a',
+      repeat: false,
       getModifierState: () => false,
     });
     graph.messages.invalidate('main');

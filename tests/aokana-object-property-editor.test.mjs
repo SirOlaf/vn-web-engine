@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaPropertyEditors} from '../dist/engines/buriko/games/aokana/native/property-editor.js';
-import {createGroupE0ObjectProperties} from '../dist/engines/buriko/games/aokana/native/group-e0-object-properties.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {bitmapWrite32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoPropertyEditors} from '../dist/engines/buriko/native/property-editor.js';
+import {createGroupE0ObjectProperties} from '../dist/engines/buriko/native/group-e0-object-properties.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
 
 // Synthetic DOM storage and event primitives only; no browser presentation.
 class Element {
@@ -122,20 +122,20 @@ const named = (parent, name) => all(parent).find((child) => child.textContent ==
 test('E0:20 binds actual Sprite fields and routes modal row edits through the display manager', async () => {
   const {manager, messages} = deviceServiceFixture(),
     host = document(),
-    text = new AokanaNativeText(),
-    editors = new AokanaPropertyEditors(
+    text = new BurikoNativeText(),
+    editors = new BurikoPropertyEditors(
       host,
       host.parent,
       text,
       messages,
       text.encodeWide('Objects'),
     ),
-    memory = new AokanaBpMemory(new Uint8Array(512)),
+    memory = new BurikoBpMemory(new Uint8Array(512)),
     view = new DataView(memory.globalMemory.buffer),
     pointer = (offset) => ({bytes: memory.globalMemory, offset}),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
     [slot] = createGroupE0ObjectProperties(editors, manager);
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0xe0][0x20]);
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0xe0][0x20]);
   assert.equal(editors.create(pointer(16), null, null, null, 180, 140), 0);
   const editorId = view.getUint32(16, true);
   assert.equal(manager.surfaces.allocate(0, 3, 3, 1), 1);

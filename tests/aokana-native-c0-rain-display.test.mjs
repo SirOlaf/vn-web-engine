@@ -1,41 +1,41 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaRainDisplayState} from '../dist/engines/buriko/games/aokana/native/display-rain.js';
-import {AokanaRainDisplays} from '../dist/engines/buriko/games/aokana/native/rain-displays.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaCrtRandom} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {createGroupC0Rain} from '../dist/engines/buriko/games/aokana/native/group-c0-rain.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoRainDisplayState} from '../dist/engines/buriko/native/display-rain.js';
+import {BurikoRainDisplays} from '../dist/engines/buriko/native/rain-displays.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoCrtRandom} from '../dist/engines/buriko/native/system-timing.js';
+import {createGroupC0Rain} from '../dist/engines/buriko/native/group-c0-rain.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 
 function fixture() {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(64, {left: 0, top: 0, right: 999, bottom: 999}),
+    new BurikoDisplayDamage(64, {left: 0, top: 0, right: 999, bottom: 999}),
   );
-  const surfaces = new AokanaSurfaces(null, compositor, {currentActor: {}});
-  const manager = new AokanaDisplayManager(
+  const surfaces = new BurikoSurfaces(null, compositor, {currentActor: {}});
+  const manager = new BurikoDisplayManager(
     environment,
     surfaces,
-    new AokanaNativeDisplayState(1000, 1000),
+    new BurikoNativeDisplayState(1000, 1000),
   );
-  const state = new AokanaRainDisplayState();
-  const rain = new AokanaRainDisplays(
+  const state = new BurikoRainDisplayState();
+  const rain = new BurikoRainDisplays(
     manager,
     state,
-    new AokanaCrtRandom(),
-    new AokanaSystemTicks({now: () => 100}),
+    new BurikoCrtRandom(),
+    new BurikoSystemTicks({now: () => 100}),
   );
   return {rain, state, manager, compositor, environment, surfaces};
 }
@@ -118,7 +118,7 @@ test('rain display configuration keeps virtual child propagation and separate gl
   const {rain, state, environment, manager} = fixture();
   const {handle} = rain.create(20, 20),
     object = rain.find(handle);
-  const child = new AokanaDisplayObject(environment, 0, 0, 1);
+  const child = new BurikoDisplayObject(environment, 0, 0, 1);
   object.addChild(child, 2, 3);
   assert.equal(rain.setActivation(handle, 1), true);
   assert.equal(child.activation, 1);
@@ -197,10 +197,10 @@ test('C0 rain definitions preserve every success stack contract and validation o
   for (const definition of definitions)
     assert.equal(
       definition.nativeAddress,
-      AOKANA_NATIVE_SLOT_ADDRESSES[0xc0][definition.secondary],
+      BURIKO_NATIVE_SLOT_ADDRESSES[0xc0][definition.secondary],
     );
   const handlers = new Map(definitions.map((slot) => [slot.secondary, slot.execute]));
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,

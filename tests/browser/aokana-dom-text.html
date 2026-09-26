@@ -39,12 +39,9 @@
   import {BrowserRasterTextPresentation} from '../../dist/text/browser-raster-text-presentation.js';
   import {BrowserWindowDisplayHost} from '../../dist/platform/browser-window-display.js';
   import {recordRasterText} from '../../dist/text/raster-text.js';
-  import {
-    allocateAokanaBitmap,
-    fillAokanaBitmap,
-  } from '../../dist/engines/buriko/games/aokana/native/bitmap.js';
-  import {AokanaBitmapCompositor} from '../../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-  import {presentAokanaChildBitmap} from '../../dist/engines/buriko/games/aokana/native/child-bitmap.js';
+  import {allocateBurikoBitmap, fillBurikoBitmap} from '../../dist/engines/buriko/native/bitmap.js';
+  import {BurikoBitmapCompositor} from '../../dist/engines/buriko/native/bitmap-compositor.js';
+  import {presentBurikoChildBitmap} from '../../dist/engines/buriko/native/child-bitmap.js';
   // All pixels and strings in this fixture are generated here. No game assets,
   // installation handles, or game storage are read.
   const canvas = document.querySelector('#native');
@@ -143,13 +140,13 @@
       'native canvas unchanged',
     );
     const owner = new BrowserRasterTextPresentation();
-    const surface = allocateAokanaBitmap(320, 180, 1),
-      ink = allocateAokanaBitmap(12, 24, 1);
-    fillAokanaBitmap(surface, 0);
-    fillAokanaBitmap(ink, 0xffffff);
+    const surface = allocateBurikoBitmap(320, 180, 1),
+      ink = allocateBurikoBitmap(12, 24, 1);
+    fillBurikoBitmap(surface, 0);
+    fillBurikoBitmap(ink, 0xffffff);
     recordRasterText(ink, 'Z', {size: 24, width: 12});
-    new AokanaBitmapCompositor().draw(surface, 10, 10, ink, 0, 0);
-    presentAokanaChildBitmap(canvas, surface, 0, 0, owner);
+    new BurikoBitmapCompositor().draw(surface, 10, 10, ink, 0, 0);
+    presentBurikoChildBitmap(canvas, surface, 0, 0, owner);
     check(!document.querySelector('.game-glyph-slots'), 'native mode has no alternate display');
     const canonical = canvas.getContext('2d').getImageData(10, 10, 1, 1).data.slice();
     surface.storage.release();

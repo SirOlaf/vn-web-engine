@@ -1,21 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {createGroup80NamedBitArrays} from '../dist/engines/buriko/games/aokana/native/group-80-named-bit-arrays.js';
-import {AokanaNamedBitArrays} from '../dist/engines/buriko/games/aokana/native/named-bit-arrays.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {createGroup80NamedBitArrays} from '../dist/engines/buriko/native/group-80-named-bit-arrays.js';
+import {BurikoNamedBitArrays} from '../dist/engines/buriko/native/named-bit-arrays.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('80 88-8B share one MSB-first named-bit owner and preserve native wrapper order', () => {
-  const bits = new AokanaNamedBitArrays(),
+  const bits = new BurikoNamedBitArrays(),
     slots = createGroup80NamedBitArrays(bits),
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(256)),
+    memory = new BurikoBpMemory(new Uint8Array(256)),
     context = {thread, memory},
     nameAddress = 32,
     setOutput = 128,
@@ -25,7 +25,7 @@ test('80 88-8B share one MSB-first named-bit owner and preserve native wrapper o
   memory.writeU32(thread, clearedOutput, 0x55667788);
   assert.equal(slots.length, 4);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
 
   const call = (secondary, ...args) => {
     args.forEach((value) => push32(thread, value));

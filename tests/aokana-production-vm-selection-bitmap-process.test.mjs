@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted scheduled bitmap selectors share Window pixels, input and BP completion', async () => {
@@ -55,7 +55,7 @@ test('mounted scheduled bitmap selectors share Window pixels, input and BP compl
 
     const handle = await result(0x80, [32, 32]);
     const window = graph.manager.find('window', handle);
-    assert.ok(window instanceof AokanaWindowDisplayObject);
+    assert.ok(window instanceof BurikoWindowDisplayObject);
     await call(0x84, [handle, 1]);
     for (const [id, color] of [
       [0, 0xff0000],

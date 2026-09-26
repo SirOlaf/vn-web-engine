@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted 80:F7 and 81:F7 use the graph folders and selected in-memory ShellLink primitive', async () => {
@@ -80,7 +80,7 @@ test('mounted 80:F7 and 81:F7 use the graph folders and selected in-memory Shell
       definitions.filter(({primary, secondary}) => primary === 0x80 && secondary === 0xf7).length,
       1,
     );
-    memory.globalMemory.set(graph.text.encodeWide('Aokana.lnk', 1), 0x100);
+    memory.globalMemory.set(graph.text.encodeWide('Buriko.lnk', 1), 0x100);
     memory.globalMemory.set(graph.text.encodeWide('C:\\game\\aokana.exe', 1), 0x200);
     memory.globalMemory.set(graph.text.encodeWide('--route misaki', 1), 0x300);
     assert.equal(await invoke(0x81, 0xf7, [0, 0x100, 0x200, 0x300], 0), 1);
@@ -94,7 +94,7 @@ test('mounted 80:F7 and 81:F7 use the graph folders and selected in-memory Shell
       ['arguments', '--route misaki'],
       ['working-directory', ''],
       ['query-persist'],
-      ['save', 'C:\\Users\\Player\\Desktop\\Aokana.lnk', true],
+      ['save', 'C:\\Users\\Player\\Desktop\\Buriko.lnk', true],
       ['release-persist'],
       ['release-link'],
     ]);
@@ -111,7 +111,7 @@ test('mounted 80:F7 and 81:F7 use the graph folders and selected in-memory Shell
       ['arguments', ''],
       ['working-directory', ''],
       ['query-persist'],
-      ['save', 'C:\\Users\\Player\\Desktop\\Aokana.lnk', true],
+      ['save', 'C:\\Users\\Player\\Desktop\\Buriko.lnk', true],
       ['release-persist'],
       ['release-link'],
     ]);

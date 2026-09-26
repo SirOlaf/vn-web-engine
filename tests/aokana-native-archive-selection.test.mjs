@@ -1,21 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {createGroup81ArchiveSelection} from '../dist/engines/buriko/games/aokana/native/group-81-archive-selection.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {createGroup81ArchiveSelection} from '../dist/engines/buriko/native/group-81-archive-selection.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaSelectionDialog} from '../dist/engines/buriko/games/aokana/native/selection-dialog.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoSelectionDialog} from '../dist/engines/buriko/native/selection-dialog.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
 
@@ -36,12 +36,12 @@ function setup(choice) {
       cwd: 'C:\\game',
       mounts: [{windows: 'C:\\', virtual: '/'}],
     }),
-    text = new AokanaNativeText(),
-    media = new AokanaProgramMedia();
+    text = new BurikoNativeText(),
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(fileSystem, text, media),
+  const files = new BurikoProgramFiles(fileSystem, text, media),
     unavailable = () => assert.fail('Archive selection opened an unexpected diagnostic'),
-    resources = new AokanaProgramResources(
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -56,10 +56,10 @@ function setup(choice) {
       },
       {show: unavailable},
       {fatal: unavailable, threadFatal: unavailable},
-      new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+      new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
     ),
     requests = [],
-    selection = new AokanaSelectionDialog(
+    selection = new BurikoSelectionDialog(
       {
         async withNativeModal(operation) {
           return operation();
@@ -72,8 +72,8 @@ function setup(choice) {
       text,
     ),
     memoryBytes = new Uint8Array(1024).fill(0xa5),
-    memory = new AokanaBpMemory(memoryBytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(memoryBytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
@@ -119,7 +119,7 @@ test('81 3B selects an entry from a relative primary-root archive in index order
   assert.deepEqual(state.memoryBytes.slice(output, output + 6), bytes('alpha\0'));
   assert.equal(state.definition.primary, 0x81);
   assert.equal(state.definition.secondary, 0x3b);
-  assert.equal(state.definition.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][0x3b]);
+  assert.equal(state.definition.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][0x3b]);
 });
 
 test('81 3B maps cancellation to raw FFFFFFFF and preserves the output', async () => {

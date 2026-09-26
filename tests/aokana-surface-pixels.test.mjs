@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {createGroup92SurfacePixels} from '../dist/engines/buriko/games/aokana/native/group-92-surface-pixels.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {createGroup92SurfacePixels} from '../dist/engines/buriko/native/group-92-surface-pixels.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const pointer = (bytes) => ({bytes, offset: 0});
 const dwords = (values) => {
@@ -19,15 +19,15 @@ const dwords = (values) => {
 };
 
 test('surface metadata and color opcodes feed actual pixel queries and surface copying', () => {
-  const compositor = new AokanaBitmapCompositor();
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const compositor = new BurikoBitmapCompositor();
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
-  const memory = new AokanaBpMemory(new Uint8Array(128));
+  const memory = new BurikoBpMemory(new Uint8Array(128));
   const view = new DataView(memory.globalMemory.buffer);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
@@ -37,7 +37,7 @@ test('surface metadata and color opcodes feed actual pixel queries and surface c
   const definitions = createGroup92SurfacePixels(surfaces);
   const slots = new Map(definitions.map((slot) => [slot.secondary, slot]));
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x92][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x92][slot.secondary]);
   const run = (secondary, values, expected) => {
     for (const value of values) push32(thread, value);
     assert.equal(slots.get(secondary).execute(context), 0);

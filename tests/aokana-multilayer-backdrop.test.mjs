@@ -1,28 +1,28 @@
-import {bitmapWrite32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {createGroup91BackdropLayers} from '../dist/engines/buriko/games/aokana/native/group-91-backdrop-layers.js';
+import {bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {createGroup91BackdropLayers} from '../dist/engines/buriko/native/group-91-backdrop-layers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayRenderer} from '../dist/engines/buriko/games/aokana/native/display-renderer.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayRenderer} from '../dist/engines/buriko/native/display-renderer.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const rectangle = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, values = []) => ({
-  storage: new AokanaBitmapStorage(
+  storage: new BurikoBitmapStorage(
     new Uint8Array(
       new Uint32Array(Array.from({length: width * height}, (_, index) => values[index] ?? 0))
         .buffer,
@@ -38,35 +38,35 @@ const bitmap = (width, height, values = []) => ({
 });
 
 function fixture() {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
   const bounds = rectangle(0, 0, 7, 3),
     output = bitmap(8, 4),
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(16, {...bounds}),
+      new BurikoDisplayDamage(16, {...bounds}),
     );
   environment.displayContext = {bitmap: output, bounds};
-  const allocator = new AokanaDistributedAllocator(2),
-    text = new AokanaNativeText(),
-    surfaces = new AokanaSurfaces(new AokanaNativeFonts(text), compositor, allocator),
-    manager = new AokanaDisplayManager(
+  const allocator = new BurikoDistributedAllocator(2),
+    text = new BurikoNativeText(),
+    surfaces = new BurikoSurfaces(new BurikoNativeFonts(text), compositor, allocator),
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     );
   return {allocator, compositor, environment, manager, output, surfaces, text};
 }
 
 test('multilayer backdrop renders shared affine layers and selected-layer animation state', () => {
   const {allocator, manager, surfaces, output, text} = fixture();
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array(16)), diagnostics: {}};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array(16)), diagnostics: {}};
   const slots = createGroup91BackdropLayers(manager, {
     files: {text},
     threadFatal() {
@@ -78,7 +78,7 @@ test('multilayer backdrop renders shared affine layers and selected-layer animat
     [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a],
   );
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
   const call = (secondary, args) => {
     args.forEach((value) => push32(thread, value));
     assert.equal(slots.find((slot) => slot.secondary === secondary).execute(context), 0);
@@ -91,10 +91,10 @@ test('multilayer backdrop renders shared affine layers and selected-layer animat
     assert.equal(surfaces.allocate(surface, 8, 4, 1), 1);
     surfaces.fill(surface, color);
   }
-  const renderer = new AokanaDisplayRenderer(
+  const renderer = new BurikoDisplayRenderer(
     manager,
     1024,
-    new AokanaDistributedProcessing(allocator, 2),
+    new BurikoDistributedProcessing(allocator, 2),
   );
   manager.setBackdropActivation(1, 1);
   call(0x40, [0, 0, 0, 0, 0, 0, 65536, 65536, 0]);

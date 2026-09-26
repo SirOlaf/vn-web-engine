@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeRecordBuffers} from '../dist/engines/buriko/games/aokana/native/record-buffers.js';
+import {BurikoNativeRecordBuffers} from '../dist/engines/buriko/native/record-buffers.js';
 import {
   createGroup81Records,
   group81Disabled,
-} from '../dist/engines/buriko/games/aokana/native/group-81-records.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+} from '../dist/engines/buriko/native/group-81-records.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
   const bytes = new Uint8Array(2048),
-    records = new AokanaNativeRecordBuffers(),
+    records = new BurikoNativeRecordBuffers(),
     view = new DataView(bytes.buffer);
   return {bytes, records, view, pointer: (offset) => ({bytes, offset})};
 }
@@ -66,13 +66,13 @@ test('record outputs preserve byte snapshots, alias write order and deferred nul
 
 test('record wrappers use the native five-argument write ABI and unchanged status words', () => {
   const {bytes, records, pointer, view} = fixture();
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const memory = new AokanaBpMemory(bytes),
+  const memory = new BurikoBpMemory(bytes),
     h = {thread, memory},
     definitions = createGroup81Records(records);
   const call = (secondary, ...args) => {
@@ -97,14 +97,14 @@ test('record wrappers use the native five-argument write ABI and unchanged statu
 
 test('C0640 clears the same Bank 81 record-set owner before the next program', () => {
   const {bytes, records, pointer, view} = fixture();
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
   const definitions = createGroup81Records(records);
-  const h = {thread, memory: new AokanaBpMemory(bytes)};
+  const h = {thread, memory: new BurikoBpMemory(bytes)};
   const call = (secondary, ...args) => {
     for (const arg of args) push32(thread, arg);
     assert.equal(definitions.find((entry) => entry.secondary === secondary).execute(h), 0);
@@ -123,7 +123,7 @@ test('C0640 clears the same Bank 81 record-set owner before the next program', (
 });
 
 test('four disabled native services still pop and resolve arguments before returning one', () => {
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 64,

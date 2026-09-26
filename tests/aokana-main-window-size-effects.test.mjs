@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 
 class Element {
   constructor(tag) {
@@ -41,27 +41,27 @@ class Element {
 test('queued initialized WM_SIZE joins shared effects before its menu and input tail', async () => {
   const backing = new MountedFileSystem();
   backing.mount('/game', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [],
       volumes: [{path: '/', identity: {}, writable: true}],
       canonical: (path) => path.toLowerCase(),
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    paths = new AokanaMountedProgramPaths(
+    paths = new BurikoMountedProgramPaths(
       [
         {native: 'C:\\game', mounted: '/game'},
         {native: 'D:\\Drops', mounted: '/drops'},
       ],
       'C:\\game',
     ),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
     document = {createElement: (tag) => new Element(tag)},
     parent = document.createElement('div'),
     canvas = document.createElement('canvas');
   let now = 100;
-  const graph = new AokanaProductionDisplayResourceGraph({
+  const graph = new BurikoProductionDisplayResourceGraph({
       document,
       parent,
       canvas,
@@ -90,7 +90,7 @@ test('queued initialized WM_SIZE joins shared effects before its menu and input 
         verticalScrollbarWidth: 0,
         horizontalScrollbarHeight: 0,
       },
-      nativeWindowTitle: encode('Aokana'),
+      nativeWindowTitle: encode('Buriko'),
       preferredDialogTitle: null,
       cursorResource: null,
       performance: {now: () => now},
@@ -123,7 +123,7 @@ test('queued initialized WM_SIZE joins shared effects before its menu and input 
       resource: {
         mounted,
         paths,
-        media: new AokanaProgramMedia(),
+        media: new BurikoProgramMedia(),
         configuration: {
           nativeFileRoot: 'C:\\game\\',
           primaryRoot: encode('C:\\game\\'),
@@ -138,7 +138,7 @@ test('queued initialized WM_SIZE joins shared effects before its menu and input 
         errorDirectory: encode('C:\\game\\'),
         workingDirectory: encode('C:\\game\\'),
         audioRootWide: 'C:\\game\\',
-        backend: new AokanaMemorySpeakerBackend(1000),
+        backend: new BurikoMemorySpeakerBackend(1000),
         output: {prefer24Bit: false},
         resourceWorkerCount: 1,
         sleep: async () => {},

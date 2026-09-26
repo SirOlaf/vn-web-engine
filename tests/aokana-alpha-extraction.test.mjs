@@ -1,40 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
 import {
   bitmapRead8,
   bitmapRead32,
   bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {applyAokanaBitmapMask} from '../dist/engines/buriko/games/aokana/native/bitmap-alpha-mask.js';
-import {createGroup92AlphaExtraction} from '../dist/engines/buriko/games/aokana/native/group-92-alpha-extraction.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {applyBurikoBitmapMask} from '../dist/engines/buriko/native/bitmap-alpha-mask.js';
+import {createGroup92AlphaExtraction} from '../dist/engines/buriko/native/group-92-alpha-extraction.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('92 alpha extraction clips into real display geometry and feeds actual mask rendering', () => {
-  const compositor = new AokanaBitmapCompositor();
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const compositor = new BurikoBitmapCompositor();
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(16, {left: 0, top: 0, right: 4, bottom: 2}),
+    new BurikoDisplayDamage(16, {left: 0, top: 0, right: 4, bottom: 2}),
   );
-  const display = allocateAokanaBitmap(5, 3, 2);
-  environment.displayContext = {bitmap: display, bounds: aokanaBitmapRectangle(display)};
+  const display = allocateBurikoBitmap(5, 3, 2);
+  environment.displayContext = {bitmap: display, bounds: burikoBitmapRectangle(display)};
   for (const id of [1, 2]) assert.equal(surfaces.allocate(id, 3, 1, 2), 1);
   for (const [id, alphas] of [
     [1, [0, 64, 255]],
@@ -56,14 +53,14 @@ test('92 alpha extraction clips into real display geometry and feeds actual mask
       assert.fail('ordinary alpha extraction succeeds');
     },
   });
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x92][0x1a]);
-  const thread = new AokanaBpThread({
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x92][0x1a]);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array(64)), diagnostics: {}};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array(64)), diagnostics: {}};
   const run = (x, y, second, level, expected) => {
     [3, x, y, 1, second, level].forEach((value) => push32(thread, value));
     assert.equal(slot.execute(context), 0);
@@ -78,7 +75,7 @@ test('92 alpha extraction clips into real display geometry and feeds actual mask
       ),
       expected,
     );
-    assert.equal(applyAokanaBitmapMask(destination, source, mask), 0);
+    assert.equal(applyBurikoBitmapMask(destination, source, mask), 0);
     assert.deepEqual(
       Array.from({length: 3}, (_, row) =>
         Array.from({length: 5}, (_, column) =>

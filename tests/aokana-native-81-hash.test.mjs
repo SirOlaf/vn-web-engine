@@ -5,9 +5,9 @@ import {
   nativeMd5,
   updateNativeChecksum,
   group81Hash,
-} from '../dist/engines/buriko/games/aokana/native/group-81-hash.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+} from '../dist/engines/buriko/native/group-81-hash.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 test('native MD5 matches independent digests across padding and block boundaries', () => {
   const output = new Uint8Array(16);
@@ -47,13 +47,13 @@ test('native checksum retains state across chunks and rereads aliased source byt
 });
 
 test('81 hash wrappers pop count, source, destination without pushing a value', () => {
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(256));
+  const memory = new BurikoBpMemory(new Uint8Array(256));
   memory.globalMemory.set([97, 98, 99], 32);
   for (const value of [64, 32, 3]) push32(thread, value);
   const depth = thread.stackIndex;

@@ -1,42 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {createGroup90WindowBitmapGroups} from '../dist/engines/buriko/games/aokana/native/group-90-window-bitmap-groups.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {createGroup90WindowBitmapGroups} from '../dist/engines/buriko/native/group-90-window-bitmap-groups.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('90:B7 composes real inner Sprites from VM bitmap groups and replaces the ordinary scene', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
   const bounds = {left: 0, top: 0, right: 63, bottom: 31},
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(128, bounds),
+      new BurikoDisplayDamage(128, bounds),
     ),
-    manager = new AokanaDisplayManager(environment, surfaces, new AokanaNativeDisplayState(64, 32));
-  manager.bindDisplayContext({bitmap: allocateAokanaBitmap(64, 32, 1), bounds});
-  const windows = new AokanaWindowDisplayState(manager),
+    manager = new BurikoDisplayManager(environment, surfaces, new BurikoNativeDisplayState(64, 32));
+  manager.bindDisplayContext({bitmap: allocateBurikoBitmap(64, 32, 1), bounds});
+  const windows = new BurikoWindowDisplayState(manager),
     created = manager.createConfigured(
       'window',
-      (order) => new AokanaWindowDisplayObject(windows, order),
+      (order) => new BurikoWindowDisplayObject(windows, order),
       (window) => window.configureInitial(32, 24),
     );
   assert.equal(created.result, 0);
@@ -49,10 +49,10 @@ test('90:B7 composes real inner Sprites from VM bitmap groups and replaces the o
     surfaces.fill(id, color);
   }
   const [slot] = createGroup90WindowBitmapGroups(manager),
-    memory = new AokanaBpMemory(new Uint8Array(1024)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
+    memory = new BurikoBpMemory(new Uint8Array(1024)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
     view = new DataView(memory.globalMemory.buffer);
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][0xb7]);
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][0xb7]);
   const words = (offset, values) =>
     values.forEach((v, i) => view.setInt32(offset + i * 4, v, true));
   words(32, [1, 128, 0, 0, 0, 0, 0, 0, 0, 0]);

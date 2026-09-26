@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {encodeAokanaSdc, decodeAokanaSdc} from '../dist/engines/buriko/games/aokana/native/sdc.js';
+import {encodeBurikoSdc, decodeBurikoSdc} from '../dist/engines/buriko/native/sdc.js';
 import {decodeSdc} from '../dist/formats/buriko/compressed-resource.js';
 
 test('native SDC emits exact overlapping distance-two tokens and stored-byte checksums', () => {
@@ -15,7 +15,7 @@ test('native SDC emits exact overlapping distance-two tokens and stored-byte che
   // Plain tokens: literalAB, match17/distance2, match17/distance2, match4/distance2.
   // Seed0 obfuscates 01 41 42 F8 00 F8 00 90 00 into this exact stored stream.
   expected.set([1, 155, 196, 222, 66, 128, 205, 75, 15], 32);
-  assert.deepEqual(encodeAokanaSdc(plain, 0), expected);
-  assert.deepEqual(decodeAokanaSdc(expected), plain);
+  assert.deepEqual(encodeBurikoSdc(plain, 0), expected);
+  assert.deepEqual(decodeBurikoSdc(expected), plain);
   assert.deepEqual(decodeSdc(expected), plain);
 });

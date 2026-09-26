@@ -1,31 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayFrames} from '../dist/engines/buriko/games/aokana/native/display-frames.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayRenderer} from '../dist/engines/buriko/games/aokana/native/display-renderer.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDisplayTexture} from '../dist/engines/buriko/games/aokana/native/display-texture.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayFrames} from '../dist/engines/buriko/native/display-frames.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayRenderer} from '../dist/engines/buriko/native/display-renderer.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDisplayTexture} from '../dist/engines/buriko/native/display-texture.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup90DisplayBase} from '../dist/engines/buriko/games/aokana/native/group-90-display-base.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup90DisplayBase} from '../dist/engines/buriko/native/group-90-display-base.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
 
@@ -35,21 +35,21 @@ const pixels = (bitmap) =>
   );
 
 function fixture() {
-  const text = new AokanaNativeText(),
-    fonts = new AokanaNativeFonts(text),
-    compositor = new AokanaBitmapCompositor(),
-    allocator = new AokanaDistributedAllocator(1),
-    surfaces = new AokanaSurfaces(fonts, compositor, allocator),
-    damage = new AokanaDisplayDamage(16, {left: 0, top: 0, right: 1, bottom: 1}),
-    environment = new AokanaDisplayObjectEnvironment(compositor, damage),
-    displayState = new AokanaNativeDisplayState(1920, 1080),
-    manager = new AokanaDisplayManager(environment, surfaces, displayState),
-    renderer = new AokanaDisplayRenderer(manager, 4),
-    texture = new AokanaDisplayTexture(2, 2, 22),
-    windows = new AokanaWindowDisplayState(manager),
-    frames = new AokanaDisplayFrames(manager, null, null, null, null, null, null, null, null),
-    media = new AokanaProgramMedia(),
-    files = new AokanaProgramFiles(
+  const text = new BurikoNativeText(),
+    fonts = new BurikoNativeFonts(text),
+    compositor = new BurikoBitmapCompositor(),
+    allocator = new BurikoDistributedAllocator(1),
+    surfaces = new BurikoSurfaces(fonts, compositor, allocator),
+    damage = new BurikoDisplayDamage(16, {left: 0, top: 0, right: 1, bottom: 1}),
+    environment = new BurikoDisplayObjectEnvironment(compositor, damage),
+    displayState = new BurikoNativeDisplayState(1920, 1080),
+    manager = new BurikoDisplayManager(environment, surfaces, displayState),
+    renderer = new BurikoDisplayRenderer(manager, 4),
+    texture = new BurikoDisplayTexture(2, 2, 22),
+    windows = new BurikoWindowDisplayState(manager),
+    frames = new BurikoDisplayFrames(manager, null, null, null, null, null, null, null, null),
+    media = new BurikoProgramMedia(),
+    files = new BurikoProgramFiles(
       new WindowsFileSystem(new SourceFileSystem(windowsFileKey), {
         cwd: 'C:\\game',
         mounts: [{windows: 'C:\\', virtual: '/'}],
@@ -59,7 +59,7 @@ function fixture() {
     ),
     fatal = () => assert.fail('ordinary display-base operations should succeed'),
     bytes = (value) => new TextEncoder().encode(value),
-    resources = new AokanaProgramResources(
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -74,16 +74,16 @@ function fixture() {
       },
       {show: fatal},
       {fatal, threadFatal: fatal},
-      new AokanaDistributedProcessing(allocator, 1),
+      new BurikoDistributedProcessing(allocator, 1),
     ),
-    loading = new AokanaResourceLoadingState(resources),
+    loading = new BurikoResourceLoadingState(resources),
     slots = createGroup90DisplayBase(manager, frames, loading, windows, {
       files: {text: {encodeWide: (message) => message}},
       threadFatal() {
         assert.fail('ordinary display-base operations should succeed');
       },
     }),
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
       moduleCapacity: 0,
@@ -91,7 +91,7 @@ function fixture() {
     }),
     context = {
       thread,
-      memory: new AokanaBpMemory(new Uint8Array(0)),
+      memory: new BurikoBpMemory(new Uint8Array(0)),
       diagnostics: {},
     };
   manager.configureDescriptor(2, 2, 2, 4);
@@ -123,7 +123,7 @@ test('thirteen Bank90 base wrappers preserve native pop order and mutate their s
   const s = fixture();
   assert.equal(s.slots.length, 13);
   for (const slot of s.slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
 
   s.call(0x00, [0]);
   assert.deepEqual([s.manager.redraw.pending, s.manager.redraw.mode], [1, 0]);

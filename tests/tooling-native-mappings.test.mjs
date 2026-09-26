@@ -453,7 +453,7 @@ test('mapping CLI validates and queries explicit signatures with source verifica
   });
 });
 
-test('real Aokana mappings retain unresolved seeds and reviewed particle routes', async () => {
+test('real Buriko mappings retain unresolved seeds and reviewed particle routes', async () => {
   const database = await loadDatabase(path.join(root, 'tools/native-lift/mappings/aokana.json'), {
     root,
   });

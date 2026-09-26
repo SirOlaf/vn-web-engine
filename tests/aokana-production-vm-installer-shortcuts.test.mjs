@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('80:F3 uses the selected ShellLink owner and rolls back a failed Programs transaction', async () => {
@@ -12,9 +12,16 @@ test('80:F3 uses the selected ShellLink owner and rolls back a failed Programs t
       return {
         hresult: 0,
         link: {
-          setPath(value) { path = value; return 0; },
-          setArguments() { return 0; },
-          setWorkingDirectory() { return 0; },
+          setPath(value) {
+            path = value;
+            return 0;
+          },
+          setArguments() {
+            return 0;
+          },
+          setWorkingDirectory() {
+            return 0;
+          },
           queryPersistFile() {
             return {
               hresult: 0,
@@ -55,10 +62,11 @@ test('80:F3 uses the selected ShellLink owner and rolls back a failed Programs t
   });
   try {
     const {graph, memory, child, invoke, definitions} = fixture;
-    assert.equal(definitions.filter((slot) => slot.primary === 0x80 && slot.secondary === 0xf3).length, 1);
-    const values = [
-      'C:\\game', 'aokana.exe', 'Play.lnk', 'uninstall.exe', 'Remove.lnk', 'Aokana',
-    ];
+    assert.equal(
+      definitions.filter((slot) => slot.primary === 0x80 && slot.secondary === 0xf3).length,
+      1,
+    );
+    const values = ['C:\\game', 'aokana.exe', 'Play.lnk', 'uninstall.exe', 'Remove.lnk', 'Buriko'];
     const addresses = values.map((value, index) => {
       const address = 0x100 + index * 0x100;
       memory.globalMemory.set(graph.text.encodeWide(value, 1), address);
@@ -69,10 +77,10 @@ test('80:F3 uses the selected ShellLink owner and rolls back a failed Programs t
     assert.equal(pop32(child.state), 0);
     assert.deepEqual(saved, [
       ['C:\\game\\Desktop\\Play.lnk', 'C:\\game\\aokana.exe'],
-      ['C:\\game\\Programs\\Aokana\\Play.lnk', 'C:\\game\\aokana.exe'],
-      ['C:\\game\\Programs\\Aokana\\Remove.lnk', 'C:\\game\\uninstall.exe'],
+      ['C:\\game\\Programs\\Buriko\\Play.lnk', 'C:\\game\\aokana.exe'],
+      ['C:\\game\\Programs\\Buriko\\Remove.lnk', 'C:\\game\\uninstall.exe'],
     ]);
-    await assert.rejects(graph.resource.files.metadata.stat('/game/Programs/Aokana'));
+    await assert.rejects(graph.resource.files.metadata.stat('/game/Programs/Buriko'));
   } finally {
     await fixture.close();
   }

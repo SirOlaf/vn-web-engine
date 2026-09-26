@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {BrowserWindowsFileAssociationHost} from '../dist/platform/windows-file-associations.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
@@ -28,10 +28,10 @@ test('mounted 80:FC uses the graph browser host and reports registration plus no
 
     const values = [
       [0x100, 'vnx'],
-      [0x140, 'Aokana.Document'],
-      [0x180, 'Aokana document'],
-      [0x1c0, 'Aokana.exe,0'],
-      [0x200, '"Aokana.exe" "%1"'],
+      [0x140, 'Buriko.Document'],
+      [0x180, 'Buriko document'],
+      [0x1c0, 'Buriko.exe,0'],
+      [0x200, '"Buriko.exe" "%1"'],
     ];
     for (const [address, value] of values) memory.globalMemory.set(bytes(value), address);
     assert.equal(
@@ -46,15 +46,15 @@ test('mounted 80:FC uses the graph browser host and reports registration plus no
     assert.equal(pop32(child.state), 1);
     assert.equal(child.state.stackIndex, 0);
 
-    assert.deepEqual(host.value('.vnx'), {type: 1, data: wide('Aokana.Document')});
-    assert.deepEqual(host.value('Aokana.Document'), {type: 1, data: wide('Aokana document')});
-    assert.deepEqual(host.value('Aokana.Document\\DefaultIcon'), {
+    assert.deepEqual(host.value('.vnx'), {type: 1, data: wide('Buriko.Document')});
+    assert.deepEqual(host.value('Buriko.Document'), {type: 1, data: wide('Buriko document')});
+    assert.deepEqual(host.value('Buriko.Document\\DefaultIcon'), {
       type: 1,
-      data: wide('Aokana.exe,0'),
+      data: wide('Buriko.exe,0'),
     });
-    assert.deepEqual(host.value('Aokana.Document\\Shell\\Open\\Command'), {
+    assert.deepEqual(host.value('Buriko.Document\\Shell\\Open\\Command'), {
       type: 1,
-      data: wide('"Aokana.exe" "%1"'),
+      data: wide('"Buriko.exe" "%1"'),
     });
     assert.deepEqual(host.notifications, [
       {kind: 'setting-change', window: 0xffff, message: 0x1a, wParam: 0x2e, lParam: 0},

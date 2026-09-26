@@ -2,28 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaLaunchSelection} from '../dist/engines/buriko/games/aokana/native/launch-selection.js';
-import {createGroup80Launch} from '../dist/engines/buriko/games/aokana/native/group-80-launch.js';
-import {AokanaBootProgramLoader} from '../dist/engines/buriko/games/aokana/native/boot-program-loader.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoLaunchSelection} from '../dist/engines/buriko/native/launch-selection.js';
+import {createGroup80Launch} from '../dist/engines/buriko/native/group-80-launch.js';
+import {BurikoBootProgramLoader} from '../dist/engines/buriko/native/boot-program-loader.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {singleArchive} from './aokana-resource-direct-fixtures.mjs';
 
 function moduleBytes(payload) {
@@ -51,7 +51,7 @@ async function mountedLaunch(commandLineTailWide) {
     accessTime: null,
     writeTime: 123n,
   });
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [
         record('/game', 'directory'),
         record('/game/startup dir', 'directory'),
@@ -63,20 +63,20 @@ async function mountedLaunch(commandLineTailWide) {
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    paths = new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
-    text = new AokanaNativeText(),
-    media = new AokanaProgramMedia();
+    paths = new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+    text = new BurikoNativeText(),
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(mounted, text, media, paths),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(
+  const files = new BurikoProgramFiles(mounted, text, media, paths),
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(
       files,
       dialogs,
       text.encodeWide('C:\\game\\', 1),
       text.encodeWide('C:\\game\\', 1),
     ),
-    processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
-    resources = new AokanaProgramResources(
+    processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -93,7 +93,7 @@ async function mountedLaunch(commandLineTailWide) {
       errors,
       processing,
     ),
-    launch = new AokanaLaunchSelection(
+    launch = new BurikoLaunchSelection(
       files,
       paths,
       resources,
@@ -136,8 +136,8 @@ test('launch selection shares roots and boot names with mounted ED170 resource a
     assert.equal(text.decodeAuto({bytes: module, offset: 0}), 'ipl._bp');
 
     const bpBytes = new Uint8Array(512),
-      memory = new AokanaBpMemory(bpBytes),
-      vmThread = new AokanaBpThread({
+      memory = new BurikoBpMemory(bpBytes),
+      vmThread = new BurikoBpThread({
         id: 9,
         operandCapacity: 8,
         moduleCapacity: 0,
@@ -169,19 +169,19 @@ test('launch selection shares roots and boot names with mounted ED170 resource a
     assert.equal(await launcherSlot.execute({thread: vmThread, memory}), 0);
     assert.equal(pop32(vmThread), 1);
 
-    const control = new AokanaVmControlState(),
-      root = new AokanaBpThread({
+    const control = new BurikoVmControlState(),
+      root = new BurikoBpThread({
         id: control.allocateThreadId(),
         operandCapacity: 0,
         moduleCapacity: 0,
         frameCapacity: 0,
       }),
-      scheduler = new AokanaBpScheduler(root),
-      loader = new AokanaBootProgramLoader(
+      scheduler = new BurikoBpScheduler(root),
+      loader = new BurikoBootProgramLoader(
         resources,
         control,
         scheduler,
-        new AokanaBpDiagnostics(() => {}),
+        new BurikoBpDiagnostics(() => {}),
       );
     assert.equal(await loader.appendSelectedProgram(archive, module), 1);
     assert.deepEqual([...scheduler.firstThread.state.moduleMemory.subarray(0, 3)], [9, 8, 7]);

@@ -3,27 +3,27 @@ import test from 'node:test';
 import {BlobSource} from '../dist/core/source.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 import {
-  AokanaEngineDialogs,
-  AokanaNativeCursor,
-} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {createGroup80ResourceSettings} from '../dist/engines/buriko/games/aokana/native/group-80-resource-settings.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+  BurikoEngineDialogs,
+  BurikoNativeCursor,
+} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {createGroup80ResourceSettings} from '../dist/engines/buriko/native/group-80-resource-settings.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 
@@ -33,26 +33,26 @@ test('ECB90 resource search reset uses the same BC240/BC170 owner as Bank 80 and
       cwd: 'C:\\game',
       mounts: [{windows: 'C:\\', virtual: '/'}],
     }),
-    text = new AokanaNativeText(),
-    media = new AokanaProgramMedia(),
-    files = new AokanaProgramFiles(fs, text, media),
-    clock = new AokanaNativeClock(() => 100),
-    display = new AokanaNativeDisplayState(800, 600),
-    input = new AokanaNativeInput(display, clock),
-    dialogs = new AokanaEngineDialogs(
+    text = new BurikoNativeText(),
+    media = new BurikoProgramMedia(),
+    files = new BurikoProgramFiles(fs, text, media),
+    clock = new BurikoNativeClock(() => 100),
+    display = new BurikoNativeDisplayState(800, 600),
+    input = new BurikoNativeInput(display, clock),
+    dialogs = new BurikoEngineDialogs(
       {show: async () => 1},
       text,
       clock,
       input,
-      new AokanaNativeCursor({style: {}}),
+      new BurikoNativeCursor({style: {}}),
       {isPresent: () => false},
       display,
       null,
       bytes('Game'),
     ),
-    errors = new AokanaEngineErrors(files, dialogs, bytes('C:\\game\\'), bytes('C:\\game\\')),
-    allocator = new AokanaDistributedAllocator(1),
-    processing = new AokanaDistributedProcessing(allocator, 1),
+    errors = new BurikoEngineErrors(files, dialogs, bytes('C:\\game\\'), bytes('C:\\game\\')),
+    allocator = new BurikoDistributedAllocator(1),
+    processing = new BurikoDistributedProcessing(allocator, 1),
     configuration = {
       nativeFileRoot: 'C:\\game\\',
       primaryRoot: bytes('C:\\game\\'),
@@ -64,10 +64,10 @@ test('ECB90 resource search reset uses the same BC240/BC170 owner as Bank 80 and
       retryMessage: Uint8Array.of(0),
       quitConfirmation: Uint8Array.of(0),
     },
-    resources = new AokanaProgramResources(files, configuration, dialogs, errors, processing),
+    resources = new BurikoProgramResources(files, configuration, dialogs, errors, processing),
     definitions = createGroup80ResourceSettings(resources, null),
-    memory = new AokanaBpMemory(new Uint8Array(128)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
+    memory = new BurikoBpMemory(new Uint8Array(128)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
     context = {memory, thread},
     execute = (secondary, value) => {
       push32(thread, value);

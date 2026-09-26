@@ -2,16 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
-import {AokanaRainDisplayState} from '../dist/engines/buriko/games/aokana/native/display-rain.js';
-import {AokanaRainDisplays} from '../dist/engines/buriko/games/aokana/native/rain-displays.js';
-import {AokanaCrtRandom} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
+import {BurikoRainDisplayState} from '../dist/engines/buriko/native/display-rain.js';
+import {BurikoRainDisplays} from '../dist/engines/buriko/native/rain-displays.js';
+import {BurikoCrtRandom} from '../dist/engines/buriko/native/system-timing.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 
 class Element {
   constructor(tag) {
@@ -45,26 +45,26 @@ class Element {
 test('0802B0 resets the shared display manager and Window state while retaining Rain', async () => {
   const backing = new MountedFileSystem();
   backing.mount('/game', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [],
       volumes: [{path: '/', identity: {}, writable: true}],
       canonical: (path) => path.toLowerCase(),
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    paths = new AokanaMountedProgramPaths(
+    paths = new BurikoMountedProgramPaths(
       [
         {native: 'C:\\game', mounted: '/game'},
         {native: 'D:\\Drops', mounted: '/drops'},
       ],
       'C:\\game',
     ),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
     document = {createElement: (tag) => new Element(tag)},
     parent = document.createElement('div'),
     canvas = document.createElement('canvas');
-  const graph = new AokanaProductionDisplayResourceGraph({
+  const graph = new BurikoProductionDisplayResourceGraph({
     document,
     parent,
     canvas,
@@ -93,7 +93,7 @@ test('0802B0 resets the shared display manager and Window state while retaining 
       verticalScrollbarWidth: 0,
       horizontalScrollbarHeight: 0,
     },
-    nativeWindowTitle: encode('Aokana'),
+    nativeWindowTitle: encode('Buriko'),
     preferredDialogTitle: null,
     cursorResource: null,
     performance: {now: () => 100},
@@ -126,7 +126,7 @@ test('0802B0 resets the shared display manager and Window state while retaining 
     resource: {
       mounted,
       paths,
-      media: new AokanaProgramMedia(),
+      media: new BurikoProgramMedia(),
       configuration: {
         nativeFileRoot: 'C:\\game\\',
         primaryRoot: encode('C:\\game\\'),
@@ -141,7 +141,7 @@ test('0802B0 resets the shared display manager and Window state while retaining 
       errorDirectory: encode('C:\\game\\'),
       workingDirectory: encode('C:\\game\\'),
       audioRootWide: 'C:\\game\\',
-      backend: new AokanaMemorySpeakerBackend(1000),
+      backend: new BurikoMemorySpeakerBackend(1000),
       output: {prefer24Bit: false},
       resourceWorkerCount: 1,
       sleep: async () => {},
@@ -149,16 +149,16 @@ test('0802B0 resets the shared display manager and Window state while retaining 
   });
   try {
     const {manager, windowState} = graph,
-      rain = new AokanaRainDisplays(
+      rain = new BurikoRainDisplays(
         manager,
-        new AokanaRainDisplayState(),
-        new AokanaCrtRandom(),
+        new BurikoRainDisplayState(),
+        new BurikoCrtRandom(),
         graph.ticks,
       ),
       spriteHandle = manager.createSprite(),
       windowCreated = manager.createConfigured(
         'window',
-        (order) => new AokanaWindowDisplayObject(windowState, order),
+        (order) => new BurikoWindowDisplayObject(windowState, order),
         (object) => object.configureInitial(16, 16),
       ),
       rainCreated = rain.create(8, 8);

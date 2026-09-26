@@ -1,44 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaMovieReferenceClock,
-  AokanaMovieRenderEvents,
-  aokanaMovieThrottle,
-} from '../dist/engines/buriko/games/aokana/native/movie-render-events.js';
-import {AokanaMovieFilterEvents} from '../dist/engines/buriko/games/aokana/native/movie-filter-events.js';
-import {AokanaMovieReceivePin} from '../dist/engines/buriko/games/aokana/native/movie-receive.js';
-import {AokanaMovieRenderer} from '../dist/engines/buriko/games/aokana/native/movie-renderer.js';
+  BurikoMovieReferenceClock,
+  BurikoMovieRenderEvents,
+  burikoMovieThrottle,
+} from '../dist/engines/buriko/native/movie-render-events.js';
+import {BurikoMovieFilterEvents} from '../dist/engines/buriko/native/movie-filter-events.js';
+import {BurikoMovieReceivePin} from '../dist/engines/buriko/native/movie-receive.js';
+import {BurikoMovieRenderer} from '../dist/engines/buriko/native/movie-renderer.js';
 import {
-  AokanaMovieImage,
-  AokanaMovieImageConfiguration,
-} from '../dist/engines/buriko/games/aokana/native/movie-image.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoMovieImage,
+  BurikoMovieImageConfiguration,
+} from '../dist/engines/buriko/native/movie-image.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 function fixture(withClock = true) {
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText(), {}),
-    new AokanaBitmapCompositor(),
-    new AokanaDistributedAllocator(1),
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText(), {}),
+    new BurikoBitmapCompositor(),
+    new BurikoDistributedAllocator(1),
   );
-  const notifications = new AokanaNativeNotifications();
-  const renderer = new AokanaMovieRenderer(
+  const notifications = new BurikoNativeNotifications();
+  const renderer = new BurikoMovieRenderer(
     surfaces,
     2,
-    new AokanaMovieImage(new AokanaMovieImageConfiguration()),
+    new BurikoMovieImage(new BurikoMovieImageConfiguration()),
     notifications,
   );
-  const messages = new AokanaWindowMessages(null);
-  const filterEvents = new AokanaMovieFilterEvents(messages);
+  const messages = new BurikoWindowMessages(null);
+  const filterEvents = new BurikoMovieFilterEvents(messages);
   let now = 0;
-  const clock = new AokanaMovieReferenceClock(() => now);
-  const pin = new AokanaMovieReceivePin(renderer, filterEvents, withClock ? clock : null, clock);
+  const clock = new BurikoMovieReferenceClock(() => now);
+  const pin = new BurikoMovieReceivePin(renderer, filterEvents, withClock ? clock : null, clock);
   const format = new Uint8Array(88),
     view = new DataView(format.buffer);
   view.setInt32(52, 1, true);
@@ -52,7 +52,7 @@ function fixture(withClock = true) {
   };
   assert.equal(pin.connect(type), 0);
   const sample = (start = 0n, end = 400000n) => ({
-    storage: new AokanaBitmapStorage(Uint8Array.of(1, 2, 3, 255), true),
+    storage: new BurikoBitmapStorage(Uint8Array.of(1, 2, 3, 255), true),
     offset: 0,
     time: {start, end},
     discontinuity: false,
@@ -72,7 +72,7 @@ function fixture(withClock = true) {
 }
 
 test('native renderer events retain auto/manual reset and abort priority', async () => {
-  const events = new AokanaMovieRenderEvents();
+  const events = new BurikoMovieRenderEvents();
   assert.equal(events.waitForState(0), 0);
   events.setReady(false);
   assert.equal(events.waitForState(0), 0x40237);
@@ -95,18 +95,18 @@ test('native renderer events retain auto/manual reset and abort priority', async
 
 test('clock advice cancels without a late stale signal, and throttle zero yields a task', async () => {
   let time = 0;
-  const clock = new AokanaMovieReferenceClock(() => time),
-    events = new AokanaMovieRenderEvents();
+  const clock = new BurikoMovieReferenceClock(() => time),
+    events = new BurikoMovieRenderEvents();
   events.advise(clock, 0n, 100000n);
   events.cancelNotification();
   const waiting = events.waitForRender();
   time = 20;
-  await aokanaMovieThrottle(20);
+  await burikoMovieThrottle(20);
   events.setAbort(false);
   assert.equal(await waiting, 0x80040223);
   events.dispose();
   const order = [];
-  const throttle = aokanaMovieThrottle(0).then(() => order.push('task'));
+  const throttle = burikoMovieThrottle(0).then(() => order.push('task'));
   queueMicrotask(() => order.push('microtask'));
   await throttle;
   assert.deepEqual(order, ['microtask', 'task']);
@@ -176,8 +176,8 @@ test('bad sample times drop after media-position registration and do not report 
 });
 
 test('graph completions aggregate and HWND notifications preserve lifetime and parameters', () => {
-  const messages = new AokanaWindowMessages(null),
-    events = new AokanaMovieFilterEvents(messages);
+  const messages = new BurikoWindowMessages(null),
+    events = new BurikoMovieFilterEvents(messages);
   const a = {},
     b = {};
   events.addRenderer(a);
@@ -208,11 +208,11 @@ test('EOS waits for long sample tails and pause cancels then Run reinstates its 
   f.pin.endOfStream();
   assert.equal(f.filterEvents.take(), null);
   f.pin.pause();
-  await aokanaMovieThrottle(75);
+  await burikoMovieThrottle(75);
   assert.equal(f.filterEvents.take(), null);
   f.filterEvents.resetCompletion();
   f.pin.run(0n);
-  await aokanaMovieThrottle(75);
+  await burikoMovieThrottle(75);
   assert.deepEqual(f.filterEvents.take(), {code: 1, value1: 0n, value2: 0n});
   assert.equal(f.pin.mediaStart, 900000n);
   assert.equal(f.pin.mediaEnd, 900000n);

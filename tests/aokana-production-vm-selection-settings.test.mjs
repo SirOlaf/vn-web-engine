@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted selection settings share the policy owner and copy Window item colors', async () => {
@@ -50,7 +50,7 @@ test('mounted selection settings share the policy owner and copy Window item col
     const handle = pop32(child.state);
     assert.equal(child.state.stackIndex, 0);
     const window = graph.manager.find('window', handle);
-    assert.ok(window instanceof AokanaWindowDisplayObject);
+    assert.ok(window instanceof BurikoWindowDisplayObject);
 
     const colors = Array.from({length: 16}, (_, index) => 0x01020300 + index);
     for (let index = 0; index < colors.length; index++) {

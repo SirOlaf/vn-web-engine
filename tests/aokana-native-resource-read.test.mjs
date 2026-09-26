@@ -2,22 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {createGroup80ResourceRead} from '../dist/engines/buriko/games/aokana/native/group-80-resource-read.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {createGroup80ResourceRead} from '../dist/engines/buriko/native/group-80-resource-read.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
 import {modernCbg, legacyCbg, singleArchive} from './aokana-resource-direct-fixtures.mjs';
 
 test('80:30/31 decode into actual BP caller bytes through loose and archive owners with exact slice results', async () => {
@@ -28,20 +28,20 @@ test('80:30/31 decode into actual BP caller bytes through loose and archive owne
     new BlobSource(new Blob([singleArchive('Legacy', legacyCbg())])),
   );
   backing.attach('/game/Raw.bin', new BlobSource(new Blob([Uint8Array.of(8, 9, 10, 11)])));
-  const text = new AokanaNativeText(),
-    media = new AokanaProgramMedia();
+  const text = new BurikoNativeText(),
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
     backing,
     text,
     media,
-    new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+    new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
   );
   // Actual resource owners remain composed; successful resources do not enter modal/retry UI.
-  const dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0));
-  const processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1);
-  const resources = new AokanaProgramResources(
+  const dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0));
+  const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1);
+  const resources = new BurikoProgramResources(
     files,
     {
       nativeFileRoot: 'C:\\game\\',
@@ -59,8 +59,8 @@ test('80:30/31 decode into actual BP caller bytes through loose and archive owne
     processing,
   );
   const bytes = new Uint8Array(4096),
-    memory = new AokanaBpMemory(bytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(bytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 16,

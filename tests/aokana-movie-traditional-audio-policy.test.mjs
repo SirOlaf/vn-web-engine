@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaTraditionalMovieAudioPolicy} from '../dist/engines/buriko/games/aokana/native/movie-traditional-audio-policy.js';
+import {BurikoTraditionalMovieAudioPolicy} from '../dist/engines/buriko/native/movie-traditional-audio-policy.js';
 
 test('traditional fullscreen movie policy retains exact volume and raw suppression without a graph', () => {
-  const policy = new AokanaTraditionalMovieAudioPolicy();
+  const policy = new BurikoTraditionalMovieAudioPolicy();
   assert.equal(policy.savedDecibels, 0);
   assert.equal(policy.rawSuppression, 0);
 

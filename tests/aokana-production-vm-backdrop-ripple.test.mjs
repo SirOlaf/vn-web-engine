@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaRippleBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoRippleBackdrop} from '../dist/engines/buriko/native/display-backdrop.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 const gray = (value) => Math.imul(value, 0x01010101) >>> 0;
@@ -14,7 +11,7 @@ const gray = (value) => Math.imul(value, 0x01010101) >>> 0;
 test('mounted VM ripple backdrop consumes shared coefficients and imported distance vectors', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke, memory} = fixture;
-  const output = allocateAokanaBitmap(3, 2, 2);
+  const output = allocateBurikoBitmap(3, 2, 2);
   const call = async (primary, secondary, args) => {
     assert.equal(await invoke(primary, secondary, args, 0), 0);
     assert.equal(child.state.stackIndex, 0);
@@ -57,7 +54,7 @@ test('mounted VM ripple backdrop consumes shared coefficients and imported dista
       Array.from({length: 6}, () => [dx, 0, 1]),
     );
   };
-  const draw = () => graph.manager.backdrop.draw(output, aokanaBitmapRectangle(output), 0);
+  const draw = () => graph.manager.backdrop.draw(output, burikoBitmapRectangle(output), 0);
   try {
     assert.deepEqual(
       definitions
@@ -90,7 +87,7 @@ test('mounted VM ripple backdrop consumes shared coefficients and imported dista
     graph.damage.clear();
     await call(0x90, 0x47, [3, 4, 1, 2, 256]);
     const selected = graph.manager.backdrop;
-    assert.ok(selected instanceof AokanaRippleBackdrop);
+    assert.ok(selected instanceof BurikoRippleBackdrop);
     assert.deepEqual(
       [selected.activation, selected.contentEnabled, graph.manager.backdropRenderType],
       [1, 1, 8],

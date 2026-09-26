@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseAokanaWaveBoxHeader,
-  AokanaWaveBoxError,
-} from '../dist/engines/buriko/games/aokana/native/audio/wavebox-header.js';
+  parseBurikoWaveBoxHeader,
+  BurikoWaveBoxError,
+} from '../dist/engines/buriko/native/audio/wavebox-header.js';
 import {
-  createAokanaCustomWaveBoxDecoder,
-  decodeAokanaAdpcm4Sample,
-  decodeAokanaHfAdpcm8Sample,
-} from '../dist/engines/buriko/games/aokana/native/audio/wavebox-codecs.js';
+  createBurikoCustomWaveBoxDecoder,
+  decodeBurikoAdpcm4Sample,
+  decodeBurikoHfAdpcm8Sample,
+} from '../dist/engines/buriko/native/audio/wavebox-codecs.js';
 
 function wave(codec, payload, fields = {}) {
   const output = new Uint8Array(64 + payload.length),
@@ -57,15 +57,15 @@ function huffmanPayload(symbolBytes, rootValue) {
 
 test('WaveBox parser preserves native selector precedence, header fields, and raw checkpoint words', () => {
   assert.throws(
-    () => parseAokanaWaveBoxHeader(new Uint8Array(63)),
-    (error) => error instanceof AokanaWaveBoxError && error.nativeCode === 14,
+    () => parseBurikoWaveBoxHeader(new Uint8Array(63)),
+    (error) => error instanceof BurikoWaveBoxError && error.nativeCode === 14,
   );
   assert.throws(
-    () => parseAokanaWaveBoxHeader(wave(9, [], {4: 0})),
+    () => parseBurikoWaveBoxHeader(wave(9, [], {4: 0})),
     (error) => error.nativeCode === 14,
   );
   assert.throws(
-    () => parseAokanaWaveBoxHeader(wave(0, [], {4: 0})),
+    () => parseBurikoWaveBoxHeader(wave(0, [], {4: 0})),
     (error) => error.nativeCode === 0x11000001,
   );
   const source = wave(3, [], {
@@ -84,7 +84,7 @@ test('WaveBox parser preserves native selector precedence, header fields, and ra
     56: 29,
     60: 11,
   });
-  const h = parseAokanaWaveBoxHeader(source);
+  const h = parseBurikoWaveBoxHeader(source);
   source[0] = 0;
   assert.equal(h.raw.length, 64);
   assert.equal(h.resetDataOffset, 96);
@@ -126,19 +126,19 @@ test('ADPCM arithmetic matches independent native leaf execution boundary vector
     const state = {predictor, step};
     const sample =
       kind === 0
-        ? decodeAokanaAdpcm4Sample(code, state)
-        : decodeAokanaHfAdpcm8Sample(code, state, arg);
+        ? decodeBurikoAdpcm4Sample(code, state)
+        : decodeBurikoHfAdpcm8Sample(code, state, arg);
     assert.equal(sample & 65535, output);
     assert.deepEqual(state, {predictor: nextPredictor, step: nextStep});
   }
   assert.throws(
-    () => decodeAokanaHfAdpcm8Sample(0, {predictor: 0, step: 127}, 61),
+    () => decodeBurikoHfAdpcm8Sample(0, {predictor: 0, step: 127}, 61),
     /division by zero/,
   );
 });
 
 test('PCM16 retains odd short reads and applies binary64 gain before signed clipping', () => {
-  const d = createAokanaCustomWaveBoxDecoder(wave(1, [0x10, 0x27, 0xf0, 0xd8, 0x7f], {12: 3}), {
+  const d = createBurikoCustomWaveBoxDecoder(wave(1, [0x10, 0x27, 0xf0, 0xd8, 0x7f], {12: 3}), {
     gain: 0.5,
   });
   assert.deepEqual(d.readFrameBytes(3), Uint8Array.of(0x88, 0x13, 0x78, 0xec, 0x7f));
@@ -147,16 +147,16 @@ test('PCM16 retains odd short reads and applies binary64 gain before signed clip
   assert.equal(d.readFrameBytes(1).length, 0);
   d.reset();
   assert.deepEqual(samples(d.readFrameBytes(2)), [5000, -5000]);
-  const clipped = createAokanaCustomWaveBoxDecoder(wave(1, [0xff, 0x7f, 0x00, 0x80], {12: 2}), {
+  const clipped = createBurikoCustomWaveBoxDecoder(wave(1, [0xff, 0x7f, 0x00, 0x80], {12: 2}), {
     gain: 2,
   });
   assert.deepEqual(samples(clipped.readFrameBytes(2)), [32767, -32768]);
-  const overflow = createAokanaCustomWaveBoxDecoder(wave(1, [1, 0], {12: 1}), {gain: Infinity});
+  const overflow = createBurikoCustomWaveBoxDecoder(wave(1, [1, 0], {12: 1}), {gain: Infinity});
   assert.deepEqual(samples(overflow.readFrameBytes(1)), [-32768]);
 });
 
 test('PCM16 initial cursor is 64 while reset and loop use the declared data offset', () => {
-  const d = createAokanaCustomWaveBoxDecoder(
+  const d = createBurikoCustomWaveBoxDecoder(
     wave(1, [1, 0, 2, 0, 3, 0, 4, 0], {0: 68, 12: 2, 28: 1}),
     {gain: 1},
   );
@@ -175,16 +175,16 @@ test('PCM16 initial cursor is 64 while reset and loop use the declared data offs
 });
 
 test('ADPCM4 decodes low nibble first and stereo predictors remain independent', () => {
-  const mono = createAokanaCustomWaveBoxDecoder(wave(0, [0x10, 0x32]), {gain: 1});
+  const mono = createBurikoCustomWaveBoxDecoder(wave(0, [0x10, 0x32]), {gain: 1});
   assert.deepEqual(samples(mono.readFrameBytes(4)), [15, 62, 141, 252]);
   mono.reset();
   assert.deepEqual(samples(mono.readFrameBytes(4)), [15, 62, 141, 252]);
-  const stereo = createAokanaCustomWaveBoxDecoder(wave(0, [0x10, 0x32], {12: 2, 20: 2}), {gain: 1});
+  const stereo = createBurikoCustomWaveBoxDecoder(wave(0, [0x10, 0x32], {12: 2, 20: 2}), {gain: 1});
   assert.deepEqual(samples(stereo.readFrameBytes(2)), [15, 47, 94, 158]);
 });
 
 test('ADPCM4 odd mono calls preserve pending output and native lower frame counter discrepancy', () => {
-  const d = createAokanaCustomWaveBoxDecoder(wave(0, [0x10, 0x32, 0x54], {12: 5}), {gain: 1});
+  const d = createBurikoCustomWaveBoxDecoder(wave(0, [0x10, 0x32, 0x54], {12: 5}), {gain: 1});
   assert.deepEqual(samples(d.readFrameBytes(3)), [15, 62, 141]);
   assert.equal(d.decodedFramePosition, 3);
   assert.deepEqual(samples(d.readFrameBytes(3)), [252, 394, 603]);
@@ -193,7 +193,7 @@ test('ADPCM4 odd mono calls preserve pending output and native lower frame count
 });
 
 test('ADPCM4 loop checkpoint restores unclamped state and its odd pending sample bypasses gain', () => {
-  const d = createAokanaCustomWaveBoxDecoder(
+  const d = createBurikoCustomWaveBoxDecoder(
     wave(0, [0x70, 0x00], {12: 3, 28: 1, 32: 100, 36: 127}),
     {gain: 0.5},
   );
@@ -205,20 +205,20 @@ test('ADPCM4 loop checkpoint restores unclamped state and its odd pending sample
 
 test('HFADPCM8 Huffman bits are MSB-first and symbols feed alternating channel predictors', () => {
   const payload = huffmanPayload(Uint8Array.of(0, 128, 1, 129));
-  const d = createAokanaCustomWaveBoxDecoder(wave(2, payload, {12: 2, 20: 2}), {gain: 1});
+  const d = createBurikoCustomWaveBoxDecoder(wave(2, payload, {12: 2, 20: 2}), {gain: 1});
   assert.deepEqual(samples(d.readFrameBytes(2)), [3, -3, 14, -14]);
   d.reset();
   assert.deepEqual(samples(d.readFrameBytes(2)), [3, -3, 14, -14]);
 });
 
 test('HFADPCM8 loop bit offset is retained and a leaf-only tree consumes no encoded bits', () => {
-  const d = createAokanaCustomWaveBoxDecoder(
+  const d = createBurikoCustomWaveBoxDecoder(
     wave(2, huffmanPayload(Uint8Array.of(0xa5, 0x80)), {12: 1, 56: 3, 60: 11}),
     {gain: 1},
   );
   d.restartLoop();
   assert.deepEqual(samples(d.readFrameBytes(1)), [88]);
-  const constant = createAokanaCustomWaveBoxDecoder(
+  const constant = createBurikoCustomWaveBoxDecoder(
     wave(2, huffmanPayload(new Uint8Array(), 0), {12: 3}),
     {gain: 1},
   );
@@ -239,9 +239,9 @@ test('HFADPCM8 refill retains partial byte offsets across 1024-byte boundaries a
   tree.setInt16(10, 3, true);
   payload.set(encoded, 0x408);
   const resource = wave(2, payload, {12: 3000, 20: 2});
-  const whole = createAokanaCustomWaveBoxDecoder(resource, {gain: 1}).readFrameBytes(3000);
+  const whole = createBurikoCustomWaveBoxDecoder(resource, {gain: 1}).readFrameBytes(3000);
   assert.deepEqual(samples(whole.subarray(0, 12)), [3, -3, 30, 0, 27, 27]);
-  const chunked = createAokanaCustomWaveBoxDecoder(resource, {gain: 1}),
+  const chunked = createBurikoCustomWaveBoxDecoder(resource, {gain: 1}),
     parts = [];
   for (const count of [1, 4, 511, 35, 1200, 1249]) parts.push(...chunked.readFrameBytes(count));
   assert.deepEqual(Uint8Array.from(parts), whole);
@@ -249,14 +249,14 @@ test('HFADPCM8 refill retains partial byte offsets across 1024-byte boundaries a
 });
 
 test('WaveBox short encoded reads preserve native stored bytes and distinguish unwritten memory', () => {
-  const d = createAokanaCustomWaveBoxDecoder(wave(0, [0], {12: 4}), {gain: 1});
+  const d = createBurikoCustomWaveBoxDecoder(wave(0, [0], {12: 4}), {gain: 1});
   assert.deepEqual(samples(d.readFrameBytes(2)), [15, 30]);
   assert.deepEqual(samples(d.readFrameBytes(2)), [45, 60]);
-  const empty = createAokanaCustomWaveBoxDecoder(wave(0, [], {12: 2}), {gain: 1});
+  const empty = createBurikoCustomWaveBoxDecoder(wave(0, [], {12: 2}), {gain: 1});
   assert.throws(() => empty.readFrameBytes(2), /unwritten native allocation/);
   const shortTree = new Uint8Array(12); // Eight ignored bytes and a known root leaf; other tree bytes stay unwritten.
-  const hf = createAokanaCustomWaveBoxDecoder(wave(2, shortTree, {12: 1}), {gain: 1});
+  const hf = createBurikoCustomWaveBoxDecoder(wave(2, shortTree, {12: 1}), {gain: 1});
   assert.deepEqual(samples(hf.readFrameBytes(1)), [3]);
-  const zeroChannels = createAokanaCustomWaveBoxDecoder(wave(1, [], {20: 0}), {gain: 1});
+  const zeroChannels = createBurikoCustomWaveBoxDecoder(wave(1, [], {20: 0}), {gain: 1});
   assert.throws(() => zeroChannels.readFrameBytes(0), /division by zero/);
 });

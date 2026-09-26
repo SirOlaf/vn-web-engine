@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMemoryAudioStorage} from '../dist/engines/buriko/games/aokana/native/audio/memory-storage.js';
-import {AokanaOggExchangeDecoder} from '../dist/engines/buriko/games/aokana/native/audio/ogg-exchange-stream.js';
-import {AokanaWaveStream} from '../dist/engines/buriko/games/aokana/native/audio/wave-stream.js';
-import {AokanaWaveBoxOggDecoder} from '../dist/engines/buriko/games/aokana/native/audio/wavebox-ogg.js';
-import {parseAokanaWaveBoxHeader} from '../dist/engines/buriko/games/aokana/native/audio/wavebox-header.js';
+import {BurikoMemoryAudioStorage} from '../dist/engines/buriko/native/audio/memory-storage.js';
+import {BurikoOggExchangeDecoder} from '../dist/engines/buriko/native/audio/ogg-exchange-stream.js';
+import {BurikoWaveStream} from '../dist/engines/buriko/native/audio/wave-stream.js';
+import {BurikoWaveBoxOggDecoder} from '../dist/engines/buriko/native/audio/wavebox-ogg.js';
+import {parseBurikoWaveBoxHeader} from '../dist/engines/buriko/native/audio/wavebox-header.js';
+import {BURIKO_BP_ABI_169, BURIKO_BP_ABI_172} from '../dist/engines/buriko/bp/abi.js';
 
 function source(values) {
   const raw = new Uint8Array(64),
@@ -17,7 +18,7 @@ function source(values) {
     [48, 3],
   ])
     view.setUint32(offset, value, true);
-  const storage = new AokanaMemoryAudioStorage(64);
+  const storage = new BurikoMemoryAudioStorage(64);
   storage.flags = 3;
   storage.write({bytes: raw, offset: 0}, 64);
   storage.seek(0);
@@ -31,14 +32,14 @@ function source(values) {
   };
   return {
     storage,
-    decoder: new AokanaWaveBoxOggDecoder(parseAokanaWaveBoxHeader(raw), [link], 16, 1),
+    decoder: new BurikoWaveBoxOggDecoder(parseBurikoWaveBoxHeader(raw), [link], 16, 1),
   };
 }
 
 function exchange(rawLoopDword) {
   const first = source([0.25, 0.5]),
     second = source([-0.25, -0.5]);
-  return new AokanaOggExchangeDecoder(
+  return new BurikoOggExchangeDecoder(
     first.decoder,
     second.decoder,
     first.storage,
@@ -56,7 +57,7 @@ test('paired decoded OGG links advance first to second and apply the raw DWORD o
   const once = exchange(0),
     actor = {},
     actors = {currentActor: actor};
-  const first = new AokanaWaveStream(once, () => 0, actors);
+  const first = new BurikoWaveStream(once, () => 0, actors);
   try {
     assert.equal(once.activeInput, 0);
     assert.equal(once.loopEnabled, 1);
@@ -81,7 +82,7 @@ test('paired decoded OGG links advance first to second and apply the raw DWORD o
   }
 
   const repeating = exchange(0x80000000),
-    second = new AokanaWaveStream(repeating, () => 0, actors);
+    second = new BurikoWaveStream(repeating, () => 0, actors);
   try {
     await second.initialize(actor);
     assert.equal(repeating.activeInput, 1);
@@ -95,32 +96,39 @@ test('paired decoded OGG links advance first to second and apply the raw DWORD o
   }
 });
 
-test('the first source transition leaves the visible loop count unchanged; a second-source repeat counts', async () => {
-  const first = source(Array(8).fill(0.25)),
-    second = source(Array(8).fill(-0.25));
-  const decoder = new AokanaOggExchangeDecoder(
-    first.decoder,
-    second.decoder,
-    first.storage,
-    second.storage,
-    1,
-  );
-  let milliseconds = 0;
-  const actor = {},
-    stream = new AokanaWaveStream(decoder, () => milliseconds, {currentActor: actor});
-  try {
-    await stream.initialize(actor);
-    assert.equal(decoder.activeInput, 0);
-    assert.equal(await stream.readInto(new Uint8Array(16), 0, 8), 8);
-    await stream.serviceProducer();
-    assert.equal(decoder.activeInput, 1);
-    assert.equal(stream.visibleLoopCount, 0);
-    assert.equal(await stream.readInto(new Uint8Array(14), 0, 7), 7);
-    await stream.serviceProducer();
-    assert.equal(stream.visibleLoopCount, 0);
-    milliseconds = 4000;
-    assert.equal(stream.visibleLoopCount, 1);
-  } finally {
-    await stream.dispose();
+test("paired source transition, repeat and reset retain each ABI's loop counter lifetime", async () => {
+  for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_172]) {
+    const first = source(Array(8).fill(0.25)),
+      second = source(Array(8).fill(-0.25));
+    const decoder = new BurikoOggExchangeDecoder(
+      first.decoder,
+      second.decoder,
+      first.storage,
+      second.storage,
+      1,
+    );
+    let milliseconds = 0;
+    const actor = {},
+      stream = new BurikoWaveStream(decoder, () => milliseconds, {currentActor: actor}, abi);
+    try {
+      await stream.initialize(actor);
+      assert.equal(decoder.activeInput, 0);
+      assert.equal(await stream.readInto(new Uint8Array(16), 0, 8), 8);
+      await stream.serviceProducer();
+      assert.equal(decoder.activeInput, 1);
+      assert.equal(stream.visibleLoopCount, 0);
+      assert.equal(await stream.readInto(new Uint8Array(14), 0, 7), 7);
+      await stream.serviceProducer();
+      assert.equal(stream.visibleLoopCount, 0);
+      milliseconds = 4000;
+      assert.equal(stream.visibleLoopCount, 1);
+      await stream.reset(actor);
+      assert.equal(stream.framePosition, 0);
+      assert.equal(decoder.activeInput, 0);
+      assert.equal(stream.fifo.available, 16);
+      assert.equal(stream.visibleLoopCount, abi.compatibility === '1.69' ? 0 : 1);
+    } finally {
+      await stream.dispose();
+    }
   }
 });

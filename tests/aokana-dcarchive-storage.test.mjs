@@ -2,22 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaDcArchive} from '../dist/engines/buriko/games/aokana/native/audio/dc-archive.js';
-import {AokanaArchiveFileStorage} from '../dist/engines/buriko/games/aokana/native/audio/archive-storage.js';
-import {createAokanaWaveStatic} from '../dist/engines/buriko/games/aokana/native/audio/wave-static.js';
-import {AokanaSpeakerModel} from '../dist/engines/buriko/games/aokana/native/audio/speaker-model.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoDcArchive} from '../dist/engines/buriko/native/audio/dc-archive.js';
+import {BurikoArchiveFileStorage} from '../dist/engines/buriko/native/audio/archive-storage.js';
+import {createBurikoWaveStatic} from '../dist/engines/buriko/native/audio/wave-static.js';
+import {BurikoSpeakerModel} from '../dist/engines/buriko/native/audio/speaker-model.js';
 import {
-  AokanaSpeakerContext,
-  AokanaStaticSpeaker,
-} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+  BurikoSpeakerContext,
+  BurikoStaticSpeaker,
+} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 
 test('real DCArchive member cursor feeds initialized WaveBox bytes to the actual static PCM speaker', async () => {
   const wave = new Uint8Array(72),
@@ -48,7 +48,7 @@ test('real DCArchive member cursor feeds initialized WaveBox bytes to the actual
   bytes.set(wave, 275);
   const backing = new StoredFileSystem(new MemoryStore(), (p) => p.toLowerCase());
   await backing.commit([{kind: 'write', path: '/game/sound.arc', data: bytes}]);
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
     records: [
       {
         path: '/game/sound.arc',
@@ -64,17 +64,17 @@ test('real DCArchive member cursor feeds initialized WaveBox bytes to the actual
     currentFileTime: () => 123456789n,
     accessTimePolicy: 'disabled',
   });
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       mounted,
-      new AokanaNativeText(),
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+      new BurikoNativeText(),
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
     ),
-    archive = new AokanaDcArchive(files),
-    storage = new AokanaArchiveFileStorage(),
+    archive = new BurikoDcArchive(files),
+    storage = new BurikoArchiveFileStorage(),
     actor = {},
-    backend = new AokanaMemorySpeakerBackend(24000),
-    speaker = new AokanaStaticSpeaker(new AokanaSpeakerContext(backend));
+    backend = new BurikoMemorySpeakerBackend(24000),
+    speaker = new BurikoStaticSpeaker(new BurikoSpeakerContext(backend));
   try {
     assert.equal(await archive.openIndex('C:\\game\\sound.arc', actor), 0);
     assert.equal(await archive.hasMember('VOICE.bw', actor), 0);
@@ -94,8 +94,8 @@ test('real DCArchive member cursor feeds initialized WaveBox bytes to the actual
     assert.equal(await storage.readInto({bytes: continuation, offset: 0}, 6, actor), 6);
     assert.deepEqual([...continuation], [0, 64, 0, 0, 0, 192]);
     // Detached bytes are intentionally the fixture's final consumer, not a live-stream claim.
-    const decoded = await createAokanaWaveStatic(actual, {gain: 1, prefer24Bit: false});
-    assert.equal(await speaker.attach(new AokanaSpeakerModel(decoded)), 0);
+    const decoded = await createBurikoWaveStatic(actual, {gain: 1, prefer24Bit: false});
+    assert.equal(await speaker.attach(new BurikoSpeakerModel(decoded)), 0);
     assert.equal(await speaker.start(0), 0);
     const output = backend.buffers[0].render(4);
     assert.deepEqual([...output[0]], [0, 0.5, 0, -0.5]);

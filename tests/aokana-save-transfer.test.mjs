@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaSaveTransfer} from '../dist/engines/buriko/games/aokana/save-transfer.js';
+import {BurikoSaveTransfer} from '../dist/engines/buriko/save-transfer.js';
 
-test('Aokana save transfer uses the native save names and persistent game/user byte stores', async () => {
+test('Buriko save transfer uses the native save names and persistent game/user byte stores', async () => {
   const stores = {game: new MemoryStore(), user: new MemoryStore()};
-  const transfer = new AokanaSaveTransfer(async (area) => ({
+  const transfer = new BurikoSaveTransfer(async (area) => ({
     snapshot: () => stores[area].snapshot(),
     update: (change) => stores[area].update(change),
     close() {},

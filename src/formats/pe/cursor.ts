@@ -37,7 +37,7 @@ export class PeCursorReader {
   private readonly resources: PeResource[];
   private hashes: Promise<Map<string, (PeStaticCursor | PeAnimatedCursor)[]>> | undefined;
   constructor(bytes: Uint8Array) {
-    this.resources = parsePeResources(bytes);
+    this.resources = parsePeResources(bytes, [1, 12, 21]);
   }
 
   list(): PeCursorEntry[] {

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaFrameMetrics} from '../dist/engines/buriko/games/aokana/native/frame-metrics.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {aokanaPresentationVertices} from '../dist/engines/buriko/games/aokana/native/display-device.js';
+import {BurikoFrameMetrics} from '../dist/engines/buriko/native/frame-metrics.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {burikoPresentationVertices} from '../dist/engines/buriko/native/display-device.js';
 
 test('frame metrics carry successive simulation intervals into one committed draw', () => {
   let ticks = 0n,
@@ -15,7 +15,7 @@ test('frame metrics carry successive simulation intervals into one committed dra
     },
     queryFrequency: () => 1000000n,
   };
-  const metrics = new AokanaFrameMetrics(counter, new AokanaNativeClock(() => 0), {
+  const metrics = new BurikoFrameMetrics(counter, new BurikoNativeClock(() => 0), {
     refreshRate: 60,
     readRasterScanline: () => 0x81000000,
   });
@@ -60,7 +60,7 @@ test('frame quality distinguishes scanline wrap and exact timing threshold indep
       return 0;
     },
   };
-  const metrics = new AokanaFrameMetrics(counter, new AokanaNativeClock(() => 0), raster);
+  const metrics = new BurikoFrameMetrics(counter, new BurikoNativeClock(() => 0), raster);
   metrics.enable(1);
   metrics.begin();
   ticks = 1000n;
@@ -80,10 +80,10 @@ test('frame quality distinguishes scanline wrap and exact timing threshold indep
 });
 
 test('presentation quad retains half-pixel coordinates, actual-size UV range and DWORD diffuse', () => {
-  const display = new AokanaNativeDisplayState(1920, 1080);
+  const display = new BurikoNativeDisplayState(1920, 1080);
   display.requestedWidth = 1600;
   display.requestedHeight = 900;
-  const bytes = aokanaPresentationVertices(display),
+  const bytes = burikoPresentationVertices(display),
     view = new DataView(bytes.buffer);
   assert.equal(bytes.length, 112);
   const vertex = (index) => {

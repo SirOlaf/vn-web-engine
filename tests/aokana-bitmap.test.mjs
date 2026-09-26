@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 import {
-  blendAokanaAlpha,
-  blendAokanaAlphaWithTransparency,
-  blendAokanaAlphaIntoRgb,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-alpha.js';
+  blendBurikoAlpha,
+  blendBurikoAlphaWithTransparency,
+  blendBurikoAlphaIntoRgb,
+} from '../dist/engines/buriko/native/bitmap-alpha.js';
 import {
-  copyAokanaBitmapRows,
-  clearAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
+  copyBurikoBitmapRows,
+  clearBurikoBitmap,
+} from '../dist/engines/buriko/native/bitmap-copy.js';
 
 function bitmap(words, width = words.length, height = 1) {
   const bytes = new Uint8Array(new Uint32Array(words).buffer);
   return {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride: width * 4,
     width,
@@ -59,7 +59,7 @@ const normalVectors = [
 test('normal alpha blend retains measured SSE pair rounding and integer odd-tail results', () => {
   for (const vector of normalVectors) {
     const destination = bitmap(vector.slice(3, 6));
-    blendAokanaAlpha(destination, bitmap(vector.slice(0, 3)));
+    blendBurikoAlpha(destination, bitmap(vector.slice(0, 3)));
     assert.deepEqual(words(destination), vector.slice(6));
   }
 });
@@ -81,7 +81,7 @@ test('fractional alpha blend retains each native float32 rounding step', () => {
   ];
   for (const vector of vectors) {
     const destination = bitmap(vector.slice(4, 7));
-    blendAokanaAlphaWithTransparency(destination, bitmap(vector.slice(1, 4)), vector[0]);
+    blendBurikoAlphaWithTransparency(destination, bitmap(vector.slice(1, 4)), vector[0]);
     assert.deepEqual(words(destination), vector.slice(7));
   }
 });
@@ -90,7 +90,7 @@ test('native zero-denominator tail faults after completing its paired writes', (
   const destination = bitmap([0x00b134a8, 0x00ebfaf4, 0x0066d22e]);
   const source = bitmap([0x4052f23a, 0xbfa597ca, 0x401cd779]);
   assert.throws(
-    () => blendAokanaAlphaWithTransparency(destination, source, 256),
+    () => blendBurikoAlphaWithTransparency(destination, source, 256),
     /division by zero/,
   );
   assert.deepEqual(words(destination), [0, 0, 0x0066d22e]);
@@ -98,14 +98,14 @@ test('native zero-denominator tail faults after completing its paired writes', (
 
 test('opaque alpha-to-RGB pairs copy alpha while the opaque odd tail clears it', () => {
   const destination = bitmap([0x05060708, 0x15161718, 0x25262728]);
-  blendAokanaAlphaIntoRgb(destination, bitmap([0xfe123456, 0xffabcdef, 0xfe123456]));
+  blendBurikoAlphaIntoRgb(destination, bitmap([0xfe123456, 0xffabcdef, 0xfe123456]));
   assert.deepEqual(words(destination), [0xfe123456, 0xffabcdef, 0x00123456]);
 });
 
 test('native block copies preserve overlapping 8-byte store order', () => {
   const source = bitmap([1, 2, 3, 4, 5, 6], 4);
   const destination = {...source, offset: 4};
-  copyAokanaBitmapRows(destination, source);
+  copyBurikoBitmapRows(destination, source);
   assert.deepEqual(words(source), [1, 1, 2, 2, 4, 6]);
 });
 
@@ -113,7 +113,7 @@ test('alpha blend snapshots each overlapping pair before writing it', () => {
   const shared = bitmap([0xff000001, 0xff000002, 0xff000003, 0xff000004]);
   const destination = {...shared, offset: 4};
   const source = {...shared, width: 3};
-  blendAokanaAlpha(destination, source);
+  blendBurikoAlpha(destination, source);
   // The odd tail observes the second word written by the preceding MOVQ pair.
   assert.deepEqual(words(shared), [0xff000001, 0xff000001, 0xff000002, 0xff000002]);
 });
@@ -121,27 +121,27 @@ test('alpha blend snapshots each overlapping pair before writing it', () => {
 test('alpha blend retains native range and unwritten-source faults', () => {
   const destination = bitmap([0xff010203, 0xff040506]);
   const source = bitmap([0xffaabbcc, 0xffddeeff]);
-  source.storage = new AokanaBitmapStorage(source.storage.bytes, false);
+  source.storage = new BurikoBitmapStorage(source.storage.bytes, false);
   source.storage.written(0, 4);
-  assert.throws(() => blendAokanaAlpha(destination, source), /unwritten native allocation/);
+  assert.throws(() => blendBurikoAlpha(destination, source), /unwritten native allocation/);
   assert.deepEqual(words(destination), [0xff010203, 0xff040506]);
 
   const shortSource = {...bitmap([0xffaabbcc]), width: 2};
-  assert.throws(() => blendAokanaAlpha(destination, shortSource), /outside native allocation/);
+  assert.throws(() => blendBurikoAlpha(destination, shortSource), /outside native allocation/);
 });
 
 test('native block copies keep earlier stores when a later source block is unwritten', () => {
   const source = bitmap([1, 2, 3, 4, 5, 6]);
-  source.storage = new AokanaBitmapStorage(source.storage.bytes, false);
+  source.storage = new BurikoBitmapStorage(source.storage.bytes, false);
   source.storage.written(0, 8);
   const destination = bitmap([0, 0, 0, 0, 0, 0]);
-  assert.throws(() => copyAokanaBitmapRows(destination, source), /unwritten native allocation/);
+  assert.throws(() => copyBurikoBitmapRows(destination, source), /unwritten native allocation/);
   assert.deepEqual(words(destination), [1, 2, 0, 0, 0, 0]);
 });
 
 test('failed optional clear cropping clears the original bitmap and retains row padding', () => {
   const target = bitmap([1, 2, 0x12345678, 3, 4, 0xabcdef00], 2, 2);
   target.stride = 12;
-  clearAokanaBitmap(target, {left: 20, top: 20, right: 30, bottom: 30});
+  clearBurikoBitmap(target, {left: 20, top: 20, right: 30, bottom: 30});
   assert.deepEqual(words(target), [0, 0, 0x12345678, 0, 0, 0xabcdef00]);
 });

@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaDisplayRedraw} from '../dist/engines/buriko/games/aokana/native/display-redraw.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoDisplayRedraw} from '../dist/engines/buriko/native/display-redraw.js';
 
 test('both native registries consume one identity sequence and retain newest-first records', () => {
   const actors = {currentActor: {}},
-    locks = new AokanaNativeLocks(actors);
+    locks = new BurikoNativeLocks(actors);
   assert.equal(locks.script.create(), 1);
   locks.initializeEngine();
   assert.deepEqual(
@@ -33,7 +33,7 @@ test('both native registries consume one identity sequence and retain newest-fir
 
 test('recursive native acquisitions retain separate admission and acquisition counts', () => {
   const actors = {currentActor: {}},
-    locks = new AokanaNativeLocks(actors);
+    locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
   const first = locks.script.create(),
     second = locks.script.create();
@@ -59,8 +59,8 @@ test('recursive native acquisitions retain separate admission and acquisition co
 
 test('redraw coalescing owns the actual shared engine lock one during each pending write', () => {
   const actors = {currentActor: {}},
-    locks = new AokanaNativeLocks(actors),
-    redraw = new AokanaDisplayRedraw();
+    locks = new BurikoNativeLocks(actors),
+    redraw = new BurikoDisplayRedraw();
   locks.initializeEngine();
   redraw.bindLocks(locks);
   let pending = 0;

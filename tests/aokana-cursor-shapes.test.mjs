@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
-import {AokanaNativeCursor} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
+import {BurikoNativeCursor} from '../dist/engines/buriko/native/engine-dialogs.js';
 import {
-  AokanaCursorShapes,
-  readAokanaCursorResource,
-} from '../dist/engines/buriko/games/aokana/native/cursor-shapes.js';
-import {createGroup80CursorShapes} from '../dist/engines/buriko/games/aokana/native/group-80-cursor-shapes.js';
-import {AokanaMainWindowMessageReceiver} from '../dist/engines/buriko/games/aokana/native/main-window-messages.js';
-import {AokanaWindowMessages as Waits} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaKnobDisplays} from '../dist/engines/buriko/games/aokana/native/knob-displays.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoCursorShapes,
+  readBurikoCursorResource,
+} from '../dist/engines/buriko/native/cursor-shapes.js';
+import {createGroup80CursorShapes} from '../dist/engines/buriko/native/group-80-cursor-shapes.js';
+import {BurikoMainWindowMessageReceiver} from '../dist/engines/buriko/native/main-window-messages.js';
+import {BurikoWindowMessages as Waits} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoKnobDisplays} from '../dist/engines/buriko/native/knob-displays.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 // Ordinary synthetic PE directory and initialized cursor pixels; no executable is run.
 function dib({width = 32, height = 32, depth = 24, x = 9, y = 2, core = false} = {}) {
@@ -154,7 +154,7 @@ test('80:67 shares resource-backed cursor selection, client messages and physica
     listeners = new Map();
   s.canvas.addEventListener = (name, listener) => listeners.set(name, listener);
   s.canvas.removeEventListener = (name) => listeners.delete(name);
-  const resource = readAokanaCursorResource(
+  const resource = readBurikoCursorResource(
       simple({width: 32, height: 32, depth: 8, x: 0, y: 0}).bytes,
     ),
     cur = new DataView(resource.buffer, resource.byteOffset, resource.byteLength);
@@ -165,11 +165,11 @@ test('80:67 shares resource-backed cursor selection, client messages and physica
   assert.equal(resource[7], 32);
   assert.equal(cur.getUint16(10, true), 0);
   assert.equal(cur.getUint16(12, true), 0);
-  const physical = new AokanaNativeCursor(s.canvas),
-    shapes = new AokanaCursorShapes(physical, s.messages, resource),
+  const physical = new BurikoNativeCursor(s.canvas),
+    shapes = new BurikoCursorShapes(physical, s.messages, resource),
     waits = new Waits(),
-    knobs = new AokanaKnobDisplays(s.manager, s.input, s.notifications);
-  new AokanaMainWindowMessageReceiver(
+    knobs = new BurikoKnobDisplays(s.manager, s.input, s.notifications);
+  new BurikoMainWindowMessageReceiver(
     s.messages,
     waits,
     s.input,
@@ -184,14 +184,14 @@ test('80:67 shares resource-backed cursor selection, client messages and physica
       assert.fail('ordinary valid cursor selection');
     },
   });
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x80][0x67]);
-  const thread = new AokanaBpThread({
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][0x67]);
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(32));
+    memory = new BurikoBpMemory(new Uint8Array(32));
   for (const index of [0, 1, 2, 4, 0]) {
     push32(thread, index);
     assert.equal(slot.execute({thread, memory, diagnostics: {}}), 0);

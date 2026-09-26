@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem} from '../dist/platform/filesystem.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProductionResourceWorker} from '../dist/engines/buriko/games/aokana/native/production-resource-worker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaDroppedFiles} from '../dist/engines/buriko/games/aokana/native/dropped-files.js';
-import {AokanaMainWindowMessageReceiver} from '../dist/engines/buriko/games/aokana/native/main-window-messages.js';
-import {AokanaWindowMessages as Waits} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaKnobDisplays} from '../dist/engines/buriko/games/aokana/native/knob-displays.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProductionResourceWorker} from '../dist/engines/buriko/native/production-resource-worker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoDroppedFiles} from '../dist/engines/buriko/native/dropped-files.js';
+import {BurikoMainWindowMessageReceiver} from '../dist/engines/buriko/native/main-window-messages.js';
+import {BurikoWindowMessages as Waits} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoKnobDisplays} from '../dist/engines/buriko/native/knob-displays.js';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
 
 test('production file owner reads a dropped Blob through its metadata-backed mount', async () => {
@@ -18,21 +18,21 @@ test('production file owner reads a dropped Blob through its metadata-backed mou
   s.canvas.addEventListener = (name, listener) => listeners.set(name, listener);
   s.canvas.removeEventListener = (name) => listeners.delete(name);
   const backing = new MountedFileSystem(),
-    mounted = new AokanaMountedFileMetadata(backing, {
+    mounted = new BurikoMountedFileMetadata(backing, {
       records: [],
       volumes: [{path: '/', identity: {}, writable: true}],
       canonical: (path) => path.toLowerCase(),
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    paths = new AokanaMountedProgramPaths([{native: 'D:\\Drops', mounted: '/drops'}], 'D:\\Drops'),
+    paths = new BurikoMountedProgramPaths([{native: 'D:\\Drops', mounted: '/drops'}], 'D:\\Drops'),
     text = s.controller.localized.text,
     encode = (value) => text.encodeWide(value, 1),
-    owner = new AokanaProductionResourceWorker({
+    owner = new BurikoProductionResourceWorker({
       mounted,
       paths,
       text,
-      media: new AokanaProgramMedia(),
+      media: new BurikoProgramMedia(),
       dialogs: s.controller.mouseTrails.dialogs,
       configuration: {
         nativeFileRoot: 'D:\\Drops\\',
@@ -48,7 +48,7 @@ test('production file owner reads a dropped Blob through its metadata-backed mou
       errorDirectory: encode('D:\\Drops\\'),
       workingDirectory: encode('D:\\Drops\\'),
       audioRootWide: 'D:\\Drops\\',
-      backend: new AokanaMemorySpeakerBackend(1000),
+      backend: new BurikoMemorySpeakerBackend(1000),
       output: {prefer24Bit: false},
       ticks: s.controller.ticks,
       allocator: s.manager.surfaces.allocator,
@@ -59,7 +59,7 @@ test('production file owner reads a dropped Blob through its metadata-backed mou
   assert.equal(owner.files.metadata, mounted);
   assert.equal(owner.files.usesFileSystem(mounted), true);
   assert.equal(owner.files.usesFileSystem(backing), false);
-  const drops = new AokanaDroppedFiles(
+  const drops = new BurikoDroppedFiles(
     s.canvas,
     s.messages,
     owner.files,
@@ -67,13 +67,13 @@ test('production file owner reads a dropped Blob through its metadata-backed mou
     '/drops',
     'D:\\Drops',
   );
-  new AokanaMainWindowMessageReceiver(
+  new BurikoMainWindowMessageReceiver(
     s.messages,
     new Waits(),
     s.input,
     s.notifications,
     s.controller.host,
-    new AokanaKnobDisplays(s.manager, s.input, s.notifications),
+    new BurikoKnobDisplays(s.manager, s.input, s.notifications),
     s.controller,
     null,
     drops,

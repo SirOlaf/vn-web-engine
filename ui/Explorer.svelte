@@ -1,7 +1,7 @@
 <script lang="ts">
   import MediaActivation from './player/MediaActivation.svelte';
 
-  export let game: 'noah' | 'aokana';
+  export let game: 'noah' | 'buriko';
 
   $: noah = game === 'noah';
 </script>
@@ -9,9 +9,7 @@
 <MediaActivation />
 
 <header>
-  <span class="eyebrow"
-    >{noah ? 'CHAOS;HEAD NOAH / WEB ENGINE' : 'AOKANA ULTIMATE EDITION / BURIKO'}</span
-  >
+  <span class="eyebrow">{noah ? 'CHAOS;HEAD NOAH / WEB ENGINE' : 'BGI / ETHORNELL'}</span>
   <h1>Asset laboratory</h1>
   <p>
     {noah
@@ -27,7 +25,7 @@
   {#if noah}
     <button id="storage" type="button">User data</button>
     <button id="vm-boot" type="button">Diagnostic player</button>
-    <a href="./aokana-assets.html">Aokana explorer</a>
+    <a href="./buriko-assets.html">BGI explorer</a>
     <a href="./index.html">Game library</a>
   {:else}
     <a href="./assets.html">MAGES explorer</a>

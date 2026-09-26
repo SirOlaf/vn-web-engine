@@ -1,28 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaBitmapLoadState} from '../dist/engines/buriko/games/aokana/native/bitmap-load-state.js';
-import {createGroup90Surfaces} from '../dist/engines/buriko/games/aokana/native/group-90-surfaces.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoBitmapLoadState} from '../dist/engines/buriko/native/bitmap-load-state.js';
+import {createGroup90Surfaces} from '../dist/engines/buriko/native/group-90-surfaces.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 function setup() {
-  const fonts = new AokanaNativeFonts(new AokanaNativeText());
-  const compositor = new AokanaBitmapCompositor();
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
+  const fonts = new BurikoNativeFonts(new BurikoNativeText());
+  const compositor = new BurikoBitmapCompositor();
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
   const time = {now: 0},
-    clock = new AokanaNativeClock(() => time.now);
-  const input = new AokanaNativeInput(new AokanaNativeDisplayState(1920, 1080), clock);
+    clock = new BurikoNativeClock(() => time.now);
+  const input = new BurikoNativeInput(new BurikoNativeDisplayState(1920, 1080), clock);
   input.skipAllowed = 1;
-  const loading = new AokanaBitmapLoadState(input, clock);
+  const loading = new BurikoBitmapLoadState(input, clock);
   const words = (index) => {
     const bitmap = surfaces.descriptor(index);
     return Array.from({length: bitmap.width * bitmap.height}, (_, i) =>
@@ -112,13 +112,13 @@ test('surface drawing uses the complete existing compositor with source clipping
 
 test('twelve native90 wrappers share the actual surface table, native descriptor shape and bitmap-load delay', async () => {
   const s = setup(),
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 7,
       operandCapacity: 32,
       moduleCapacity: 64,
       frameCapacity: 64,
     });
-  const memory = new AokanaBpMemory(new Uint8Array(128));
+  const memory = new BurikoBpMemory(new Uint8Array(128));
   const slots = createGroup90Surfaces(s.surfaces, s.loading, {
     threadFatal() {
       assert.fail('normal surface operations should succeed');
@@ -126,7 +126,7 @@ test('twelve native90 wrappers share the actual surface table, native descriptor
   });
   assert.equal(slots.length, 12);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
   const run = async (secondary, values = []) => {
     for (const value of values) push32(thread, value);
     assert.equal(

@@ -1,13 +1,13 @@
-import {blendAokanaAlphaWithTransparency} from '../dist/engines/buriko/games/aokana/native/bitmap-alpha.js';
+import {blendBurikoAlphaWithTransparency} from '../dist/engines/buriko/native/bitmap-alpha.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  allocateAokanaBitmap,
-  cropAokanaBitmap,
-  fillAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {clearAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
+  allocateBurikoBitmap,
+  cropBurikoBitmap,
+  fillBurikoBitmap,
+} from '../dist/engines/buriko/native/bitmap.js';
+import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {
   recordRasterText,
   readRasterText,
@@ -17,10 +17,10 @@ import {
 import {rasterTextSlots} from '../dist/text/browser-raster-text.js';
 import {slotText} from '../dist/text/glyph-slots.js';
 
-const compositor = new AokanaBitmapCompositor();
+const compositor = new BurikoBitmapCompositor();
 const bitmap = (w, h, color = 0, format = 1) => {
-  const value = allocateAokanaBitmap(w, h, format);
-  fillAokanaBitmap(value, color);
+  const value = allocateBurikoBitmap(w, h, format);
+  fillBurikoBitmap(value, color);
   return value;
 };
 const glyph = (text) => {
@@ -48,7 +48,7 @@ test('raster text survives offscreen composition, clipping, snapshots and scroll
     storage: surface.storage.cloneRange(0, surface.storage.bytes.length),
   };
   const input = {...snapshot};
-  cropAokanaBitmap(input, {left: 4, top: 8, right: 11, bottom: 15});
+  cropBurikoBitmap(input, {left: 4, top: 8, right: 11, bottom: 15});
   compositor.draw(surface, 0, 0, input, 0x80, 0);
   assert.equal(
     readRasterText(surface)
@@ -57,7 +57,7 @@ test('raster text survives offscreen composition, clipping, snapshots and scroll
       .join(''),
     'AB',
   );
-  clearAokanaBitmap(surface, {left: 0, top: 0, right: 7, bottom: 7});
+  clearBurikoBitmap(surface, {left: 0, top: 0, right: 7, bottom: 7});
   assert.equal(
     readRasterText(surface).some((g) => g.y === 0),
     false,
@@ -77,14 +77,14 @@ test('partial damage and opaque overlays keep only visible semantic text, and fu
   const surface = bitmap(12, 8),
     a = glyph('A');
   compositor.draw(surface, 0, 0, a, 0, 0);
-  clearAokanaBitmap(surface, {left: 0, top: 0, right: 1, bottom: 7});
+  clearBurikoBitmap(surface, {left: 0, top: 0, right: 1, bottom: 7});
   assert.equal(readRasterText(surface)[0].clip.x, 2);
   assert.equal(visibleRasterText(surface)[0].text, 'A');
   // Alpha artwork is a later opaque cover, without a text-specific clear.
   const cover = bitmap(4, 8, 0xff778899, 2);
   compositor.draw(surface, 0, 0, cover, 0, 0);
   assert.equal(visibleRasterText(surface).length, 0);
-  fillAokanaBitmap(surface, 0);
+  fillBurikoBitmap(surface, 0);
   assert.equal(readRasterText(surface).length, 0);
   assert.equal(rasterTextBitmap(surface), surface);
 });
@@ -97,7 +97,7 @@ test('textless alpha replay cannot introduce a native divide fault, while native
   assert.equal(readRasterText(destination)[0].text, 'A');
   assert.ok(rasterTextBitmap(destination).storage.bytes.every((v) => v === 0));
   assert.throws(
-    () => blendAokanaAlphaWithTransparency(bitmap(3, 3, 0, 2), bitmap(3, 3, 0xffffffff, 2), 256),
+    () => blendBurikoAlphaWithTransparency(bitmap(3, 3, 0, 2), bitmap(3, 3, 0xffffffff, 2), 256),
     /division by zero/,
   );
 });

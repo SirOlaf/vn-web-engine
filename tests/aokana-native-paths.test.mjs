@@ -2,22 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaPathFileDirectory} from '../dist/engines/buriko/games/aokana/native/path-file-directory.js';
-import {createGroup80Paths} from '../dist/engines/buriko/games/aokana/native/group-80-paths.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoPathFileDirectory} from '../dist/engines/buriko/native/path-file-directory.js';
+import {createGroup80Paths} from '../dist/engines/buriko/native/group-80-paths.js';
 
 test('80 path services share mounted directories, file flags and lexical UTF-8 split outputs', async () => {
   const canonical = (path) => path.toLowerCase();
   const backing = new StoredFileSystem(new MemoryStore(), canonical);
-  const metadata = new AokanaMountedFileMetadata(backing, {
+  const metadata = new BurikoMountedFileMetadata(backing, {
     canonical,
     volumes: [{path: '/', identity: {}, writable: true}],
     records: [
@@ -33,14 +33,14 @@ test('80 path services share mounted directories, file flags and lexical UTF-8 s
     currentFileTime: () => 2n,
     accessTimePolicy: 'disabled',
   });
-  const text = new AokanaNativeText();
-  const files = new AokanaProgramFiles(
+  const text = new BurikoNativeText();
+  const files = new BurikoProgramFiles(
     metadata,
     text,
-    new AokanaProgramMedia(),
-    new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+    new BurikoProgramMedia(),
+    new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
   );
-  const service = new AokanaPathFileDirectory(files);
+  const service = new BurikoPathFileDirectory(files);
   assert.equal(service.metadata, files.metadata);
   const definitions = createGroup80Paths(service);
   assert.deepEqual(
@@ -48,8 +48,8 @@ test('80 path services share mounted directories, file flags and lexical UTF-8 s
     [0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d],
   );
   const bytes = new Uint8Array(4096);
-  const memory = new AokanaBpMemory(bytes);
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(bytes);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 16,

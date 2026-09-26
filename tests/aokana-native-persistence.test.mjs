@@ -3,52 +3,52 @@ import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {decodeSdc} from '../dist/formats/buriko/compressed-resource.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaPersistentMemory,
-  AokanaPersistence,
-} from '../dist/engines/buriko/games/aokana/native/persistence.js';
-import {createGroup80Persistence} from '../dist/engines/buriko/games/aokana/native/group-80-persistence.js';
-import {AokanaNamedBitArrays} from '../dist/engines/buriko/games/aokana/native/named-bit-arrays.js';
-import {AokanaStringLists} from '../dist/engines/buriko/games/aokana/native/string-lists.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDisplayAdapters} from '../dist/engines/buriko/games/aokana/native/display-adapters.js';
+  BurikoPersistentMemory,
+  BurikoPersistence,
+} from '../dist/engines/buriko/native/persistence.js';
+import {createGroup80Persistence} from '../dist/engines/buriko/native/group-80-persistence.js';
+import {BurikoNamedBitArrays} from '../dist/engines/buriko/native/named-bit-arrays.js';
+import {BurikoStringLists} from '../dist/engines/buriko/native/string-lists.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDisplayAdapters} from '../dist/engines/buriko/native/display-adapters.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
 import {legacyGdb, shortModernGdb} from './aokana-persistence-fixtures.mjs';
 
 const ptr = (bytes, offset = 0) => ({bytes, offset});
-const text = new AokanaNativeText(),
+const text = new BurikoNativeText(),
   encode = (s) => text.encodeWide(s, 1);
 
 async function setup() {
   const fs = new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase());
   await fs.commit([{kind: 'write', path: '/save/directory-marker', data: Uint8Array.of(1)}]);
-  const media = new AokanaProgramMedia();
+  const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       fs,
       text,
       media,
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
     ),
-    dialogs = new AokanaEngineDialogs(),
+    dialogs = new BurikoEngineDialogs(),
     initialRoot = encode('C:\\initial\\'),
-    errors = new AokanaEngineErrors(files, dialogs, initialRoot, encode('C:\\')),
-    processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
-    resources = new AokanaProgramResources(
+    errors = new BurikoEngineErrors(files, dialogs, initialRoot, encode('C:\\')),
+    processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\assets\\',
@@ -65,16 +65,16 @@ async function setup() {
       errors,
       processing,
     ),
-    memory = new AokanaBpMemory(new Uint8Array(0x10000)),
-    persistent = new AokanaPersistentMemory(),
-    strings = new AokanaStringLists(),
-    bits = new AokanaNamedBitArrays(),
-    display = new AokanaNativeDisplayState(1920, 1080);
+    memory = new BurikoBpMemory(new Uint8Array(0x10000)),
+    persistent = new BurikoPersistentMemory(),
+    strings = new BurikoStringLists(),
+    bits = new BurikoNamedBitArrays(),
+    display = new BurikoNativeDisplayState(1920, 1080);
   display.requestedWidth = 640;
   display.requestedHeight = 480;
   display.monitors = [[0, 0, 1920, 1080]];
   // An explicit current-window rectangle and UTC wall-time profile, not fake filesystem/UI results.
-  const adapters = new AokanaDisplayAdapters(
+  const adapters = new BurikoDisplayAdapters(
       display,
       [
         {
@@ -86,7 +86,7 @@ async function setup() {
       0,
       () => [100, 120, 740, 600],
     ),
-    persistence = new AokanaPersistence(
+    persistence = new BurikoPersistence(
       resources,
       memory,
       persistent,
@@ -96,7 +96,7 @@ async function setup() {
       () => new Date('2026-09-19T12:34:56.123Z'),
     ),
     slots = createGroup80Persistence(persistence),
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 4096,
