@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
 
@@ -124,7 +125,7 @@ function integerBox(
  * Every draw uses the native bilinear, weighted-area, or integer-area kernel selected by scale.
  * It retains caller storage and padding and never creates an output bitmap.
  */
-export function scaleAokanaBitmap(
+function scaleAokanaBitmapPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   scaleX: number,
@@ -179,3 +180,36 @@ export function scaleAokanaBitmap(
     rowOffset += rowStep;
   }
 }
+
+export const scaleAokanaBitmap = withAokanaBitmapText(scaleAokanaBitmapPixels, {
+  replace: true,
+  region: (args) => {
+    const [destination, source, scaleX] = args,
+      scaleY = args[3] ?? scaleX;
+    const width = (Math.imul(source.width, scaleX) + 0x8000) >>> 16,
+      height = (Math.imul(source.height, scaleY) + 0x8000) >>> 16;
+    const left = (destination.width >>> 1) - (width >>> 1),
+      top = (destination.height >>> 1) - (height >>> 1),
+      x = Math.max(0, left),
+      y = Math.max(0, top);
+    return {
+      x,
+      y,
+      width: Math.max(0, Math.min(destination.width, left + width) - x),
+      height: Math.max(0, Math.min(destination.height, top + height) - y),
+    };
+  },
+  applied: (_, args) =>
+    (Math.imul(args[1].width, args[2]) + 0x8000) >>> 16 > 0 &&
+    (Math.imul(args[1].height, args[3] ?? args[2]) + 0x8000) >>> 16 > 0,
+  map: (x, y, args) => {
+    const [destination, source, scaleX] = args,
+      scaleY = args[3] ?? scaleX;
+    const width = (Math.imul(source.width, scaleX) + 0x8000) >>> 16,
+      height = (Math.imul(source.height, scaleY) + 0x8000) >>> 16;
+    return [
+      (x * width) / source.width + (destination.width >>> 1) - (width >>> 1),
+      (y * height) / source.height + (destination.height >>> 1) - (height >>> 1),
+    ];
+  },
+});

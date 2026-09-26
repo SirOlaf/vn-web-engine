@@ -7,6 +7,9 @@
   <button id="choose" type="button">Choose game folder</button>
   <input id="files" type="file" webkitdirectory hidden />
   <button id="installation-folder-fallback" type="button" hidden>Use browser folder picker</button>
+  <button id="installation-reconnect" type="button" hidden>Reconnect remembered folder</button>
+  <button id="installation-forget" type="button" hidden>Forget remembered folder</button>
+  <p id="installation-directory-status" role="status"></p>
   <button id="installation-add-files" type="button">Add files</button>
   <button id="installation-add-file" type="button">Add one file</button>
   <input id="installation-files-input" type="file" multiple hidden />
@@ -20,6 +23,10 @@
   <button id="installation-remove" type="button">Remove saved game files</button>
   <button id="installation-cancel" type="button" hidden>Cancel copy</button>
   <p>Read from your device. Never uploaded.</p>
+  <p>
+    Supporting browsers remember your chosen folder for this game without copying its files. It
+    reopens after refresh, or you can reconnect it when the browser asks for access again.
+  </p>
   <p>
     Add files individually if your file manager cannot select several. Added files join the current
     selection; choosing a folder replaces it. Safari may copy selections temporarily.

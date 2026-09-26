@@ -1,6 +1,8 @@
 import {allocateAokanaBitmap, type AokanaBitmap, type AokanaBitmapRectangle} from './bitmap.js';
 import {clearAokanaBitmap, copyAokanaBitmapRows} from './bitmap-copy.js';
 import {rasterAokanaGlyph} from './font-bitmap.js';
+import {recordAokanaBitmapText} from './bitmap-dom-text.js';
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaFontRecord} from './fonts.js';
 import {aokanaTextCodes, type AokanaRubyAnnotations} from './text-annotations.js';
 import {isNativeCp932Lead, nativeCp932CharacterToWide, textByte} from './text.js';
@@ -72,7 +74,7 @@ function empty(): AokanaBitmap {
 }
 
 /** 0798E0: square-only clockwise copy, retaining the caller's descriptor/backing. */
-export function rotateAokanaVerticalGlyph(bitmap: AokanaBitmap): boolean {
+function rotateAokanaVerticalGlyphPixels(bitmap: AokanaBitmap): boolean {
   if (bitmap.width !== bitmap.height) return false;
   const temporary = allocateAokanaBitmap(bitmap.width, bitmap.height, bitmap.format);
   try {
@@ -98,6 +100,13 @@ export function rotateAokanaVerticalGlyph(bitmap: AokanaBitmap): boolean {
   return true;
 }
 
+export const rotateAokanaVerticalGlyph = withAokanaBitmapText(rotateAokanaVerticalGlyphPixels, {
+  source: 0,
+  destination: 0,
+  replace: true,
+  map: (x, y, [bitmap]) => [bitmap.width - y, x],
+});
+
 function glyph(
   state: AokanaTextLayoutState,
   font: AokanaFontRecord,
@@ -117,13 +126,20 @@ function glyph(
       (size + (effect.mode !== 0 ? radiusY : 0)) | 0,
     ),
     wide = nativeCp932CharacterToWide(code);
-  const draw = (destination: AokanaBitmap, selectedColor: number): void => {
+  const draw = (destination: AokanaBitmap, selectedColor: number, decorative = false): void => {
     if (wide === 0) return;
     if (reading) {
       if (font.raster === null)
         throw new Error('Aokana vertical reading font raster is uninitialized');
-      rasterAokanaGlyph(destination, font.raster, wide, selectedColor);
-    } else state.customGlyphs.draw(destination, wide, font, selectedColor, state.field1D1D94);
+      rasterAokanaGlyph(destination, font.raster, wide, selectedColor, {
+        vertical: true,
+        decorative,
+      });
+    } else
+      state.customGlyphs.draw(destination, wide, font, selectedColor, state.field1D1D94, {
+        vertical: true,
+        decorative,
+      });
   };
   try {
     draw(main, color);
@@ -134,10 +150,11 @@ function glyph(
         if (effect.color >>> 0 === 0)
           state.surfaces.compositor.composite(shadow, main, 5, 256, true);
         else {
-          draw(shadow, effect.color);
+          draw(shadow, effect.color, true);
           // 079B60's colored reading shadow does not repeat the main glyph rotation.
           if (rotation && !reading) rotateAokanaVerticalGlyph(shadow);
         }
+        recordAokanaBitmapText(shadow, '', {decorative: true, vertical: true});
         state.surfaces.compositor.draw(
           bitmap,
           radiusX,

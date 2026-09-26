@@ -1,3 +1,5 @@
+import {isRasterTextPresentation} from '../../../../../text/raster-text.js';
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {
   bitmapStorage,
   cropAokanaBitmap,
@@ -9,12 +11,7 @@ import {bitmapRead8, bitmapRead32, bitmapWrite8, bitmapWrite32} from './bitmap-s
 import {aokanaAlphaHalfCoefficient, writeAokanaMappedPairs} from './bitmap-pairs.js';
 
 /** 140041310 ignores unsuccessful rectangle cropping and then clears the original descriptor. */
-export function clearAokanaBitmap(
-  bitmap: AokanaBitmap,
-  rectangle: AokanaBitmapRectangle | null = null,
-): void {
-  const target = {...bitmap};
-  if (rectangle !== null) cropAokanaBitmap(target, rectangle);
+function clearAokanaBitmapPixels(target: AokanaBitmap): void {
   const rowBytes = Math.imul(target.bytesPerPixel, target.width) >>> 0;
   for (let y = 0; y < target.height >>> 0; y++) {
     if (rowBytes === 0) continue;
@@ -23,6 +20,17 @@ export function clearAokanaBitmap(
     storage.bytes.fill(0, offset, offset + rowBytes);
     storage.written(offset, rowBytes);
   }
+}
+
+const clearAokanaBitmapRegion = withAokanaBitmapText(clearAokanaBitmapPixels, {clear: true});
+
+export function clearAokanaBitmap(
+  bitmap: AokanaBitmap,
+  rectangle: AokanaBitmapRectangle | null = null,
+): void {
+  const target = {...bitmap};
+  if (rectangle !== null) cropAokanaBitmap(target, rectangle);
+  clearAokanaBitmapRegion(target);
 }
 
 export function copyBlock(
@@ -103,7 +111,7 @@ function copyInitializedRows(
  * 1400410c0/14003dd70 copy aligned 16-byte blocks, otherwise successive 8-byte blocks.
  * Only row lengths that are not divisible by four use the native overlap-safe memmove.
  */
-export function copyAokanaBitmapRows(destination: AokanaBitmap, source: AokanaBitmap): void {
+function copyAokanaBitmapRowsPixels(destination: AokanaBitmap, source: AokanaBitmap): void {
   const rowBytes = Math.imul(source.bytesPerPixel, source.width) >>> 0;
   const height = source.height >>> 0;
   if (copyInitializedRows(destination, source, rowBytes, height)) return;
@@ -184,13 +192,13 @@ function copyInitializedRgbToAlpha(destination: AokanaBitmap, source: AokanaBitm
 }
 
 /** 14003dcc0 preserves source RGB and forces both pair and tail alpha bytes to 255. */
-export function copyAokanaRgbToAlpha(destination: AokanaBitmap, source: AokanaBitmap): void {
+function copyAokanaRgbToAlphaPixels(destination: AokanaBitmap, source: AokanaBitmap): void {
   if (copyInitializedRgbToAlpha(destination, source)) return;
   writeAokanaMappedPairs(destination, source, (pixel) => pixel | 0xff000000);
 }
 
 /** 14003dbb0 uses the native alpha/2 table, whose last entry promotes 254 to opaque. */
-export function copyAokanaAlphaToRgb(destination: AokanaBitmap, source: AokanaBitmap): void {
+function copyAokanaAlphaToRgbPixels(destination: AokanaBitmap, source: AokanaBitmap): void {
   writeAokanaMappedPairs(destination, source, (pixel) => {
     const coefficient = aokanaAlphaHalfCoefficient(pixel >>> 24);
     let result = 0;
@@ -201,7 +209,7 @@ export function copyAokanaAlphaToRgb(destination: AokanaBitmap, source: AokanaBi
 }
 
 /** 140046620 expands four mask bytes from one source DWORD before storing sixteen bytes. */
-export function copyAokanaMaskToAlpha(
+function copyAokanaMaskToAlphaPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   color: number,
@@ -228,7 +236,7 @@ export function copyAokanaMaskToAlpha(
 }
 
 /** 14003d270 retains scalar read/store order when source and destination alias. */
-export function blendAokanaRgbIntoAlphaWithTransparency(
+function blendAokanaRgbIntoAlphaWithTransparencyPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   transparency: number,
@@ -243,7 +251,13 @@ export function blendAokanaRgbIntoAlphaWithTransparency(
       const destinationAlpha =
         Math.imul(bitmapRead8(destination, output + 3), destinationFactor) >>> 8;
       const denominator = (sourceAlpha + destinationAlpha) >>> 0;
-      if (denominator === 0) throw new RangeError('Aokana bitmap native unsigned division by zero');
+      if (denominator === 0) {
+        if (isRasterTextPresentation()) {
+          bitmapWrite32(destination, output, 0);
+          continue;
+        }
+        throw new RangeError('Aokana bitmap native unsigned division by zero');
+      }
       const sourceCoefficient = Math.trunc(sourceNumerator / denominator);
       const destinationCoefficient = Math.trunc(((destinationAlpha << 16) >>> 0) / denominator);
       const sourceBlue = Math.imul(bitmapRead8(source, input), sourceCoefficient);
@@ -264,3 +278,25 @@ export function blendAokanaRgbIntoAlphaWithTransparency(
       bitmapWrite8(destination, output + 2, (sourceRed + destinationRed) >>> 16);
     }
 }
+
+export const copyAokanaBitmapRows = withAokanaBitmapText(copyAokanaBitmapRowsPixels, {
+  replace: true,
+});
+
+export const copyAokanaRgbToAlpha = withAokanaBitmapText(copyAokanaRgbToAlphaPixels, {
+  replace: true,
+});
+
+export const copyAokanaAlphaToRgb = withAokanaBitmapText(copyAokanaAlphaToRgbPixels, {
+  replace: true,
+});
+
+export const copyAokanaMaskToAlpha = withAokanaBitmapText(copyAokanaMaskToAlphaPixels, {
+  replace: true,
+  color: (_, args) => args[2] & 0xffffff,
+});
+
+export const blendAokanaRgbIntoAlphaWithTransparency = withAokanaBitmapText(
+  blendAokanaRgbIntoAlphaWithTransparencyPixels,
+  {opacity: (args) => (256 - args[2]) / 256},
+);

@@ -25,6 +25,11 @@ stable achievement identifiers across a real IndexedDB close/reopen. Both use
 the same built modules as the app. The path test creates and removes only its
 own randomly named test database.
 
+`aokana-dom-text.html` checks continuous selectable raster text, incremental reveal,
+vertical text, clearing and teardown against generated text and pixels only. It
+also checks canvas/DOM alignment through the shared window host's scaling and
+page expansion. It does not open a game installation or display game assets.
+
 `draw-list.html` exercises the reusable Canvas sprite backend: seven pixel checks for RGB modulation, opacity, source cropping, invalidation and clearing. Copy it to `dist/draw-list-test.html` and open that page through the existing development server.
 
 `scene-graphics.html` renders captured first-scene frames and checks triangle
@@ -36,3 +41,7 @@ with `NOAH_SCENE_CAPTURE=1 npm run verify:scene`, copy the HTML to
 bytes. Run `npx vite --host 127.0.0.1`, then open `/tests/browser/installation.html` on that server.
 Its file-cache namespace is isolated from game installations. Use **Keep game files in browser**,
 reload, then **Open saved game files** to exercise the same controls used by both players.
+In a browser with directory picker support, **Remember generated folder for reload**, reload,
+then **Check restored folder and forget** verifies handle storage, automatic restoration through
+the production controls, and forgetting without unmounting the selected files. The fixture uses
+an isolated generated OPFS folder; it neither selects nor reads a game installation.

@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import {
   bitmapRead8,
@@ -34,7 +35,7 @@ function intersectDimensions(
 }
 
 /** 14004e120/14004df10: screen; the alpha-bearing source is premultiplied in two stages. */
-export function screenAokanaBitmap(
+function screenAokanaBitmapPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -80,7 +81,7 @@ function overlayChannel(source: number, destination: number, selectSource: boole
  * 14004d930/dbd0/dd90 (destination threshold) and 14004d350/d5f0/d7b0 (source threshold).
  * Source-alpha weights are truncated to 12 fractional bits before signed high multiplication.
  */
-export function overlayAokanaBitmap(
+function overlayAokanaBitmapPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -120,7 +121,7 @@ export function overlayAokanaBitmap(
 }
 
 /** 14004cdc0 multiplies every target byte by 256-floor(sourceAlpha*opacity/256). */
-export function eraseAokanaAlphaFromRgb(
+function eraseAokanaAlphaFromRgbPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -149,7 +150,7 @@ export function eraseAokanaAlphaFromRgb(
 }
 
 /** 14004cc30/14004cac0 preserve RGB; the fractional odd tail keeps eight extra alpha bits. */
-export function eraseAokanaAlpha(
+function eraseAokanaAlphaPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -184,7 +185,7 @@ export function eraseAokanaAlpha(
 }
 
 /** 14004c950/14004c840 use 256 for paired mask erasure but 255 for the scalar tail. */
-export function eraseAokanaAlphaFromMask(
+function eraseAokanaAlphaFromMaskPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -222,7 +223,7 @@ export function eraseAokanaAlphaFromMask(
 }
 
 /** 140045dc0 tints source RGB and retains its alpha byte, even for format one. */
-export function tintAokanaBitmap32(
+function tintAokanaBitmap32Pixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   color: number,
@@ -241,7 +242,7 @@ export function tintAokanaBitmap32(
 }
 
 /** 14003a1e0, selected by 14003a2d0's format-one branch, discards alpha while attenuating RGB. */
-export function dimAokanaRgb(
+function dimAokanaRgbPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   transparency: number,
@@ -253,3 +254,44 @@ export function dimAokanaRgb(
     return result >>> 0;
   });
 }
+
+export const screenAokanaBitmap = withAokanaBitmapText(screenAokanaBitmapPixels, {
+  opacity: (args) => args[2] / 256,
+});
+
+export const overlayAokanaBitmap = withAokanaBitmapText(overlayAokanaBitmapPixels, {
+  opacity: (args) => args[2] / 256,
+});
+
+export const eraseAokanaAlphaFromRgb = withAokanaBitmapText(eraseAokanaAlphaFromRgbPixels, {
+  source: 0,
+  replace: true,
+});
+
+export const eraseAokanaAlpha = withAokanaBitmapText(eraseAokanaAlphaPixels, {
+  source: 0,
+  replace: true,
+});
+
+export const eraseAokanaAlphaFromMask = withAokanaBitmapText(eraseAokanaAlphaFromMaskPixels, {
+  source: 0,
+  replace: true,
+});
+
+export const tintAokanaBitmap32 = withAokanaBitmapText(tintAokanaBitmap32Pixels, {
+  replace: true,
+  color: (color, args) => {
+    let output = 0;
+    for (let shift = 0; shift < 24; shift += 8) {
+      const from = Math.imul((color >>> shift) & 255, 256 - args[3]) & 65535,
+        to = Math.imul((args[2] >>> shift) & 255, args[3]) & 65535;
+      output |= (Math.min(65535, from + to) >>> 8) << shift;
+    }
+    return output;
+  },
+});
+
+export const dimAokanaRgb = withAokanaBitmapText(dimAokanaRgbPixels, {
+  replace: true,
+  opacity: (args) => (256 - args[2]) / 256,
+});

@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {nativeAffineSineCosine} from '../bp/opcodes/native-math.js';
 import {
   aokanaBitmapRectangle,
@@ -326,7 +327,7 @@ function affineBitmap(
 }
 
 /** 052480: affine copy/dimming, with the actual optional shared distributed strip path. */
-export function transformAokanaBitmap(
+function transformAokanaBitmapPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -348,7 +349,7 @@ export function transformAokanaBitmap(
 }
 
 /** 052710: affine RGB destination blending, retaining native Q7 opacity coefficients. */
-export function blendTransformedAokanaBitmap(
+function blendTransformedAokanaBitmapPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -368,3 +369,58 @@ export function blendTransformedAokanaBitmap(
     true,
   );
 }
+
+export const transformAokanaBitmap = withAokanaBitmapText(transformAokanaBitmapPixels, {
+  alternateArgs: (args) => {
+    const alternate = [...args] as Parameters<typeof transformAokanaBitmapPixels>;
+    alternate[6] = false;
+    return alternate;
+  },
+  destination: 1,
+  source: 2,
+  replace: true,
+  applied: (result, args) =>
+    result === 0 &&
+    (args[2].format === 1 || args[2].format === 2) &&
+    (args[1].format === args[2].format || (args[1].format === 2 && args[2].format === 1)),
+  opacity: (args) => (256 - args[4]) / 256,
+  map: (x, y, args) => {
+    const coordinate = aokanaBitmapAffineCoordinates(args[3]),
+      determinant = coordinate.columnX * coordinate.rowY - coordinate.rowX * coordinate.columnY,
+      u = x * 65536 - coordinate.startX,
+      v = y * 65536 - coordinate.startY;
+    return [
+      (u * coordinate.rowY - v * coordinate.rowX) / determinant,
+      (v * coordinate.columnX - u * coordinate.columnY) / determinant,
+    ];
+  },
+});
+
+export const blendTransformedAokanaBitmap = withAokanaBitmapText(
+  blendTransformedAokanaBitmapPixels,
+  {
+    alternateArgs: (args) => {
+      const alternate = [...args] as Parameters<typeof blendTransformedAokanaBitmapPixels>;
+      alternate[6] = false;
+      return alternate;
+    },
+    destination: 1,
+    source: 2,
+    applied: (result, args) =>
+      result === 0 &&
+      args[1].format === 1 &&
+      (args[2].format === 1 || args[2].format === 2) &&
+      args[4] < 256,
+    opacity: (args) => (256 - args[4]) / 256,
+    map: (x, y, args) => {
+      const coordinate = aokanaBitmapAffineCoordinates(args[3]),
+        determinant = coordinate.columnX * coordinate.rowY - coordinate.rowX * coordinate.columnY,
+        u = x * 65536 - coordinate.startX,
+        v = y * 65536 - coordinate.startY;
+      return [
+        (u * coordinate.rowY - v * coordinate.rowX) / determinant,
+        (v * coordinate.columnX - u * coordinate.columnY) / determinant,
+      ];
+    },
+  },
+);

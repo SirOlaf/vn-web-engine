@@ -8,6 +8,8 @@ export interface SelectedInstallationFile {
 export interface InstallationSelection {
   readonly files: readonly SelectedInstallationFile[];
   readonly directory: boolean;
+  /** A reusable reference to device files, when the browser provides one. */
+  readonly directoryHandle?: FileSystemDirectoryHandle;
 }
 
 /** Folder selection replaces the tree; individual picks fill in or replace its entries. */
@@ -85,6 +87,38 @@ export async function pickInstallationFiles(view: Window): Promise<InstallationS
 /** Invoke directly from a click handler, before awaiting anything, to preserve activation. */
 export async function pickInstallationDirectory(view: Window): Promise<InstallationSelection> {
   const root = await (view as DirectoryPickerWindow).showDirectoryPicker!({mode: 'read'});
+  return readInstallationDirectory(root);
+}
+
+type PermissionDirectoryHandle = FileSystemDirectoryHandle & {
+  queryPermission?(options: {mode: 'read'}): Promise<PermissionState>;
+  requestPermission?(options: {mode: 'read'}): Promise<PermissionState>;
+};
+
+/** A stored handle is not a permission grant. This never shows a browser prompt. */
+export function installationDirectoryPermission(
+  handle: FileSystemDirectoryHandle,
+): Promise<PermissionState> {
+  return (
+    (handle as PermissionDirectoryHandle).queryPermission?.({mode: 'read'}) ??
+    Promise.resolve('prompt')
+  );
+}
+
+/** Call directly in the reconnect click, before awaiting storage or other work. */
+export function requestInstallationDirectoryPermission(
+  handle: FileSystemDirectoryHandle,
+): Promise<PermissionState> {
+  return (
+    (handle as PermissionDirectoryHandle).requestPermission?.({mode: 'read'}) ??
+    Promise.resolve('denied')
+  );
+}
+
+/** Refresh File snapshots after a reload instead of retaining stale file contents. */
+export async function readInstallationDirectory(
+  root: FileSystemDirectoryHandle,
+): Promise<InstallationSelection> {
   const files: SelectedInstallationFile[] = [];
   async function visit(directory: FileSystemDirectoryHandle, prefix: string): Promise<void> {
     // The browser's async directory iterator is not yet included in every TS DOM library.
@@ -99,5 +133,5 @@ export async function pickInstallationDirectory(view: Window): Promise<Installat
     }
   }
   await visit(root, '');
-  return {files, directory: true};
+  return {files, directory: true, directoryHandle: root};
 }

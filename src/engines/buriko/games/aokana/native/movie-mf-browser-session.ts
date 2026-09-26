@@ -71,6 +71,7 @@ class AokanaBrowserMfDisplayControl implements AokanaMfMovieDisplayControl {
       this.destinationWidth,
       this.destinationHeight,
     );
+    this.window.textPresentation?.clear(this.window.surface);
   }
 
   resize(width: number, height: number): void {

@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import type {AokanaBitmapCompositor} from './bitmap-compositor.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
@@ -129,7 +130,7 @@ function mosaicBlocks(
 }
 
 /** 047630 routes four real mosaic kernels or03D610 at level0. */
-export function mosaicAokanaBitmap(
+function mosaicAokanaBitmapPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -150,3 +151,11 @@ export function mosaicAokanaBitmap(
   if (transparency < 256) mosaicBlocks(destination, source, level, selector === 1, transparency);
   return 0;
 }
+
+export const mosaicAokanaBitmap = withAokanaBitmapText(mosaicAokanaBitmapPixels, {
+  destination: 1,
+  source: 2,
+  opacity: (args) => (256 - args[5]) / 256,
+  applied: (result, args) =>
+    result === 0 && (args[2].format === 1 || args[2].format === 2) && args[5] < 256,
+});

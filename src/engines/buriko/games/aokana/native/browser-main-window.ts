@@ -1,6 +1,11 @@
 import {AokanaDisplayManager} from './display-manager.js';
 import type {AokanaBitmap} from './bitmap.js';
-import {aokanaChildDibPixels} from './child-bitmap.js';
+import {aokanaChildDibPixels, captureAokanaChildText} from './child-bitmap.js';
+import {
+  BrowserRasterTextPresentation,
+  intersectTextRect,
+  mapRasterTextGlyphs,
+} from '../../../../../text/browser-raster-text-presentation.js';
 import {aokanaDisplayScaleSize, aokanaDisplayViewport} from './display-geometry.js';
 import type {AokanaNativeDisplayState, AokanaNativeRectangle} from './display-state.js';
 import type {AokanaNativeInput} from './input.js';
@@ -92,6 +97,7 @@ export class AokanaBrowserMainWindow {
     readonly presentationMode: 'canvas' | 'none' = 'canvas',
     readonly displayHost: WindowDisplayHost | null = null,
     readonly childWindowParent: HTMLElement = parent,
+    readonly textPresentation: BrowserRasterTextPresentation | null = null,
   ) {
     // The supplied canvas is the sole main client surface, even when the host
     // provides it detached. Keep an existing nested attachment in place.
@@ -357,6 +363,7 @@ export class AokanaBrowserMainWindow {
     this.inputIngress?.dispose();
     this.inputIngress = null;
     this.detached = true;
+    this.textPresentation?.clear(this.surface);
     this.setPresentationVisibility(false);
     this.parent.remove();
   }
@@ -524,6 +531,51 @@ export class AokanaBrowserMainWindow {
     invalidateCanvasFrame(this.surface);
     context.drawImage(source, destinationX, destinationY, width, height);
     context.restore();
+    if (this.textPresentation !== null) {
+      const region = intersectTextRect(
+        {x: destinationX, y: destinationY, width, height},
+        {x: left, y: top, width: (right - left) | 0, height: (bottom - top) | 0},
+      );
+      const visible =
+        region &&
+        intersectTextRect(region, {
+          x: 0,
+          y: 0,
+          width: this.surface.width,
+          height: this.surface.height,
+        });
+      if (visible) {
+        const captured = captureAokanaChildText(bitmap, pixels);
+        let alternate: HTMLCanvasElement | undefined;
+        this.textPresentation.paint(this.surface, {
+          region: visible,
+          glyphs: mapRasterTextGlyphs(
+            captured.glyphs,
+            destinationX,
+            destinationY,
+            width / bitmap.width,
+            height / bitmap.height,
+            visible,
+          ),
+          paint: (context) => {
+            if (!alternate) {
+              alternate = this.document.createElement('canvas');
+              alternate.width = bitmap.width;
+              alternate.height = bitmap.height;
+              alternate.getContext('2d')!.putImageData(captured.frame(), 0, 0);
+            }
+            context.beginPath();
+            context.rect(left, top, (right - left) | 0, (bottom - top) | 0);
+            context.clip();
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = 'high';
+            context.globalAlpha = 1;
+            context.globalCompositeOperation = 'source-over';
+            context.drawImage(alternate, destinationX, destinationY, width, height);
+          },
+        });
+      }
+    }
   }
 
   invalidateInline(rectangle: AokanaNativeRectangle): void {

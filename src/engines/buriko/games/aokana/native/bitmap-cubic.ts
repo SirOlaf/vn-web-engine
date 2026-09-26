@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import type {AokanaBitmapCompositor} from './bitmap-compositor.js';
 import {runAokanaBitmapFloatPointOperation} from './bitmap-operation-jobs.js';
@@ -98,7 +99,7 @@ function cubicPixels(
 }
 
 /** 045000 validates scales, then dispatches mode three before its format gate. */
-export function stretchAokanaBitmapCubic(
+function stretchAokanaBitmapCubicPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   destinationX: number,
@@ -144,3 +145,19 @@ export function stretchAokanaBitmapCubic(
     cubicPixels(destination, destinationX, destinationY, source, sourceX, sourceY, scaleX, scaleY);
   return 0;
 }
+
+export const stretchAokanaBitmapCubic = withAokanaBitmapText(stretchAokanaBitmapCubicPixels, {
+  alternateArgs: (args) => {
+    const alternate = [...args] as Parameters<typeof stretchAokanaBitmapCubicPixels>;
+    alternate[9] = false;
+    return alternate;
+  },
+  destination: 1,
+  source: 4,
+  replace: true,
+  applied: (result, args) =>
+    result === 0 &&
+    args[1].format === args[4].format &&
+    (args[4].format === 1 || args[4].format === 2),
+  map: (x, y, args) => [(x - args[5]) * args[7] + args[2], (y - args[6]) * args[8] + args[3]],
+});

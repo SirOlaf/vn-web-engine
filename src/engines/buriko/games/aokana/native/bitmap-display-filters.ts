@@ -1,3 +1,4 @@
+import {aokanaBitmapTextCompositor, withAokanaBitmapText} from './bitmap-dom-text.js';
 import {
   allocateAokanaBitmap,
   aokanaBitmapRectangle,
@@ -26,7 +27,7 @@ function release(bitmap: AokanaBitmap): void {
 }
 
 /** 045B10: format-three coverage selects a color through the Filter's shifted threshold. */
-export function applyAokanaFilterMaskColor(
+function applyAokanaFilterMaskColorPixels(
   destination: AokanaBitmap,
   color: number,
   mask: AokanaBitmap,
@@ -191,7 +192,7 @@ function blurAxis(
 }
 
 /** 04AAD0: axis dispatch precedes copy; two-pass allocation precedes axis validation. */
-export function applyAokanaEffectorBlur(
+function applyAokanaEffectorBlurPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -383,7 +384,7 @@ function vectorPixels(
 }
 
 /** 04ABB0: the Effector's one- or two-map Q4 screen warp, including endpoint kernels. */
-export function applyAokanaEffectorVectorMap(
+function applyAokanaEffectorVectorMapPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -444,3 +445,56 @@ export function applyAokanaEffectorVectorMap(
 export function clearAokanaEffectorBuffer(bitmap: AokanaBitmap): void {
   clearAokanaBitmap(bitmap);
 }
+
+export const applyAokanaFilterMaskColor = withAokanaBitmapText(applyAokanaFilterMaskColorPixels, {
+  source: [0, 2],
+  replace: true,
+  applied: (_, args) => args[0].format === 1,
+});
+
+export const applyAokanaEffectorBlur = withAokanaBitmapText(applyAokanaEffectorBlurPixels, {
+  alternateArgs: (args) => {
+    const alternate = [...args] as Parameters<typeof applyAokanaEffectorBlurPixels>;
+    alternate[0] = aokanaBitmapTextCompositor(args[0]);
+    return alternate;
+  },
+  destination: 1,
+  source: 2,
+  replace: true,
+  applied: (result) => result === 0,
+});
+
+export const applyAokanaEffectorVectorMap = withAokanaBitmapText(
+  applyAokanaEffectorVectorMapPixels,
+  {
+    alternateArgs: (args) => {
+      const alternate = [...args] as Parameters<typeof applyAokanaEffectorVectorMapPixels>;
+      alternate[0] = aokanaBitmapTextCompositor(args[0]);
+      return alternate;
+    },
+    destination: 1,
+    source: 2,
+    replace: true,
+    applied: (result, args) => result === 0 && (args[2].format === 1 || args[2].format === 2),
+    map: (x, y, args) => {
+      const primary = args[3],
+        secondary = args[4];
+      if (primary.width <= 0 || primary.height <= 0) return [NaN, NaN];
+      let outputX = x,
+        outputY = y;
+      for (let iteration = 0; iteration < 4; iteration++) {
+        const column = Math.max(0, Math.min(primary.width - 1, Math.floor(outputX))),
+          row = Math.max(0, Math.min(primary.height - 1, Math.floor(outputY))),
+          first = bitmapRead32(primary, primary.offset + row * primary.stride + column * 4),
+          second =
+            secondary === null
+              ? null
+              : bitmapRead32(secondary, secondary.offset + row * secondary.stride + column * 4),
+          sample = mapCoordinate(first, second, args[5], column, row, args[6] !== 0);
+        outputX = x - (sample.x + sample.fractionX / sample.denominator - column);
+        outputY = y - (sample.y + sample.fractionY / sample.denominator - row);
+      }
+      return [outputX, outputY];
+    },
+  },
+);

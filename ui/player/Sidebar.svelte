@@ -43,19 +43,18 @@
     </section>
     <InstallationFiles />
     <SaveFiles {game} runtime />
-    {#if game === 'noah'}
-      <section>
-        <h2>Text rendering</h2>
-        <label class="sr-only" for="text-mode">Text rendering mode</label>
-        <select id="text-mode" aria-describedby="text-help">
-          <option value="native">Native</option><option value="dom">DOM text</option>
-        </select>
-        <p id="text-help">
-          DOM text uses selectable browser fonts with the game’s line breaks. Click outside text to
-          control the game.
-        </p>
-      </section>
-    {:else}
+    <section>
+      <h2>Text rendering</h2>
+      <label class="sr-only" for="text-mode">Text rendering mode</label>
+      <select id="text-mode" aria-describedby="text-help">
+        <option value="native">Native</option><option value="dom">DOM text</option>
+      </select>
+      <p id="text-help">
+        DOM text uses selectable browser fonts with the game’s line breaks. Click outside text to
+        control the game. Glyph placement and visual effects are approximate.
+      </p>
+    </section>
+    {#if game === 'aokana'}
       <section id="playback-options" hidden>
         <h2>Playback</h2>
         <button id="skip-startup" type="button" aria-pressed="false" disabled hidden

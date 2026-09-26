@@ -1,4 +1,11 @@
 import {aokanaBitmapPixelSize, bitmapStorage, type AokanaBitmap} from './bitmap.js';
+import {rasterTextBitmap, visibleRasterText} from '../../../../../text/raster-text.js';
+import {
+  BrowserRasterTextPresentation,
+  intersectTextRect,
+  mapRasterTextGlyphs,
+} from '../../../../../text/browser-raster-text-presentation.js';
+import {invalidateCanvasFrame} from '../../../../../graphics/canvas-frame-presenter.js';
 
 /** 1400b7390's untransformed StretchDIBits input used by every auxiliary-window caller. */
 export function aokanaChildDibPixels(bitmap: AokanaBitmap): Uint8ClampedArray<ArrayBuffer> | null {
@@ -38,12 +45,41 @@ export function aokanaChildDibPixels(bitmap: AokanaBitmap): Uint8ClampedArray<Ar
   return output;
 }
 
+/** Snapshot only presentation backing; a deferred mode switch must survive native buffer reuse. */
+export function captureAokanaChildText(
+  bitmap: AokanaBitmap,
+  nativePixels: Uint8ClampedArray<ArrayBuffer>,
+) {
+  const width = bitmap.width,
+    height = bitmap.height;
+  const glyphs = visibleRasterText(bitmap);
+  const alternate = rasterTextBitmap(bitmap);
+  const snapshot =
+    alternate.storage === bitmap.storage
+      ? null
+      : {
+          ...alternate,
+          storage: alternate.storage?.cloneRange(0, alternate.storage.bytes.length) ?? null,
+        };
+  let frame: ImageData | undefined;
+  return {
+    glyphs,
+    frame: (): ImageData =>
+      (frame ??= new ImageData(
+        snapshot ? aokanaChildDibPixels(snapshot)! : nativePixels,
+        width,
+        height,
+      )),
+  };
+}
+
 /** Concrete browser DC for the native auxiliary windows; no game image is bundled here. */
 export function presentAokanaChildBitmap(
   canvas: HTMLCanvasElement,
   bitmap: AokanaBitmap,
   x = 0,
   y = 0,
+  textPresentation: BrowserRasterTextPresentation | null = null,
 ): void {
   const pixels = aokanaChildDibPixels(bitmap);
   if (pixels === null) return;
@@ -51,4 +87,21 @@ export function presentAokanaChildBitmap(
   if (context === null)
     throw new Error('Aokana child window cannot acquire its browser drawing context');
   context.putImageData(new ImageData(pixels, bitmap.width, bitmap.height), x | 0, y | 0);
+  invalidateCanvasFrame(canvas);
+  if (textPresentation !== null) {
+    x |= 0;
+    y |= 0;
+    const region = intersectTextRect(
+      {x, y, width: bitmap.width, height: bitmap.height},
+      {x: 0, y: 0, width: canvas.width, height: canvas.height},
+    );
+    if (region) {
+      const captured = captureAokanaChildText(bitmap, pixels);
+      textPresentation.paint(canvas, {
+        region,
+        glyphs: mapRasterTextGlyphs(captured.glyphs, x, y, 1, 1, region),
+        paint: (context) => context.putImageData(captured.frame(), x, y),
+      });
+    }
+  }
 }

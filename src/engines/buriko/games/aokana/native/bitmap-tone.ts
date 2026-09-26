@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {bitmapStorage, type AokanaBitmap} from './bitmap.js';
 import type {AokanaBitmapCompositor} from './bitmap-compositor.js';
 import {runAokanaBitmapOperation} from './bitmap-operation-jobs.js';
@@ -44,7 +45,7 @@ function tonePixel(
 }
 
 /** 0546B0 and 053340/052F40: paired SSE word arithmetic with actual strip dispatch. */
-export function applyAokanaBitmapTone(
+function applyAokanaBitmapTonePixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -118,3 +119,15 @@ export function applyAokanaBitmapTone(
   }
   return 0;
 }
+
+export const applyAokanaBitmapTone = withAokanaBitmapText(applyAokanaBitmapTonePixels, {
+  alternateArgs: (args) => {
+    const alternate = [...args] as Parameters<typeof applyAokanaBitmapTonePixels>;
+    alternate[9] = false;
+    return alternate;
+  },
+  destination: 1,
+  source: 2,
+  replace: true,
+  applied: (result) => result === 0,
+});

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readRasterText} from '../dist/text/raster-text.js';
 import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
 import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
 import {
@@ -211,6 +212,7 @@ test('custom glyph fitting colorizes a mask, reduces once and reports native fit
     {character: 0xf001, fullWidth: 1, pixels: null, left: 0, top: 0, right: 3, bottom: 3},
   );
   assert.deepEqual(pixels(destination), Array(16).fill(0xff123456));
+  assert.equal(readRasterText(destination)[0].text, '\uf001');
 });
 
 test('embedded decoding retains CP932 pairs and substitutes all three numeric character forms', () => {

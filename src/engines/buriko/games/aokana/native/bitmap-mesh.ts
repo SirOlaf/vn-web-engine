@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {nativeMeshSineCosine} from '../bp/opcodes/native-math.js';
 import {roundToInt32} from '../bp/opcodes/fixed.js';
 import {bitmapStorage, type AokanaBitmap, type AokanaBitmapRectangle} from './bitmap.js';
@@ -595,7 +596,7 @@ export function buildAokanaMeshScanlines(
 }
 
 /** 042FF0 perspective-samples matching RGB/RGBA formats and clears uncovered output. */
-export function copyAokanaBitmapMesh32(
+function copyAokanaBitmapMesh32Pixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   records: readonly AokanaMeshScanline[],
@@ -606,7 +607,7 @@ export function copyAokanaBitmapMesh32(
 }
 
 /** 042BA0 perspective-samples RGB and applies the native signed-WORD blend coefficient. */
-export function blendAokanaBitmapMeshRgb32(
+function blendAokanaBitmapMeshRgb32Pixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   records: readonly AokanaMeshScanline[],
@@ -618,7 +619,7 @@ export function blendAokanaBitmapMeshRgb32(
 }
 
 /** 042750 perspective-samples RGBA and combines sample alpha with inverse transparency. */
-export function blendAokanaBitmapMeshAlphaIntoRgb32(
+function blendAokanaBitmapMeshAlphaIntoRgb32Pixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   records: readonly AokanaMeshScanline[],
@@ -630,7 +631,7 @@ export function blendAokanaBitmapMeshAlphaIntoRgb32(
 }
 
 /** 043530 offers the real shared mode-four worker before selecting its three pixel kernels. */
-export function drawAokanaBitmapMesh(
+function drawAokanaBitmapMeshPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -683,4 +684,72 @@ export function drawAokanaBitmapMesh(
         transparency,
       );
   }
+}
+
+export const copyAokanaBitmapMesh32 = withAokanaBitmapText(copyAokanaBitmapMesh32Pixels, {
+  replace: true,
+  map: (x, y, args) => meshTextPoint(x, y, args[2], args[3], args[4] ?? 0),
+});
+
+export const blendAokanaBitmapMeshRgb32 = withAokanaBitmapText(blendAokanaBitmapMeshRgb32Pixels, {
+  opacity: (args) => (256 - args[5]) / 256,
+  map: (x, y, args) => meshTextPoint(x, y, args[2], args[3], args[4]),
+});
+
+export const blendAokanaBitmapMeshAlphaIntoRgb32 = withAokanaBitmapText(
+  blendAokanaBitmapMeshAlphaIntoRgb32Pixels,
+  {
+    opacity: (args) => (256 - args[5]) / 256,
+    map: (x, y, args) => meshTextPoint(x, y, args[2], args[3], args[4]),
+  },
+);
+
+export const drawAokanaBitmapMesh = withAokanaBitmapText(drawAokanaBitmapMeshPixels, {
+  alternateArgs: (args) => {
+    const alternate = [...args] as Parameters<typeof drawAokanaBitmapMeshPixels>;
+    alternate[8] = false;
+    return alternate;
+  },
+  destination: 1,
+  source: 2,
+  replace: (args) => args[6] === 0,
+  applied: (_, args) =>
+    ((args[6] === 0 && args[1].format === args[2].format) ||
+      (args[6] === 1 && args[1].format === 1)) &&
+    (args[2].format === 1 || args[2].format === 2),
+  opacity: (args) => (args[6] === 0 ? 1 : (256 - args[7]) / 256),
+  map: (x, y, args) => meshTextPoint(x, y, args[3], args[4], args[5]),
+});
+
+/** DOM glyph boxes follow the nearest projected scanline; perspective glyph distortion stays approximate. */
+function meshTextPoint(
+  x: number,
+  y: number,
+  records: readonly AokanaMeshScanline[],
+  firstRow: number,
+  xOffset: number,
+): [number, number] {
+  let best = Infinity,
+    output: [number, number] = [NaN, NaN];
+  for (let row = 0; row < records.length; row++) {
+    const record = records[row]!;
+    if (record.right < record.left) continue;
+    const a = record.uq - x * record.q,
+      b = record.vq - y * record.q,
+      da = record.duq - x * record.dq,
+      db = record.dvq - y * record.dq,
+      denominator = da * da + db * db;
+    const step = denominator
+        ? Math.max(0, Math.min(record.right - record.left + 1, -(a * da + b * db) / denominator))
+        : 0,
+      q = record.q + step * record.dq,
+      u = (record.uq + step * record.duq) / q,
+      v = (record.vq + step * record.dvq) / q,
+      distance = (u - x) ** 2 + (v - y) ** 2;
+    if (distance < best) {
+      best = distance;
+      output = [record.left + xOffset + step, firstRow + row];
+    }
+  }
+  return output;
 }

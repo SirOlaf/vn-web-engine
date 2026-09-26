@@ -2,6 +2,7 @@ import {
   BrowserInstallationCache,
   type CachedInstallation,
 } from '../../src/platform/installation-cache.js';
+import {BrowserInstallationDirectoryStore} from '../../src/platform/installation-directory-store.js';
 import {
   hasInstallationDirectoryPicker,
   hasInstallationFilePicker,
@@ -9,6 +10,9 @@ import {
   pickInstallationFiles,
   InstallationSelectionFiles,
   selectedInstallationFiles,
+  installationDirectoryPermission,
+  requestInstallationDirectoryPermission,
+  readInstallationDirectory,
   type InstallationSelection,
 } from '../../src/platform/installation-picker.js';
 
@@ -30,8 +34,10 @@ export function mountInstallationControls(options: {
   const section = options.choose.closest<HTMLElement>('#installation-files')!;
   const element = <T extends HTMLElement>(id: string) => section.querySelector<T>(`#${id}`)!;
   const cache = new BrowserInstallationCache();
+  const directories = new BrowserInstallationDirectoryStore();
   const controls: HTMLButtonElement[] = [];
   const status = element<HTMLParagraphElement>('installation-status');
+  const directoryStatus = element<HTMLParagraphElement>('installation-directory-status');
   const input = element<HTMLInputElement>('installation-files-input');
   const single = element<HTMLInputElement>('installation-file-input');
   const selectionFiles = new InstallationSelectionFiles(
@@ -44,6 +50,8 @@ export function mountInstallationControls(options: {
   let working = false;
   let cachedInstallation: CachedInstallation | null = null;
   let abort: AbortController | null = null;
+  let rememberedDirectory: FileSystemDirectoryHandle | null = null;
+  let selectionRevision = 0;
   function message(text: string): void {
     status.textContent = text;
     options.report(text);
@@ -56,6 +64,7 @@ export function mountInstallationControls(options: {
   }
   async function run(work: () => Promise<void>): Promise<void> {
     if (working || options.busy()) return;
+    selectionRevision++;
     working = true;
     options.setBusy(true);
     refresh();
@@ -84,8 +93,52 @@ export function mountInstallationControls(options: {
     selectedSummary.textContent = `${combined.files.length} selected files`;
     selectedNames.textContent = combined.files.map(({path}) => path).join('\n');
     await options.select(combined);
+    // A folder supplemented with individual files cannot be reconstructed from its handle.
+    // Keep only complete, successfully opened folder selections across reloads.
+    if (directories.available()) {
+      try {
+        if (selection.directoryHandle) {
+          await directories.set(options.key, selection.directoryHandle);
+          rememberedDirectory = selection.directoryHandle;
+          directoryStatus.textContent = `Remembered folder: ${rememberedDirectory.name}. It will reopen after refresh when the browser permits access.`;
+        } else {
+          await directories.remove(options.key);
+          rememberedDirectory = null;
+          directoryStatus.textContent =
+            'This file selection cannot be remembered. Keep game files in browser to reopen them later.';
+        }
+      } catch {
+        directoryStatus.textContent = selection.directoryHandle
+          ? 'Device files are ready, but this browser could not remember the folder. Choose it again after refresh or keep a browser copy.'
+          : 'Device files are ready, but the previous remembered folder could not be forgotten.';
+      }
+    }
     message('Device files ready. Press Play.');
   }
+  const reconnect = button('installation-reconnect', () => {
+    if (working || options.busy() || !rememberedDirectory) return;
+    const handle = rememberedDirectory;
+    // A permission prompt needs the original click, not an awaited IndexedDB read.
+    const permission = requestInstallationDirectoryPermission(handle);
+    void run(async () => {
+      if ((await permission) !== 'granted')
+        throw new Error(
+          'Folder access was not granted. Reconnect or choose the game folder again.',
+        );
+      message(`Reading remembered folder: ${handle.name}…`);
+      await select(await readInstallationDirectory(handle));
+    });
+  });
+  const forget = button(
+    'installation-forget',
+    () =>
+      void run(async () => {
+        await directories.remove(options.key);
+        rememberedDirectory = null;
+        directoryStatus.textContent =
+          'Folder forgotten. Device files and browser saves are unchanged.';
+      }),
+  );
   options.choose.onclick = () => {
     if (working || options.busy()) return;
     if (hasInstallationDirectoryPicker(window)) {
@@ -195,6 +248,7 @@ export function mountInstallationControls(options: {
     const disabled = working || options.busy();
     options.choose.disabled = disabled;
     for (const button of controls) button.disabled = disabled;
+    reconnect.hidden = forget.hidden = rememberedDirectory === null;
     cancel.disabled = false;
     if (!cache.available()) {
       open.disabled = save.disabled = remove.disabled = true;
@@ -202,6 +256,37 @@ export function mountInstallationControls(options: {
         'Persistent game files require HTTPS (or localhost) and browser file storage support. Device file selection is still available.';
     } else save.disabled ||= options.current() === null || options.current() === cachedInstallation;
   }
+  async function restoreDirectory(): Promise<void> {
+    if (!hasInstallationDirectoryPicker(window) || !directories.available()) {
+      directoryStatus.textContent =
+        'This browser cannot remember device folders. Keep game files in browser to reopen them later.';
+      return;
+    }
+    const revision = selectionRevision;
+    try {
+      const handle = await directories.get(options.key);
+      if (selectionRevision !== revision || !handle) return;
+      rememberedDirectory = handle;
+      refresh();
+      const permission = await installationDirectoryPermission(handle);
+      if (selectionRevision !== revision) return;
+      directoryStatus.textContent = `Remembered folder: ${handle.name}.`;
+      if (permission !== 'granted') {
+        message('Reconnect the remembered folder to allow access, or choose another folder.');
+        return;
+      }
+      await run(async () => {
+        message(`Reading remembered folder: ${handle.name}…`);
+        await select(await readInstallationDirectory(handle));
+      });
+    } catch (error) {
+      if (selectionRevision !== revision) return;
+      directoryStatus.textContent =
+        'The remembered folder could not be reopened. Reconnect or choose the game folder again.';
+      message(error instanceof Error ? error.message : String(error));
+    }
+  }
   refresh();
+  void restoreDirectory();
   return {refresh, resetSelection};
 }

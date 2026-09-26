@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {
   aokanaBitmapRectangle,
   cropAokanaBitmap,
@@ -35,7 +36,7 @@ function extract(
 }
 
 /**054A20 keeps original offsets in exterior strips, including after negative-position clipping. */
-export function extractAokanaBitmapAlpha(
+function extractAokanaBitmapAlphaPixels(
   destination: AokanaBitmap,
   x: number,
   y: number,
@@ -79,3 +80,12 @@ export function extractAokanaBitmapAlpha(
     clearAokanaBitmap(destination, {...aokanaBitmapRectangle(destination), top: bottom});
   return 0;
 }
+
+export const extractAokanaBitmapAlpha = withAokanaBitmapText(extractAokanaBitmapAlphaPixels, {
+  sourceOpacity: (source, args) =>
+    args[4] === null ? 1 : (source === 3 ? 256 - args[5] : args[5]) / 256,
+  source: [3, 4],
+  replace: true,
+  applied: (result, args) => result === 0 && args[3].format === 2,
+  map: (x, y, args) => [x + args[1], y + args[2]],
+});

@@ -5,6 +5,8 @@ import {blendAokanaMaskColor} from './bitmap-mask-color.js';
 import {reduceAokanaBitmapHalf} from './bitmap-reduce.js';
 import {allocateAokanaBitmap, clipAokanaBitmapPair, type AokanaBitmap} from './bitmap.js';
 import {rasterAokanaGlyph} from './font-bitmap.js';
+import {aokanaGlyphText} from './font-raster.js';
+import {recordAokanaBitmapText} from './bitmap-dom-text.js';
 import {drawAokanaByteMaskOutline, drawAokanaCachedGlyphOutline} from './font-outline.js';
 import type {AokanaFontRecord} from './fonts.js';
 import type {AokanaSurfaces} from './surfaces.js';
@@ -219,12 +221,13 @@ export class AokanaCustomGlyphs {
     font: AokanaFontRecord,
     color: number,
     fitting: number,
+    presentation: {vertical?: boolean; decorative?: boolean} = {},
   ): AokanaDrawnGlyph {
     const key = (character | 0x80000000) >>> 0;
     if (!isAokanaCustomGlyphCode(key)) {
       if (font.raster === null)
         throw new Error('Aokana custom glyph lower reads an uninitialized ordinary font');
-      const glyph = rasterAokanaGlyph(destination, font.raster, character, color);
+      const glyph = rasterAokanaGlyph(destination, font.raster, character, color, presentation);
       return {
         character: glyph.character,
         fullWidth: glyph.fullWidth,
@@ -303,6 +306,27 @@ export class AokanaCustomGlyphs {
         height = size;
       }
     }
+    // Custom bitmap glyphs can be rendered without an ordinary raster record,
+    // but still have the original character code needed for DOM text. Match the
+    // shared TextOut setting when the per-font raster is unavailable.
+    const textOut = font.raster?.settings.textOut ?? this.surfaces.fonts.rasterSettings.textOut;
+    const original =
+      character > 0xffff && character <= 0x10ffff
+        ? String.fromCodePoint(character)
+        : String.fromCharCode(character & 0xffff);
+    // A registered bitmap can draw a private-use character even when TextOut's
+    // ordinary font path would suppress it. Preserve that source character.
+    const text = textOut ? (aokanaGlyphText(character).text ?? original) : original;
+    if (record !== null)
+      recordAokanaBitmapText(destination, text, {
+        size: font.size,
+        width,
+        height,
+        family: font.raster?.face.cssFamily,
+        color,
+        vertical: presentation.vertical,
+        decorative: presentation.decorative,
+      });
     return {
       character: character >>> 0,
       fullWidth: 1,

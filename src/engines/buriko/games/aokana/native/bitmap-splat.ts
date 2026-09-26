@@ -1,9 +1,10 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import {clearAokanaBitmap} from './bitmap-copy.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
 
 /** 054A00/053910: forward RGB accumulation using the native source-stride addressing. */
-export function splatAokanaBitmap(
+function splatAokanaBitmapPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   scaleX: number,
@@ -66,3 +67,18 @@ export function splatAokanaBitmap(
     sourceRow += stride * 4;
   }
 }
+
+export const splatAokanaBitmap = withAokanaBitmapText(splatAokanaBitmapPixels, {
+  replace: true,
+  applied: (_, args) => args[0].format === 1 && args[1].format === 1,
+  opacity: (args) => (256 - args[4]) / 256,
+  map: (x, y, args) => {
+    const [, source, scaleX, scaleY] = args;
+    return [
+      (((Math.imul(source.width, scaleX) >>> 1) - scaleX) | 0) / 65536 +
+        (x * ((65536 - scaleX) | 0)) / 65536,
+      (((Math.imul(source.height, scaleY) >>> 1) - scaleY) | 0) / 65536 +
+        (y * ((65536 - scaleY) | 0)) / 65536,
+    ];
+  },
+});

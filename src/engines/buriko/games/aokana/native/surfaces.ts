@@ -1,6 +1,6 @@
 import {AokanaSurfaceToneCurves} from './surface-tone-curves.js';
 import {applyAokanaBitmapTone} from './bitmap-tone.js';
-import {recolorAokanaBitmapAlpha} from './bitmap-recolor.js';
+import {recolorAokanaBitmapAlpha, replaceAokanaBitmapColor} from './bitmap-recolor.js';
 import {mirrorAokanaBitmap} from './bitmap-mirror.js';
 import {reduceAokanaBitmapHalf} from './bitmap-reduce.js';
 import {stretchCenteredAokanaBitmap} from './bitmap-centered-stretch.js';
@@ -13,6 +13,7 @@ import {
   AokanaBitmapStorage,
   aokanaBitmapPixelSize,
   bitmapStorage,
+  fillAokanaBitmap,
   fillAokanaBitmap16,
   fillAokanaBitmap32,
   cropAokanaBitmap,
@@ -22,7 +23,7 @@ import {
   type AokanaBitmap,
 } from './bitmap.js';
 import {clearAokanaBitmap, copyAokanaBitmapRows} from './bitmap-copy.js';
-import {bitmapRead8, bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
+import {bitmapRead8, bitmapWrite32} from './bitmap-scalar.js';
 import {makeAokanaBitmapOpaque, removeAokanaBitmapMatte} from './bitmap-import.js';
 import {AokanaBitmapCompositor} from './bitmap-compositor.js';
 import {AokanaNativeFonts} from './fonts.js';
@@ -381,23 +382,7 @@ export class AokanaSurfaces {
     const bitmap = this.snapshot(index);
     if (bitmap === null) return 1;
     if (bitmap.bytesPerPixel !== 4) return 2;
-    search >>>= 0;
-    replacement >>>= 0;
-    if (bitmap.format !== 1 && bitmap.format !== 2) return 0;
-    const rgbOnly = bitmap.format === 1 || (search & 0xff000000) === 0;
-    for (let y = 0; y < bitmap.height >>> 0; y++)
-      for (let x = 0; x < bitmap.width >>> 0; x++) {
-        const offset = bitmap.offset + y * bitmap.stride + x * 4;
-        const pixel = bitmapRead32(bitmap, offset);
-        if (rgbOnly ? (pixel & 0xffffff) === (search & 0xffffff) : pixel === search)
-          bitmapWrite32(
-            bitmap,
-            offset,
-            rgbOnly
-              ? (bitmap.format === 2 ? pixel & 0xff000000 : 0) | (replacement & 0xffffff)
-              : replacement,
-          );
-      }
+    replaceAokanaBitmapColor(bitmap, search, replacement);
     return 0;
   }
   /** 036AD0 clears the DWORD before memmove reads the selected source pixel. */
@@ -536,13 +521,7 @@ export class AokanaSurfaces {
     else if (bitmap.format === 0) fillAokanaBitmap16(bitmap, color);
     else if (bitmap.format === 1 || bitmap.format === 2)
       fillAokanaBitmap32(bitmap, bitmap.format === 1 ? color & 0xffffff : color);
-    else if (bitmap.format === 3)
-      for (let y = 0; y < bitmap.height >>> 0; y++) {
-        const offset = bitmap.offset + y * bitmap.stride;
-        const storage = bitmapStorage(bitmap, offset, bitmap.width >>> 0, false);
-        storage.bytes.fill(color & 255, offset, offset + (bitmap.width >>> 0));
-        storage.written(offset, bitmap.width >>> 0);
-      }
+    else if (bitmap.format === 3) fillAokanaBitmap(bitmap, color);
     return 1;
   }
 

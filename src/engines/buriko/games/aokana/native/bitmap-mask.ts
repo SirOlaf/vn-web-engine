@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {bitmapStorage, type AokanaBitmap} from './bitmap.js';
 import {bitmapRead8, bitmapRead16, bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
 import {aokanaSignedProduct16, saturateAokanaByte} from './bitmap-pairs.js';
@@ -26,7 +27,7 @@ function copyGroup(
 }
 
 /** 04bef0 → 04bdc0: every nonzero mask byte copies the entire RGBA pixel; zero writes zero. */
-export function copyAokanaMaskedAlpha(
+function copyAokanaMaskedAlphaPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   mask: AokanaBitmap,
@@ -68,7 +69,7 @@ export function copyAokanaMaskedAlpha(
 }
 
 /** 04c340 → 04bf10: mask-gated RGB blend; the destination's fourth byte is retained. */
-export function blendAokanaMaskedAlphaIntoRgb(
+function blendAokanaMaskedAlphaIntoRgbPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   mask: AokanaBitmap,
@@ -101,3 +102,12 @@ export function blendAokanaMaskedAlphaIntoRgb(
     }
   }
 }
+
+export const copyAokanaMaskedAlpha = withAokanaBitmapText(copyAokanaMaskedAlphaPixels, {
+  replace: true,
+});
+
+export const blendAokanaMaskedAlphaIntoRgb = withAokanaBitmapText(
+  blendAokanaMaskedAlphaIntoRgbPixels,
+  {opacity: (args) => (256 - args[3]) / 256},
+);

@@ -104,11 +104,7 @@
               <span>{games[id].engine} engine</span>
               <small class:ready={installations[id]?.ready}>
                 <i aria-hidden="true"></i>
-                {installations[id] === null
-                  ? 'Checking files'
-                  : installations[id]?.ready
-                    ? 'Browser copy ready'
-                    : 'Choose a folder'}
+                {installations[id] === null ? 'Checking files' : installations[id]?.label}
               </small>
             </span>
             <span class="card-arrow" aria-hidden="true">›</span>
@@ -167,9 +163,7 @@
                 <strong
                   >{installation === null
                     ? 'Checking local installation'
-                    : installation.ready
-                      ? 'Browser copy ready'
-                      : 'Choose a game folder'}</strong
+                    : installation.label}</strong
                 >
                 <p>{installation?.detail ?? 'Looking for game files on this device…'}</p>
               </div>

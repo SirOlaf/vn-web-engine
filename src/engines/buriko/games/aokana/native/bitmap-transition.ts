@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {
   aokanaBitmapRectangle,
   cropAokanaBitmap,
@@ -90,7 +91,7 @@ function transition32(
 }
 
 /** 04E3A0 clips three descriptors before actual04BA00/04BD70 format dispatch. */
-export function transitionAokanaBitmap(
+function transitionAokanaBitmapPixels(
   destination: AokanaBitmap,
   x: number,
   y: number,
@@ -131,3 +132,9 @@ export function transitionAokanaBitmap(
     transition32(output, input, matte, parameter >>> 0, blend >>> 0, extra >>> 0);
   return 0;
 }
+
+export const transitionAokanaBitmap = withAokanaBitmapText(transitionAokanaBitmapPixels, {
+  source: 3,
+  applied: (result, args) => result === 0 && args[3].format === 1,
+  map: (x, y, args) => [x + args[1], y + args[2]],
+});

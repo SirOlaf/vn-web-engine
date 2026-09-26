@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import {bitmapRead8, bitmapRead32, bitmapWrite8, bitmapWrite32} from './bitmap-scalar.js';
 
@@ -88,7 +89,7 @@ function mask32(
 }
 
 /** 04e5d0 supplies 256-transparency to both the separate and same-pointer RGBA paths. */
-export function applyAokanaAlphaMask(
+function applyAokanaAlphaMaskPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   mask: AokanaBitmap,
@@ -133,7 +134,7 @@ function mask8(destination: AokanaBitmap, source: AokanaBitmap, mask: AokanaBitm
 }
 
 /** 04e670 selects the concrete RGBA-mask or one-byte-mask operation by descriptor format. */
-export function applyAokanaBitmapMask(
+function applyAokanaBitmapMaskPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   mask: AokanaBitmap,
@@ -150,3 +151,14 @@ export function applyAokanaBitmapMask(
   mask8(destination, source, mask);
   return 0;
 }
+
+export const applyAokanaAlphaMask = withAokanaBitmapText(applyAokanaAlphaMaskPixels, {
+  replace: true,
+  opacity: (args) => (256 - args[3]) / 256,
+  applied: (result) => result === 0,
+});
+
+export const applyAokanaBitmapMask = withAokanaBitmapText(applyAokanaBitmapMaskPixels, {
+  replace: true,
+  applied: (result) => result === 0,
+});

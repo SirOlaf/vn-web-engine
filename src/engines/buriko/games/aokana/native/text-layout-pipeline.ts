@@ -12,6 +12,7 @@ import {AokanaWindowDisplayObject} from './display-window.js';
 import type {AokanaWindowDisplayState} from './display-window-state.js';
 import {rasterAokanaGlyph} from './font-bitmap.js';
 import {drawAokanaCachedGlyphOutline} from './font-outline.js';
+import {recordAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaFontRecord} from './fonts.js';
 import {AokanaRubyAnnotations, type AokanaRubyAnnotation} from './text-annotations.js';
 import {
@@ -220,7 +221,8 @@ function readingGlyphNodes(
         const shadow = allocateAokanaBitmap(scratch.width, scratch.height, format);
         clearAokanaBitmap(shadow);
         if (effect.color >>> 0 === 0) recolorAlpha(shadow, scratch, 0);
-        else rasterAokanaGlyph(shadow, raster, character, effect.color);
+        else rasterAokanaGlyph(shadow, raster, character, effect.color, {decorative: true});
+        recordAokanaBitmapText(shadow, '', {decorative: true, color: effect.color});
         state.surfaces.compositor.draw(
           bitmap,
           radiusX,
@@ -245,6 +247,7 @@ function readingGlyphNodes(
             7,
             0x100,
           );
+        recordAokanaBitmapText(outline, '', {decorative: true, color: effect.color});
         state.surfaces.compositor.draw(bitmap, 0, 0, outline, 1, (0x100 - effect.opacity) >>> 0);
         outline.storage?.release();
         state.surfaces.compositor.draw(bitmap, radiusX, radiusY, scratch, 0, 0);

@@ -25,6 +25,8 @@ export interface TextGlyph extends Rect {
 }
 export interface GlyphSlot {
   interactive?: boolean;
+  vertical?: boolean;
+  bold?: boolean;
   id: string;
   glyphs: readonly TextGlyph[];
 }

@@ -87,6 +87,10 @@ export class AokanaMonochromeFont {
     return this.sizeValue;
   }
 
+  get cssFamily(): string | undefined {
+    return this.face?.cssFamily;
+  }
+
   private releaseFace(): void {
     if (!this.active) return;
     this.face = undefined;

@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {initializedAokanaBitmapView, type AokanaBitmap} from './bitmap.js';
 import {AOKANA_BITMAP_WASM_MIN_PIXELS, tryAokanaBitmapFusedWasm} from './bitmap-alpha-wasm.js';
 import type {AokanaDistributedProcessing} from './distributed-processing.js';
@@ -193,7 +194,7 @@ function blendInitializedMixedIntoRgb(
 }
 
 /** 03C8B0/03C580 fuse RGBA crossfade, transparency and RGB destination blending. */
-export function blendMixedAokanaBitmapsIntoRgb(
+function blendMixedAokanaBitmapsIntoRgbPixels(
   destination: AokanaBitmap,
   first: AokanaBitmap,
   second: AokanaBitmap,
@@ -359,7 +360,7 @@ function mixRows(
 }
 
 /** 040fd0, including its actual descriptor-only distributed callback at 0542f0. */
-export function mixAokanaBitmaps(
+function mixAokanaBitmapsPixels(
   destination: AokanaBitmap,
   first: AokanaBitmap,
   second: AokanaBitmap,
@@ -379,3 +380,36 @@ export function mixAokanaBitmaps(
   mixRows(destination, first, second, factor);
   return 0;
 }
+
+export const blendMixedAokanaBitmapsIntoRgb = withAokanaBitmapText(
+  blendMixedAokanaBitmapsIntoRgbPixels,
+  {
+    sourceOpacity: (source, args) =>
+      args[1].storage === args[2].storage &&
+      args[1].offset === args[2].offset &&
+      args[1].stride === args[2].stride
+        ? source === 1
+          ? 1
+          : 0
+        : (source === 1 ? 256 - args[3] : args[3]) / 256,
+    source: [1, 2],
+    opacity: (args) => (256 - args[4]) / 256,
+    applied: (result) => result === 0,
+  },
+);
+
+export const mixAokanaBitmaps = withAokanaBitmapText(mixAokanaBitmapsPixels, {
+  sourceOpacity: (source, args) =>
+    args[1].storage === args[2].storage &&
+    args[1].offset === args[2].offset &&
+    args[1].stride === args[2].stride
+      ? source === 1
+        ? 1
+        : 0
+      : (source === 1 ? 256 - args[3] : args[3]) / 256,
+  alternateArgs: (args) =>
+    [args[0], args[1], args[2], args[3], null, 0] as Parameters<typeof mixAokanaBitmapsPixels>,
+  source: [1, 2],
+  replace: true,
+  applied: (result) => result === 0,
+});

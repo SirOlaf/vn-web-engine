@@ -11,6 +11,7 @@ import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/eng
 import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
 import {createGroup92SurfaceText} from '../dist/engines/buriko/games/aokana/native/group-92-surface-text.js';
 import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {readRasterText} from '../dist/text/raster-text.js';
 
 test('registered surface text draws multiline width and wrapped line metrics through the shared font cache', async () => {
   const text = new AokanaNativeText(),
@@ -113,4 +114,10 @@ test('registered surface text draws multiline width and wrapped line metrics thr
   assert.equal(surfaces.drawSurface(3, 0, 0, 2, 0x80, 0), 0);
   assert.equal(pixel(3, 0, 24), 0x00fe00);
   assert.equal(pixel(3, 0, 23), 0);
+  const copiedText = readRasterText(surfaces.snapshot(3));
+  assert.equal(copiedText.map((glyph) => glyph.text).join(''), 'ABCDE');
+  assert.deepEqual(
+    copiedText.map((glyph) => glyph.y),
+    [0, 0, 12, 12, 24],
+  );
 });

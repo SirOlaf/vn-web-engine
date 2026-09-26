@@ -9,7 +9,10 @@ original loading order.
 1. Open the player through HTTPS (or localhost on the device running the browser).
 2. Choose **Choose game folder**. Where supported, this requests a read-only directory
    handle and reads selected files on demand, without an application-created archive copy.
-   Keep the source folder available and unchanged while playing. Select it again after reload.
+   Keep the source folder available and unchanged while playing. A successful folder selection
+   is remembered separately for each game and reopens after refresh when access is still granted.
+   Otherwise choose **Reconnect remembered folder** to allow access again. **Forget remembered
+   folder** removes the reference, leaving device files and saves unchanged.
 3. If folder selection omits files, try **Use browser folder picker**, where offered, or
    **Add files**. **Add one file** uses a single-file picker for managers without multiple
    selection. Added files accumulate; a new folder replaces the selection. For Aokana include
@@ -31,6 +34,15 @@ See [Chrome's File System Access documentation](https://developer.chrome.com/doc
 [WebKit's folder-input release notes](https://webkit.org/blog/16574/webkit-features-in-safari-18-4/),
 [the iOS picker implementation](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/UIProcess/ios/forms/WKFileUploadPanel.mm),
 and [Safari 26 storage support](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/).
+
+Remembered folders use structured-cloned directory handles in IndexedDB, not stored absolute
+paths or copied game bytes. Browser permission remains separate: restoration only checks for
+existing read access, while reconnect requests access from a click. Chrome can offer **Allow on
+every visit**, but this is the user's browser choice; see [Chrome's persistent permissions](https://developer.chrome.com/blog/persistent-permissions-for-the-file-system-access-api).
+The folder-input fallback does not expose a reusable directory handle. Adding individual files
+clears the remembered folder because that combined selection cannot be reconstructed from one
+handle; keep a browser copy instead. Moving/removing the source folder, clearing site data, or
+revoking browser access can require selecting it again.
 
 The cache streams files into OPFS in bounded chunks, then publishes a completed manifest.
 Cancellation or a failed replacement retains the previous completed installation. Replacement

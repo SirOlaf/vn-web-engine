@@ -1,3 +1,9 @@
+import {
+  cloneRasterText,
+  releaseRasterText,
+  withRasterText,
+} from '../../../../../text/raster-text.js';
+
 /** Native bitmap backing identity is shared by cropped descriptors and copied slot records. */
 export class AokanaBitmapStorage {
   readonly bytes: Uint8Array;
@@ -84,9 +90,11 @@ export class AokanaBitmapStorage {
     );
     if (this.defined !== null) clone.defined = this.defined.slice(offset, offset + length);
     clone.nativeHeapReads = this.nativeHeapReads;
+    cloneRasterText(this, clone, offset, length);
     return clone;
   }
   release(): void {
+    releaseRasterText(this);
     this.disposed = true;
   }
 }
@@ -221,7 +229,7 @@ export function initializedAokanaBitmapView(
 }
 
 /** 14003e530 converts RGB888 to native 5:5:5 then fills exactly width pixels per row. */
-export function fillAokanaBitmap16(bitmap: AokanaBitmap, color: number): void {
+function fillAokanaBitmap16Pixels(bitmap: AokanaBitmap, color: number): void {
   const pixel = ((color >>> 9) & 0x7c00) + ((color >>> 6) & 0x3e0) + ((color >>> 3) & 0x1f);
   for (let y = 0; y < bitmap.height >>> 0; y++) {
     const start = bitmap.offset + y * bitmap.stride;
@@ -235,7 +243,7 @@ export function fillAokanaBitmap16(bitmap: AokanaBitmap, color: number): void {
 }
 
 /** 14003e400's scalar/SIMD fill branches have identical stores and row padding remains untouched. */
-export function fillAokanaBitmap32(bitmap: AokanaBitmap, color: number): void {
+function fillAokanaBitmap32Pixels(bitmap: AokanaBitmap, color: number): void {
   for (let y = 0; y < bitmap.height >>> 0; y++) {
     const start = bitmap.offset + y * bitmap.stride;
     for (let x = 0; x < bitmap.width >>> 0; x++) {
@@ -248,7 +256,7 @@ export function fillAokanaBitmap32(bitmap: AokanaBitmap, color: number): void {
 }
 
 /** 14003e5a0's full-format fill dispatcher; formats four and above perform no write. */
-export function fillAokanaBitmap(bitmap: AokanaBitmap, color: number): void {
+function fillAokanaBitmapPixels(bitmap: AokanaBitmap, color: number): void {
   if (bitmap.format === 0) fillAokanaBitmap16(bitmap, color);
   else if (bitmap.format === 1 || bitmap.format === 2)
     fillAokanaBitmap32(bitmap, bitmap.format === 1 ? color & 0xffffff : color);
@@ -260,3 +268,10 @@ export function fillAokanaBitmap(bitmap: AokanaBitmap, color: number): void {
       storage.written(offset, bitmap.width >>> 0);
     }
 }
+
+export const fillAokanaBitmap16 = withRasterText(fillAokanaBitmap16Pixels, {clear: true});
+export const fillAokanaBitmap32 = withRasterText(fillAokanaBitmap32Pixels, {clear: true});
+export const fillAokanaBitmap = withRasterText(fillAokanaBitmapPixels, {
+  clear: true,
+  applied: (_, [bitmap]) => bitmap.format < 4,
+});

@@ -1,3 +1,5 @@
+import {isRasterTextPresentation} from '../../../../../text/raster-text.js';
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {initializedAokanaBitmapView, type AokanaBitmap} from './bitmap.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
 import {AOKANA_BITMAP_WASM_MIN_PIXELS, tryAokanaBitmapAlphaWasm} from './bitmap-alpha-wasm.js';
@@ -63,7 +65,10 @@ export function aokanaAlphaTailPixel(
   const sourceAlpha = Math.imul(source >>> 24, 256 - destinationWeight) >>> 0;
   const destinationAlpha = Math.imul(destination >>> 24, 65536 - sourceAlpha) >>> 8;
   const denominator = (sourceAlpha + destinationAlpha) >>> 0;
-  if (denominator === 0) throw new RangeError('Aokana bitmap native unsigned division by zero');
+  if (denominator === 0) {
+    if (isRasterTextPresentation()) return 0;
+    throw new RangeError('Aokana bitmap native unsigned division by zero');
+  }
   return weightedRgb(
     source,
     destination,
@@ -74,7 +79,7 @@ export function aokanaAlphaTailPixel(
 }
 
 /** 14003d690: normal format-2 over format-2, with native pair shortcuts and integer tail. */
-export function blendAokanaAlpha(destination: AokanaBitmap, source: AokanaBitmap): void {
+function blendAokanaAlphaPixels(destination: AokanaBitmap, source: AokanaBitmap): void {
   // One scratch tuple per operation avoids allocating a destination pair for
   // every pixel pair. Read both values before writing to preserve MOVQ overlap.
   const oldPixels: [number, number] = [0, 0];
@@ -109,7 +114,7 @@ export function blendAokanaAlpha(destination: AokanaBitmap, source: AokanaBitmap
 }
 
 /** 14003ca70: destinationWeight is native transparency, not source opacity. */
-export function blendAokanaAlphaWithTransparency(
+function blendAokanaAlphaWithTransparencyPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   destinationWeight: number,
@@ -233,7 +238,7 @@ function blendInitializedAlphaIntoRgb(
 }
 
 /** 14003d950 has deliberately different alpha-byte handling in its opaque pair and tail. */
-export function blendAokanaAlphaIntoRgb(destination: AokanaBitmap, source: AokanaBitmap): void {
+function blendAokanaAlphaIntoRgbPixels(destination: AokanaBitmap, source: AokanaBitmap): void {
   if (blendInitializedAlphaIntoRgb(destination, source, null)) return;
   visitAokanaPixelPairsReusingSource(
     destination,
@@ -265,7 +270,7 @@ export function blendAokanaAlphaIntoRgb(destination: AokanaBitmap, source: Aokan
 }
 
 /** 14003cd30's prefetch branches use the same 128-entry, truncated opacity table. */
-export function blendAokanaAlphaIntoRgbWithTransparency(
+function blendAokanaAlphaIntoRgbWithTransparencyPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   transparency: number,
@@ -295,7 +300,7 @@ export function blendAokanaAlphaIntoRgbWithTransparency(
 }
 
 /** 14003d3f0 blends all four bytes using transparency>>1 and signed 16-bit differences. */
-export function mixAokanaAllChannels(
+function mixAokanaAllChannelsPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   transparency: number,
@@ -381,3 +386,21 @@ export function mixAokanaAllChannels(
       bitmapWrite32(destination, offset, mix(pixel, bitmapRead32(destination, offset))),
   );
 }
+
+export const blendAokanaAlpha = withAokanaBitmapText(blendAokanaAlphaPixels);
+
+export const blendAokanaAlphaIntoRgb = withAokanaBitmapText(blendAokanaAlphaIntoRgbPixels);
+
+export const blendAokanaAlphaWithTransparency = withAokanaBitmapText(
+  blendAokanaAlphaWithTransparencyPixels,
+  {opacity: (args) => (256 - args[2]) / 256},
+);
+
+export const blendAokanaAlphaIntoRgbWithTransparency = withAokanaBitmapText(
+  blendAokanaAlphaIntoRgbWithTransparencyPixels,
+  {opacity: (args) => (256 - args[2]) / 256},
+);
+
+export const mixAokanaAllChannels = withAokanaBitmapText(mixAokanaAllChannelsPixels, {
+  opacity: (args) => (256 - args[2]) / 256,
+});

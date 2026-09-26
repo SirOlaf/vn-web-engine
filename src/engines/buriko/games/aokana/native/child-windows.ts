@@ -18,6 +18,8 @@ import {writeAokanaClipboard} from './modal.js';
 import type {AokanaEngineDialogs} from './engine-dialogs.js';
 import {writePropertyWord} from './property-values.js';
 import type {WindowCoordinatesHost} from '../../../../../platform/browser-window-coordinates.js';
+import type {BrowserRasterTextPresentation} from '../../../../../text/browser-raster-text-presentation.js';
+import {isBrowserTextTarget} from '../../../../../input/browser-text-target.js';
 
 /** Native b7540 frame extents and GetSystemMetrics(2)/(3), provided by the actual window profile. */
 export interface AokanaChildWindowMetrics {
@@ -81,6 +83,7 @@ export class AokanaChildWindows {
     readonly desktopCanvas: HTMLCanvasElement,
     readonly presentationMode: 'canvas' | 'none' = 'canvas',
     readonly coordinates: WindowCoordinatesHost | null = null,
+    readonly textPresentation: BrowserRasterTextPresentation | null = null,
   ) {}
 
   /** 14006de40: zeroing is intentionally independent of 14006ddd0's closing pass. */
@@ -164,7 +167,7 @@ export class AokanaChildWindows {
       close.setAttribute('aria-label', 'Close');
       heading.append(titleElement, minimize, close);
       const body = this.document.createElement('div');
-      body.style.cssText = 'display:grid;overflow:hidden';
+      body.style.cssText = 'position:relative;display:grid;overflow:hidden';
       body.style.gridTemplateColumns = `minmax(0,1fr) ${flags & 2 ? this.metrics.verticalScrollbarWidth : 0}px`;
       body.style.gridTemplateRows = `minmax(0,1fr) ${flags & 1 ? this.metrics.horizontalScrollbarHeight : 0}px`;
       body.style.height = `calc(100% - ${this.metrics.frameHeight - this.metrics.frameWidth}px)`;
@@ -227,7 +230,10 @@ export class AokanaChildWindows {
         event.preventDefault();
         const bounds = panel.getBoundingClientRect(),
           position = this.coordinates?.readPosition(panel) ?? [bounds.left, bounds.top],
-          point = this.coordinates?.viewportToScreen(event.clientX, event.clientY) ?? [event.clientX, event.clientY];
+          point = this.coordinates?.viewportToScreen(event.clientX, event.clientY) ?? [
+            event.clientX,
+            event.clientY,
+          ];
         drag = {
           pointer: event.pointerId,
           x: point[0]!,
@@ -239,8 +245,15 @@ export class AokanaChildWindows {
       });
       heading.addEventListener('pointermove', (event) => {
         if (drag?.pointer !== event.pointerId) return;
-        const point = this.coordinates?.viewportToScreen(event.clientX, event.clientY) ?? [event.clientX, event.clientY];
-        this.positionPanel(panel, Math.trunc(drag.left + point[0]! - drag.x), Math.trunc(drag.top + point[1]! - drag.y));
+        const point = this.coordinates?.viewportToScreen(event.clientX, event.clientY) ?? [
+          event.clientX,
+          event.clientY,
+        ];
+        this.positionPanel(
+          panel,
+          Math.trunc(drag.left + point[0]! - drag.x),
+          Math.trunc(drag.top + point[1]! - drag.y),
+        );
       });
       const stop = (event: PointerEvent): void => {
         if (drag?.pointer !== event.pointerId) return;
@@ -252,6 +265,7 @@ export class AokanaChildWindows {
       heading.addEventListener('pointercancel', stop);
       for (const name of ['keydown', 'keyup'] as const)
         panel.addEventListener(name, (event) => {
+          if (isBrowserTextTarget(event.target)) return;
           this.keyboard.post(target, event);
           event.stopPropagation();
           if (event.key !== 'Tab') event.preventDefault();
@@ -262,7 +276,10 @@ export class AokanaChildWindows {
           event.preventDefault();
           const delta = event.deltaY === 0 ? 0 : event.deltaY < 0 ? 120 : -120;
           const keyFlags = (event.shiftKey ? 4 : 0) | (event.ctrlKey ? 8 : 0);
-          const point = this.coordinates?.viewportToScreen(event.clientX, event.clientY) ?? [event.screenX, event.screenY],
+          const point = this.coordinates?.viewportToScreen(event.clientX, event.clientY) ?? [
+              event.screenX,
+              event.screenY,
+            ],
             position = ((Math.trunc(point[1]!) & 0xffff) << 16) | (Math.trunc(point[0]!) & 0xffff);
           this.messages.post({
             target,
@@ -283,6 +300,7 @@ export class AokanaChildWindows {
         this.ownedTargets.delete(allocatedTarget);
       }
       if (record.window !== null) {
+        this.textPresentation?.clear(record.window.canvas);
         this.coordinates?.forget(record.window.panel);
         record.window.panel.remove();
       }
@@ -359,6 +377,7 @@ export class AokanaChildWindows {
     if (record.closeAllowed === 0 || record.window === null) return;
     if (record.visible !== 0) this.dialogs.transition(false);
     const window = record.window;
+    this.textPresentation?.clear(window.canvas);
     this.coordinates?.forget(window.panel);
     window.panel.remove();
     record.bitmap.storage?.release();
@@ -400,7 +419,13 @@ export class AokanaChildWindows {
   }
   private present(record: ChildRecord, bitmap = record.bitmap, x = 0, y = 0): void {
     if (this.presentationMode === 'none') return;
-    presentAokanaChildBitmap(record.window?.canvas ?? this.desktopCanvas, bitmap, x, y);
+    presentAokanaChildBitmap(
+      record.window?.canvas ?? this.desktopCanvas,
+      bitmap,
+      x,
+      y,
+      this.textPresentation,
+    );
   }
   fill(handle: number, color: number): 0 | 1 {
     const record = this.record(handle);
@@ -533,6 +558,7 @@ export class AokanaChildWindows {
     };
     if (message.message === 2) {
       const value = required();
+      if (value.window !== null) this.textPresentation?.clear(value.window.canvas);
       value.bitmap.storage?.release();
       this.orphaned.push({...value});
       Object.assign(value, empty());

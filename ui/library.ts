@@ -2,24 +2,52 @@ import {SourceFileSystem} from '../src/platform/filesystem.js';
 import {openBrowserPlatform} from '../src/platform/services.js';
 import {windowsFileKey} from '../src/platform/windows-filesystem.js';
 import {BrowserInstallationCache} from '../src/platform/installation-cache.js';
+import {BrowserInstallationDirectoryStore} from '../src/platform/installation-directory-store.js';
+import {installationDirectoryPermission} from '../src/platform/installation-picker.js';
 import {NOAH_PATHS, NOAH_WINDOWS} from '../src/engines/mages/games/chaos-head-noah/paths.js';
 
 export type GameId = 'aokana' | 'noah';
 export interface InstallationStatus {
   ready: boolean;
+  label: string;
   detail: string;
 }
 
 export async function installationStatus(game: GameId): Promise<InstallationStatus> {
+  const key = game === 'aokana' ? 'aokana' : 'chaos-head-noah-gog';
+  const directory = await new BrowserInstallationDirectoryStore().get(key).catch(() => null);
+  if (
+    directory &&
+    (await installationDirectoryPermission(directory).catch(() => 'prompt')) === 'granted'
+  ) {
+    return {
+      ready: true,
+      label: 'Remembered folder ready',
+      detail: `${directory.name} — opens automatically in the player`,
+    };
+  }
+  const unavailable = directory
+    ? {
+        ready: false,
+        label: 'Reconnect remembered folder',
+        detail: `${directory.name} — open the player to allow folder access again`,
+      }
+    : {
+        ready: false,
+        label: 'Choose a game folder',
+        detail: 'Choose the game folder in the player.',
+      };
   try {
-    const cached = await new BrowserInstallationCache().open(
-      game === 'aokana' ? 'aokana' : 'chaos-head-noah-gog',
-    );
-    if (!cached) return {ready: false, detail: 'Choose the game folder in the player.'};
+    const cached = await new BrowserInstallationCache().open(key);
+    if (!cached) return unavailable;
     const title = game === 'aokana' ? 'game files' : 'game archives';
-    return {ready: true, detail: `${cached.files.length} ${title} saved in this browser`};
+    return {
+      ready: true,
+      label: 'Browser copy ready',
+      detail: `${cached.files.length} ${title} saved in this browser`,
+    };
   } catch {
-    return {ready: false, detail: 'Choose the game folder in the player.'};
+    return unavailable;
   }
 }
 

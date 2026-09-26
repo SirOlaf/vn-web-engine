@@ -5,6 +5,7 @@ import {clearAokanaBitmap} from './bitmap-copy.js';
 import type {AokanaNativeClock} from './clock.js';
 import type {AokanaWindowDisplayObject} from './display-window.js';
 import {rasterAokanaGlyph} from './font-bitmap.js';
+import {recordAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaNativeInput} from './input.js';
 import {AokanaProcedure, type AokanaProcedureState} from './procedure.js';
 import {
@@ -242,6 +243,7 @@ export class AokanaTextDisplayProcess extends AokanaProcedure {
         try {
           clearAokanaBitmap(shadow);
           this.manager.environment.compositor.composite(shadow, view, 5, 256, true);
+          recordAokanaBitmapText(shadow, '', {decorative: true, color: effect.color});
           damagePublished =
             this.window.drawTextBitmap(
               damage,

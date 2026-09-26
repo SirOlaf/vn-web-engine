@@ -1,6 +1,7 @@
 import type {AokanaBitmap} from './bitmap.js';
 import {bitmapRead8, bitmapWrite32} from './bitmap-scalar.js';
 import type {AokanaFontRecord} from './fonts.js';
+import {recordAokanaBitmapText} from './bitmap-dom-text.js';
 import {textByte} from './text.js';
 
 type AokanaOutlineReader = (x: number, y: number) => number;
@@ -104,6 +105,12 @@ export function drawAokanaCachedGlyphOutline(
           return distance <= 0 ? value : distance >= 1 ? 0 : Math.trunc(value * distance);
         },
   );
+  recordAokanaBitmapText(destination, '', {
+    size: raster.geometry.size,
+    family: raster.face.cssFamily,
+    color,
+    decorative: true,
+  });
 }
 
 /** 0723d0's custom branches sum either format-three bytes or a fitted RGBA alpha channel. */
@@ -127,4 +134,5 @@ export function drawAokanaByteMaskOutline(
     color,
     (value) => value,
   );
+  recordAokanaBitmapText(destination, '', {decorative: true, color});
 }

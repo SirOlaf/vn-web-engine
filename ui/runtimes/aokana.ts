@@ -62,6 +62,17 @@ const surface = document.querySelector<HTMLElement>('#surface')!;
 const windowLayer = document.querySelector<HTMLElement>('#window-layer')!;
 const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas')!;
 const diagnosticMode = document.documentElement.classList.contains('no-canvas');
+const textMode = document.querySelector<HTMLSelectElement>('#text-mode')!;
+let activeGraph: AokanaProductionDisplayResourceGraph | null = null;
+textMode.onchange = () => {
+  try {
+    activeGraph?.setTextMode(textMode.value === 'dom' ? 'dom' : 'native');
+  } catch (error) {
+    textMode.value = 'native';
+    activeGraph?.setTextMode('native');
+    report(errorMessage(error));
+  }
+};
 const {collapseOptions} = mountGameViewer('aokana');
 let fullscreenControls: ReturnType<typeof mountFullscreenControls> | undefined;
 const displayHost = new BrowserWindowDisplayHost(
@@ -325,6 +336,8 @@ async function launch(
     skipStartup.addEventListener('click', requestSkip);
     // C3CB0 creates logical preset 2 (800 × 600) before B11F0 initializes D3D.
     // IPL later restores BGI.gdb and selects its saved client size through 81:64.
+    activeGraph = graph;
+    graph.setTextMode(textMode.value === 'dom' ? 'dom' : 'native');
     graph.display.requestedWidth = 800;
     graph.display.requestedHeight = 600;
     const memory = new AokanaBpMemory(new Uint8Array(0x10000));
@@ -341,6 +354,7 @@ async function launch(
     report('Aokana closed.');
   } finally {
     finishStartup();
+    activeGraph = null;
     skipStartup.removeEventListener('click', requestSkip);
     skipStartup.disabled = true;
     skipStartup.hidden = true;

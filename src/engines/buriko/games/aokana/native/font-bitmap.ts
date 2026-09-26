@@ -7,7 +7,13 @@ import {
 } from './bitmap.js';
 import {AokanaBitmapCompositor} from './bitmap-compositor.js';
 import {bitmapWrite16, bitmapWrite32} from './bitmap-scalar.js';
-import {aokanaWideCharacter, type AokanaGlyph, type AokanaFontRaster} from './font-raster.js';
+import {
+  aokanaGlyphText,
+  aokanaWideCharacter,
+  type AokanaGlyph,
+  type AokanaFontRaster,
+} from './font-raster.js';
+import {recordAokanaBitmapText} from './bitmap-dom-text.js';
 import {AokanaNativeFonts} from './fonts.js';
 import {isNativePunctuation, textByte} from './text.js';
 
@@ -30,6 +36,7 @@ export function rasterAokanaGlyph(
   raster: AokanaFontRaster,
   character: number,
   color: number,
+  presentation: {vertical?: boolean; decorative?: boolean} = {},
 ): AokanaGlyph {
   const glyph = raster.glyph(character);
   const width = Math.min(bitmap.width >>> 0, raster.geometry.width >>> 0);
@@ -58,6 +65,18 @@ export function rasterAokanaGlyph(
           );
       }
     }
+  const mapped = raster.settings.textOut
+    ? aokanaGlyphText(character).text
+    : character > 0xffff && character <= 0x10ffff
+      ? String.fromCodePoint(character)
+      : String.fromCharCode(character & 0xffff);
+  recordAokanaBitmapText(bitmap, mapped ?? '', {
+    size: raster.geometry.size,
+    family: raster.face.cssFamily,
+    color,
+    vertical: presentation.vertical,
+    decorative: presentation.decorative || mapped === null,
+  });
   return glyph;
 }
 

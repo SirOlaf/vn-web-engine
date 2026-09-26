@@ -1,8 +1,9 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import {bitmapRead8, bitmapRead32, bitmapWrite8, bitmapWrite32} from './bitmap-scalar.js';
 
 /** 03E2A0 saturating-adds the alpha mask to four pixels, then the two/one tails. */
-export function makeAokanaBitmapOpaque(bitmap: AokanaBitmap): void {
+function makeAokanaBitmapOpaquePixels(bitmap: AokanaBitmap): void {
   for (let y = 0; y < bitmap.height >>> 0; y++) {
     const row = bitmap.offset + y * bitmap.stride;
     let x = 0;
@@ -21,7 +22,7 @@ export function makeAokanaBitmapOpaque(bitmap: AokanaBitmap): void {
 }
 
 /** 03FA20 removes a selected matte from partial-alpha imported pixels. */
-export function removeAokanaBitmapMatte(bitmap: AokanaBitmap, color: number): 0 | 1 {
+function removeAokanaBitmapMattePixels(bitmap: AokanaBitmap, color: number): 0 | 1 {
   color >>>= 0;
   if (color === 0 || bitmap.format !== 2) return 0;
   for (let y = 0; y < bitmap.height >>> 0; y++)
@@ -41,3 +42,14 @@ export function removeAokanaBitmapMatte(bitmap: AokanaBitmap, color: number): 0 
     }
   return 1;
 }
+
+export const makeAokanaBitmapOpaque = withAokanaBitmapText(makeAokanaBitmapOpaquePixels, {
+  source: 0,
+  replace: true,
+});
+
+export const removeAokanaBitmapMatte = withAokanaBitmapText(removeAokanaBitmapMattePixels, {
+  source: 0,
+  replace: true,
+  applied: (result) => result === 1,
+});

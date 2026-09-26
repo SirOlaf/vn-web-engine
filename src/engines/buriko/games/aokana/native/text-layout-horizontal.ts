@@ -10,6 +10,7 @@ import {
 import {clearAokanaBitmap} from './bitmap-copy.js';
 import {aokanaCrtWideLower} from './crt-case.js';
 import {isAokanaCustomGlyphCode, type AokanaDrawnGlyph} from './custom-text-glyphs.js';
+import {recordAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaFontRecord} from './fonts.js';
 import type {AokanaRubyAnnotations} from './text-annotations.js';
 import type {AokanaTextLayoutState} from './text-layout-state.js';
@@ -1149,6 +1150,10 @@ export async function buildAokanaHorizontalTextLayout(
         const shadow = allocateAokanaBitmap(glyphBitmap.width, glyphBitmap.height, format);
         clearAokanaBitmap(shadow);
         recolorAlpha(shadow, glyphBitmap, options.effect.color);
+        recordAokanaBitmapText(shadow, '', {
+          decorative: true,
+          color: options.effect.color,
+        });
         runAsActor(() =>
           state.surfaces.compositor.draw(
             main,
@@ -1192,6 +1197,10 @@ export async function buildAokanaHorizontalTextLayout(
               0x100,
             ),
           );
+        recordAokanaBitmapText(outline, '', {
+          decorative: true,
+          color: options.effect.color,
+        });
         runAsActor(() =>
           state.surfaces.compositor.draw(
             main,

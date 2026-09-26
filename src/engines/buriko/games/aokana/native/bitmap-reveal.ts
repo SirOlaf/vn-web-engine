@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import type {AokanaBitmapCompositor} from './bitmap-compositor.js';
 import {clearAokanaBitmap} from './bitmap-copy.js';
@@ -66,7 +67,7 @@ function reveal32(
 }
 
 /** 04b230 returns the native fully-clear/fully-copied endpoints before source-format dispatch. */
-export function revealAokanaBitmap(
+function revealAokanaBitmapPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -142,7 +143,7 @@ function blendReveal32(
 }
 
 /** 04b5c0 blends the reveal directly into RGB, retaining the separate ordinary blend endpoint. */
-export function blendRevealedAokanaBitmap(
+function blendRevealedAokanaBitmapPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -159,3 +160,23 @@ export function blendRevealedAokanaBitmap(
   if (source.format === 1 || source.format === 2)
     blendReveal32(destination, source, mask, exponent, progress, transparency);
 }
+
+export const revealAokanaBitmap = withAokanaBitmapText(revealAokanaBitmapPixels, {
+  destination: 1,
+  source: 2,
+  replace: true,
+  applied: (_, args) =>
+    args[3].format === 3 && args[1].format === 2 && (args[2].format === 1 || args[2].format === 2),
+  opacity: (args) => (args[5] >>> 0 === 0 ? 0 : 1),
+});
+
+export const blendRevealedAokanaBitmap = withAokanaBitmapText(blendRevealedAokanaBitmapPixels, {
+  destination: 1,
+  source: 2,
+  applied: (_, args) =>
+    args[3].format === 3 &&
+    args[1].format === 1 &&
+    (args[2].format === 1 || args[2].format === 2) &&
+    args[6] >>> 0 < 256,
+  opacity: (args) => (args[5] >>> 0 === 0 ? 0 : (256 - args[6]) / 256),
+});

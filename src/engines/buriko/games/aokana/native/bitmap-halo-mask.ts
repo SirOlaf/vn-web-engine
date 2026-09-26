@@ -1,10 +1,11 @@
+import {aokanaBitmapTextCompositor, withAokanaBitmapText} from './bitmap-dom-text.js';
 import {bitmapStorage, cropAokanaBitmap, type AokanaBitmap} from './bitmap.js';
 import {clearAokanaBitmap} from './bitmap-copy.js';
 import {bitmapRead8} from './bitmap-scalar.js';
 import type {AokanaBitmapCompositor} from './bitmap-compositor.js';
 
 /**046960 ->045170: saturated alpha neighborhoods followed by the actual mode7 erasure. */
-export function createAokanaHaloMask(
+function createAokanaHaloMaskPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   radius: number,
@@ -55,3 +56,13 @@ export function createAokanaHaloMask(
   compositor.composite(interior, source, 7, 256, true);
   return 0;
 }
+
+export const createAokanaHaloMask = withAokanaBitmapText(createAokanaHaloMaskPixels, {
+  alternateArgs: (args) =>
+    [args[0], args[1], args[2], aokanaBitmapTextCompositor(args[3])] as Parameters<
+      typeof createAokanaHaloMaskPixels
+    >,
+  replace: true,
+  applied: (result) => result === 0,
+  map: (x, y) => [x + 8, y + 8],
+});

@@ -1,8 +1,9 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import {bitmapRead8, bitmapWrite8} from './bitmap-scalar.js';
 
 /** 046910 dispatches the source-sized scalar 045840/045770 kernels. */
-export function convertAokanaBitmapToMask(
+function convertAokanaBitmapToMaskPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
 ): 0 | 9 | 10 {
@@ -31,7 +32,7 @@ export function convertAokanaBitmapToMask(
 }
 
 /** 0468A0 only complements bytes of an existing format-three descriptor. */
-export function invertAokanaBitmapMask(bitmap: AokanaBitmap): boolean {
+function invertAokanaBitmapMaskPixels(bitmap: AokanaBitmap): boolean {
   if (bitmap.format !== 3) return false;
   let row = bitmap.offset;
   for (let y = 0; y < bitmap.height >>> 0; y++) {
@@ -44,3 +45,14 @@ export function invertAokanaBitmapMask(bitmap: AokanaBitmap): boolean {
   }
   return true;
 }
+
+export const convertAokanaBitmapToMask = withAokanaBitmapText(convertAokanaBitmapToMaskPixels, {
+  replace: true,
+  applied: (result) => result === 0,
+});
+
+export const invertAokanaBitmapMask = withAokanaBitmapText(invertAokanaBitmapMaskPixels, {
+  source: 0,
+  replace: true,
+  applied: (result) => result,
+});

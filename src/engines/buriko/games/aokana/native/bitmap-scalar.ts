@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {bitmapStorage, type AokanaBitmap} from './bitmap.js';
 
 export function bitmapRead8(bitmap: AokanaBitmap, offset: number): number {
@@ -39,7 +40,7 @@ function mix555(source: number, destination: number, destinationWeight: number):
 }
 
 /** 14003dae0 walks each 16-bit row backwards, treating zero as transparent. */
-export function copyAokanaTransparent16(destination: AokanaBitmap, source: AokanaBitmap): void {
+function copyAokanaTransparent16Pixels(destination: AokanaBitmap, source: AokanaBitmap): void {
   for (let y = 0; y < source.height >>> 0; y++)
     for (let x = (source.width >>> 0) - 1; x >= 0; x--) {
       const pixel = bitmapRead16(source, source.offset + y * source.stride + x * 2);
@@ -49,7 +50,7 @@ export function copyAokanaTransparent16(destination: AokanaBitmap, source: Aokan
 }
 
 /** 14003d4e0/14003c900 differ only in whether a zero source pixel suppresses the write. */
-export function mixAokana16(
+function mixAokana16Pixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   destinationWeight: number,
@@ -70,11 +71,7 @@ export function mixAokana16(
 }
 
 /** 14003bd30 saturates each 5-bit component after the source's /256 multiplication. */
-export function addAokana16(
-  destination: AokanaBitmap,
-  source: AokanaBitmap,
-  opacity: number,
-): void {
+function addAokana16Pixels(destination: AokanaBitmap, source: AokanaBitmap, opacity: number): void {
   for (let y = 0; y < source.height >>> 0; y++)
     for (let x = (source.width >>> 0) - 1; x >= 0; x--) {
       const sourceOffset = source.offset + y * source.stride + x * 2;
@@ -95,7 +92,7 @@ export function addAokana16(
 }
 
 /** 140046730 tints all source pixels, including zero, against an RGB888 constant. */
-export function tintAokana16(
+function tintAokana16Pixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   color: number,
@@ -114,7 +111,7 @@ export function tintAokana16(
 }
 
 /** 140039e30 clears the destination where the 16-bit source word is nonzero. */
-export function eraseAokana16(destination: AokanaBitmap, source: AokanaBitmap): void {
+function eraseAokana16Pixels(destination: AokanaBitmap, source: AokanaBitmap): void {
   for (let y = 0; y < source.height >>> 0; y++)
     for (let x = (source.width >>> 0) - 1; x >= 0; x--)
       if (bitmapRead16(source, source.offset + y * source.stride + x * 2) !== 0)
@@ -122,7 +119,7 @@ export function eraseAokana16(destination: AokanaBitmap, source: AokanaBitmap): 
 }
 
 /** 140039d80/cd0/c30/b90 retain the source/target descriptor's independent pixel strides. */
-export function eraseAokana32(
+function eraseAokana32Pixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   partialAlpha: number,
@@ -153,7 +150,7 @@ export function eraseAokana32(
 }
 
 /** 14003bc00/14003bab0 read each channel after the preceding aliased destination store. */
-export function addAokanaOpaque32(
+function addAokanaOpaque32Pixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -187,7 +184,7 @@ export function addAokanaOpaque32(
 }
 
 /** 140045900's channel-isolation mode preserves its unusual red-channel mask. */
-export function isolateAokanaChannel(
+function isolateAokanaChannelPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   channel: number,
@@ -208,3 +205,27 @@ export function isolateAokanaChannel(
       );
     }
 }
+
+export const copyAokanaTransparent16 = withAokanaBitmapText(copyAokanaTransparent16Pixels);
+
+export const mixAokana16 = withAokanaBitmapText(mixAokana16Pixels, {
+  opacity: (args) => (256 - args[2]) / 256,
+});
+
+export const addAokana16 = withAokanaBitmapText(addAokana16Pixels, {
+  opacity: (args) => args[2] / 256,
+});
+
+export const addAokanaOpaque32 = withAokanaBitmapText(addAokanaOpaque32Pixels, {
+  opacity: (args) => args[2] / 256,
+});
+
+export const tintAokana16 = withAokanaBitmapText(tintAokana16Pixels, {replace: true});
+
+export const isolateAokanaChannel = withAokanaBitmapText(isolateAokanaChannelPixels, {
+  replace: true,
+});
+
+export const eraseAokana16 = withAokanaBitmapText(eraseAokana16Pixels, {source: 0, replace: true});
+
+export const eraseAokana32 = withAokanaBitmapText(eraseAokana32Pixels, {source: 0, replace: true});

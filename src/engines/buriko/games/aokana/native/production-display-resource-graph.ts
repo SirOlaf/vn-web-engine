@@ -1,4 +1,8 @@
 import type {RecordStore} from '../../../../../platform/store.js';
+import {
+  BrowserRasterTextPresentation,
+  type BrowserTextMode,
+} from '../../../../../text/browser-raster-text-presentation.js';
 import type {WindowsGdiImageCodecHost} from '../../../../../platform/windows-gdi-image.js';
 import {
   BROWSER_WINDOWS_WINDOW_TRANSITION_PROFILE,
@@ -409,6 +413,7 @@ export class AokanaProductionDisplayResourceGraph {
   readonly host: AokanaBrowserMainWindow;
   readonly adapters: AokanaDisplayAdapters;
   readonly device: AokanaDisplayDevice;
+  readonly textPresentation = new BrowserRasterTextPresentation();
   readonly cursor: AokanaNativeCursor;
   readonly cursorPolicy: AokanaCursorPolicy;
   readonly cursorPosition: AokanaBrowserCursorPosition;
@@ -539,6 +544,7 @@ export class AokanaProductionDisplayResourceGraph {
       inputs.readLocalTime === undefined ? () => new Date() : inputs.readLocalTime;
     const rollback: (() => void)[] = [];
     try {
+      rollback.push(() => this.textPresentation.dispose());
       this.allocator = new AokanaDistributedAllocator(inputs.processorCount);
       rollback.push(() => this.allocator.dispose());
       this.text = new AokanaNativeText();
@@ -731,6 +737,7 @@ export class AokanaProductionDisplayResourceGraph {
         inputs.presentationMode ?? 'canvas',
         inputs.displayHost ?? null,
         inputs.childWindowParent ?? inputs.parent,
+        inputs.presentationMode === 'none' ? null : this.textPresentation,
       );
       rollback.push(() => this.host.detachScopedWindow());
       this.host.bindViewportScreenMapping(inputs.readViewportScreenMapping);
@@ -771,6 +778,7 @@ export class AokanaProductionDisplayResourceGraph {
         this.clock,
         this.adapters,
         inputs.presentationMode ?? 'canvas',
+        inputs.presentationMode === 'none' ? null : this.textPresentation,
       );
       rollback.push(() => this.device.dispose());
       this.cursor = new AokanaNativeCursor(inputs.canvas);
@@ -902,6 +910,7 @@ export class AokanaProductionDisplayResourceGraph {
         inputs.canvas,
         inputs.presentationMode ?? 'canvas',
         inputs.childWindowCoordinates ?? null,
+        inputs.presentationMode === 'none' ? null : this.textPresentation,
       );
       this.children.initialize();
       rollback.push(() => this.children.dispose());
@@ -1382,6 +1391,11 @@ export class AokanaProductionDisplayResourceGraph {
     }
   }
 
+  /** Switch browser presentation without changing the native frame or text rasterization. */
+  setTextMode(mode: BrowserTextMode): void {
+    this.textPresentation.setTextMode(mode);
+  }
+
   /** Prepare F04B0's physical source as a bounded ISO document; no movie slot is changed. */
   async prepareMovieDocument(
     archive: AokanaBpPointer | null,
@@ -1701,6 +1715,7 @@ export class AokanaProductionDisplayResourceGraph {
     await attempt(() => this.bmvRegistry.clear());
     await attempt(() => this.monochromeText.dispose());
     await attempt(() => this.device.dispose());
+    await attempt(() => this.textPresentation.dispose());
     await attempt(() => this.manager.dispose());
     await attempt(() => {
       this.fonts.resetManager();

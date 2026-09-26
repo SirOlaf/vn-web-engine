@@ -3,6 +3,7 @@ import {allocateAokanaBitmap, type AokanaBitmap} from './bitmap.js';
 import {bitmapWrite8, bitmapWrite16, bitmapWrite32} from './bitmap-scalar.js';
 import {AokanaMonochromeFont} from './font-monochrome.js';
 import {aokanaWideCharacter} from './font-raster.js';
+import {recordAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaSurfaces} from './surfaces.js';
 import {textByte, textLength} from './text.js';
 
@@ -175,6 +176,12 @@ export class AokanaMonochromeSurfaceText {
           else if (first === 10) lineAdvance();
         } else {
           expandGlyph(scratch, font, character, args.color);
+          recordAokanaBitmapText(scratch, String.fromCodePoint(character), {
+            size,
+            family: font.cssFamily,
+            bold: args.bold !== 0,
+            color: args.color,
+          });
           const glyph = {...scratch};
           if (aokanaWideCharacter(character) === 0) glyph.width >>>= 1;
           if (wrapWidth !== 0 && wrapWidth < (x + glyph.width) >>> 0) lineAdvance();

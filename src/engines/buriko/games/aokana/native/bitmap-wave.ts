@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import {nativeWaveSineRadians} from '../bp/opcodes/native-math.js';
 import type {AokanaBitmap} from './bitmap.js';
 import type {AokanaBitmapCompositor} from './bitmap-compositor.js';
@@ -72,7 +73,7 @@ function wave32(
 }
 
 /** 04e930 and its 053e80 callback retain the actual mode-five strip phase displacement. */
-export function waveAokanaBitmap(
+function waveAokanaBitmapPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -105,3 +106,29 @@ export function waveAokanaBitmap(
   if (destination.format !== source.format || (source.format !== 1 && source.format !== 2)) return;
   wave32(destination, source, period, phase, amplitude);
 }
+
+export const waveAokanaBitmap = withAokanaBitmapText(waveAokanaBitmapPixels, {
+  alternateArgs: (args) => {
+    const alternate = [...args] as Parameters<typeof waveAokanaBitmapPixels>;
+    alternate[6] = false;
+    return alternate;
+  },
+  destination: 1,
+  source: 2,
+  replace: true,
+  region: (args) => ({
+    x: 0,
+    y: 0,
+    width: args[1].width,
+    height: Math.min(args[1].height, args[2].height),
+  }),
+  applied: (_, args) =>
+    args[1].format === args[2].format && (args[2].format === 1 || args[2].format === 2),
+  map: (x, y, args) => {
+    const [, destination, source, period, phase, amplitude] = args;
+    const center = (source.width - destination.width) << 15,
+      sine = nativeWaveSineRadians(((phase + y) * 6.283185307179586) / (period >>> 0)),
+      shift = ((truncate32(sine * ((source.width >>> 0) * (amplitude >>> 0))) >> 1) + center) | 0;
+    return [x - shift / 65536, y];
+  },
+});

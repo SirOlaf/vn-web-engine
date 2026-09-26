@@ -1,8 +1,9 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import {copyBlock} from './bitmap-copy.js';
 
 /**0325F0's pixel/row memmoves retain zero-extended DWORD pointer products. */
-export function mirrorAokanaBitmap(
+function mirrorAokanaBitmapPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   mode: number,
@@ -26,3 +27,9 @@ export function mirrorAokanaBitmap(
   }
   return 0;
 }
+
+export const mirrorAokanaBitmap = withAokanaBitmapText(mirrorAokanaBitmapPixels, {
+  replace: true,
+  applied: (result) => result === 0,
+  map: (x, y, args) => (args[2] === 0 ? [args[1].width - x, y] : [x, args[1].height - y]),
+});

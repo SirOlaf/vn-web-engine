@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import type {AokanaBitmapCompositor} from './bitmap-compositor.js';
 import {bitmapRead16, bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
@@ -133,7 +134,7 @@ function displace32(
 }
 
 /** 048640 requires a format-six map matching the output dimensions before format dispatch. */
-export function displaceAokanaBitmap(
+function displaceAokanaBitmapPixels(
   compositor: AokanaBitmapCompositor,
   destination: AokanaBitmap,
   source: AokanaBitmap,
@@ -149,3 +150,33 @@ export function displaceAokanaBitmap(
     displace32(compositor, destination, source, fullSource, map, table, (bilinear | 0) !== 0);
   return 0;
 }
+
+export const displaceAokanaBitmap = withAokanaBitmapText(displaceAokanaBitmapPixels, {
+  destination: 1,
+  source: 2,
+  replace: true,
+  applied: (result, args) => result === 0 && (args[2].format === 1 || args[2].format === 2),
+  // Invert the local warp at glyph corners; DOM retains a readable box through nonlinear effects.
+  map: (x, y, args) => {
+    const map = args[4],
+      table = args[5];
+    if (map.width <= 0 || map.height <= 0) return [NaN, NaN];
+    let outputX = x,
+      outputY = y;
+    for (let iteration = 0; iteration < 4; iteration++) {
+      const column = Math.max(0, Math.min(map.width - 1, Math.floor(outputX))),
+        row = Math.max(0, Math.min(map.height - 1, Math.floor(outputY))),
+        sample = point(
+          map,
+          map.offset + row * map.stride + column * 6,
+          column,
+          row,
+          table,
+          args[6] !== 0,
+        );
+      outputX = x - (sample.x + sample.fractionX / 16 - column);
+      outputY = y - (sample.y + sample.fractionY / 16 - row);
+    }
+    return [outputX, outputY];
+  },
+});

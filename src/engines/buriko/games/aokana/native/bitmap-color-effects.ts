@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import type {AokanaBitmapCompositor} from './bitmap-compositor.js';
 import {runAokanaBitmapOperation} from './bitmap-operation-jobs.js';
@@ -12,7 +13,7 @@ function packByte(value: number): number {
 }
 
 /** 046450/0462b0 XOR against color; 0460f0/045f30 colorize the 29/150/77 luminance sum. */
-function transformColors(
+function transformColorsPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   color: number,
@@ -62,7 +63,7 @@ function transformColors(
 }
 
 /** 045c60 excludes color alpha for addition; 045b30 includes it for subtraction. */
-function offsetColors(
+function offsetColorsPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   color: number,
@@ -134,3 +135,31 @@ export function applyAokanaBitmapColorEffect(
   }
   return 0;
 }
+
+const transformColors = withAokanaBitmapText(transformColorsPixels, {
+  replace: true,
+  color: (pixel, args) => {
+    const coefficient = args[4] ? (args[3] & 65535) >>> 1 : signedWord(args[3]) >> 1;
+    const sum = (pixel & 255) * 29 + ((pixel >>> 8) & 255) * 150 + ((pixel >>> 16) & 255) * 77;
+    let result = 0;
+    for (let shift = 0; shift < 24; shift += 8) {
+      const value = (pixel >>> shift) & 255,
+        component = (args[2] >>> shift) & 255,
+        target = args[4] ? (sum * component) >>> 16 : value ^ component;
+      result |= packByte(value + (signedWord((target - value) * coefficient) >> 7)) << shift;
+    }
+    return result;
+  },
+});
+const offsetColors = withAokanaBitmapText(offsetColorsPixels, {
+  replace: true,
+  color: (pixel, args) => {
+    let result = 0;
+    for (let shift = 0; shift < 24; shift += 8) {
+      const value = (pixel >>> shift) & 255,
+        offset = (Math.imul((args[2] >>> shift) & 255, args[3]) & 65535) >>> 8;
+      result |= (args[4] ? Math.max(0, value - offset) : Math.min(255, value + offset)) << shift;
+    }
+    return result;
+  },
+});

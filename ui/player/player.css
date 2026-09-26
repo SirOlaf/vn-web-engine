@@ -300,6 +300,9 @@ a {
   pointer-events: none;
   user-select: none;
 }
+.game-glyph-slots [data-game-text].vertical-game-text::before {
+  content: none;
+}
 
 #noah-surface {
   position: absolute;

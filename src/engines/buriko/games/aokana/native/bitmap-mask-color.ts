@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import {aokanaAlphaPairPixel, aokanaAlphaTailPixel} from './bitmap-alpha.js';
 import {
@@ -25,7 +26,7 @@ function rgbMaskPixel(destination: number, color: number, coverage: number): num
 }
 
 /** 045600 blends format-three coverage into every byte of a format-one destination. */
-export function blendAokanaMaskColorIntoRgb(
+function blendAokanaMaskColorIntoRgbPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   color: number,
@@ -59,7 +60,7 @@ export function blendAokanaMaskColorIntoRgb(
 }
 
 /** 045310 shares the RGBA pair reciprocal and scalar-tail arithmetic with ordinary alpha blend. */
-export function blendAokanaMaskColorIntoAlpha(
+function blendAokanaMaskColorIntoAlphaPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   color: number,
@@ -110,3 +111,12 @@ export function blendAokanaMaskColor(
   if (destination.format === 1) blendAokanaMaskColorIntoRgb(destination, source, color);
   else if (destination.format === 2) blendAokanaMaskColorIntoAlpha(destination, source, color);
 }
+
+export const blendAokanaMaskColorIntoRgb = withAokanaBitmapText(blendAokanaMaskColorIntoRgbPixels, {
+  color: (_, args) => args[2] & 0xffffff,
+});
+
+export const blendAokanaMaskColorIntoAlpha = withAokanaBitmapText(
+  blendAokanaMaskColorIntoAlphaPixels,
+  {color: (_, args) => args[2] & 0xffffff},
+);

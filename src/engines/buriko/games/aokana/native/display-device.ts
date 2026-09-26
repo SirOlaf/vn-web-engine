@@ -1,4 +1,16 @@
 import type {AokanaBitmapRectangle} from './bitmap.js';
+import {
+  rasterTextBitmap,
+  visibleRasterText,
+  type RasterTextGlyph,
+} from '../../../../../text/raster-text.js';
+import {
+  BrowserRasterTextPresentation,
+  mapRasterTextGlyphs,
+  intersectTextRect,
+  rasterTextOutsideRegion,
+  type BrowserRasterTextFrame,
+} from '../../../../../text/browser-raster-text-presentation.js';
 import {LinearRgbWasm} from '../../../../../graphics/linear-rgb-wasm.js';
 import type {Rect} from '../../../../../graphics/surface.js';
 import {
@@ -29,6 +41,12 @@ export interface AokanaDisplayAdapterProfile {
   readonly refreshRate: number;
   /** The configured adapter owner supplies the actual GetAdapterDisplayMode query. */
   queryDesktopMode?(): boolean;
+}
+interface TextDraw {
+  texture: AokanaDisplayTexture;
+  vertices: Uint8Array;
+  cubic: boolean;
+  sampler: AokanaPresentationSampler;
 }
 
 /** b20e0's four XYZRHW/diffuse/UV vertices, each with the native 28-byte stride. */
@@ -100,6 +118,8 @@ export class AokanaDisplayDevice {
   private canvasPresenter: CanvasFramePresenter | null = null;
   private frameRevision = {};
   private frameDamage: Rect | null | undefined; // Undefined: full upload; null: no pending writes.
+  private ordinaryTextDraw: TextDraw | null = null;
+  private movieTextDraw: TextDraw | null = null;
   dialogBoxMode = false;
   textureAlpha = 0; // 1e6a5c.
   filterMode = 0; // 1e6a58.
@@ -110,6 +130,7 @@ export class AokanaDisplayDevice {
     readonly clock: AokanaNativeClock,
     readonly adapter: AokanaDisplayAdapterProfile,
     readonly presentationMode: 'canvas' | 'none' = 'canvas',
+    readonly textPresentation: BrowserRasterTextPresentation | null = null,
   ) {
     if (presentationMode !== 'canvas' && presentationMode !== 'none')
       throw new TypeError('Aokana display requires a selected presentation mode');
@@ -122,6 +143,7 @@ export class AokanaDisplayDevice {
   private readonly onContextLost = (event: Event): void => {
     event.preventDefault();
     invalidateCanvasFrame(this.canvas);
+    this.textPresentation?.clear(this.canvas);
     this.lost = true;
   };
   private readonly onContextRestored = (): void => {
@@ -224,6 +246,8 @@ export class AokanaDisplayDevice {
     return 0;
   }
   private resizeBackBuffer(): void {
+    this.textPresentation?.clear(this.canvas);
+    this.ordinaryTextDraw = this.movieTextDraw = null;
     const [width, height] =
       this.fullscreen !== 0
         ? [this.display.desktopWidth, this.display.desktopHeight]
@@ -330,6 +354,7 @@ export class AokanaDisplayDevice {
     invalidateCanvasFrame(this.canvas);
     context.fillRect(0, 0, this.canvas.width, this.canvas.height);
     context.restore();
+    this.textPresentation?.clear(this.canvas);
   }
   /** b1470 applies offsets to a fresh base copy whenever either current or prior offset is nonzero. */
   private moveQuad(x: number, y: number): void {
@@ -392,6 +417,15 @@ export class AokanaDisplayDevice {
     if (mode === 1 && this.shader === null)
       throw new Error('Aokana presentation shader has not been created');
     this.moveQuad(x, y);
+    if (this.textPresentation !== null && this.frame !== null) {
+      this.ordinaryTextDraw = {
+        texture: sampled.forPresentation(),
+        vertices: this.vertices!.slice(),
+        cubic: mode === 1,
+        sampler: this.sampler,
+      };
+      this.movieTextDraw = null;
+    }
     if (this.frame !== null) {
       const cubic = mode === 1;
       const vertices = this.vertices!;
@@ -463,6 +497,13 @@ export class AokanaDisplayDevice {
     ])
       quad.setFloat32(offset!, value!, true);
     this.shifted = 1;
+    if (this.textPresentation !== null && this.frame !== null)
+      this.movieTextDraw = {
+        texture: texture.forPresentation(),
+        vertices: this.vertices.slice(),
+        cubic: false,
+        sampler: this.sampler,
+      };
     if (this.frame !== null) {
       this.markFrameChanged();
       this.rasterizeQuad(texture, false);
@@ -544,14 +585,12 @@ export class AokanaDisplayDevice {
     sampled: AokanaDisplayTexture,
     cubic: boolean,
     clip?: AokanaBitmapRectangle,
+    frame: ImageData = this.frame!,
+    vertices: Uint8Array = this.vertices!,
+    sampler: AokanaPresentationSampler = this.sampler,
   ): void {
-    const frame = this.frame!;
     const pixels = frame.data;
-    const quad = new DataView(
-      this.vertices!.buffer,
-      this.vertices!.byteOffset,
-      this.vertices!.byteLength,
-    );
+    const quad = new DataView(vertices.buffer, vertices.byteOffset, vertices.byteLength);
     const left = quad.getFloat32(0, true),
       top = quad.getFloat32(4, true),
       right = quad.getFloat32(28, true),
@@ -566,8 +605,7 @@ export class AokanaDisplayDevice {
       lastY = Math.min(clip === undefined ? frame.height : clip.bottom + 1, Math.ceil(bottom));
     const frameWidth = frame.width;
     const logicalWidth = this.display.logicalWidth,
-      logicalHeight = this.display.logicalHeight,
-      sampler = this.sampler;
+      logicalHeight = this.display.logicalHeight;
     const colorBuffer: AokanaPresentationColor = [0, 0, 0, 0];
     const sampleScratch = {
       a: [0, 0, 0, 0] as AokanaPresentationColor,
@@ -757,6 +795,55 @@ export class AokanaDisplayDevice {
       }
     }
   }
+  private domFrame(
+    native: ImageData,
+    ordinary: TextDraw | null,
+    movie: TextDraw | null,
+  ): BrowserRasterTextFrame {
+    const frame = new ImageData(native.data.slice(), native.width, native.height);
+    let glyphs: RasterTextGlyph[] = [];
+    for (const draw of [ordinary, movie]) {
+      if (draw === null) continue;
+      const bitmap = draw.texture.textBitmap;
+      const alternate = Object.create(draw.texture) as AokanaDisplayTexture;
+      Object.defineProperty(alternate, 'storage', {value: rasterTextBitmap(bitmap).storage});
+      this.rasterizeQuad(alternate, draw.cubic, undefined, frame, draw.vertices, draw.sampler);
+      const quad = new DataView(
+        draw.vertices.buffer,
+        draw.vertices.byteOffset,
+        draw.vertices.byteLength,
+      );
+      const left = quad.getFloat32(0, true),
+        top = quad.getFloat32(4, true);
+      const width = quad.getFloat32(28, true) - left,
+        height = quad.getFloat32(60, true) - top;
+      const u = quad.getFloat32(48, true) * draw.texture.width;
+      const v = quad.getFloat32(80, true) * draw.texture.height;
+      const clip = intersectTextRect(
+        {
+          x: Math.ceil(left),
+          y: Math.ceil(top),
+          width: Math.ceil(left + width) - Math.ceil(left),
+          height: Math.ceil(top + height) - Math.ceil(top),
+        },
+        {x: 0, y: 0, width: frame.width, height: frame.height},
+      );
+      if (!clip || !u || !v) continue;
+      // Movie output is opaque. Preserve only ordinary text outside its painted area.
+      if (draw === movie) glyphs = rasterTextOutsideRegion(glyphs, clip);
+      glyphs.push(
+        ...mapRasterTextGlyphs(
+          visibleRasterText(bitmap),
+          left + 0.5,
+          top + 0.5,
+          width / u,
+          height / v,
+          clip,
+        ),
+      );
+    }
+    return {frame, glyphs};
+  }
   /** b30c0: absent scanline timing leaves the wait count zero; successful commit records native time. */
   async present(output: {waitCount: number}): Promise<number> {
     if (!this.isPresent() || this.lost) return 0x80000000;
@@ -774,6 +861,12 @@ export class AokanaDisplayDevice {
     if (this.lost || this.context === null || this.frame === null) return 0x80000000;
     this.canvasPresenter ??= new CanvasFramePresenter(this.canvas, this.context);
     this.canvasPresenter.present(this.frame, this.frameRevision, this.frameDamage ?? undefined);
+    if (this.textPresentation !== null) {
+      const frame = this.frame,
+        ordinary = this.ordinaryTextDraw,
+        movie = this.movieTextDraw;
+      this.textPresentation.replace(this.canvas, () => this.domFrame(frame, ordinary, movie));
+    }
     this.frameDamage = null;
     this.display.lastPresentMilliseconds = Number(BigInt.asUintN(32, this.clock.read()));
     output.waitCount = 0;
@@ -781,10 +874,15 @@ export class AokanaDisplayDevice {
   }
   /** b11b0/b2040: shader, source, sampled, dynamic, quad, device. */
   release(): void {
+    this.textPresentation?.clear(this.canvas);
+    this.ordinaryTextDraw = this.movieTextDraw = null;
     this.canvasPresenter = null;
     this.linearRasterizer = undefined;
     this.rasterValid = false;
     this.releaseShader();
+    this.source?.discardPresentation();
+    this.sampled?.discardPresentation();
+    this.dynamic?.discardPresentation();
     this.source?.dispose();
     this.source = null;
     this.sampled?.dispose();

@@ -1,3 +1,4 @@
+import {withAokanaBitmapText} from './bitmap-dom-text.js';
 import type {AokanaBitmap} from './bitmap.js';
 import {bitmapRead8, bitmapRead32, bitmapWrite8, bitmapWrite32} from './bitmap-scalar.js';
 import {
@@ -10,7 +11,7 @@ import {
 } from './bitmap-pairs.js';
 
 /** 14003b680 and 14003acd0 share alpha-half premultiplication and saturating byte arithmetic. */
-export function addAokanaAlphaIntoRgb(
+function addAokanaAlphaIntoRgbPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -48,7 +49,7 @@ export function addAokanaAlphaIntoRgb(
 }
 
 /** 14003b120's 0x01220000 property selects whether RGB is already premultiplied. */
-export function addAokanaAlpha(
+function addAokanaAlphaPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -88,7 +89,7 @@ export function addAokanaAlpha(
 }
 
 /** 14003ab50: the product is truncated after the destination multiplication. */
-export function multiplyAokanaRgb(
+function multiplyAokanaRgbPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -119,7 +120,7 @@ export function multiplyAokanaRgb(
 }
 
 /** 14003aa30 and 14003a500 truncate the RGB product before opacity interpolation. */
-export function multiplyAokanaRgbProduct(
+function multiplyAokanaRgbProductPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -156,7 +157,7 @@ export function multiplyAokanaRgbProduct(
 }
 
 /** 14003a350's overlap branch is scalar; its disjoint SIMD path has the same byte results. */
-export function multiplyAokanaMask(
+function multiplyAokanaMaskPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   opacity: number,
@@ -176,7 +177,7 @@ export function multiplyAokanaMask(
 }
 
 /** 14003a050 dims source RGB before blending with the promoted native alpha/2 table. */
-export function dimAokanaAlphaIntoRgb(
+function dimAokanaAlphaIntoRgbPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   transparency: number,
@@ -212,7 +213,7 @@ export function dimAokanaAlphaIntoRgb(
 }
 
 /** 140039f00 retains normal output alpha while attenuating the source RGB coefficient. */
-export function dimAokanaAlpha(
+function dimAokanaAlphaPixels(
   destination: AokanaBitmap,
   source: AokanaBitmap,
   transparency: number,
@@ -249,3 +250,31 @@ export function dimAokanaAlpha(
       bitmapWrite8(destination, output + 2, red >>> 16);
     }
 }
+
+export const addAokanaAlphaIntoRgb = withAokanaBitmapText(addAokanaAlphaIntoRgbPixels, {
+  opacity: (args) => args[2] / 256,
+});
+
+export const addAokanaAlpha = withAokanaBitmapText(addAokanaAlphaPixels, {
+  opacity: (args) => args[2] / 256,
+});
+
+export const multiplyAokanaRgb = withAokanaBitmapText(multiplyAokanaRgbPixels, {
+  opacity: (args) => args[2] / 256,
+});
+
+export const multiplyAokanaRgbProduct = withAokanaBitmapText(multiplyAokanaRgbProductPixels, {
+  opacity: (args) => args[2] / 256,
+});
+
+export const multiplyAokanaMask = withAokanaBitmapText(multiplyAokanaMaskPixels, {
+  opacity: (args) => args[2] / 256,
+});
+
+export const dimAokanaAlphaIntoRgb = withAokanaBitmapText(dimAokanaAlphaIntoRgbPixels, {
+  opacity: (args) => (256 - args[2]) / 256,
+});
+
+export const dimAokanaAlpha = withAokanaBitmapText(dimAokanaAlphaPixels, {
+  opacity: (args) => (256 - args[2]) / 256,
+});
