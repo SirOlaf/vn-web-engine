@@ -1,18 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaVectorBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop-vector.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoVectorBackdrop} from '../dist/engines/buriko/native/display-backdrop-vector.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM generated Q4 map feeds the vector backdrop software draw', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke, memory} = fixture;
-  const output = allocateAokanaBitmap(2, 2, 1);
+  const output = allocateBurikoBitmap(2, 2, 1);
   const call = async (primary, secondary, args) => {
     assert.equal(await invoke(primary, secondary, args, 0), 0);
     assert.equal(child.state.stackIndex, 0);
@@ -27,7 +24,7 @@ test('mounted VM generated Q4 map feeds the vector backdrop software draw', asyn
           (index % bitmap.width) * 4,
       ),
     );
-  const draw = () => graph.manager.backdrop.draw(output, aokanaBitmapRectangle(output), 0);
+  const draw = () => graph.manager.backdrop.draw(output, burikoBitmapRectangle(output), 0);
   const colors = [0x102030, 0x405060, 0x708090, 0xa0b0c0];
   try {
     assert.deepEqual(
@@ -78,7 +75,7 @@ test('mounted VM generated Q4 map feeds the vector backdrop software draw', asyn
     graph.damage.clear();
     await call(0x90, 0x45, [0, 1, -1, 0, 0]);
     const selected = graph.manager.backdrop;
-    assert.ok(selected instanceof AokanaVectorBackdrop);
+    assert.ok(selected instanceof BurikoVectorBackdrop);
     assert.deepEqual(
       [selected.activation, selected.contentEnabled, graph.manager.backdropRenderType],
       [1, 1, 6],

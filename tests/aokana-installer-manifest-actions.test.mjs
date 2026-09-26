@@ -3,21 +3,21 @@ import test from 'node:test';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaInstallerManifestActions} from '../dist/engines/buriko/games/aokana/native/installer-manifest-actions.js';
-import {createGroup80InstallerManifest} from '../dist/engines/buriko/games/aokana/native/group-80-installer-manifest.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoInstallerManifestActions} from '../dist/engines/buriko/native/installer-manifest-actions.js';
+import {createGroup80InstallerManifest} from '../dist/engines/buriko/native/group-80-installer-manifest.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 
@@ -28,7 +28,7 @@ async function mountedManifest(contents) {
     {kind: 'write', path: '/install/keep.bin', data: bytes('retained')},
     {kind: 'write', path: '/install/old.bin', data: bytes('removed')},
   ]);
-  const metadata = new AokanaMountedFileMetadata(backing, {
+  const metadata = new BurikoMountedFileMetadata(backing, {
       records: [
         {
           path: '/install',
@@ -52,15 +52,15 @@ async function mountedManifest(contents) {
       currentFileTime: () => 0n,
       accessTimePolicy: 'disabled',
     }),
-    text = new AokanaNativeText(),
-    files = new AokanaProgramFiles(
+    text = new BurikoNativeText(),
+    files = new BurikoProgramFiles(
       metadata,
       text,
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
     ),
     unavailable = () => assert.fail('ordinary manifest action opened an engine error'),
-    resources = new AokanaProgramResources(
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\install\\',
@@ -75,9 +75,9 @@ async function mountedManifest(contents) {
       },
       {show: unavailable},
       {fatal: unavailable, threadFatal: unavailable},
-      new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+      new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
     );
-  return {backing, metadata, resources, actions: new AokanaInstallerManifestActions(resources)};
+  return {backing, metadata, resources, actions: new BurikoInstallerManifestActions(resources)};
 }
 
 async function read(files, path) {
@@ -86,8 +86,8 @@ async function read(files, path) {
 }
 
 async function invoke(actions, secondary, root, entries) {
-  const memory = new AokanaBpMemory(new Uint8Array(2048));
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(new Uint8Array(2048));
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
     moduleCapacity: 0,

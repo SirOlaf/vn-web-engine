@@ -4,7 +4,7 @@ export type WindowsAssociationRoot = number | bigint | WindowsAssociationKey;
 
 type HostResult<T> = T | Promise<T>;
 
-/** Win32 registry and shell notifications used by the Aokana file-association procedure. */
+/** Win32 registry and shell notifications used by the Buriko file-association procedure. */
 export interface WindowsFileAssociationHost {
   createKey(
     root: WindowsAssociationRoot,

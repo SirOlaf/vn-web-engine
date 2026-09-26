@@ -1,66 +1,63 @@
-import {
-  allocateAokanaBitmap,
-  fillAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaDisplaySprite} from '../dist/engines/buriko/games/aokana/native/display-sprite.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
+import {allocateBurikoBitmap, fillBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoDisplaySprite} from '../dist/engines/buriko/native/display-sprite.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup90SpriteLifecycle} from '../dist/engines/buriko/games/aokana/native/group-90-sprite-lifecycle.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSpriteTargets} from '../dist/engines/buriko/games/aokana/native/sprite-targets.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup90SpriteLifecycle} from '../dist/engines/buriko/native/group-90-sprite-lifecycle.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSpriteTargets} from '../dist/engines/buriko/native/sprite-targets.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 test('Sprite and Window lifecycle wrappers share real pools, masks and input capture', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(32, {left: 0, top: 0, right: 99, bottom: 99}),
+    new BurikoDisplayDamage(32, {left: 0, top: 0, right: 99, bottom: 99}),
   );
-  const text = new AokanaNativeText();
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(text),
+  const text = new BurikoNativeText();
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(text),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
-  const display = new AokanaNativeDisplayState(100, 100);
-  const manager = new AokanaDisplayManager(environment, surfaces, display);
-  const output = allocateAokanaBitmap(100, 100, 1);
-  fillAokanaBitmap(output, 0);
+  const display = new BurikoNativeDisplayState(100, 100);
+  const manager = new BurikoDisplayManager(environment, surfaces, display);
+  const output = allocateBurikoBitmap(100, 100, 1);
+  fillBurikoBitmap(output, 0);
   manager.bindDisplayContext({bitmap: output, bounds: {left: 0, top: 0, right: 99, bottom: 99}});
-  const input = new AokanaNativeInput(display, {read: () => 0n});
+  const input = new BurikoNativeInput(display, {read: () => 0n});
   input.foreground = true;
   input.inputActive = true;
   input.pointerAvailable = true;
   input.touchPositions = [[1, 1]];
   input.resetCaptures();
-  const targets = new AokanaSpriteTargets(manager, input);
+  const targets = new BurikoSpriteTargets(manager, input);
   const definitions = createGroup90SpriteLifecycle(manager, targets, {
     files: {text},
     threadFatal() {
       assert.fail('ordinary lifecycle operation must succeed');
     },
   });
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array(0)), diagnostics: {}};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array(0)), diagnostics: {}};
   const call = (secondary, args = [], pushed = 0) => {
     args.forEach((value) => push32(thread, value));
     assert.equal(definitions.find((slot) => slot.secondary === secondary).execute(context), 0);
@@ -72,16 +69,16 @@ test('Sprite and Window lifecycle wrappers share real pools, masks and input cap
     [0x50, 0x51, 0x54, 0x55, 0x81],
   );
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
   assert.equal(surfaces.allocate(0, 4, 4, 1), 1);
-  fillAokanaBitmap(surfaces.snapshot(0), 0x204060);
+  fillBurikoBitmap(surfaces.snapshot(0), 0x204060);
   assert.equal(surfaces.allocate(1, 4, 4, 3), 1);
   const mask = surfaces.snapshot(1);
   mask.storage.bytes.fill(255);
   mask.storage.written(0, mask.storage.bytes.length);
   const handle = call(0x50, [], 1);
   const sprite = manager.find('sprite', handle);
-  assert.ok(sprite instanceof AokanaDisplaySprite);
+  assert.ok(sprite instanceof BurikoDisplaySprite);
   assert.equal(sprite.initializeSimple(0, 0, 0, 0, 0, 3), 0);
   assert.equal(manager.poolObjects('sprite').filter(Boolean).length, 1);
   call(0x54, [handle, 1]);
@@ -102,10 +99,10 @@ test('Sprite and Window lifecycle wrappers share real pools, masks and input cap
   );
   assert.equal(targets.hitTarget(), 0xffffffff);
   assert.equal(input.pointerCaptureAllowed(1), true);
-  const state = new AokanaWindowDisplayState(manager);
+  const state = new BurikoWindowDisplayState(manager);
   const created = manager.createConfigured(
     'window',
-    (order) => new AokanaWindowDisplayObject(state, order),
+    (order) => new BurikoWindowDisplayObject(state, order),
     (window) => window.configureInitial(2, 1),
   );
   assert.equal(created.result, 0);

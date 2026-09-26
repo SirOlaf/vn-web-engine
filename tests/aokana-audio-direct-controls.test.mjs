@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaSpeakerContext} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaAudioChannels} from '../dist/engines/buriko/games/aokana/native/audio/channel-registry.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
 function wave(frames) {
   const bytes = new Uint8Array(64 + frames * 2),
     view = new DataView(bytes.buffer);
@@ -23,21 +23,21 @@ function wave(frames) {
 }
 const close = (actual, expected) =>
   assert.ok(actual.every((value) => Math.abs(value - expected) < 1e-7));
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {createGroupA0AudioControls} from '../dist/engines/buriko/games/aokana/native/group-a0-audio-controls.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {createGroupA0AudioControls} from '../dist/engines/buriko/native/group-a0-audio-controls.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 test('A0 direct controls drive actual attached PCM voices through shared locks and raw fade timer', async () => {
   const actors = {currentActor: {}},
-    locks = new AokanaNativeLocks(actors);
+    locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
   let milliseconds = 0;
-  const backend = new AokanaMemorySpeakerBackend(1000);
-  const channels = new AokanaAudioChannels(
-    new AokanaSpeakerContext(backend),
+  const backend = new BurikoMemorySpeakerBackend(1000);
+  const channels = new BurikoAudioChannels(
+    new BurikoSpeakerContext(backend),
     locks,
     actors,
-    new AokanaSystemTicks({now: () => milliseconds}),
+    new BurikoSystemTicks({now: () => milliseconds}),
     {prefer24Bit: false},
   );
   assert.equal(channels.initialize({}), 0);
@@ -47,18 +47,18 @@ test('A0 direct controls drive actual attached PCM voices through shared locks a
       assert.fail('ordinary control fixture');
     },
   });
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array(16)), diagnostics: {}};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array(16)), diagnostics: {}};
   const invoke = async (secondary, args) => {
     const slot = slots.find((s) => s.secondary === secondary);
     assert.deepEqual(
       [slot.primary, slot.nativeAddress],
-      [0xa0, AOKANA_NATIVE_SLOT_ADDRESSES[0xa0][secondary]],
+      [0xa0, BURIKO_NATIVE_SLOT_ADDRESSES[0xa0][secondary]],
     );
     args.forEach((value) => push32(thread, value));
     assert.equal(await slot.execute(context), 0);

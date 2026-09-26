@@ -1,38 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaDisplayTexture} from '../dist/engines/buriko/games/aokana/native/display-texture.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
+import {BurikoDisplayTexture} from '../dist/engines/buriko/native/display-texture.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayRenderer} from '../dist/engines/buriko/games/aokana/native/display-renderer.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayRenderer} from '../dist/engines/buriko/native/display-renderer.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 
 function setup() {
-  const compositor = new AokanaBitmapCompositor();
-  const environment = new AokanaDisplayObjectEnvironment(
+  const compositor = new BurikoBitmapCompositor();
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 3}),
+    new BurikoDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 3}),
   );
-  const allocator = new AokanaDistributedAllocator(1);
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const allocator = new BurikoDistributedAllocator(1);
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
     allocator,
   );
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     environment,
     surfaces,
-    new AokanaNativeDisplayState(1920, 1080),
+    new BurikoNativeDisplayState(1920, 1080),
   );
-  const renderer = new AokanaDisplayRenderer(manager, 16);
+  const renderer = new BurikoDisplayRenderer(manager, 16);
   return {environment, manager, renderer};
 }
 
@@ -42,7 +42,7 @@ test('descriptor reconfiguration preserves shared identity and native family tra
   const context = environment.displayContext;
   const calls = [];
   const resized = (family) =>
-    class extends AokanaDisplayObject {
+    class extends BurikoDisplayObject {
       resizeToDisplay() {
         calls.push([
           family,
@@ -57,7 +57,7 @@ test('descriptor reconfiguration preserves shared identity and native family tra
     Effector = resized('effector');
   manager.createSimple('filter', (order) => new Filter(environment, 3, order, 1));
   manager.createSimple('effector', (order) => new Effector(environment, 6, order, 1));
-  class Window extends AokanaDisplayObject {
+  class Window extends BurikoDisplayObject {
     refreshDisplayGeometry() {
       calls.push(['window', environment.displayBitmap().width]);
     }
@@ -91,11 +91,11 @@ test('descriptor reconfiguration preserves shared identity and native family tra
 test('normal full and damage draw notifications observe the one mapped display descriptor', () => {
   const {environment, manager} = setup();
   manager.configureDescriptor(4, 3, 1, 12);
-  const texture = new AokanaDisplayTexture(8, 4, 22);
+  const texture = new BurikoDisplayTexture(8, 4, 22);
   texture.clearLogical(4, 3);
   manager.setDisplayTexture(texture);
   const seen = [];
-  class Observed extends AokanaDisplayObject {
+  class Observed extends BurikoDisplayObject {
     notify() {
       seen.push([
         environment.displayContext.bitmap.storage === texture.storage,
@@ -120,8 +120,8 @@ test('normal full and damage draw notifications observe the one mapped display d
 });
 
 test('level-zero dirty updates preserve unselected sample texels after the initial upload', () => {
-  const source = new AokanaDisplayTexture(4, 2, 22);
-  const target = new AokanaDisplayTexture(4, 2, 22);
+  const source = new BurikoDisplayTexture(4, 2, 22);
+  const target = new BurikoDisplayTexture(4, 2, 22);
   target.updateFrom(source);
   const locked = source.lock();
   locked.storage.view.setUint32(4, 0x00112233, true);

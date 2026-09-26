@@ -2,31 +2,31 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {createGroup81Installation} from '../dist/engines/buriko/games/aokana/native/group-81-installation.js';
-import {AokanaNativeLanguage} from '../dist/engines/buriko/games/aokana/native/group-81-language.js';
-import {AokanaImportedTextMaps} from '../dist/engines/buriko/games/aokana/native/imported-text-maps.js';
-import {AokanaInstallationService} from '../dist/engines/buriko/games/aokana/native/installation.js';
-import {AokanaLocalizedMessages} from '../dist/engines/buriko/games/aokana/native/localized-messages.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {createGroup81Installation} from '../dist/engines/buriko/native/group-81-installation.js';
+import {BurikoNativeLanguage} from '../dist/engines/buriko/native/group-81-language.js';
+import {BurikoImportedTextMaps} from '../dist/engines/buriko/native/imported-text-maps.js';
+import {BurikoInstallationService} from '../dist/engines/buriko/native/installation.js';
+import {BurikoLocalizedMessages} from '../dist/engines/buriko/native/localized-messages.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeRegistry} from '../dist/engines/buriko/games/aokana/native/windows-registry.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeRegistry} from '../dist/engines/buriko/native/windows-registry.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 const ticks = (iso) => BigInt(Date.parse(iso)) * 10000n + 116444736000000000n;
@@ -63,7 +63,7 @@ test('81 F2 installs one ordinary mounted file and completes through the real wa
       attributes: 0x20,
       ...sourceTimes,
     }),
-    metadata = new AokanaMountedFileMetadata(backing, {
+    metadata = new BurikoMountedFileMetadata(backing, {
       records: [
         {
           path: '/',
@@ -90,12 +90,12 @@ test('81 F2 installs one ordinary mounted file and completes through the real wa
       currentFileTime: () => base + 30_000n,
       accessTimePolicy: 'disabled',
     }),
-    text = new AokanaNativeText(),
-    media = new AokanaProgramMedia(),
-    paths = new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
-    files = new AokanaProgramFiles(metadata, text, media, paths),
+    text = new BurikoNativeText(),
+    media = new BurikoProgramMedia(),
+    paths = new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+    files = new BurikoProgramFiles(metadata, text, media, paths),
     noDialog = () => assert.fail('Ordinary installation opened a diagnostic'),
-    resources = new AokanaProgramResources(
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\media\\',
@@ -110,30 +110,30 @@ test('81 F2 installs one ordinary mounted file and completes through the real wa
       },
       {show: noDialog},
       {fatal: noDialog, threadFatal: noDialog},
-      new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+      new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
     ),
-    loading = new AokanaResourceLoadingState(resources),
-    notifications = new AokanaNativeNotifications(),
-    localized = new AokanaLocalizedMessages(
+    loading = new BurikoResourceLoadingState(resources),
+    notifications = new BurikoNativeNotifications(),
+    localized = new BurikoLocalizedMessages(
       text,
-      new AokanaNativeLanguage(() => 0x409),
-      new AokanaImportedTextMaps(text),
+      new BurikoNativeLanguage(() => 0x409),
+      new BurikoImportedTextMaps(text),
     ),
-    registry = new AokanaNativeRegistry(new MemoryStore()),
+    registry = new BurikoNativeRegistry(new MemoryStore()),
     progress = [],
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(0x400)),
-    scheduler = new AokanaBpScheduler(thread, () => 1),
-    service = new AokanaInstallationService(
+    memory = new BurikoBpMemory(new Uint8Array(0x400)),
+    scheduler = new BurikoBpScheduler(thread, () => 1),
+    service = new BurikoInstallationService(
       resources,
       loading,
-      new AokanaProcedureState(),
-      new AokanaNativeClock(() => 100),
+      new BurikoProcedureState(),
+      new BurikoNativeClock(() => 100),
       notifications,
       localized,
       registry,
@@ -176,7 +176,7 @@ test('81 F2 installs one ordinary mounted file and completes through the real wa
   writeDword(addresses.retryMessages, addresses.retryMessage);
   writeString(addresses.format, 'Component%.4d.CAD');
   writeString(addresses.publisher, 'Sprite');
-  writeString(addresses.product, 'Aokana');
+  writeString(addresses.product, 'Buriko');
   writeString(addresses.uninstaller, 'uninstall.exe');
   writeString(addresses.uninstallerRetry, 'Insert uninstaller media');
 
@@ -239,10 +239,10 @@ test('81 F2 installs one ordinary mounted file and completes through the real wa
   const uninstallKey = {
       hive: 'HKLM',
       view: '64',
-      path: 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Aokana',
+      path: 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Buriko',
     },
-    titleKey = {hive: 'HKLM', view: '64', path: 'Software\\Sprite\\Aokana'};
-  assert.equal(wideValue(await registry.storage.getValue(uninstallKey, 'DisplayName')), 'Aokana');
+    titleKey = {hive: 'HKLM', view: '64', path: 'Software\\Sprite\\Buriko'};
+  assert.equal(wideValue(await registry.storage.getValue(uninstallKey, 'DisplayName')), 'Buriko');
   assert.equal(wideValue(await registry.storage.getValue(uninstallKey, 'Publisher')), 'Sprite');
   assert.equal(
     wideValue(await registry.storage.getValue(uninstallKey, 'UninstallString')),

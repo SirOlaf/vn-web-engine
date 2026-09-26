@@ -3,53 +3,53 @@ import assert from 'node:assert/strict';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
 import {BlobSource} from '../dist/core/source.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {
-  AokanaEngineDialogs,
-  AokanaNativeCursor,
-} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
+  BurikoEngineDialogs,
+  BurikoNativeCursor,
+} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {
-  decodeAokanaResource as decodeWithProcessing,
-  AokanaUndefinedResourceRead,
-} from '../dist/engines/buriko/games/aokana/native/resource-decode.js';
-import {decodeAokanaBfFrame as frameWithProcessing} from '../dist/engines/buriko/games/aokana/native/bf-frame.js';
-import {decodeAokanaCompressedBgV2 as cbgWithProcessing} from '../dist/engines/buriko/games/aokana/native/compressed-bg-v2.js';
+  decodeBurikoResource as decodeWithProcessing,
+  BurikoUndefinedResourceRead,
+} from '../dist/engines/buriko/native/resource-decode.js';
+import {decodeBurikoBfFrame as frameWithProcessing} from '../dist/engines/buriko/native/bf-frame.js';
+import {decodeBurikoCompressedBgV2 as cbgWithProcessing} from '../dist/engines/buriko/native/compressed-bg-v2.js';
 import {randomByteGenerator} from '../dist/formats/buriko/binary.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
-import {createGroup80Resources} from '../dist/engines/buriko/games/aokana/native/group-80-resources.js';
-import {createGroupC0Bwef} from '../dist/engines/buriko/games/aokana/native/group-c0-bwef.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
+import {createGroup80Resources} from '../dist/engines/buriko/native/group-80-resources.js';
+import {createGroupC0Bwef} from '../dist/engines/buriko/native/group-c0-bwef.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-const allocator = new AokanaDistributedAllocator(2);
-const mainProcessing = new AokanaDistributedProcessing(allocator, 2);
-const decodeAokanaResource = (bytes, offset, length) =>
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+const allocator = new BurikoDistributedAllocator(2);
+const mainProcessing = new BurikoDistributedProcessing(allocator, 2);
+const decodeBurikoResource = (bytes, offset, length) =>
   decodeWithProcessing(bytes, mainProcessing, offset, length);
-const decodeAokanaBfFrame = (bytes, width, height, depth, quantization, destination) =>
+const decodeBurikoBfFrame = (bytes, width, height, depth, quantization, destination) =>
   frameWithProcessing(
     bytes,
     width,
     height,
     depth,
     quantization,
-    new AokanaDistributedProcessing(allocator, 2),
+    new BurikoDistributedProcessing(allocator, 2),
     destination,
   );
-const decodeAokanaCompressedBgV2 = (bytes) =>
-  cbgWithProcessing(bytes, new AokanaDistributedProcessing(allocator, 2));
+const decodeBurikoCompressedBgV2 = (bytes) =>
+  cbgWithProcessing(bytes, new BurikoDistributedProcessing(allocator, 2));
 const bytes = (s) => new TextEncoder().encode(s);
 const put = (b, o, n) => new DataView(b.buffer, b.byteOffset, b.byteLength).setUint32(o, n, true);
 function setup(present = async () => 1) {
@@ -58,19 +58,19 @@ function setup(present = async () => 1) {
     cwd: 'C:\\game',
     mounts: [{windows: 'C:\\', virtual: '/'}],
   });
-  const text = new AokanaNativeText(),
-    media = new AokanaProgramMedia();
+  const text = new BurikoNativeText(),
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(fs, text, media);
-  const clock = new AokanaNativeClock(() => 100);
-  const display = new AokanaNativeDisplayState(1920, 1080),
-    input = new AokanaNativeInput(display, clock);
-  const dialogs = new AokanaEngineDialogs(
+  const files = new BurikoProgramFiles(fs, text, media);
+  const clock = new BurikoNativeClock(() => 100);
+  const display = new BurikoNativeDisplayState(1920, 1080),
+    input = new BurikoNativeInput(display, clock);
+  const dialogs = new BurikoEngineDialogs(
     {show: present},
     text,
     clock,
     input,
-    new AokanaNativeCursor({style: {}}),
+    new BurikoNativeCursor({style: {}}),
     {
       isPresent: () => false,
       refresh() {
@@ -81,8 +81,8 @@ function setup(present = async () => 1) {
     null,
     bytes('Game'),
   );
-  const errors = new AokanaEngineErrors(files, dialogs, bytes('C:\\game\\'), bytes('C:\\game\\'));
-  const resources = new AokanaProgramResources(
+  const errors = new BurikoEngineErrors(files, dialogs, bytes('C:\\game\\'), bytes('C:\\game\\'));
+  const resources = new BurikoProgramResources(
     files,
     {
       nativeFileRoot: 'C:\\game\\',
@@ -228,8 +228,8 @@ test('deferred archive pointers are consumed only after a primary loose miss, in
   assert.equal(reads, 0);
   assert.equal(await s.resources.size(deferred, bytes('missing')), 0);
   assert.equal(reads, 1);
-  const memory = new AokanaBpMemory(new Uint8Array(256)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0});
+  const memory = new BurikoBpMemory(new Uint8Array(256)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0});
   memory.globalMemory.set(bytes('x\0'), 32);
   // A non-null archive pointer outside its bank remains unused on both successful loose reads.
   [64, 96, 0x01000000, 32, 23].forEach((value) => push32(thread, value));
@@ -273,10 +273,10 @@ test('resource retry cancellation preserves native quit code and follows both di
 });
 test('asset decoder keeps raw BSE/SDC and precise unsigned slice statuses', async () => {
   const input = bytes('BSE 1.0\0unchanged');
-  assert.deepEqual((await decodeAokanaResource(input)).bytes, input);
-  assert.equal((await decodeAokanaResource(input, 0, input.length + 1)).status, 3);
-  assert.equal((await decodeAokanaResource(input, 1, input.length)).status, 2);
-  await assert.rejects(decodeAokanaResource(input, 0xffffffff, 1), AokanaUndefinedResourceRead);
+  assert.deepEqual((await decodeBurikoResource(input)).bytes, input);
+  assert.equal((await decodeBurikoResource(input, 0, input.length + 1)).status, 3);
+  assert.equal((await decodeBurikoResource(input, 1, input.length)).status, 2);
+  await assert.rejects(decodeBurikoResource(input, 0xffffffff, 1), BurikoUndefinedResourceRead);
 });
 function varint(n) {
   const out = [];
@@ -319,7 +319,7 @@ test('BF alpha workers use the descriptor extent while retaining a larger backin
       bytes: new Uint8Array(272).fill(0xa5),
       initialized: new Uint8Array(272).fill(1),
     };
-    decodeAokanaBfFrame(
+    decodeBurikoBfFrame(
       frame(depth, undefined, 1, mode),
       8,
       8,
@@ -352,7 +352,7 @@ test('native BF grayscale, RGB and both alpha modes use the verified reconstruct
   const quantization = new Uint8Array(128).fill(1);
   for (const depth of [8, 24, 32])
     for (const alpha of [1, 2]) {
-      const result = decodeAokanaBfFrame(
+      const result = decodeBurikoBfFrame(
         frame(depth, undefined, 1, alpha),
         8,
         8,
@@ -367,7 +367,7 @@ test('native BF grayscale, RGB and both alpha modes use the verified reconstruct
           depth !== 32 ? 0 : alpha === 1 ? 170 : 1,
         ]);
       assert.equal(result.initialized.includes(0), false);
-      const retained = decodeAokanaBfFrame(
+      const retained = decodeBurikoBfFrame(
         frame(depth, 0, 1, alpha),
         8,
         8,
@@ -378,23 +378,23 @@ test('native BF grayscale, RGB and both alpha modes use the verified reconstruct
       assert.deepEqual(retained.bytes, result.bytes);
     }
   assert.throws(
-    () => decodeAokanaBfFrame(frame(16), 8, 8, 16, quantization),
-    AokanaUndefinedResourceRead,
+    () => decodeBurikoBfFrame(frame(16), 8, 8, 16, quantization),
+    BurikoUndefinedResourceRead,
   );
 });
 test('CBG v2 preserves crop bytes, depth24 unwritten allocation tail and zero-count retained output', async () => {
-  const gray = await decodeAokanaResource(cbg(8));
+  const gray = await decodeBurikoResource(cbg(8));
   assert.equal(gray.status, 0);
   assert.deepEqual(Array.from(gray.bytes.subarray(16)), [128, 128]);
-  const rgba = await decodeAokanaResource(cbg(32));
+  const rgba = await decodeBurikoResource(cbg(32));
   assert.equal(rgba.status, 0);
   assert.deepEqual(Array.from(rgba.bytes.subarray(16)), [128, 128, 128, 170, 128, 128, 128, 170]);
-  const rgb = await decodeAokanaCompressedBgV2(cbg(24));
+  const rgb = await decodeBurikoCompressedBgV2(cbg(24));
   assert.equal(rgb.bytes.length, 24);
   assert.equal(rgb.initializedLength, 22);
-  assert.equal((await decodeAokanaResource(cbg(24), 16, 6)).status, 0);
-  await assert.rejects(decodeAokanaResource(cbg(24)), AokanaUndefinedResourceRead);
-  await assert.rejects(decodeAokanaResource(cbg(8, frame(8, 0, 1))), AokanaUndefinedResourceRead);
+  assert.equal((await decodeBurikoResource(cbg(24), 16, 6)).status, 0);
+  await assert.rejects(decodeBurikoResource(cbg(24)), BurikoUndefinedResourceRead);
+  await assert.rejects(decodeBurikoResource(cbg(8, frame(8, 0, 1))), BurikoUndefinedResourceRead);
 });
 test('8040 appends the module and 8044 links an independently allocated runnable thread', async () => {
   const s = setup(),
@@ -403,15 +403,15 @@ test('8040 appends the module and 8044 links an independently allocated runnable
   put(module, 4, 4);
   module.set([1, 2, 3, 4], 16);
   s.mount('/game/program', module);
-  const control = new AokanaVmControlState(),
-    root = new AokanaBpThread({
+  const control = new BurikoVmControlState(),
+    root = new BurikoBpThread({
       id: control.allocateThreadId(),
       operandCapacity: 32,
       moduleCapacity: 64,
       frameCapacity: 64,
     });
-  const scheduler = new AokanaBpScheduler(root, () => 1),
-    memory = new AokanaBpMemory(new Uint8Array(64));
+  const scheduler = new BurikoBpScheduler(root, () => 1),
+    memory = new BurikoBpMemory(new Uint8Array(64));
   memory.globalMemory.set(bytes('program\0'), 4);
   const slots = new Map(
     createGroup80Resources(scheduler, control, s.resources).map((slot) => [slot.secondary, slot]),
@@ -454,15 +454,15 @@ test('8040 and 8044 retain the invoking actor and module name across mounted rea
     seen.push({name: args[1], actor: args[4]});
     return load(...args);
   };
-  const control = new AokanaVmControlState();
-  const root = new AokanaBpThread({
+  const control = new BurikoVmControlState();
+  const root = new BurikoBpThread({
     id: control.allocateThreadId(),
     operandCapacity: 32,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const scheduler = new AokanaBpScheduler(root, () => 1),
-    memory = new AokanaBpMemory(new Uint8Array(64));
+  const scheduler = new BurikoBpScheduler(root, () => 1),
+    memory = new BurikoBpMemory(new Uint8Array(64));
   const slots = new Map(
     createGroup80Resources(scheduler, control, s.resources).map((slot) => [slot.secondary, slot]),
   );
@@ -494,26 +494,42 @@ test('8040 and 8044 retain the invoking actor and module name across mounted rea
 });
 
 test('native BF color conversion reads four-word groups of partial third planes and preserves LUT indices', () => {
-  const result = decodeAokanaBfFrame(frame(16, 191), 1, 1, 16, new Uint8Array(128).fill(1));
+  const result = decodeBurikoBfFrame(frame(16, 191), 1, 1, 16, new Uint8Array(128).fill(1));
   assert.equal(result.initialized.includes(0), false);
   // Third plane begins at176; cleared coefficient0 is used as Cr, without IDCT conversion.
   assert.deepEqual(Array.from(result.bytes), [128, 219, 0, 0]);
 });
 
-test('native entropy performs full lookahead, zero-bit access, and wrapping varints', async () => {
-  const {AokanaBfBits, aokanaBfTree, aokanaBfSymbol, aokanaBfSignedBits, aokanaBfVarint} =
-    await import('../dist/engines/buriko/games/aokana/native/bf-entropy.js');
-  const tree = aokanaBfTree([1, 0]),
-    bits = new AokanaBfBits(Uint8Array.of(0));
-  assert.equal(aokanaBfSymbol(bits, tree), 0);
+test('native entropy preserves numeric lookahead faults and resolves only defined short symbols', async () => {
+  const {BurikoBfBits, burikoBfTree, burikoBfSymbol, burikoBfSignedBits, burikoBfVarint} =
+    await import('../dist/engines/buriko/native/bf-entropy.js');
+  const tree = burikoBfTree([1, 0]),
+    bits = new BurikoBfBits(Uint8Array.of(0));
+  assert.equal(burikoBfSymbol(bits, tree), 0);
   assert.equal(bits.position, 1);
-  assert.throws(() => aokanaBfSymbol(bits, tree), AokanaUndefinedResourceRead);
-  const empty = new AokanaBfBits(new Uint8Array());
-  assert.throws(() => aokanaBfSignedBits(empty, 0), AokanaUndefinedResourceRead);
-  assert.equal(aokanaBfVarint(Uint8Array.of(128, 128, 128, 128, 128, 1), {position: 0}), 8);
+  assert.throws(() => bits.peekByte(), BurikoUndefinedResourceRead);
+  for (let i = 1; i < 8; i++) assert.equal(burikoBfSymbol(bits, tree), 0);
+  assert.throws(() => burikoBfSymbol(bits, tree), BurikoUndefinedResourceRead);
+  const empty = new BurikoBfBits(new Uint8Array());
+  assert.throws(() => burikoBfSignedBits(empty, 0), BurikoUndefinedResourceRead);
+  assert.equal(burikoBfVarint(Uint8Array.of(128, 128, 128, 128, 128, 1), {position: 0}), 8);
   const resource = cbg(8),
     truncated = resource.subarray(0, resource.length - 2);
-  await assert.rejects(decodeAokanaResource(truncated), AokanaUndefinedResourceRead);
+  await assert.rejects(decodeBurikoResource(truncated), BurikoUndefinedResourceRead);
   const header = bytes('CompressedBG___\0');
-  await assert.rejects(decodeAokanaResource(header), AokanaUndefinedResourceRead);
+  await assert.rejects(decodeBurikoResource(header), BurikoUndefinedResourceRead);
+});
+
+test('resource BF final short codes do not consume speculative lookahead outside the payload', async () => {
+  const padded = frame(24),
+    exact = padded.subarray(0, padded.length - 1),
+    expected = await decodeBurikoResource(cbg(24, padded), 16, 6),
+    result = await decodeBurikoResource(cbg(24, exact), 16, 6);
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.bytes, expected.bytes);
+  // Removing an actually consumed coefficient byte remains an undefined native read.
+  await assert.rejects(
+    decodeBurikoResource(cbg(24, exact.subarray(0, exact.length - 1)), 16, 6),
+    BurikoUndefinedResourceRead,
+  );
 });

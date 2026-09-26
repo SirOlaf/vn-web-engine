@@ -112,6 +112,7 @@ async function loadInstallation(installation: CachedInstallation): Promise<void>
   archives.clear();
   gameFiles.clear();
   gameFiles.attach('/Game.exe', byPath.get('/game.exe')!.source);
+  for (const path of installation.directories ?? []) gameFiles.attachDirectory(path);
   for (const entry of installation.files) {
     if (!/^\/data\/[^/]+\.cpk$/i.test(entry.path)) continue;
     const name = entry.path.split('/').at(-1)!;
@@ -134,7 +135,12 @@ async function selectInstallation(selection: InstallationSelection): Promise<voi
       lastModifiedMs: file.lastModified,
     });
   }
-  await loadInstallation({files, metadata: {}, attachments: {}});
+  await loadInstallation({
+    directories: selection.directories,
+    files,
+    metadata: {},
+    attachments: {},
+  });
 }
 const installationControls = mountInstallationControls({
   key: 'chaos-head-noah-gog',

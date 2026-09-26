@@ -1,7 +1,12 @@
 import {slotText, type GlyphSlot, type TextGlyph} from './glyph-slots.js';
 let nextTint = 0;
-/** One continuous light-DOM Text node per slot. Native line boundaries are
- * expressed through CSS wrapping, never characters inserted into the text. */
+let nextInk = 0;
+interface InkHighlights {
+  style: HTMLStyleElement;
+  names: string[];
+}
+/** One light-DOM Text node per slot. Raster adapters preserve native line
+ * boundaries explicitly; adapters with complete buffers can use CSS wrapping. */
 export class DomGlyphSlots {
   readonly element = document.createElement('div');
   readonly buffers = new Map<string, readonly TextGlyph[]>();
@@ -12,6 +17,8 @@ export class DomGlyphSlots {
       text: HTMLSpanElement;
       node: Text;
       highlights: HTMLDivElement[];
+      explicitLines?: boolean;
+      ink?: InkHighlights;
       tint?: {filter: SVGFilterElement; id: string; key: string};
     }
   >();
@@ -26,12 +33,25 @@ export class DomGlyphSlots {
         this.paintSelection();
       });
   };
+  private readonly copy = (event: ClipboardEvent) => {
+    const selection = document.getSelection();
+    if (!event.clipboardData || selection?.rangeCount !== 1 || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    for (const {node, explicitLines} of this.nodes.values()) {
+      if (!explicitLines || range.startContainer !== node || range.endContainer !== node) continue;
+      // Native visual wraps are presentation-only, as in slotText's source string.
+      event.clipboardData.setData('text/plain', range.toString().replaceAll('\n', ''));
+      event.preventDefault();
+      return;
+    }
+  };
   constructor(parent: HTMLElement) {
     this.element.className = 'game-glyph-slots';
     this.element.style.cssText =
       'position:absolute;width:1920px;height:1080px;overflow:hidden;pointer-events:none;transform-origin:0 0';
     parent.append(this.element);
     document.addEventListener('selectionchange', this.queueSelection);
+    document.addEventListener('copy', this.copy);
   }
   setSize(width: number, height: number): void {
     this.width = width;
@@ -44,7 +64,10 @@ export class DomGlyphSlots {
     const content = slotText(slot);
     let nodes = this.nodes.get(slot.id);
     if (!content) {
-      if (nodes) nodes.box.hidden = true;
+      if (nodes) {
+        nodes.box.hidden = true;
+        if (nodes.ink) this.clearInk(nodes.ink);
+      }
       return;
     }
     if (!nodes) {
@@ -63,6 +86,7 @@ export class DomGlyphSlots {
     }
     const {box, text, node} = nodes,
       {bounds, clip} = content;
+    nodes.explicitLines = slot.explicitLines;
     box.hidden = false;
     const interactive = slot.interactive !== false;
     box.inert = !interactive;
@@ -74,34 +98,58 @@ export class DomGlyphSlots {
       for (const highlight of nodes.highlights.splice(0)) highlight.remove();
     }
     // Update only the changed suffix, preserving the node and selections in the prefix.
-    if (node.data !== content.text) {
+    const displayed = slot.explicitLines ? content.visualText : content.text;
+    if (node.data !== displayed) {
       let prefix = 0;
       while (
         prefix < node.length &&
-        prefix < content.text.length &&
-        node.data[prefix] === content.text[prefix]
+        prefix < displayed.length &&
+        node.data[prefix] === displayed[prefix]
       )
         prefix++;
-      node.replaceData(prefix, node.length - prefix, content.text.slice(prefix));
+      node.replaceData(prefix, node.length - prefix, displayed.slice(prefix));
     }
-    const size = Math.min(content.size, bounds.height / content.lines),
+    const size = Math.min(content.size, bounds.height),
       font = `${slot.bold ? 'bold ' : ''}${size}px ${family ?? 'serif'}`;
     this.measure.font = font;
     this.measure.fontKerning = 'none';
     const fullLines = Array.from({length: content.lines}, () => '');
+    const lineBounds = fullLines.map(() => ({left: Infinity, right: -Infinity, top: Infinity}));
     const firstLine = Math.min(...slot.glyphs.map((g) => g.line));
-    for (const g of slot.glyphs) fullLines[g.line - firstLine] += g.text ?? '';
+    for (const g of slot.glyphs) {
+      const line = g.line - firstLine;
+      fullLines[line] += g.text ?? '';
+      lineBounds[line]!.left = Math.min(lineBounds[line]!.left, g.x);
+      lineBounds[line]!.right = Math.max(lineBounds[line]!.right, g.x + g.width);
+      lineBounds[line]!.top = Math.min(lineBounds[line]!.top, g.y);
+    }
     const widths = fullLines.map((line) => this.measure.measureText(line).width);
     const measured = Math.max(1, ...widths),
-      scale = Math.min(1, bounds.width / measured);
-    const lineHeight = content.lines > 1 ? (bounds.height - size) / (content.lines - 1) : size;
-    // An empty floated pseudo-element reserves the unused right side of each
-    // native line. Even short lines and blank rows wrap without splitting the
-    // Text node or inserting separators that interrupt dictionary scanning.
+      scale = Math.min(
+        1,
+        ...(slot.explicitLines ? widths.slice(0, 1) : widths).flatMap((width, line) =>
+          width ? [(lineBounds[line]!.right - lineBounds[line]!.left) / width] : [],
+        ),
+      );
+    const positioned = lineBounds.flatMap((row, line) =>
+        Number.isFinite(row.top) ? [{line, top: row.top}] : [],
+      ),
+      firstPosition = positioned[0]!,
+      lastPosition = positioned.at(-1)!,
+      lineHeight =
+        positioned.length > 1
+          ? (lastPosition.top - firstPosition.top) / (lastPosition.line - firstPosition.line)
+          : size;
+    // The first row can hang to the left of subsequent rows (dialogue quotes).
+    // text-indent preserves that offset; the float reserves the unused right
+    // edge without splitting the Text node into independent visual rows.
     // Leave a small allowance for CSS subpixel rounding of measured advances.
-    const wrapWidth = measured + 1 / 16;
+    const origin = lineBounds.slice(1).find((line) => Number.isFinite(line.left))?.left ?? bounds.x,
+      indent = (lineBounds[0]!.left - origin) / scale,
+      wrapWidth =
+        Math.max(1, ...widths.map((width, line) => width + (line === 0 ? indent : 0))) + 1 / 16;
     const edge = widths.flatMap((width, line) => {
-      const x = width ? width + 1 / 16 : 0;
+      const x = width ? width + (line === 0 ? indent : 0) + 1 / 16 : 0;
       return [`${x}px ${line * lineHeight}px`, `${x}px ${(line + 1) * lineHeight}px`];
     });
     const shape = `polygon(${wrapWidth}px 0,${edge.join(',')},${wrapWidth}px ${content.lines * lineHeight}px)`;
@@ -187,8 +235,50 @@ export class DomGlyphSlots {
       }
       filter = `filter:url(#${nodes.tint.id});`;
     }
-    text.style.cssText = `position:absolute;display:block;left:${bounds.x - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;--text-wrap-height:${content.lines * lineHeight}px;--text-wrap-shape:${shape};white-space:break-spaces;word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;${filter}line-height:${lineHeight}px;color:#${(content.color & 0xffffff).toString(16).padStart(6, '0')};opacity:${filter ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
-    text.className = slot.vertical ? 'vertical-game-text' : '';
+    text.style.cssText = `position:absolute;display:block;left:${origin - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;text-indent:${indent}px;--text-wrap-height:${content.lines * lineHeight}px;--text-wrap-shape:${shape};white-space:${slot.explicitLines ? 'pre' : 'break-spaces'};word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;${filter}line-height:${lineHeight}px;color:#${(content.color & 0xffffff).toString(16).padStart(6, '0')};opacity:${filter ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
+    // Reveal alpha belongs to glyphs, not paragraph identity. Custom highlight
+    // ranges preserve that alpha without fragmenting text or changing wrapping.
+    if (nodes.ink) this.clearInk(nodes.ink);
+    if (
+      typeof CSS !== 'undefined' &&
+      CSS.highlights &&
+      typeof Highlight !== 'undefined' &&
+      slot.glyphs.some((g) => g.alpha > 0 && g.alpha < content.alpha)
+    ) {
+      if (!nodes.ink) {
+        const style = document.createElement('style');
+        box.append(style);
+        nodes.ink = {style, names: []};
+      }
+      const rules: string[] = [];
+      let offset = 0,
+        previousLine = firstLine;
+      for (const g of slot.glyphs) {
+        if (slot.explicitLines) offset = Math.min(node.length, offset + g.line - previousLine);
+        previousLine = g.line;
+        const length = g.alpha > 0 ? (g.text?.length ?? 0) : Array.from(g.text ?? '').length,
+          end = Math.min(node.length, offset + length);
+        if (g.alpha > 0 && g.alpha < content.alpha && end > offset) {
+          const range = document.createRange(),
+            name = `game-ink-${++nextInk}`;
+          range.setStart(node, offset);
+          range.setEnd(node, end);
+          CSS.highlights.set(name, new Highlight(range));
+          nodes.ink.names.push(name);
+          const c = content.color;
+          rules.push(
+            `.game-glyph-slots [data-game-text]::highlight(${name}){color:rgb(${(c >>> 16) & 255} ${(c >>> 8) & 255} ${c & 255}/${g.alpha / content.alpha})}`,
+          );
+        }
+        offset = end;
+      }
+      nodes.ink.style.textContent = rules.join('\n');
+    }
+    text.className = slot.vertical
+      ? 'vertical-game-text'
+      : slot.explicitLines
+        ? 'native-lines-game-text'
+        : '';
     if (slot.vertical) {
       text.style.writingMode = 'vertical-rl';
       text.style.textOrientation = 'mixed';
@@ -203,6 +293,11 @@ export class DomGlyphSlots {
     }
     if (document.getSelection()?.containsNode(node, true) || nodes.highlights.length)
       this.queueSelection();
+  }
+  private clearInk(ink: InkHighlights): void {
+    for (const name of ink.names) CSS.highlights.delete(name);
+    ink.names.length = 0;
+    ink.style.textContent = '';
   }
   /** Paint range rectangles as siblings of the filtered glyphs. Native selection
    * backgrounds are tinted with the font and can become black during animation. */
@@ -244,6 +339,7 @@ export class DomGlyphSlots {
   retain(ids: ReadonlySet<string>, buffers: ReadonlySet<string> = ids): void {
     for (const [id, n] of this.nodes) {
       if (!buffers.has(id)) {
+        if (n.ink) this.clearInk(n.ink);
         n.box.remove();
         this.nodes.delete(id);
       } else if (!ids.has(id)) n.box.hidden = true;
@@ -255,6 +351,7 @@ export class DomGlyphSlots {
   }
   dispose(): void {
     document.removeEventListener('selectionchange', this.queueSelection);
+    document.removeEventListener('copy', this.copy);
     cancelAnimationFrame(this.selectionFrame);
     this.clear();
     this.element.remove();

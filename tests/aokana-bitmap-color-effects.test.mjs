@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {applyAokanaBitmapColorEffect} from '../dist/engines/buriko/games/aokana/native/bitmap-color-effects.js';
-import {AokanaSpriteEffects} from '../dist/engines/buriko/games/aokana/native/sprite-effects.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {applyBurikoBitmapColorEffect} from '../dist/engines/buriko/native/bitmap-color-effects.js';
+import {BurikoSpriteEffects} from '../dist/engines/buriko/native/sprite-effects.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 
 function bitmap(width, height, values, format = 2) {
   const stride = width * 4 + 4;
@@ -17,7 +17,7 @@ function bitmap(width, height, values, format = 2) {
     for (let x = 0; x < width; x++)
       view.setUint32(y * stride + x * 4, values[y * width + x] ?? 0, true);
   return {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride,
     width,
@@ -36,7 +36,7 @@ function pixels(bitmap) {
 const values = [0x00102030, 0x00405060, 0x00123456, 0x80abcdef, 0x01224466, 0xff447799, 0x00112233];
 
 test('XOR and luminance effects retain Q7 rounding and RGBA pair coverage', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   const expected = [
     [0x00ed2e64, 0x00be5e35, 0x00eb3a03, 0x8054c2ba, 0x01db4a33, 0xffba77cb, 0x00ec2c65],
     [0x001b0109, 0x004b0419, 0x002c020f, 0x80c40c42, 0x013c0314, 0xff6a0623, 0x001d010a],
@@ -45,7 +45,7 @@ test('XOR and luminance effects retain Q7 rounding and RGBA pair coverage', () =
     for (const format of [1, 2]) {
       const output = bitmap(7, 1, Array(7).fill(0), format);
       assert.equal(
-        applyAokanaBitmapColorEffect(
+        applyBurikoBitmapColorEffect(
           compositor,
           output,
           bitmap(7, 1, values, format),
@@ -67,13 +67,13 @@ test('XOR and luminance effects retain Q7 rounding and RGBA pair coverage', () =
 });
 
 test('color addition preserves alpha while subtraction applies its fourth color byte', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   const input = [
     0x10000000, 0x20506070, 0x30f0f0f0, 0x80ffffff, 0xff102030, 0x00112233, 0x99887766,
   ];
   for (const selector of [4, 5]) {
     const output = bitmap(7, 1, Array(7).fill(0));
-    applyAokanaBitmapColorEffect(
+    applyBurikoBitmapColorEffect(
       compositor,
       output,
       bitmap(7, 1, input),
@@ -96,20 +96,20 @@ test('color addition preserves alpha while subtraction applies its fourth color 
 });
 
 test('copy and tint selectors call the shared concrete conversion and dimming paths', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   const source = bitmap(3, 1, [0x00102030, 0x00406080, 0x0080a0c0], 1);
   const output = bitmap(3, 1, Array(3).fill(0), 2);
-  applyAokanaBitmapColorEffect(compositor, output, source, 0, 0x112233, 27);
+  applyBurikoBitmapColorEffect(compositor, output, source, 0, 0x112233, 27);
   assert.deepEqual(pixels(output), [0xff102030, 0xff406080, 0xff80a0c0]);
   const tinted = bitmap(3, 1, Array(3).fill(0), 1);
-  applyAokanaBitmapColorEffect(compositor, tinted, source, 3, 0x204060, 128);
+  applyBurikoBitmapColorEffect(compositor, tinted, source, 3, 0x204060, 128);
   assert.deepEqual(pixels(tinted), [0x00183048, 0x00305070, 0x00507090]);
-  applyAokanaBitmapColorEffect(compositor, tinted, source, 3, 0, 128);
+  applyBurikoBitmapColorEffect(compositor, tinted, source, 3, 0, 128);
   assert.deepEqual(pixels(tinted), [0x00081018, 0x00203040, 0x00405060]);
 });
 
 test('sprite effect records use the optional source once and preserve slot order', () => {
-  const effects = new AokanaSpriteEffects(new AokanaBitmapCompositor());
+  const effects = new BurikoSpriteEffects(new BurikoBitmapCompositor());
   const output = bitmap(1, 1, [0x80606060]);
   assert.equal(effects.active, false);
   assert.equal(effects.apply(output), 0);
@@ -121,8 +121,8 @@ test('sprite effect records use the optional source once and preserve slot order
 });
 
 test('all color effect selectors share the actual distributed bitmap job owner', () => {
-  const processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(3), 3);
-  const compositor = new AokanaBitmapCompositor();
+  const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(3), 3);
+  const compositor = new BurikoBitmapCompositor();
   compositor.processing = processing;
   const source = bitmap(
     65,
@@ -132,8 +132,8 @@ test('all color effect selectors share the actual distributed bitmap job owner',
   for (let selector = 0; selector < 6; selector++) {
     const serial = bitmap(65, 101, []),
       parallel = bitmap(65, 101, []);
-    applyAokanaBitmapColorEffect(compositor, serial, source, selector, 0x123456, 127);
-    applyAokanaBitmapColorEffect(compositor, parallel, source, selector, 0x123456, 127, true);
+    applyBurikoBitmapColorEffect(compositor, serial, source, selector, 0x123456, 127);
+    applyBurikoBitmapColorEffect(compositor, parallel, source, selector, 0x123456, 127, true);
     assert.deepEqual(parallel.storage.bytes, serial.storage.bytes);
   }
   assert.equal(compositor.processing, processing);

@@ -1,5 +1,5 @@
 import type {WorkerSource} from '../core/worker-source.js';
-import type {MovieInfo} from '../formats/cri/movie.js';
+import type {MovieInfo} from './movie-types.js';
 import type {YuvFrame} from './frame.js';
 import type {MovieResponse} from './worker-protocol.js';
 
@@ -31,13 +31,28 @@ export class StreamMovieVoice {
     this.gain.connect(context.destination);
     this.open();
   }
+  get metadata(): MovieInfo | undefined {
+    return this.info;
+  }
+  private failWorker(worker: Worker, error: unknown): void {
+    if (this.disposed || this.worker !== worker || this.failure !== undefined) return;
+    this.failure = error;
+    this.freeze();
+    worker.terminate();
+  }
+  private availableAudio(info: MovieInfo): number {
+    return Math.max(this.audioEnd, this.cycle + (info.audioStartTime ?? 0));
+  }
   private open(): void {
     this.worker?.terminate();
     this.worker = new Worker(new URL('./decode-worker.js', import.meta.url), {type: 'module'});
     const worker = this.worker;
     worker.onerror = (e) => {
-      this.failure = new Error(e.message || 'Movie worker failed');
+      e.preventDefault();
+      this.failWorker(worker, new Error(e.message || 'Movie worker failed'));
     };
+    worker.onmessageerror = () =>
+      this.failWorker(worker, new Error('Movie worker result could not be transferred'));
     worker.onmessage = (event: MessageEvent<MovieResponse>) => {
       if (this.disposed || this.worker !== worker) return;
       try {
@@ -48,28 +63,41 @@ export class StreamMovieVoice {
         this.info = b.info;
         this.done = b.done;
         for (const frame of b.frames) {
-          this.frames.push({at: this.cycle + frame.index / b.info.frameRate, frame});
-          this.videoEnd = this.cycle + (frame.index + 1) / b.info.frameRate;
+          const at = this.cycle + (frame.timestamp ?? frame.index / b.info.frameRate);
+          this.frames.push({at, frame});
+          this.videoEnd = at + (frame.duration ?? 1 / b.info.frameRate);
         }
-        if (b.audio.length) {
-          const first = b.audio[0]!,
-            count = b.audio.reduce((n, a) => n + a.channels[0]!.length, 0),
-            buffer = this.context.createBuffer(b.info.channels, count, b.info.sampleRate);
+        for (let firstIndex = 0; firstIndex < b.audio.length;) {
+          const first = b.audio[firstIndex]!,
+            firstTime = first.timestamp ?? first.start / b.info.sampleRate;
+          let end = firstIndex + 1,
+            count = first.channels[0]!.length;
+          while (end < b.audio.length) {
+            const next = b.audio[end]!,
+              nextTime = next.timestamp ?? next.start / b.info.sampleRate;
+            if (
+              next.start !== first.start + count ||
+              Math.abs(nextTime - firstTime - count / b.info.sampleRate) > 0.5 / b.info.sampleRate
+            )
+              break;
+            count += next.channels[0]!.length;
+            end++;
+          }
+          const buffer = this.context.createBuffer(b.info.channels, count, b.info.sampleRate);
           let offset = 0;
-          for (const a of b.audio) {
-            if (a.start !== first.start + offset) throw new Error('Non-contiguous movie audio');
+          for (const a of b.audio.slice(firstIndex, end)) {
             for (let c = 0; c < b.info.channels; c++)
               buffer.getChannelData(c).set(a.channels[c]!, offset);
             offset += a.channels[0]!.length;
           }
-          const at = this.cycle + first.start / b.info.sampleRate;
+          const at = this.cycle + firstTime;
           this.audio.push({at, buffer});
           this.audioEnd = at + count / b.info.sampleRate;
+          firstIndex = end;
         }
         this.tick();
       } catch (error) {
-        this.failure = error;
-        this.freeze();
+        this.failWorker(worker, error);
       }
     };
     this.pulling = true;
@@ -114,7 +142,17 @@ export class StreamMovieVoice {
     const info = this.info;
     let position = this.position();
     if (info && this.playing) {
-      const available = Math.min(this.videoEnd, info.channels ? this.audioEnd : Infinity);
+      const videoFinished =
+        this.videoEnd >=
+        this.cycle + (info.videoEndTime ?? info.frameCount / info.frameRate) - 1e-6;
+      const audioFinished =
+        !info.channels ||
+        this.audioEnd >=
+          this.cycle + (info.audioEndTime ?? info.sampleCount / info.sampleRate) - 1e-6;
+      const available = Math.min(
+        videoFinished ? Infinity : this.videoEnd,
+        audioFinished ? Infinity : this.availableAudio(info),
+      );
       if (position >= available && !this.done) {
         this.offset = available;
         this.freeze();
@@ -145,8 +183,15 @@ export class StreamMovieVoice {
       info &&
       this.wanted &&
       !this.playing &&
-      (this.done || this.videoEnd - position >= 0.1) &&
-      (info.channels === 0 || this.done || this.audioEnd - position >= 0.1)
+      (this.done ||
+        this.videoEnd - position >= 0.1 ||
+        this.videoEnd >=
+          this.cycle + (info.videoEndTime ?? info.frameCount / info.frameRate) - 1e-6) &&
+      (info.channels === 0 ||
+        this.done ||
+        this.availableAudio(info) - position >= 0.1 ||
+        this.audioEnd >=
+          this.cycle + (info.audioEndTime ?? info.sampleCount / info.sampleRate) - 1e-6)
     ) {
       this.epoch = this.context.currentTime - position + 0.02;
       this.playing = true;

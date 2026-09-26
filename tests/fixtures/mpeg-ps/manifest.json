@@ -1,0 +1,83 @@
+{
+  "reference": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "fixtures": [
+    {
+      "name": "video-only",
+      "width": 64,
+      "height": 48,
+      "frameRate": 30,
+      "sampleRate": 0,
+      "channels": 0,
+      "pictureTypes": [
+        "I",
+        "B",
+        "B",
+        "P",
+        "B",
+        "B",
+        "I",
+        "B",
+        "B",
+        "P",
+        "B",
+        "B",
+        "I",
+        "B",
+        "B",
+        "P",
+        "B",
+        "I"
+      ],
+      "audioPts": [],
+      "encodedSha256": "3d4e9bfe7266e2edc7a6db6fe48e8e8a11258c099095fb7963be65aa69e1f1bf",
+      "yuvSha256": "af351fc7dcb9fe5acec86ff8ba1a328e0cc65ea711ea64961d482eb6c65d35da",
+      "pcmSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "probeVideoPts": [
+        48000, 51000, 54000, 57000, 60000, 63000, 66000, 69000, 72000, 75000, 78000, 81000, 84000,
+        87000, 90000, 93000, 96000, 99000
+      ],
+      "frameCount": 18,
+      "videoStart": 0,
+      "audioStart": null
+    },
+    {
+      "name": "delayed-audio",
+      "width": 64,
+      "height": 48,
+      "frameRate": 30,
+      "sampleRate": 48000,
+      "channels": 2,
+      "pictureTypes": [
+        "I",
+        "B",
+        "B",
+        "P",
+        "B",
+        "B",
+        "I",
+        "B",
+        "B",
+        "P",
+        "B",
+        "B",
+        "I",
+        "B",
+        "B",
+        "P",
+        "B",
+        "I"
+      ],
+      "audioPts": [55200, 57360, 59520, 61680, 63840, 66000, 68160, 70320],
+      "encodedSha256": "27e143cdbe23541b394aca275fd6d728bde08de882432ec81ec351c9eb28d74a",
+      "yuvSha256": "af351fc7dcb9fe5acec86ff8ba1a328e0cc65ea711ea64961d482eb6c65d35da",
+      "pcmSha256": "67bac32e9c04667018ea2447996bdf5cba696dcf853f1dfd3d9215ead9d44804",
+      "probeVideoPts": [
+        48000, 51000, 54000, 57000, 60000, 63000, 60000, 63000, 66000, 75000, 78000, 81000, 84000,
+        87000, 90000, 93000, 96000, 99000
+      ],
+      "frameCount": 18,
+      "videoStart": 0,
+      "audioStart": 0.08
+    }
+  ]
+}

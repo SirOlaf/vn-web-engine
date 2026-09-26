@@ -212,10 +212,14 @@ test('simple slot ordering preserves direct metadata beside a dynamic factory sp
     `,
   };
   const [factory] = discoverFactories(parseSources(files), files, config, imageBase);
-  assert.deepEqual(factory.entries.map((entry) => entry.slot), ['80:02']);
-  assert.deepEqual(factory.unresolved.map((entry) => entry.reason), [
-    'Unresolved returned slot metadata',
-  ]);
+  assert.deepEqual(
+    factory.entries.map((entry) => entry.slot),
+    ['80:02'],
+  );
+  assert.deepEqual(
+    factory.unresolved.map((entry) => entry.reason),
+    ['Unresolved returned slot metadata'],
+  );
 });
 
 test('exported static arrays and single slots retain provider kinds separate from factories', () => {
@@ -504,12 +508,12 @@ test('symlinked source entries and configured roots are rejected instead of sile
   }
 });
 
-const localAokanaManifest = path.join(root, 'tools/native-audit/workspace/aokana-slots.json');
+const localBurikoManifest = path.join(root, 'tools/native-audit/workspace/aokana-slots.json');
 test(
-  'local Aokana manifest proves all 840 slots against every native table hash and explicit owner partition',
-  {skip: !existsSync(localAokanaManifest)},
+  'local Buriko manifest proves all 840 slots against every native table hash and explicit owner partition',
+  {skip: !existsSync(localBurikoManifest)},
   async () => {
-    const manifest = validateManifest(JSON.parse(await readFile(localAokanaManifest, 'utf8')));
+    const manifest = validateManifest(JSON.parse(await readFile(localBurikoManifest, 'utf8')));
     const source = await readFile(path.join(root, manifest.universe.path), 'utf8');
     const inventory = extractInventory(
       parseSources({[manifest.universe.path]: source}).get(manifest.universe.path),

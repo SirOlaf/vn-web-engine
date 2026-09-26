@@ -1,22 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {createGroup90PerspectivePoint} from '../dist/engines/buriko/games/aokana/native/group-90-perspective-point.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {createGroup90PerspectivePoint} from '../dist/engines/buriko/native/group-90-perspective-point.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
 const rectangle = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, values = []) => ({
-  storage: new AokanaBitmapStorage(
+  storage: new BurikoBitmapStorage(
     new Uint8Array(
       new Uint32Array(Array.from({length: width * height}, (_, index) => values[index] ?? 0))
         .buffer,
@@ -32,22 +32,22 @@ const bitmap = (width, height, values = []) => ({
 });
 
 function fixture() {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
   const bounds = rectangle(0, 0, 7, 3),
     output = bitmap(8, 4),
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(16, {...bounds}),
+      new BurikoDisplayDamage(16, {...bounds}),
     );
   environment.displayContext = {bitmap: output, bounds};
-  const allocator = new AokanaDistributedAllocator(2),
-    text = new AokanaNativeText(),
-    surfaces = new AokanaSurfaces(new AokanaNativeFonts(text), compositor, allocator),
-    manager = new AokanaDisplayManager(
+  const allocator = new BurikoDistributedAllocator(2),
+    text = new BurikoNativeText(),
+    surfaces = new BurikoSurfaces(new BurikoNativeFonts(text), compositor, allocator),
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     );
   return {allocator, compositor, environment, manager, output, surfaces, text};
 }
@@ -58,9 +58,9 @@ test('perspective point coordinates move a real Sprite through shared display ge
   surfaces.fill(0, 0x204060);
   const handle = manager.createSprite();
   assert.equal(manager.initializeSimpleSprite(handle, 0, 0, 0, 0, 0, 1), 0);
-  const memory = new AokanaBpMemory(new Uint8Array(64));
+  const memory = new BurikoBpMemory(new Uint8Array(64));
   const view = new DataView(memory.globalMemory.buffer);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
     moduleCapacity: 0,
@@ -69,7 +69,7 @@ test('perspective point coordinates move a real Sprite through shared display ge
   const [slot] = createGroup90PerspectivePoint();
   assert.deepEqual(
     [slot.primary, slot.secondary, slot.nativeAddress],
-    [0x90, 0xcf, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][0xcf]],
+    [0x90, 0xcf, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][0xcf]],
   );
   for (const [point, scales, expected] of [
     [

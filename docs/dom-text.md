@@ -23,9 +23,24 @@ the alternate frame and selectable text in a sibling layer. Closing a window,
 clearing its client, hiding a presentation, or tearing down the runtime retires
 its DOM nodes. The no-canvas diagnostic mode never creates a DOM presentation.
 
-Browser glyph placement is approximate. Adjacent matching rows are grouped into
-continuous text without inserting line-break characters. Ruby and differently
-styled runs remain separate. Vertical text uses browser vertical layout. Shadows
+Browser glyph placement is approximate. Adjacent matching raster rows form one
+Text node with explicit native row boundaries. Its copy handler omits visual-wrap
+newlines from the source string. Completed rows do not reflow as a later row is
+revealed; horizontal scaling is anchored to the first row. Adapters with complete
+glyph buffers can use browser wrapping. Ruby and differently styled runs remain
+separate. Native row positions define line spacing; font size
+is independent of the bitmap cell height. Hanging first-row indentation is
+preserved without separating the dialogue into multiple nodes. Glyph reveal
+alpha does not change paragraph identity. CSS Custom Highlight ranges preserve
+individual fade opacity when available; other browsers use the paragraph's
+maximum opacity. Repeated damage-strip fragments retain combined coverage and
+the latest native fade/tint style. Visibility is evaluated across all fragments
+of a glyph so damage through transparent cell margins cannot change text coverage.
+Presentation owners can annotate a bitmap with `rasterTextFlow` to isolate control
+text. Window overlays use independent flows; decoded wait-marker glyphs remain
+visible without entering dialogue width or line-spacing calculations. Flow
+identity follows copies, crops, clones, transforms and display uploads.
+Vertical text uses browser vertical layout. Shadows
 and outlines can be omitted; arbitrary blend, mask, mesh and displacement effects
 cannot be reproduced exactly by browser text. Fully occluded glyphs are excluded
 using native/textless pixel comparison, while partial occlusion and transformed

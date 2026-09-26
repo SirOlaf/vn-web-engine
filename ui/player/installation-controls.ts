@@ -92,7 +92,7 @@ export function mountInstallationControls(options: {
     selectedDetails.hidden = false;
     selectedSummary.textContent = `${combined.files.length} selected files`;
     selectedNames.textContent = combined.files.map(({path}) => path).join('\n');
-    await options.select(combined);
+    await options.select({...combined, directoryHandle: selection.directoryHandle});
     // A folder supplemented with individual files cannot be reconstructed from its handle.
     // Keep only complete, successfully opened folder selections across reloads.
     if (directories.available()) {
@@ -258,8 +258,7 @@ export function mountInstallationControls(options: {
   }
   async function restoreDirectory(): Promise<void> {
     if (!hasInstallationDirectoryPicker(window) || !directories.available()) {
-      directoryStatus.textContent =
-        'This browser cannot remember device folders.';
+      directoryStatus.textContent = 'This browser cannot remember device folders.';
       return;
     }
     const revision = selectionRevision;

@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {
-  aokanaAlignedAffineSource,
-  aokanaBitmapAffineCoordinates,
-  blendTransformedAokanaBitmap,
-  transformAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-affine.js';
-import {aokanaBitmapOperationPoints} from '../dist/engines/buriko/games/aokana/native/bitmap-operation-jobs.js';
+  burikoAlignedAffineSource,
+  burikoBitmapAffineCoordinates,
+  blendTransformedBurikoBitmap,
+  transformBurikoBitmap,
+} from '../dist/engines/buriko/native/bitmap-affine.js';
+import {burikoBitmapOperationPoints} from '../dist/engines/buriko/native/bitmap-operation-jobs.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 
 const identity = {x: 0, y: 0, pivotX: 0, pivotY: 0, angle: 0, scaleX: 65536, scaleY: 65536};
 const gray = (value) => Math.imul(value, 0x1010101) >>> 0;
@@ -24,7 +24,7 @@ function bitmap(width, height, values, format = 2, padding = 0) {
     for (let x = 0; x < width; x++)
       view.setUint32(y * stride + x * 4, values[y * width + x] ?? 0, true);
   return {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride,
     width,
@@ -42,7 +42,7 @@ function pixels(bitmap) {
 }
 
 test('affine integral containment crops the actual source and retains row padding', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   const source = bitmap(
     5,
     4,
@@ -52,15 +52,15 @@ test('affine integral containment crops the actual source and retains row paddin
   );
   const destination = bitmap(2, 2, [0, 0, 0, 0], 2, 4);
   const transform = {...identity, x: 65536, pivotX: 2 * 65536, pivotY: 65536};
-  const aligned = aokanaAlignedAffineSource(destination, source, transform);
+  const aligned = burikoAlignedAffineSource(destination, source, transform);
   assert.equal(aligned.storage, source.storage);
   assert.equal(aligned.offset, source.stride + 4);
   assert.equal(aligned.width, 2);
   assert.equal(aligned.height, 2);
-  assert.equal(transformAokanaBitmap(compositor, destination, source, transform, 0, 1), 0);
+  assert.equal(transformBurikoBitmap(compositor, destination, source, transform, 0, 1), 0);
   assert.deepEqual(pixels(destination), [7, 8, 12, 13].map(gray));
   assert.deepEqual(Array.from(destination.storage.bytes.slice(8, 12)), [165, 165, 165, 165]);
-  const coordinates = aokanaBitmapAffineCoordinates(identity);
+  const coordinates = burikoBitmapAffineCoordinates(identity);
   assert.deepEqual(coordinates, {
     startX: 0,
     startY: 0,
@@ -75,30 +75,30 @@ test('affine nearest rotation follows the independent row and column increments'
   const source = bitmap(2, 3, [1, 2, 3, 4, 5, 6].map(gray));
   const destination = bitmap(3, 2, Array(6).fill(0));
   const transform = {...identity, pivotX: 65536, angle: 90 * 65536};
-  transformAokanaBitmap(new AokanaBitmapCompositor(), destination, source, transform, 0, 0);
+  transformBurikoBitmap(new BurikoBitmapCompositor(), destination, source, transform, 0, 0);
   assert.deepEqual(pixels(destination), [2, 4, 6, 1, 3, 5].map(gray));
 });
 
 test('affine bilinear uses four-bit fractions, horizontal flooring, and zero border samples', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   const source = bitmap(2, 2, [1, 6, 12, 21].map(gray));
   const center = bitmap(1, 1, [0]);
-  transformAokanaBitmap(compositor, center, source, {...identity, x: -0x8fff, y: -0x8fff}, 0, 1);
+  transformBurikoBitmap(compositor, center, source, {...identity, x: -0x8fff, y: -0x8fff}, 0, 1);
   assert.deepEqual(pixels(center), [gray(9)]);
   const destination = bitmap(3, 3, Array(9).fill(0));
-  transformAokanaBitmap(compositor, destination, source, {...identity, x: 0x8000, y: 0x8000}, 0, 1);
+  transformBurikoBitmap(compositor, destination, source, {...identity, x: 0x8000, y: 0x8000}, 0, 1);
   assert.deepEqual(pixels(destination), [0, 1, 1, 3, 9, 6, 3, 8, 5].map(gray));
 });
 
 test('affine copy dimming preserves alpha and RGB conversion supplies covered alpha', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   const transform = {...identity, x: -1};
   const input = [0x10101010, 0x20303030, 0x30505050];
   for (const sampling of [0, 1]) {
     const destination = bitmap(3, 1, [0, 0, 0]);
-    transformAokanaBitmap(compositor, destination, bitmap(3, 1, input), transform, 128, sampling);
+    transformBurikoBitmap(compositor, destination, bitmap(3, 1, input), transform, 128, sampling);
     assert.deepEqual(pixels(destination), [0x10080808, 0x20181818, 0x30282828]);
-    transformAokanaBitmap(
+    transformBurikoBitmap(
       compositor,
       destination,
       bitmap(3, 1, input, 1),
@@ -111,11 +111,11 @@ test('affine copy dimming preserves alpha and RGB conversion supplies covered al
 });
 
 test('affine blending retains Q7 RGB and alpha-table coefficients in pair and tail pixels', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   const transform = {...identity, x: -1};
   for (const sampling of [0, 1]) {
     const destination = bitmap(3, 1, [200, 200, 200].map(gray), 1);
-    blendTransformedAokanaBitmap(
+    blendTransformedBurikoBitmap(
       compositor,
       destination,
       bitmap(3, 1, [16, 48, 80].map(gray), 1),
@@ -126,14 +126,14 @@ test('affine blending retains Q7 RGB and alpha-table coefficients in pair and ta
     assert.deepEqual(pixels(destination), [17, 49, 80].map(gray));
     const alphaTarget = bitmap(3, 1, Array(3).fill(0x07282828), 1);
     const alphaSource = bitmap(3, 1, [0x00646464, 0x80c8c8c8, 0xfef0f0f0]);
-    blendTransformedAokanaBitmap(compositor, alphaTarget, alphaSource, transform, 64, sampling);
+    blendTransformedBurikoBitmap(compositor, alphaTarget, alphaSource, transform, 64, sampling);
     assert.deepEqual(pixels(alphaTarget), [0x07282828, 0x07646464, 0x07bebebe]);
   }
 });
 
 test('affine distributed jobs retain the real shared pool and subtract completed Q16 rows', () => {
-  const processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(3), 3);
-  const compositor = new AokanaBitmapCompositor();
+  const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(3), 3);
+  const compositor = new BurikoBitmapCompositor();
   compositor.processing = processing;
   const source = bitmap(
     70,
@@ -143,12 +143,12 @@ test('affine distributed jobs retain the real shared pool and subtract completed
   const destination = bitmap(65, 101, Array(65 * 101).fill(0));
   const transform = {...identity, x: -32768, y: -32768};
   const plan = {count: 3, increment: Math.floor((101 * 65536) / 3)};
-  assert.deepEqual(aokanaBitmapOperationPoints([transform.x, transform.y], plan), [
+  assert.deepEqual(burikoBitmapOperationPoints([transform.x, transform.y], plan), [
     [-32768, -32768],
     [-32768, -32768 - 33 * 65536],
     [-32768, -32768 - 67 * 65536],
   ]);
-  transformAokanaBitmap(compositor, destination, source, transform, 0, 0, true);
+  transformBurikoBitmap(compositor, destination, source, transform, 0, 0, true);
   assert.equal(compositor.processing, processing);
   assert.deepEqual(
     pixels(destination),

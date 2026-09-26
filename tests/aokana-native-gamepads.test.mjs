@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBrowserGamepads} from '../dist/engines/buriko/games/aokana/native/browser-gamepads.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeGamepads} from '../dist/engines/buriko/games/aokana/native/gamepads.js';
-import {createGroup81Gamepads} from '../dist/engines/buriko/games/aokana/native/group-81-gamepads.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBrowserGamepads} from '../dist/engines/buriko/native/browser-gamepads.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeGamepads} from '../dist/engines/buriko/native/gamepads.js';
+import {createGroup81Gamepads} from '../dist/engines/buriko/native/group-81-gamepads.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
 
 const capabilities = Object.freeze({
   size: 44,
@@ -56,13 +56,13 @@ function profile(index, id, guid, buttonMap = undefined) {
 
 function fixture(pads, profiles) {
   const provider = {getGamepads: () => pads},
-    host = new AokanaBrowserGamepads(provider, profiles),
-    input = new AokanaNativeInput(
-      new AokanaNativeDisplayState(1920, 1080),
-      new AokanaNativeClock(() => 0),
+    host = new BurikoBrowserGamepads(provider, profiles),
+    input = new BurikoNativeInput(
+      new BurikoNativeDisplayState(1920, 1080),
+      new BurikoNativeClock(() => 0),
     ),
-    notifications = new AokanaNativeNotifications(),
-    gamepads = new AokanaNativeGamepads(host, input, notifications);
+    notifications = new BurikoNativeNotifications(),
+    gamepads = new BurikoNativeGamepads(host, input, notifications);
   return {gamepads, input, notifications};
 }
 
@@ -172,8 +172,8 @@ test('81 1B/1D preserve native pop order, success values and output write order'
   assert.equal(gamepads.initialize(), 1);
   const definitions = createGroup81Gamepads(gamepads),
     bytes = new Uint8Array(256).fill(0xa5),
-    memory = new AokanaBpMemory(bytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(bytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
       moduleCapacity: 32,

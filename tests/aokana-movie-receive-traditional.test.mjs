@@ -1,25 +1,25 @@
-import {AokanaMovieReceivePin} from '../dist/engines/buriko/games/aokana/native/movie-receive.js';
-import {AokanaMovieFilterEvents} from '../dist/engines/buriko/games/aokana/native/movie-filter-events.js';
-import {AokanaMovieReferenceClock} from '../dist/engines/buriko/games/aokana/native/movie-render-events.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
+import {BurikoMovieReceivePin} from '../dist/engines/buriko/native/movie-receive.js';
+import {BurikoMovieFilterEvents} from '../dist/engines/buriko/native/movie-filter-events.js';
+import {BurikoMovieReferenceClock} from '../dist/engines/buriko/native/movie-render-events.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaDisplayDevice} from '../dist/engines/buriko/games/aokana/native/display-device.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {BurikoDisplayDevice} from '../dist/engines/buriko/native/display-device.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
 
 import {
-  AokanaMovieImage,
-  AokanaMovieImageConfiguration,
-} from '../dist/engines/buriko/games/aokana/native/movie-image.js';
-import {AokanaTraditionalMovieRenderer} from '../dist/engines/buriko/games/aokana/native/movie-traditional-renderer.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
+  BurikoMovieImage,
+  BurikoMovieImageConfiguration,
+} from '../dist/engines/buriko/native/movie-image.js';
+import {BurikoTraditionalMovieRenderer} from '../dist/engines/buriko/native/movie-traditional-renderer.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 
 test('actual receive pin retains its sample and render lock through queued display presentation', async () => {
   const commits = [],
@@ -47,29 +47,29 @@ test('actual receive pin retains its sample and render lock through queued displ
     removeEventListener() {},
     getContext: () => context,
   };
-  const display = new AokanaNativeDisplayState(4, 4);
+  const display = new BurikoNativeDisplayState(4, 4);
   assert.equal(display.setSizePreset(display.selectedSizePreset, 4, 4), 0);
   display.requestedWidth = display.requestedHeight = 4;
   display.verticalSynchronization = 1;
-  const compositor = new AokanaBitmapCompositor();
-  const environment = new AokanaDisplayObjectEnvironment(
+  const compositor = new BurikoBitmapCompositor();
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 3}),
+    new BurikoDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 3}),
   );
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     environment,
-    new AokanaSurfaces(null, compositor, new AokanaDistributedAllocator(1)),
+    new BurikoSurfaces(null, compositor, new BurikoDistributedAllocator(1)),
     display,
   );
   manager.configureDescriptor(4, 4, 1, 8);
-  const device = new AokanaDisplayDevice(canvas, manager, new AokanaNativeClock(() => 100), {
+  const device = new BurikoDisplayDevice(canvas, manager, new BurikoNativeClock(() => 100), {
     pixelShaderVersion: 0xffff0300,
     refreshRate: 60,
   });
   assert.equal(device.create(0), 0);
-  const renderer = new AokanaTraditionalMovieRenderer(
+  const renderer = new BurikoTraditionalMovieRenderer(
     device,
-    new AokanaMovieImage(new AokanaMovieImageConfiguration()),
+    new BurikoMovieImage(new BurikoMovieImageConfiguration()),
   );
   const bytes = new Uint8Array(32),
     sampleView = new DataView(bytes.buffer);
@@ -88,17 +88,17 @@ test('actual receive pin retains its sample and render lock through queued displ
       formatType: '05589f80-c356-11ce-bf01-00aa0055595a',
       format,
     };
-    const events = new AokanaMovieFilterEvents(new AokanaWindowMessages(null));
-    const pin = new AokanaMovieReceivePin(
+    const events = new BurikoMovieFilterEvents(new BurikoWindowMessages(null));
+    const pin = new BurikoMovieReceivePin(
       renderer,
       events,
       null,
-      new AokanaMovieReferenceClock(() => 0),
+      new BurikoMovieReferenceClock(() => 0),
     );
     assert.equal(pin.connect(type), 0);
     assert.equal(await pin.run(0n), 0);
     const sample = {
-      storage: new AokanaBitmapStorage(bytes.slice(), true),
+      storage: new BurikoBitmapStorage(bytes.slice(), true),
       offset: 0,
       time: null,
       discontinuity: true,

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaSpeakerContext} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaAudioChannels} from '../dist/engines/buriko/games/aokana/native/audio/channel-registry.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
 function wave(frames) {
   const bytes = new Uint8Array(64 + frames * 2),
     view = new DataView(bytes.buffer);
@@ -27,13 +27,13 @@ test('actual16/128 registry shares engine2 admission and drives PCM master, mute
   const main = {},
     worker = {},
     actors = {currentActor: main};
-  const locks = new AokanaNativeLocks(actors);
+  const locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
   let milliseconds = 0;
-  const ticks = new AokanaSystemTicks({now: () => milliseconds}),
-    backend = new AokanaMemorySpeakerBackend(1000);
-  const channels = new AokanaAudioChannels(
-    new AokanaSpeakerContext(backend),
+  const ticks = new BurikoSystemTicks({now: () => milliseconds}),
+    backend = new BurikoMemorySpeakerBackend(1000);
+  const channels = new BurikoAudioChannels(
+    new BurikoSpeakerContext(backend),
     locks,
     actors,
     ticks,

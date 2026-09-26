@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  aokanaSystemTimeToFileTime,
-  aokanaFileTimeToSystemTime,
-  writeAokanaSystemTime,
-} from '../dist/engines/buriko/games/aokana/native/file-time.js';
+  burikoSystemTimeToFileTime,
+  burikoFileTimeToSystemTime,
+  writeBurikoSystemTime,
+} from '../dist/engines/buriko/native/file-time.js';
 function systemTime(fields) {
   const bytes = new Uint8Array(16),
     view = new DataView(bytes.buffer);
@@ -12,10 +12,10 @@ function systemTime(fields) {
   return {bytes, offset: 0};
 }
 test('UTC file-time conversion retains known epochs, Gregorian leap days and independent weekday calculation', () => {
-  assert.equal(aokanaSystemTimeToFileTime(systemTime([1601, 1, 6, 1, 0, 0, 0, 0])), 0n);
-  assert.deepEqual([...aokanaFileTimeToSystemTime(0n)], [1601, 1, 1, 1, 0, 0, 0, 0]);
+  assert.equal(burikoSystemTimeToFileTime(systemTime([1601, 1, 6, 1, 0, 0, 0, 0])), 0n);
+  assert.deepEqual([...burikoFileTimeToSystemTime(0n)], [1601, 1, 1, 1, 0, 0, 0, 0]);
   assert.equal(
-    aokanaSystemTimeToFileTime(systemTime([1970, 1, 0, 1, 0, 0, 0, 0])),
+    burikoSystemTimeToFileTime(systemTime([1970, 1, 0, 1, 0, 0, 0, 0])),
     116444736000000000n,
   );
   for (const fields of [
@@ -23,7 +23,7 @@ test('UTC file-time conversion retains known epochs, Gregorian leap days and ind
     [2026, 9, 0, 13, 3, 4, 5, 123],
     [2400, 2, 0, 29, 23, 59, 59, 999],
   ]) {
-    const value = aokanaSystemTimeToFileTime(systemTime(fields)),
+    const value = burikoSystemTimeToFileTime(systemTime(fields)),
       expected =
         BigInt(
           Date.UTC(fields[0], fields[1] - 1, fields[3], fields[4], fields[5], fields[6], fields[7]),
@@ -32,7 +32,7 @@ test('UTC file-time conversion retains known epochs, Gregorian leap days and ind
         116444736000000000n;
     assert.equal(value, expected);
     const output = {bytes: new Uint8Array(20), offset: 2};
-    assert.equal(writeAokanaSystemTime(output, value + 9999n), true);
+    assert.equal(writeBurikoSystemTime(output, value + 9999n), true);
     const actual = Array.from({length: 8}, (_, index) =>
       new DataView(output.bytes.buffer).getUint16(index * 2 + 2, true),
     );

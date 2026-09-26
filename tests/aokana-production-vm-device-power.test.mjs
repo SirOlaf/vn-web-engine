@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaDevicePowerProfile} from '../dist/engines/buriko/games/aokana/native/device-power.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoDevicePowerProfile} from '../dist/engines/buriko/native/device-power.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted 81:3E reads selected in-memory device power through one system profile', async () => {
   const calls = [];
-  const profile = new AokanaDevicePowerProfile([['C:\\device', 0xf0000001]]);
+  const profile = new BurikoDevicePowerProfile([['C:\\device', 0xf0000001]]);
   const devicePowerHost = {
     openDevice(path, desiredAccess, shareMode, creationDisposition, flagsAndAttributes) {
       calls.push(['open', path, desiredAccess, shareMode, creationDisposition, flagsAndAttributes]);

@@ -1,33 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaFolderSelectionService} from '../dist/engines/buriko/games/aokana/native/folder-selection.js';
-import {createGroup81FolderSelection} from '../dist/engines/buriko/games/aokana/native/group-81-folder-selection.js';
-import {AokanaNativeLanguage} from '../dist/engines/buriko/games/aokana/native/group-81-language.js';
-import {AokanaImportedTextMaps} from '../dist/engines/buriko/games/aokana/native/imported-text-maps.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaLocalizedMessages} from '../dist/engines/buriko/games/aokana/native/localized-messages.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoFolderSelectionService} from '../dist/engines/buriko/native/folder-selection.js';
+import {createGroup81FolderSelection} from '../dist/engines/buriko/native/group-81-folder-selection.js';
+import {BurikoNativeLanguage} from '../dist/engines/buriko/native/group-81-language.js';
+import {BurikoImportedTextMaps} from '../dist/engines/buriko/native/imported-text-maps.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoLocalizedMessages} from '../dist/engines/buriko/native/localized-messages.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const encode = (value) => new TextEncoder().encode(value);
 const OUTPUT = 0x100;
 
 function setup(localizedSource = null) {
-  const text = new AokanaNativeText(),
-    language = new AokanaNativeLanguage(() => 0x409),
-    localized = new AokanaLocalizedMessages(text, language, new AokanaImportedTextMaps(text));
+  const text = new BurikoNativeText(),
+    language = new BurikoNativeLanguage(() => 0x409),
+    localized = new BurikoLocalizedMessages(text, language, new BurikoImportedTextMaps(text));
   if (localizedSource !== null) assert.equal(localized.load(localizedSource), 1);
   const memoryBytes = new Uint8Array(4096).fill(0xa5),
-    memory = new AokanaBpMemory(memoryBytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(memoryBytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    diagnostics = new AokanaBpDiagnostics(() => {}),
+    diagnostics = new BurikoBpDiagnostics(() => {}),
     mainWindowIdentity = {},
     requests = [];
   let nextAddress = 0x500,
@@ -38,7 +38,7 @@ function setup(localizedSource = null) {
         return selected;
       },
     },
-    service = new AokanaFolderSelectionService(localized, mainWindowIdentity, host),
+    service = new BurikoFolderSelectionService(localized, mainWindowIdentity, host),
     [definition] = createGroup81FolderSelection(service),
     context = {thread, memory, diagnostics};
 
@@ -96,7 +96,7 @@ test('81 3A sends the exact configured folder request and always writes accepted
   assert.equal(state.memoryBytes[OUTPUT + expected.length], 0xa5);
   assert.equal(state.definition.primary, 0x81);
   assert.equal(state.definition.secondary, 0x3a);
-  assert.equal(state.definition.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][0x3a]);
+  assert.equal(state.definition.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][0x3a]);
 });
 
 test('81 3A resolves the localized default prompt and preserves output on cancellation', async () => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 function pcm() {
@@ -26,7 +26,7 @@ test('mounted A0 stream loads use the shared inactive WaveBox music owners', asy
   const {resource} = graph;
   const backend = resource.channels.context.backend;
   try {
-    assert.ok(backend instanceof AokanaMemorySpeakerBackend);
+    assert.ok(backend instanceof BurikoMemorySpeakerBackend);
     assert.equal(resource.music.resources, resource.resources);
     assert.equal(resource.music.streams, resource.streams);
     assert.equal(resource.streams.channels, resource.channels);

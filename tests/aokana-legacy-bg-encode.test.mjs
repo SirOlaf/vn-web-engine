@@ -1,30 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {decodeCompressedBgLegacy} from '../dist/formats/buriko/compressed-bg.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {
-  bitmapRead32,
-  bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaRawSurfaceExport} from '../dist/engines/buriko/games/aokana/native/raw-surface-export.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaLegacyBgEncoder} from '../dist/engines/buriko/games/aokana/native/compressed-bg-legacy-encode.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoRawSurfaceExport} from '../dist/engines/buriko/native/raw-surface-export.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoLegacyBgEncoder} from '../dist/engines/buriko/native/compressed-bg-legacy-encode.js';
 
 test('legacy BG encoder emits independently specified entropy for exported RGB and imports its decoded pixels', () => {
-  const surfaces = new AokanaSurfaces(
-      new AokanaNativeFonts(new AokanaNativeText()),
-      new AokanaBitmapCompositor(),
-      new AokanaDistributedAllocator(2),
+  const surfaces = new BurikoSurfaces(
+      new BurikoNativeFonts(new BurikoNativeText()),
+      new BurikoBitmapCompositor(),
+      new BurikoDistributedAllocator(2),
     ),
     packed = new Uint8Array(16 + 192),
     header = new DataView(packed.buffer),
     count = new Uint8Array(4),
     output = new Uint8Array(816),
-    ticks = new AokanaSystemTicks({now: () => 1234});
+    ticks = new BurikoSystemTicks({now: () => 1234});
   assert.equal(surfaces.allocate(0, 64, 1, 1), 1);
   const source = surfaces.snapshot(0),
     expected = [];
@@ -38,7 +35,7 @@ test('legacy BG encoder emits independently specified entropy for exported RGB a
   header.setUint16(4, 24, true);
   header.setUint16(8, 1, true);
   assert.equal(
-    new AokanaRawSurfaceExport(surfaces).export(
+    new BurikoRawSurfaceExport(surfaces).export(
       {bytes: packed, offset: 16},
       {bytes: count, offset: 0},
       192,
@@ -48,7 +45,7 @@ test('legacy BG encoder emits independently specified entropy for exported RGB a
   );
   assert.equal(new DataView(count.buffer).getUint32(0, true), 192);
   assert.equal(
-    new AokanaLegacyBgEncoder(ticks).encode(
+    new BurikoLegacyBgEncoder(ticks).encode(
       {bytes: output, offset: 0},
       {bytes: count, offset: 0},
       {bytes: packed, offset: 0},

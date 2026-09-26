@@ -12,9 +12,9 @@ import {
 test('folder handles and input selection preserve File identity, nested paths and bounded reads', async () => {
   const file = new File([Uint8Array.of(1, 2, 3, 4)], 'archive.bin');
   Object.defineProperty(file, 'webkitRelativePath', {value: 'Game/Data/archive.bin'});
-  const exe = new File(['executable'], 'Aokana.exe');
-  Object.defineProperty(exe, 'webkitRelativePath', {value: 'Game/Aokana.exe'});
-  const metadata = ['._Aokana.exe', '.DS_Store'].map((name) => {
+  const exe = new File(['executable'], 'Buriko.exe');
+  Object.defineProperty(exe, 'webkitRelativePath', {value: 'Game/Buriko.exe'});
+  const metadata = ['._Buriko.exe', '.DS_Store'].map((name) => {
     const file = new File(['metadata'], name);
     Object.defineProperty(file, 'webkitRelativePath', {value: `Game/${name}`});
     return file;
@@ -39,6 +39,7 @@ test('folder handles and input selection preserve File identity, nested paths an
       name: file.name,
       getFile: async () => assert.fail('Metadata read'),
     })),
+    directory('Empty', []),
     {kind: 'file', name: exe.name, getFile: async () => exe},
   ]);
   const handles = await pickInstallationDirectory({
@@ -50,7 +51,7 @@ test('folder handles and input selection preserve File identity, nested paths an
   for (const selection of [input, handles]) {
     assert.deepEqual(
       selection.files.map(({path}) => path),
-      ['/Data/archive.bin', '/Aokana.exe'],
+      ['/Data/archive.bin', '/Buriko.exe'],
     );
     assert.equal(selection.files[0].file, file);
     assert.equal(selection.files[0].path, '/Data/archive.bin');
@@ -68,6 +69,8 @@ test('folder handles and input selection preserve File identity, nested paths an
       unsubscribe();
     }
   }
+  assert.deepEqual(input.directories, ['/Data']);
+  assert.deepEqual(handles.directories, ['/Data', '/Empty']);
   assert.equal(selectedInstallationFiles([file], false).files[0].path, '/archive.bin');
   assert.deepEqual(
     selectedInstallationFiles([...metadata, exe], false).files.map(({file}) => file),
@@ -89,14 +92,14 @@ test('folder handles and input selection preserve File identity, nested paths an
 test('mobile single-file additions retain the folder and replace names using the engine casing policy', () => {
   const selected = new InstallationSelectionFiles((path) => path.toLowerCase());
   const archive = new File(['archive'], 'system.arc'),
-    exe = new File(['exe'], 'Aokana.exe');
+    exe = new File(['exe'], 'Buriko.exe');
   selected.add({directory: true, files: [{path: '/system.arc', file: archive}]});
   const completed = selected.add(selectedInstallationFiles([exe], false));
   assert.deepEqual(
     completed.files.map(({path}) => path),
-    ['/system.arc', '/Aokana.exe'],
+    ['/system.arc', '/Buriko.exe'],
   );
-  const replacement = new File(['new'], 'aokana.EXE');
+  const replacement = new File(['new'], 'bUrIkO.EXE');
   const replaced = selected.add(selectedInstallationFiles([replacement], false));
   assert.equal(replaced.files.length, 2);
   assert.equal(replaced.files[1].file, replacement);
@@ -105,6 +108,21 @@ test('mobile single-file additions retain the folder and replace names using the
   selected.clear();
   assert.deepEqual(
     selected.add(selectedInstallationFiles([exe], false)).files.map(({path}) => path),
-    ['/Aokana.exe'],
+    ['/Buriko.exe'],
   );
+});
+
+test('directory selection merges, canonicalizes, and replaces preserved directories', () => {
+  const selected = new InstallationSelectionFiles(
+    (path) => path.toUpperCase(),
+    (path) => '/mounted' + path,
+  );
+  const first = selected.add({directory: true, files: [], directories: ['/UserData', '/empty']});
+  assert.deepEqual(first.directories, ['/mounted/UserData', '/mounted/empty']);
+  const merged = selected.add({directory: false, files: [], directories: ['/userdata', '/other']});
+  assert.deepEqual(merged.directories, ['/mounted/userdata', '/mounted/empty', '/mounted/other']);
+  const replaced = selected.add({directory: true, files: [], directories: ['/fresh']});
+  assert.deepEqual(replaced.directories, ['/mounted/fresh']);
+  selected.clear();
+  assert.deepEqual(selected.add({directory: false, files: []}).directories, []);
 });

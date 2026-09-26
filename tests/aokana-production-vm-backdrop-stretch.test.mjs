@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaStretchBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop-stretch.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoStretchBackdrop} from '../dist/engines/buriko/native/display-backdrop-stretch.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM stretch backdrop samples graph source windows at bound blend values', async () => {
@@ -59,7 +56,7 @@ test('mounted VM stretch backdrop samples graph source windows at bound blend va
     graph.damage.clear();
     await call(0x48, [0, 0, 0, 2, 2]);
     const selected = graph.manager.backdrop;
-    assert.ok(selected instanceof AokanaStretchBackdrop);
+    assert.ok(selected instanceof BurikoStretchBackdrop);
     assert.deepEqual(
       [selected.activation, selected.contentEnabled, graph.manager.backdropRenderType],
       [1, 1, 9],
@@ -81,9 +78,9 @@ test('mounted VM stretch backdrop samples graph source windows at bound blend va
       [256, colors[2]],
     ]) {
       await call(0x32, [0, blend]);
-      const output = allocateAokanaBitmap(2, 2, 1);
+      const output = allocateBurikoBitmap(2, 2, 1);
       try {
-        selected.draw(output, aokanaBitmapRectangle(output), 0);
+        selected.draw(output, burikoBitmapRectangle(output), 0);
         assert.deepEqual(
           Array.from({length: 4}, (_, index) =>
             bitmapRead32(

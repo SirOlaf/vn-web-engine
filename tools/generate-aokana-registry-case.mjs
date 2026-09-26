@@ -25,11 +25,11 @@ const source =
  * Copyright 1991-2026 Unicode, Inc. Unicode License V3.
  * See third_party/unicode-15.1-registry/README.md and LICENSE.txt.
  */
-export const AOKANA_REGISTRY_UPPERCASE_PAIRS =\n` +
+export const BURIKO_REGISTRY_UPPERCASE_PAIRS =\n` +
   (pairs.match(/.{1,104}/g) ?? []).map((line) => `  '${line}'`).join(' +\n') +
   ';\n';
 await writeFile(
-  new URL('../src/engines/buriko/games/aokana/native/registry-case-data.ts', import.meta.url),
+  new URL('../src/engines/buriko/native/registry-case-data.ts', import.meta.url),
   source,
 );
 console.log(`Generated ${pairs.length / 8} BMP uppercase mappings`);

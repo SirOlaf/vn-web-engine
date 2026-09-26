@@ -15,6 +15,10 @@ export interface TextShadow {
 }
 export interface TextGlyph extends Rect {
   id: number;
+  /** Presentation flow identity keeps neighboring controls outside body text. */
+  flow?: string;
+  /** Font size can differ from the transformed/cropped raster cell's height. */
+  size?: number;
   text: string | undefined;
   line: number;
   color: number;
@@ -25,6 +29,8 @@ export interface TextGlyph extends Rect {
 }
 export interface GlyphSlot {
   interactive?: boolean;
+  /** Use explicit native row boundaries; browser width must not invent wrapping. */
+  explicitLines?: boolean;
   vertical?: boolean;
   bold?: boolean;
   id: string;
@@ -32,6 +38,7 @@ export interface GlyphSlot {
 }
 export interface SlotText {
   text: string;
+  visualText: string;
   bounds: Rect;
   clip: Rect;
   size: number;
@@ -56,7 +63,7 @@ export function slotText(slot: GlyphSlot): SlotText | undefined {
     top = Math.min(top, g.y);
     right = Math.max(right, g.x + g.width);
     bottom = Math.max(bottom, g.y + g.height);
-    size = Math.max(size, g.height);
+    size = Math.max(size, g.size ?? g.height);
     lastLine = Math.max(lastLine, g.line);
     firstLine = Math.min(firstLine, g.line);
   }
@@ -93,6 +100,7 @@ export function slotText(slot: GlyphSlot): SlotText | undefined {
   }
   return {
     text: lines.join(''),
+    visualText: lines.slice(0, visible.at(-1)!.line - firstLine + 1).join('\n'),
     bounds: {x: left, y: top, width: right - left, height: bottom - top},
     clip,
     size,

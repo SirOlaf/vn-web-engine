@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {waveAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-wave.js';
-import {aokanaBitmapOperationScalars} from '../dist/engines/buriko/games/aokana/native/bitmap-operation-jobs.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {waveBurikoBitmap} from '../dist/engines/buriko/native/bitmap-wave.js';
+import {burikoBitmapOperationScalars} from '../dist/engines/buriko/native/bitmap-operation-jobs.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 
 const gray = (value) => Math.imul(value, 0x1010101) >>> 0;
 function bitmap(width, height, values, format = 2) {
@@ -18,7 +18,7 @@ function bitmap(width, height, values, format = 2) {
     for (let x = 0; x < width; x++)
       view.setUint32(y * stride + x * 4, values[y * width + x] ?? 0, true);
   return {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride,
     width,
@@ -46,7 +46,7 @@ test('wave centers differing widths and advances Q4 row interpolation without ch
   for (const format of [1, 2]) {
     const source = bitmap(5, 3, [...sourceRow, ...sourceRow, ...sourceRow], format);
     const output = bitmap(7, 4, Array(28).fill(gray(18)), format);
-    waveAokanaBitmap(new AokanaBitmapCompositor(), output, source, 4, 0, 16384);
+    waveBurikoBitmap(new BurikoBitmapCompositor(), output, source, 4, 0, 16384);
     assert.deepEqual(pixels(output), expected);
     for (let row = 0; row < 4; row++)
       assert.deepEqual(
@@ -59,20 +59,20 @@ test('wave centers differing widths and advances Q4 row interpolation without ch
 test('wave negative phase retains signed displacement in pair and odd-tail pixels', () => {
   const output = bitmap(5, 1, Array(5).fill(0));
   const source = bitmap(5, 1, [10, 30, 50, 70, 90].map(gray));
-  waveAokanaBitmap(new AokanaBitmapCompositor(), output, source, 4, -1, 16384);
+  waveBurikoBitmap(new BurikoBitmapCompositor(), output, source, 4, -1, 16384);
   assert.deepEqual(pixels(output), [[3, 17, 37, 57, 77].map(gray)]);
   const evenOutput = bitmap(8, 1, Array(8).fill(0));
   const evenSource = bitmap(8, 1, [10, 20, 30, 40, 50, 60, 70, 80].map(gray));
-  waveAokanaBitmap(new AokanaBitmapCompositor(), evenOutput, evenSource, 4, -1, 32768);
+  waveBurikoBitmap(new BurikoBitmapCompositor(), evenOutput, evenSource, 4, -1, 32768);
   assert.deepEqual(pixels(evenOutput), [[0, 0, 10, 20, 30, 40, 50, 60].map(gray)]);
 });
 
 test('wave strips preserve scalar row offsets, signed phase wrapping, and the actual shared pool', () => {
   const plan = {count: 3, increment: Math.floor((101 * 65536) / 3)};
-  assert.deepEqual(aokanaBitmapOperationScalars(0, plan), [0, 33, 67]);
-  assert.deepEqual(aokanaBitmapOperationScalars(-8, plan), [-8, 25, 59]);
-  const processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(3), 3);
-  const compositor = new AokanaBitmapCompositor();
+  assert.deepEqual(burikoBitmapOperationScalars(0, plan), [0, 33, 67]);
+  assert.deepEqual(burikoBitmapOperationScalars(-8, plan), [-8, 25, 59]);
+  const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(3), 3);
+  const compositor = new BurikoBitmapCompositor();
   compositor.processing = processing;
   const source = bitmap(
     65,
@@ -81,8 +81,8 @@ test('wave strips preserve scalar row offsets, signed phase wrapping, and the ac
   );
   const serial = bitmap(69, 101, []),
     parallel = bitmap(69, 101, []);
-  waveAokanaBitmap(compositor, serial, source, 79, 0x7fffffd0, 1024);
-  waveAokanaBitmap(compositor, parallel, source, 79, 0x7fffffd0, 1024, true);
+  waveBurikoBitmap(compositor, serial, source, 79, 0x7fffffd0, 1024);
+  waveBurikoBitmap(compositor, parallel, source, 79, 0x7fffffd0, 1024, true);
   assert.deepEqual(parallel.storage.bytes, serial.storage.bytes);
   assert.equal(compositor.processing, processing);
 });

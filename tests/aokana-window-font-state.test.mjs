@@ -1,23 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 function setup() {
   const created = [];
   // Only host font selection metadata is needed; no glyph or browser canvas is requested.
-  const fonts = new AokanaNativeFonts(new AokanaNativeText(), {
+  const fonts = new BurikoNativeFonts(new BurikoNativeText(), {
     async queryCharset() {
       return 1;
     },
@@ -31,18 +31,18 @@ function setup() {
       };
     },
   });
-  const compositor = new AokanaBitmapCompositor();
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
-  const manager = new AokanaDisplayManager(
-    new AokanaDisplayObjectEnvironment(
+  const compositor = new BurikoBitmapCompositor();
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
+  const manager = new BurikoDisplayManager(
+    new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(32, {left: 0, top: 0, right: 799, bottom: 599}),
+      new BurikoDisplayDamage(32, {left: 0, top: 0, right: 799, bottom: 599}),
     ),
     surfaces,
-    new AokanaNativeDisplayState(800, 600),
+    new BurikoNativeDisplayState(800, 600),
   );
-  const state = new AokanaWindowDisplayState(manager);
-  const window = new AokanaWindowDisplayObject(state, 0);
+  const state = new BurikoWindowDisplayState(manager);
+  const window = new BurikoWindowDisplayObject(state, 0);
   assert.equal(window.configureInitial(64, 96), 1);
   window.setTextRectangle({left: 4, top: 6, right: 63, bottom: 95});
   return {fonts, created, state, window};
@@ -86,7 +86,7 @@ test('line spacing and line movement preserve native rounding and share the glob
   assert.equal(window.atTextLineStart(), 0);
   window.advanceTextCursor(3);
   assert.equal(window.atTextLineStart(), 1);
-  const second = new AokanaWindowDisplayObject(state, 1);
+  const second = new BurikoWindowDisplayObject(state, 1);
   second.configureInitial(64, 96);
   second.setWritingDirection(1);
   second.setTextCursor(63, 3);

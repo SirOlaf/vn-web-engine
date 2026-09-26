@@ -3,21 +3,21 @@ import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
 
-import {AokanaMovieSources} from '../dist/engines/buriko/games/aokana/native/movie-sources.js';
-import {AokanaMovieFileStream} from '../dist/engines/buriko/games/aokana/native/movie-file-stream.js';
+import {BurikoMovieSources} from '../dist/engines/buriko/native/movie-sources.js';
+import {BurikoMovieFileStream} from '../dist/engines/buriko/native/movie-file-stream.js';
 
 function arc(entries) {
   const base = 16 + entries.length * 128,
@@ -58,21 +58,21 @@ test('movie sources retain loose search precedence and resolve real complex-arch
       ]),
     },
   ]);
-  const text = new AokanaNativeText(),
+  const text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),
     pointer = (s) => ({bytes: encode(s), offset: 0}),
-    media = new AokanaProgramMedia();
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       fs,
       text,
       media,
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
     ),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
-    processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
+    processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -89,7 +89,7 @@ test('movie sources retain loose search precedence and resolve real complex-arch
       errors,
       processing,
     ),
-    sources = new AokanaMovieSources(resources);
+    sources = new BurikoMovieSources(resources);
   assert.equal(
     await resources.archives.registerComplex(pointer('combined'), [
       pointer('first.arc'),
@@ -107,7 +107,7 @@ test('movie sources retain loose search precedence and resolve real complex-arch
   const location = await sources.locate(pointer('combined'), pointer('movie.bin'));
   assert.equal(files.path(location.path), 'c:\\game\\second.arc');
   assert.deepEqual([location.offset, location.length], [274, 4]);
-  const stream = new AokanaMovieFileStream(files, () => 0);
+  const stream = new BurikoMovieFileStream(files, () => 0);
   assert.equal(
     await stream.initialize(files.path(location.path), location.length, location.offset),
     0,

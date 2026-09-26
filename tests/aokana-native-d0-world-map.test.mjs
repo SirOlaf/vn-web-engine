@@ -1,17 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  AokanaNativeWorldMaps,
-  worldMapPosition,
-} from '../dist/engines/buriko/games/aokana/native/world-map.js';
-import {createGroupD0WorldMap} from '../dist/engines/buriko/games/aokana/native/group-d0-world-map.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+import {BurikoNativeWorldMaps, worldMapPosition} from '../dist/engines/buriko/native/world-map.js';
+import {createGroupD0WorldMap} from '../dist/engines/buriko/native/group-d0-world-map.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
   const bytes = new Uint8Array(1024),
     view = new DataView(bytes.buffer),
-    maps = new AokanaNativeWorldMaps();
+    maps = new BurikoNativeWorldMaps();
   const pointer = (offset) => ({bytes, offset});
   maps.create(pointer(0), 8, 4);
   const id = view.getUint32(0, true);
@@ -126,13 +123,13 @@ test('world-map positions use signed SIMD conversion and output aliasing writes 
 
 test('all world-map VM leaves preserve argument order, status mappings and early position reads', () => {
   const {bytes, view, maps} = fixture();
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const memory = new AokanaBpMemory(bytes),
+  const memory = new BurikoBpMemory(bytes),
     definitions = createGroupD0WorldMap(maps),
     h = {thread, memory};
   const call = (secondary, ...args) => {

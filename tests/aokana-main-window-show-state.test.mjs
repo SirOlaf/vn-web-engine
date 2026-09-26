@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMainWindowShowState} from '../dist/engines/buriko/games/aokana/native/main-window-show-state.js';
+import {BurikoMainWindowShowState} from '../dist/engines/buriko/native/main-window-show-state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 function memoryContext() {
@@ -54,7 +54,7 @@ test('show-state order applies pending position, paints, publishes raw state and
   try {
     graph.host.surface.width = 4;
     graph.host.surface.height = 2;
-    const show = new AokanaMainWindowShowState(
+    const show = new BurikoMainWindowShowState(
       graph.host,
       graph.input,
       graph.messages,

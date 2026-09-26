@@ -2,46 +2,46 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaDataCodecWorkers} from '../dist/engines/buriko/games/aokana/native/data-codec-workers.js';
-import {createGroup80StructCodec} from '../dist/engines/buriko/games/aokana/native/group-80-struct-codec.js';
-import {AokanaStructCodecScratch} from '../dist/engines/buriko/games/aokana/native/struct-codec-scratch.js';
-import {encodeAokanaDcfs} from '../dist/engines/buriko/games/aokana/native/dcfs.js';
-import {decodeAokanaSdcInto} from '../dist/engines/buriko/games/aokana/native/sdc.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoDataCodecWorkers} from '../dist/engines/buriko/native/data-codec-workers.js';
+import {createGroup80StructCodec} from '../dist/engines/buriko/native/group-80-struct-codec.js';
+import {BurikoStructCodecScratch} from '../dist/engines/buriko/native/struct-codec-scratch.js';
+import {encodeBurikoDcfs} from '../dist/engines/buriko/native/dcfs.js';
+import {decodeBurikoSdcInto} from '../dist/engines/buriko/native/sdc.js';
 
 test('80:C4/C5 encode and restore an embedded record table through the shared worker and scratch owners', async () => {
   const fs = new StoredFileSystem(new MemoryStore()),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),
-    files = new AokanaProgramFiles(
+    files = new BurikoProgramFiles(
       fs,
       text,
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
     ),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, encode('C:\\'), encode('C:\\')),
-    processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, encode('C:\\'), encode('C:\\')),
+    processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\',
@@ -58,21 +58,21 @@ test('80:C4/C5 encode and restore an embedded record table through the shared wo
       errors,
       processing,
     ),
-    loading = new AokanaResourceLoadingState(resources),
-    memory = new AokanaBpMemory(new Uint8Array(0x1000)),
-    root = new AokanaBpThread({id: 0, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 256, frameCapacity: 0}),
-    scheduler = new AokanaBpScheduler(root, () => 1),
+    loading = new BurikoResourceLoadingState(resources),
+    memory = new BurikoBpMemory(new Uint8Array(0x1000)),
+    root = new BurikoBpThread({id: 0, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 256, frameCapacity: 0}),
+    scheduler = new BurikoBpScheduler(root, () => 1),
     node = scheduler.append(thread),
-    workers = new AokanaDataCodecWorkers(() => new Date(Date.UTC(2026, 8, 19, 12, 34, 56, 0))),
-    scratch = new AokanaStructCodecScratch(4096),
+    workers = new BurikoDataCodecWorkers(() => new Date(Date.UTC(2026, 8, 19, 12, 34, 56, 0))),
+    scratch = new BurikoStructCodecScratch(4096),
     slots = createGroup80StructCodec(
       workers,
       loading,
       scratch,
       scheduler,
-      new AokanaProcedureState(),
-      new AokanaNativeClock(() => 0),
+      new BurikoProcedureState(),
+      new BurikoNativeClock(() => 0),
     ),
     encodeSlot = slots.find((slot) => slot.secondary === 0xc4),
     decodeSlot = slots.find((slot) => slot.secondary === 0xc5),
@@ -89,7 +89,7 @@ test('80:C4/C5 encode and restore an embedded record table through the shared wo
   const direct = new Uint8Array(128),
     result = {value: 0};
   assert.equal(
-    encodeAokanaDcfs(
+    encodeBurikoDcfs(
       {bytes: direct, offset: 0},
       result,
       {bytes: thread.moduleMemory, offset: 16},
@@ -121,7 +121,7 @@ test('80:C4/C5 encode and restore an embedded record table through the shared wo
     assert.equal(thread.stackIndex, 0);
     const decoded = new Uint8Array(128);
     assert.equal(
-      decodeAokanaSdcInto({bytes: decoded, offset: 0}, {bytes: memory.globalMemory, offset: 0x100}),
+      decodeBurikoSdcInto({bytes: decoded, offset: 0}, {bytes: memory.globalMemory, offset: 0x100}),
       40,
     );
     assert.deepEqual(decoded.subarray(0, 40), expected);

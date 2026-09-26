@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaDisplayEffector} from '../dist/engines/buriko/games/aokana/native/display-effector.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoDisplayEffector} from '../dist/engines/buriko/native/display-effector.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM effector callbacks share the manager pool, ordered list, and linked registry', async () => {
@@ -30,8 +30,8 @@ test('mounted VM effector callbacks share the manager pool, ordered list, and li
     assert.equal(graph.manager.categoryCount(2), 2);
     const first = graph.manager.find('effector', firstHandle);
     const second = graph.manager.find('effector', secondHandle);
-    assert.ok(first instanceof AokanaDisplayEffector);
-    assert.ok(second instanceof AokanaDisplayEffector);
+    assert.ok(first instanceof BurikoDisplayEffector);
+    assert.ok(second instanceof BurikoDisplayEffector);
     assert.equal(first.surfaces, graph.surfaces);
     assert.equal(second.surfaces, graph.surfaces);
     assert.equal(first.registry, graph.manager.effectors);

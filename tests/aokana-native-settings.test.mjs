@@ -1,30 +1,30 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {AokanaModelessSettings} from '../dist/engines/buriko/games/aokana/native/modeless-settings.js';
-import {AokanaProductKeyDialog} from '../dist/engines/buriko/games/aokana/native/product-key-dialog.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaPropertyEditors} from '../dist/engines/buriko/games/aokana/native/property-editor.js';
-import {AokanaAnsiDialogs} from '../dist/engines/buriko/games/aokana/native/ansi-dialogs.js';
-import {AokanaAnsiUi} from '../dist/engines/buriko/games/aokana/native/ansi-ui.js';
-import {AokanaChildWindows} from '../dist/engines/buriko/games/aokana/native/child-windows.js';
-import {AokanaBitmapText} from '../dist/engines/buriko/games/aokana/native/font-bitmap.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
-import {createGroupB0Children} from '../dist/engines/buriko/games/aokana/native/group-b0-children.js';
-import {createGroupB0Properties} from '../dist/engines/buriko/games/aokana/native/group-b0-properties.js';
+import {BurikoModelessSettings} from '../dist/engines/buriko/native/modeless-settings.js';
+import {BurikoProductKeyDialog} from '../dist/engines/buriko/native/product-key-dialog.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoPropertyEditors} from '../dist/engines/buriko/native/property-editor.js';
+import {BurikoAnsiDialogs} from '../dist/engines/buriko/native/ansi-dialogs.js';
+import {BurikoAnsiUi} from '../dist/engines/buriko/native/ansi-ui.js';
+import {BurikoChildWindows} from '../dist/engines/buriko/native/child-windows.js';
+import {BurikoBitmapText} from '../dist/engines/buriko/native/font-bitmap.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
+import {createGroupB0Children} from '../dist/engines/buriko/native/group-b0-children.js';
+import {createGroupB0Properties} from '../dist/engines/buriko/native/group-b0-properties.js';
 import {
   createGroupB0FormDialogs,
   createGroupB0ModalDialogs,
   createGroupB0ModelessSettings,
-} from '../dist/engines/buriko/games/aokana/native/group-b0-dialogs.js';
-import {AokanaSelectionDialog} from '../dist/engines/buriko/games/aokana/native/selection-dialog.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+} from '../dist/engines/buriko/native/group-b0-dialogs.js';
+import {BurikoSelectionDialog} from '../dist/engines/buriko/native/selection-dialog.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 class Element {
   children = [];
@@ -141,14 +141,14 @@ function vmSlots(definitions) {
   const slots = new Map(definitions.map((slot) => [slot.secondary, slot]));
   assert.equal(slots.size, definitions.length);
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0xb0][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0xb0][slot.secondary]);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 128,
     frameCapacity: 128,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(2048));
+  const memory = new BurikoBpMemory(new Uint8Array(2048));
   const h = {thread, memory};
   return {
     thread,
@@ -174,7 +174,7 @@ function event(output) {
 
 test('native modeless queue keeps the first and newest events when its fixed tail link is overwritten', () => {
   const host = document();
-  const settings = new AokanaModelessSettings(host, host.parent, {transition() {}});
+  const settings = new BurikoModelessSettings(host, host.parent, {transition() {}});
   const {id, result} = settings.create(0, initial());
   assert.equal(result, 0);
   const slider = controls(host.parent, 'range')[0];
@@ -192,7 +192,7 @@ test('native modeless queue keeps the first and newest events when its fixed tai
 
 test('appending after a partial native queue drain exposes the freed-tail write', () => {
   const host = document();
-  const settings = new AokanaModelessSettings(host, host.parent, {transition() {}});
+  const settings = new BurikoModelessSettings(host, host.parent, {transition() {}});
   const {id} = settings.create(0, initial());
   const slider = controls(host.parent, 'range')[0];
   slider.value = '1';
@@ -207,7 +207,7 @@ test('appending after a partial native queue drain exposes the freed-tail write'
 test('native modeless setting values retain radio inversion and redundant visibility errors', () => {
   const host = document(),
     transitions = [];
-  const settings = new AokanaModelessSettings(host, host.parent, {
+  const settings = new BurikoModelessSettings(host, host.parent, {
     transition(value) {
       transitions.push(value);
     },
@@ -233,7 +233,7 @@ test('native modeless setting values retain radio inversion and redundant visibi
 test('host final close removes a visible modeless panel and its pending event', () => {
   const host = document(),
     transitions = [];
-  const settings = new AokanaModelessSettings(host, host.parent, {
+  const settings = new BurikoModelessSettings(host, host.parent, {
     transition(value) {
       transitions.push(value);
     },
@@ -255,7 +255,7 @@ test('host final close removes a visible modeless panel and its pending event', 
 
 test('settings poll writes its two DWORDs before the indivisible NULL-pointer store', () => {
   const host = document();
-  const settings = new AokanaModelessSettings(host, host.parent, {transition() {}});
+  const settings = new BurikoModelessSettings(host, host.parent, {transition() {}});
   const {id} = settings.create(0, initial());
   const slider = controls(host.parent, 'range')[0];
   slider.value = '37';
@@ -269,7 +269,7 @@ test('settings poll writes its two DWORDs before the indivisible NULL-pointer st
 });
 
 test('Unicode product-key filtering retains the cross-field discard latch and ASCII ranges', () => {
-  const dialog = new AokanaProductKeyDialog({}, {}, {}, new AokanaNativeText());
+  const dialog = new BurikoProductKeyDialog({}, {}, {}, new BurikoNativeText());
   assert.equal(dialog.acceptCharacter(0x3042, false), false);
   assert.equal(dialog.acceptCharacter(65, false), false);
   assert.equal(dialog.acceptCharacter(65, false), true);
@@ -284,8 +284,8 @@ test('Unicode product-key filtering retains the cross-field discard latch and AS
 
 test('product-key acceptance reads each field as UTF-16 but always writes UTF-8 and three separators', async () => {
   const host = document(),
-    text = new AokanaNativeText();
-  const dialog = new AokanaProductKeyDialog(
+    text = new BurikoNativeText();
+  const dialog = new BurikoProductKeyDialog(
     host,
     host.parent,
     {
@@ -313,10 +313,10 @@ test('product-key acceptance reads each field as UTF-16 but always writes UTF-8 
 });
 
 test('surface creation consumes IDs before validation and destroys old ownership first', () => {
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText(), {}),
-    new AokanaBitmapCompositor(),
-    new AokanaDistributedAllocator(1),
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText(), {}),
+    new BurikoBitmapCompositor(),
+    new BurikoDistributedAllocator(1),
   );
   assert.equal(surfaces.allocate(5, 1, 1, 2), 1);
   assert.equal(surfaces.imageId(5), 0);
@@ -335,10 +335,10 @@ test('surface creation consumes IDs before validation and destroys old ownership
 });
 
 test('surface release drops bitmap ownership before movie removal and preserves outer recursive lock', () => {
-  const allocator = new AokanaDistributedAllocator(1);
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText(), {}),
-    new AokanaBitmapCompositor(),
+  const allocator = new BurikoDistributedAllocator(1);
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText(), {}),
+    new BurikoBitmapCompositor(),
     allocator,
   );
   surfaces.allocate(1, 1, 1, 2);
@@ -363,7 +363,7 @@ test('surface release drops bitmap ownership before movie removal and preserves 
 
 test('property values retain the native binary32 Q16 display conversion', async () => {
   const {formatPropertyScalar, formatPropertySource} =
-    await import('../dist/engines/buriko/games/aokana/native/property-values.js');
+    await import('../dist/engines/buriko/native/property-values.js');
   assert.equal(formatPropertyScalar(3, 2147483647), '32768.000000');
   assert.equal(formatPropertyScalar(3, -2147483648), '-32768.000000');
   assert.equal(formatPropertyScalar(3, 1), '0.000015');
@@ -372,12 +372,12 @@ test('property values retain the native binary32 Q16 display conversion', async 
   assert.equal(formatPropertyScalar(1, -1), '4294967295');
   assert.equal(formatPropertyScalar(2, 1), '0x00000001');
   assert.equal(formatPropertyScalar(4, -1), 'TRUE');
-  assert.deepEqual(formatPropertySource(-1, null, new AokanaNativeText()), {result: 0x8000000d});
+  assert.deepEqual(formatPropertySource(-1, null, new BurikoNativeText()), {result: 0x8000000d});
 });
 
 test('property edit filters preserve protected prefixes, selection-blind punctuation and pasted-text distinction', async () => {
   const {propertyEditCharacter: character, propertyEditDeleteAllowed: canDelete} =
-    await import('../dist/engines/buriko/games/aokana/native/property-values.js');
+    await import('../dist/engines/buriko/native/property-values.js');
   assert.equal(character(0, 45, '123', 0), 45);
   assert.equal(character(0, 45, '-123', 0), null);
   assert.equal(character(0, 45, '', 0), 45);
@@ -395,10 +395,9 @@ test('property edit filters preserve protected prefixes, selection-blind punctua
 });
 
 test('window FIFO distinguishes physical arrival, dequeue state, and synthetic keyboard posting', async () => {
-  const {AokanaWindowMessages} =
-    await import('../dist/engines/buriko/games/aokana/native/window-messages.js');
+  const {BurikoWindowMessages} = await import('../dist/engines/buriko/native/window-messages.js');
   const calls = [];
-  const queue = new AokanaWindowMessages({
+  const queue = new BurikoWindowMessages({
     setPhysicalKey(key, down) {
       calls.push(['physical', key, down]);
     },
@@ -428,9 +427,8 @@ test('window FIFO distinguishes physical arrival, dequeue state, and synthetic k
 });
 
 test('child scroll properties retain engine positions independently of host clamping', async () => {
-  const {AokanaChildScroll} =
-    await import('../dist/engines/buriko/games/aokana/native/child-scroll.js');
-  const scroll = new AokanaChildScroll(3);
+  const {BurikoChildScroll} = await import('../dist/engines/buriko/native/child-scroll.js');
+  const scroll = new BurikoChildScroll(3);
   assert.equal(scroll.setProperty(0, (10 << 16) | 50), 0);
   assert.equal(scroll.setProperty(1, (20 << 16) | 25), 0);
   assert.equal(scroll.setProperty(2, 26), 0x8000000d);
@@ -450,9 +448,8 @@ test('child scroll properties retain engine positions independently of host clam
 });
 
 test('child scroll notifications use different horizontal and vertical increment bounds', async () => {
-  const {AokanaChildScroll} =
-    await import('../dist/engines/buriko/games/aokana/native/child-scroll.js');
-  const scroll = new AokanaChildScroll(3);
+  const {BurikoChildScroll} = await import('../dist/engines/buriko/native/child-scroll.js');
+  const scroll = new BurikoChildScroll(3);
   scroll.setProperty(0, 5);
   scroll.setProperty(1, 5);
   scroll.notify(0, (4 << 16) | 5);
@@ -468,16 +465,14 @@ test('child scroll notifications use different horizontal and vertical increment
   assert.throws(() => scroll.wheel(120 << 16), /uninitialized.*cbSize/);
   assert.deepEqual(scroll.positions, [5, 5]);
   scroll.wheel(0);
-  assert.equal(new AokanaChildScroll(0).setProperty(0, 2), 0x8000000c);
+  assert.equal(new BurikoChildScroll(0).setProperty(0, 2), 0x8000000c);
 });
 
 test('child DIB presentation uses format-derived depth, DWORD row alignment, and opaque BI_RGB pixels', async () => {
-  const {aokanaChildDibPixels} =
-    await import('../dist/engines/buriko/games/aokana/native/child-bitmap.js');
-  const {AokanaBitmapStorage} =
-    await import('../dist/engines/buriko/games/aokana/native/bitmap.js');
+  const {burikoChildDibPixels} = await import('../dist/engines/buriko/native/child-bitmap.js');
+  const {BurikoBitmapStorage} = await import('../dist/engines/buriko/native/bitmap.js');
   const bitmap = {
-    storage: new AokanaBitmapStorage(Uint8Array.of(0, 0x7c, 99, 99, 0xe0, 3), true),
+    storage: new BurikoBitmapStorage(Uint8Array.of(0, 0x7c, 99, 99, 0xe0, 3), true),
     offset: 0,
     stride: 2,
     width: 1,
@@ -485,17 +480,17 @@ test('child DIB presentation uses format-derived depth, DWORD row alignment, and
     format: 0,
     bytesPerPixel: 4,
   };
-  assert.deepEqual([...aokanaChildDibPixels(bitmap)], [255, 0, 0, 255, 0, 255, 0, 255]);
+  assert.deepEqual([...burikoChildDibPixels(bitmap)], [255, 0, 0, 255, 0, 255, 0, 255]);
   const rgba = {
     ...bitmap,
-    storage: new AokanaBitmapStorage(Uint8Array.of(1, 2, 3, 0), true),
+    storage: new BurikoBitmapStorage(Uint8Array.of(1, 2, 3, 0), true),
     width: 1,
     height: 1,
     format: 2,
   };
-  assert.deepEqual([...aokanaChildDibPixels(rgba)], [3, 2, 1, 255]);
-  assert.equal(aokanaChildDibPixels({...bitmap, format: 6}), null);
-  assert.throws(() => aokanaChildDibPixels({...bitmap, format: 3}), /uninitialized.*color table/);
+  assert.deepEqual([...burikoChildDibPixels(rgba)], [3, 2, 1, 255]);
+  assert.equal(burikoChildDibPixels({...bitmap, format: 6}), null);
+  assert.throws(() => burikoChildDibPixels({...bitmap, format: 3}), /uninitialized.*color table/);
 });
 
 function named(element, name) {
@@ -505,12 +500,11 @@ function named(element, name) {
   ]);
 }
 async function editor() {
-  const {AokanaWindowMessages} =
-    await import('../dist/engines/buriko/games/aokana/native/window-messages.js');
-  const messages = new AokanaWindowMessages({setPhysicalKey() {}, setDequeuedKey() {}});
+  const {BurikoWindowMessages} = await import('../dist/engines/buriko/native/window-messages.js');
+  const messages = new BurikoWindowMessages({setPhysicalKey() {}, setDequeuedKey() {}});
   const host = document(),
-    text = new AokanaNativeText();
-  const service = new AokanaPropertyEditors(
+    text = new BurikoNativeText();
+  const service = new BurikoPropertyEditors(
     host,
     host.parent,
     text,
@@ -643,9 +637,8 @@ test('property tagged-ID OR collisions write output and keep the original window
 });
 
 test('generated paints coalesce behind posted messages and disappear on window destruction', async () => {
-  const {AokanaWindowMessages} =
-    await import('../dist/engines/buriko/games/aokana/native/window-messages.js');
-  const queue = new AokanaWindowMessages({setPhysicalKey() {}, setDequeuedKey() {}});
+  const {BurikoWindowMessages} = await import('../dist/engines/buriko/native/window-messages.js');
+  const queue = new BurikoWindowMessages({setPhysicalKey() {}, setDequeuedKey() {}});
   queue.invalidate(1);
   queue.invalidate(1);
   queue.invalidate(2);
@@ -661,11 +654,11 @@ test('generated paints coalesce behind posted messages and disappear on window d
 
 function ansiDialogs() {
   const host = document(),
-    text = new AokanaNativeText(),
-    ansi = new AokanaAnsiUi(text);
+    text = new BurikoNativeText(),
+    ansi = new BurikoAnsiUi(text);
   const transitions = [],
     errors = [];
-  const dialog = new AokanaAnsiDialogs(
+  const dialog = new BurikoAnsiDialogs(
     host,
     host.parent,
     {
@@ -798,9 +791,8 @@ test('name validation faults on an odd dangling native lead after its written AN
 });
 
 test('window identity validity follows actual main and child creation/destruction', async () => {
-  const {AokanaWindowMessages} =
-    await import('../dist/engines/buriko/games/aokana/native/window-messages.js');
-  const queue = new AokanaWindowMessages({setPhysicalKey() {}, setDequeuedKey() {}});
+  const {BurikoWindowMessages} = await import('../dist/engines/buriko/native/window-messages.js');
+  const queue = new BurikoWindowMessages({setPhysicalKey() {}, setDequeuedKey() {}});
   assert.equal(queue.hasTarget('main'), false);
   queue.createMainTarget();
   assert.equal(queue.hasTarget('main'), true);
@@ -825,7 +817,7 @@ function childWindows(context) {
     globalThis.ImageData = oldImage;
   });
   const host = document(),
-    text = new AokanaNativeText();
+    text = new BurikoNativeText();
   const physical = new Map(),
     dequeued = new Map();
   const input = {
@@ -839,17 +831,17 @@ function childWindows(context) {
       return physical.get(key) ? 0x8000 : 0;
     },
   };
-  const messages = new AokanaWindowMessages(input);
+  const messages = new BurikoWindowMessages(input);
   messages.createMainTarget();
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const fonts = new AokanaNativeFonts(text, {}),
-    allocator = new AokanaDistributedAllocator(1);
-  const surfaces = new AokanaSurfaces(fonts, compositor, allocator);
+  const fonts = new BurikoNativeFonts(text, {}),
+    allocator = new BurikoDistributedAllocator(1);
+  const surfaces = new BurikoSurfaces(fonts, compositor, allocator);
   const desktop = host.createElement('canvas'),
     transitions = [],
     clipboard = [];
-  const service = new AokanaChildWindows(
+  const service = new BurikoChildWindows(
     host,
     host.parent,
     {
@@ -862,14 +854,14 @@ function childWindows(context) {
     text,
     surfaces,
     compositor,
-    new AokanaBitmapText(fonts, compositor),
+    new BurikoBitmapText(fonts, compositor),
     {
       transition(value) {
         transitions.push(value);
       },
     },
     messages,
-    new AokanaKeyboardMessages(messages),
+    new BurikoKeyboardMessages(messages),
     {frameWidth: 2, frameHeight: 22, verticalScrollbarWidth: 15, horizontalScrollbarHeight: 16},
     text.encodeWide('Default title'),
     desktop,
@@ -1063,11 +1055,11 @@ test('B0 child bindings keep validation precedence, native IDs and paired positi
 test('B0 dialog binding enters the real single form and translates its accepted output', async () => {
   const {host, dialog, text} = ansiDialogs();
   const dialogs = dialog.dialogs,
-    product = new AokanaProductKeyDialog(host, host.parent, dialogs, text);
-  const settings = new AokanaModelessSettings(host, host.parent, dialogs);
+    product = new BurikoProductKeyDialog(host, host.parent, dialogs, text);
+  const settings = new BurikoModelessSettings(host, host.parent, dialogs);
   const definitions = [
     ...createGroupB0ModelessSettings(settings),
-    ...createGroupB0ModalDialogs(dialogs, new AokanaSelectionDialog(dialogs, text)),
+    ...createGroupB0ModalDialogs(dialogs, new BurikoSelectionDialog(dialogs, text)),
     ...createGroupB0FormDialogs(dialog, product),
   ];
   const vm = vmSlots(definitions);

@@ -1,36 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {
-  bitmapRead32,
-  bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup90RawSurfaceExport} from '../dist/engines/buriko/games/aokana/native/group-90-raw-surface-export.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaRawSurfaceExport} from '../dist/engines/buriko/games/aokana/native/raw-surface-export.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup90RawSurfaceExport} from '../dist/engines/buriko/native/group-90-raw-surface-export.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoRawSurfaceExport} from '../dist/engines/buriko/native/raw-surface-export.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 test('90:15 exports packed BGR pixels into BP memory for a real raw surface import', () => {
-  const text = new AokanaNativeText(),
-    compositor = new AokanaBitmapCompositor(),
-    surfaces = new AokanaSurfaces(
-      new AokanaNativeFonts(text),
+  const text = new BurikoNativeText(),
+    compositor = new BurikoBitmapCompositor(),
+    surfaces = new BurikoSurfaces(
+      new BurikoNativeFonts(text),
       compositor,
-      new AokanaDistributedAllocator(2),
+      new BurikoDistributedAllocator(2),
     ),
-    memory = new AokanaBpMemory(new Uint8Array(128)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
-    slot = createGroup90RawSurfaceExport(new AokanaRawSurfaceExport(surfaces), {
+    memory = new BurikoBpMemory(new Uint8Array(128)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
+    slot = createGroup90RawSurfaceExport(new BurikoRawSurfaceExport(surfaces), {
       threadFatal() {
         assert.fail('ordinary raw surface export');
       },
     })[0];
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][0x15]);
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][0x15]);
   assert.equal(surfaces.allocate(0, 2, 2, 1), 1);
   const source = surfaces.snapshot(0),
     original = [0xaa112233, 0xbb445566, 0xcc778899, 0xddaabbcc];

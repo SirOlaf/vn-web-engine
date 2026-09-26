@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {applyAokanaBitmapMask} from '../dist/engines/buriko/games/aokana/native/bitmap-alpha-mask.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {createGroup92SurfaceMasks} from '../dist/engines/buriko/games/aokana/native/group-92-surface-masks.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {applyBurikoBitmapMask} from '../dist/engines/buriko/native/bitmap-alpha-mask.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {createGroup92SurfaceMasks} from '../dist/engines/buriko/native/group-92-surface-masks.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const pointer = (bytes) => ({bytes, offset: 0});
 const dwords = (values) => {
@@ -22,32 +22,32 @@ const dwords = (values) => {
 };
 
 test('surface mask opcodes convert RGB and RGBA, invert and feed actual alpha-mask rendering', () => {
-  const text = new AokanaNativeText(),
-    compositor = new AokanaBitmapCompositor();
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(text),
+  const text = new BurikoNativeText(),
+    compositor = new BurikoBitmapCompositor();
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(text),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
-  const errors = new AokanaEngineErrors(
+  const errors = new BurikoEngineErrors(
     {text},
     {show: () => assert.fail('Unexpected ordinary mask error')},
     Uint8Array.of(0),
     Uint8Array.of(0),
   );
-  const memory = new AokanaBpMemory(new Uint8Array(32));
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(new Uint8Array(32));
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const diagnostics = new AokanaBpDiagnostics(() => assert.fail('Unexpected diagnostic'));
+  const diagnostics = new BurikoBpDiagnostics(() => assert.fail('Unexpected diagnostic'));
   const context = {thread, memory, diagnostics};
   const definitions = createGroup92SurfaceMasks(surfaces, errors);
   const slots = new Map(definitions.map((slot) => [slot.secondary, slot]));
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x92][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x92][slot.secondary]);
   const run = (secondary, values) => {
     for (const value of values) push32(thread, value);
     assert.equal(slots.get(secondary).execute(context), 0);
@@ -95,7 +95,7 @@ test('surface mask opcodes convert RGB and RGBA, invert and feed actual alpha-ma
   );
   assert.equal(surfaces.importRaw(6, 4, 1, 2, dwords([0, 0, 0, 0])), 1);
   assert.equal(
-    applyAokanaBitmapMask(surfaces.snapshot(6), surfaces.snapshot(5), surfaces.snapshot(2)),
+    applyBurikoBitmapMask(surfaces.snapshot(6), surfaces.snapshot(5), surfaces.snapshot(2)),
     0,
   );
   assert.deepEqual(read(6, 4), [0x00102030, 0xb3102030, 0x69102030, 0xe4102030]);

@@ -11,9 +11,18 @@ const uiRoot = path.join(root, 'ui') + path.sep;
  * these as module entries instead keeps every relative dependency in the build.
  */
 export function runtimeModules() {
+  let building = false;
+  let base = '/';
   return {
     name: 'runtime-module-urls',
     enforce: 'pre',
+    configResolved(config) {
+      building = config.command === 'build';
+      base =
+        config.base === './' || config.base === ''
+          ? '/'
+          : new URL(config.base, 'http://vite.local').pathname;
+    },
     async transform(code, id) {
       if (!(id.startsWith(sourceRoot) || id.startsWith(uiRoot)) || !/\.[cm]?[jt]s$/.test(id))
         return;
@@ -32,12 +41,23 @@ export function runtimeModules() {
           : await this.resolve(specifier, id);
         if (!resolved || resolved.external)
           this.error(`Cannot bundle runtime module ${specifier} from ${id}`);
-        const emitted = this.emitFile({
-          type: 'chunk',
-          id: resolved.id,
-          preserveSignature: 'strict',
-        });
-        const expression = `new URL(import.meta.ROLLUP_FILE_URL_${emitted}, import.meta.url)`;
+        let expression;
+        if (building) {
+          const emitted = this.emitFile({
+            type: 'chunk',
+            id: resolved.id,
+            preserveSignature: 'strict',
+          });
+          expression = `new URL(import.meta.ROLLUP_FILE_URL_${emitted}, import.meta.url)`;
+        } else {
+          // Dev has no emitted chunks or renderChunk phase. Use Vite's real
+          // module URL, including the separately built vendor directory.
+          const relative = path.relative(root, resolved.id);
+          const pathname = relative.startsWith('..' + path.sep)
+            ? '@fs' + resolved.id.split(path.sep).join('/')
+            : relative.split(path.sep).join('/');
+          expression = `new URL(/* @vite-ignore */ ${JSON.stringify(base + pathname)}, import.meta.url)`;
+        }
         code =
           code.slice(0, reference.index) +
           expression +
@@ -46,10 +66,16 @@ export function runtimeModules() {
       // Hide native URL imports from Vite's document-based preload/error helper:
       // these modules also run inside workers. Restore the import at render time,
       // after Vite's import analysis; emitFile already owns the dependency graph.
-      code = code.replace(
-        /import\(\s*(?=new URL\(import\.meta\.ROLLUP_FILE_URL_)/g,
-        '__vnStaticModuleImport(',
-      );
+      if (building)
+        code = code.replace(
+          /import\(\s*(?=new URL\(import\.meta\.ROLLUP_FILE_URL_)/g,
+          '__vnStaticModuleImport(',
+        );
+      else
+        code = code.replace(
+          /import\(\s*(?=new URL\(\/\* @vite-ignore \*\/)/g,
+          'import(/* @vite-ignore */ ',
+        );
       return {code, map: null};
     },
     renderChunk(code) {
@@ -70,6 +96,11 @@ export function runtimeModules() {
         type: 'asset',
         fileName: 'assets/ogg-vorbis.LICENSE.txt',
         source: await readFile(path.join(root, 'third_party/ogg-vorbis/LICENSE.txt'), 'utf8'),
+      });
+      this.emitFile({
+        type: 'asset',
+        fileName: 'assets/jsmpeg-mp2.LICENSE.txt',
+        source: await readFile(path.join(root, 'src/formats/mp2/LICENSE'), 'utf8'),
       });
     },
   };

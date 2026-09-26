@@ -1,27 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
 import {
   bitmapRead8,
   bitmapRead32,
   bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {applyAokanaBitmapMask} from '../dist/engines/buriko/games/aokana/native/bitmap-alpha-mask.js';
-import {createGroup92HaloMask} from '../dist/engines/buriko/games/aokana/native/group-92-halo-mask.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {applyBurikoBitmapMask} from '../dist/engines/buriko/native/bitmap-alpha-mask.js';
+import {createGroup92HaloMask} from '../dist/engines/buriko/native/group-92-halo-mask.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('92 halo masks saturate exact neighborhoods and erase through the shared compositor', () => {
-  const compositor = new AokanaBitmapCompositor();
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const compositor = new BurikoBitmapCompositor();
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
   assert.equal(surfaces.allocate(1, 3, 1, 2), 1);
   const source = surfaces.snapshot(1);
@@ -39,14 +39,14 @@ test('92 halo masks saturate exact neighborhoods and erase through the shared co
       assert.fail('ordinary halo succeeds');
     },
   });
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x92][0x1b]);
-  const thread = new AokanaBpThread({
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x92][0x1b]);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array(64)), diagnostics: {}};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array(64)), diagnostics: {}};
   // Independent sums for three adjacent source alphas, with saturated overlap.
   const bands = [
     [128, 255, 255, 192, 64],
@@ -72,7 +72,7 @@ test('92 halo masks saturate exact neighborhoods and erase through the shared co
       ),
       expected,
     );
-    assert.equal(applyAokanaBitmapMask(output, rgba, mask), 0);
+    assert.equal(applyBurikoBitmapMask(output, rgba, mask), 0);
     for (const [x, y, alpha] of [
       [0, 0, 0],
       [8 - radius, 8 - radius, 128],

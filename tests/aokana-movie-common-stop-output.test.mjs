@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mapAokanaMovieAudioEdit} from '../dist/engines/buriko/games/aokana/native/movie-audio-samples.js';
-import {AokanaMemoryMoviePcmOutput} from '../dist/engines/buriko/games/aokana/native/movie-pcm-output.js';
-import {AokanaMoviePcmGraphClock} from '../dist/engines/buriko/games/aokana/native/movie-pcm-clock.js';
+import {mapBurikoMovieAudioEdit} from '../dist/engines/buriko/native/movie-audio-samples.js';
+import {BurikoMemoryMoviePcmOutput} from '../dist/engines/buriko/native/movie-pcm-output.js';
+import {BurikoMoviePcmGraphClock} from '../dist/engines/buriko/native/movie-pcm-clock.js';
 import {
-  createAokanaIsoTimeline,
-  aokanaIsoTime,
-} from '../dist/engines/buriko/games/aokana/native/movie-iso-timeline.js';
+  createBurikoIsoTimeline,
+  burikoIsoTime,
+} from '../dist/engines/buriko/native/movie-iso-timeline.js';
 
 test('aligned real mapped PCM consumes trailing silent coverage through a common movie stop', () => {
-  const f = aokanaIsoTime.fraction,
+  const f = burikoIsoTime.fraction,
     track = {
       timescale: 4,
       duration: 4n,
@@ -17,9 +17,9 @@ test('aligned real mapped PCM consumes trailing silent coverage through a common
       samples: [{compositionTime: 0n, duration: 4}],
       edits: [{duration: 4n, mediaTime: 0n, rate: 65536}],
     },
-    timeline = createAokanaIsoTimeline({timescale: 4}, track),
+    timeline = createBurikoIsoTimeline({timescale: 4}, track),
     commonStop = {policy: 'retain-frame-support', stop: f(2n)},
-    span = mapAokanaMovieAudioEdit(
+    span = mapBurikoMovieAudioEdit(
       {
         planes: [Float32Array.from([1 / 4, 1 / 2, -1 / 4, -1 / 2])],
         sampleRate: 4,
@@ -31,8 +31,8 @@ test('aligned real mapped PCM consumes trailing silent coverage through a common
     );
   assert.notEqual(span, null);
   assert.deepEqual(span.end, timeline.exactDuration);
-  const output = new AokanaMemoryMoviePcmOutput({channels: 1, capacityFrames: 4}, 4),
-    clock = new AokanaMoviePcmGraphClock(output),
+  const output = new BurikoMemoryMoviePcmOutput({channels: 1, capacityFrames: 4}, 4),
+    clock = new BurikoMoviePcmGraphClock(output),
     completed = [];
   const remove = output.onComplete((status) => completed.push(status.position));
   const command = (value) => output.command({generation: 0, ...value});

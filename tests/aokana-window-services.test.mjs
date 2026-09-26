@@ -1,32 +1,29 @@
-import {
-  allocateAokanaBitmap,
-  fillAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
+import {allocateBurikoBitmap, fillBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup91WindowState} from '../dist/engines/buriko/games/aokana/native/group-91-window-state.js';
-import {createGroup92WindowImages} from '../dist/engines/buriko/games/aokana/native/group-92-window-images.js';
-import {bitmapWrite32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup91WindowState} from '../dist/engines/buriko/native/group-91-window-state.js';
+import {createGroup92WindowImages} from '../dist/engines/buriko/native/group-92-window-images.js';
+import {bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 test('Window services share registered fonts, cursor state, composed pixels and published damage', async () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const text = new AokanaNativeText();
-  const fonts = new AokanaNativeFonts(text, {
+  const text = new BurikoNativeText();
+  const fonts = new BurikoNativeFonts(text, {
     async queryCharset() {
       return 1;
     },
@@ -34,20 +31,20 @@ test('Window services share registered fonts, cursor state, composed pixels and 
       return {faceName: parameters.face, familyName: parameters.face, averageWidth: 8, ascent: 8};
     },
   });
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
-  const damage = new AokanaDisplayDamage(32, {left: 0, top: 0, right: 127, bottom: 63});
-  const manager = new AokanaDisplayManager(
-    new AokanaDisplayObjectEnvironment(compositor, damage),
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
+  const damage = new BurikoDisplayDamage(32, {left: 0, top: 0, right: 127, bottom: 63});
+  const manager = new BurikoDisplayManager(
+    new BurikoDisplayObjectEnvironment(compositor, damage),
     surfaces,
-    new AokanaNativeDisplayState(128, 64),
+    new BurikoNativeDisplayState(128, 64),
   );
-  const output = allocateAokanaBitmap(128, 64, 1);
-  fillAokanaBitmap(output, 0);
+  const output = allocateBurikoBitmap(128, 64, 1);
+  fillBurikoBitmap(output, 0);
   manager.bindDisplayContext({bitmap: output, bounds: {left: 0, top: 0, right: 127, bottom: 63}});
-  const state = new AokanaWindowDisplayState(manager);
+  const state = new BurikoWindowDisplayState(manager);
   const created = manager.createConfigured(
     'window',
-    (order) => new AokanaWindowDisplayObject(state, order),
+    (order) => new BurikoWindowDisplayObject(state, order),
     (object) => object.configureInitial(2, 1),
   );
   assert.equal(created.result, 0);
@@ -68,14 +65,14 @@ test('Window services share registered fonts, cursor state, composed pixels and 
   ];
   assert.equal(slots.length, 13);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: new AokanaBpMemory(new Uint8Array(0)), diagnostics: {}};
+  const context = {thread, memory: new BurikoBpMemory(new Uint8Array(0)), diagnostics: {}};
   const call = async (primary, secondary, args = [], pushed = 0) => {
     [handle, ...args].forEach((value) => push32(thread, value));
     assert.equal(

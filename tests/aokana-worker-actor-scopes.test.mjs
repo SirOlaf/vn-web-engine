@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {createAokanaDisplayLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {createBurikoDisplayLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
 
 test('actual indexed workers retain their operation actor through ordinary recursive lock work', async () => {
-  const allocator = new AokanaDistributedAllocator(2),
+  const allocator = new BurikoDistributedAllocator(2),
     ambient = allocator.currentActor,
     operationActor = {},
-    processing = new AokanaDistributedProcessing(allocator, 2),
-    locks = createAokanaDisplayLocks(allocator),
+    processing = new BurikoDistributedProcessing(allocator, 2),
+    locks = createBurikoDisplayLocks(allocator),
     scriptLock = locks.script.create(),
     completed = [];
   try {

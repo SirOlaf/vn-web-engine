@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaDataCodecWorkers} from '../dist/engines/buriko/games/aokana/native/data-codec-workers.js';
-import {decodeAokanaSdcInto} from '../dist/engines/buriko/games/aokana/native/sdc.js';
+import {BurikoDataCodecWorkers} from '../dist/engines/buriko/native/data-codec-workers.js';
+import {decodeBurikoSdcInto} from '../dist/engines/buriko/native/sdc.js';
 
 test('codec worker joins completed valid encodes before their source storage retires', async () => {
-  const workers = new AokanaDataCodecWorkers(() => new Date(Date.UTC(2026, 8, 19, 12, 34, 56)));
+  const workers = new BurikoDataCodecWorkers(() => new Date(Date.UTC(2026, 8, 19, 12, 34, 56)));
   const source = new TextEncoder().encode('AB'.repeat(20));
   const firstBytes = new Uint8Array(128);
   const first = workers.startEncode(
@@ -18,7 +18,7 @@ test('codec worker joins completed valid encodes before their source storage ret
   assert.equal(workers.hasPendingWork(), false);
   const firstDecoded = new Uint8Array(source.length);
   assert.equal(
-    decodeAokanaSdcInto({bytes: firstDecoded, offset: 0}, {bytes: firstBytes, offset: 0}),
+    decodeBurikoSdcInto({bytes: firstDecoded, offset: 0}, {bytes: firstBytes, offset: 0}),
     source.length,
   );
   assert.deepEqual(firstDecoded, source);
@@ -37,7 +37,7 @@ test('codec worker joins completed valid encodes before their source storage ret
   assert.equal(workers.hasPendingWork(), false);
   const secondDecoded = new Uint8Array(source.length);
   assert.equal(
-    decodeAokanaSdcInto({bytes: secondDecoded, offset: 0}, {bytes: secondBytes, offset: 0}),
+    decodeBurikoSdcInto({bytes: secondDecoded, offset: 0}, {bytes: secondBytes, offset: 0}),
     source.length,
   );
   assert.deepEqual(secondDecoded, source);

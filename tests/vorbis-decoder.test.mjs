@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import {decodeVorbis} from '../dist/audio/vorbis-decoder.js';
-import {createAokanaWaveStatic} from '../dist/engines/buriko/games/aokana/native/audio/wave-static.js';
+import {createBurikoWaveStatic} from '../dist/engines/buriko/native/audio/wave-static.js';
 import {
-  AokanaSpeakerContext,
-  AokanaStaticSpeaker,
-} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaSpeakerModel} from '../dist/engines/buriko/games/aokana/native/audio/speaker-model.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+  BurikoSpeakerContext,
+  BurikoStaticSpeaker,
+} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoSpeakerModel} from '../dist/engines/buriko/native/audio/speaker-model.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 
 test('Vorbis retains native boundary PCM and completes playback at a different device rate', async () => {
   const encoded = new Uint8Array(
@@ -46,11 +46,11 @@ test('Vorbis retains native boundary PCM and completes playback at a different d
   ])
     header.setUint32(offset, value, true);
   waveBox.set(encoded, 64);
-  const wave = await createAokanaWaveStatic(waveBox, {gain: 1, prefer24Bit: false});
-  const backend = new AokanaMemorySpeakerBackend(44100);
-  const speaker = new AokanaStaticSpeaker(new AokanaSpeakerContext(backend));
+  const wave = await createBurikoWaveStatic(waveBox, {gain: 1, prefer24Bit: false});
+  const backend = new BurikoMemorySpeakerBackend(44100);
+  const speaker = new BurikoStaticSpeaker(new BurikoSpeakerContext(backend));
   try {
-    assert.equal(await speaker.attach(new AokanaSpeakerModel(wave)), 0);
+    assert.equal(await speaker.attach(new BurikoSpeakerModel(wave)), 0);
     assert.equal(await speaker.start(0), 0);
     assert.equal(await speaker.status(), 1);
     const output = backend.buffers[0].render(

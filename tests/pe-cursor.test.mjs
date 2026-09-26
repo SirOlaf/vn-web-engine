@@ -137,6 +137,22 @@ function simple(options = {}, peOptions) {
     peOptions,
   );
 }
+
+test('selected PE resources remain readable beside packed resource payloads', () => {
+  const image = fixture([
+    {type: 1, id: 1, language: 1041, bytes: dib()},
+    {type: 16, id: 1, language: 1041, bytes: Buffer.from('version resource')},
+  ]);
+  // A packer leaves the directory and version data backed, but moves the cursor
+  // payload into the section's virtual-only tail.
+  image.bytes.writeUInt32LE(image.bytes.length + 0x1000, image.directory + 20);
+  image.bytes.writeUInt32LE(0x700000, image.leaves[0].data);
+  assert.throws(() => parsePeResources(image.bytes), /Unmapped or ambiguous/);
+  const versions = parsePeResources(image.bytes, [16]);
+  assert.equal(versions.length, 1);
+  assert.equal(Buffer.from(versions[0].bytes).toString(), 'version resource');
+  assert.throws(() => new PeCursorReader(image.bytes), /Unmapped or ambiguous/);
+});
 function chunk(type, data) {
   const b = Buffer.alloc(data.length + 12);
   b.writeUInt32BE(data.length);

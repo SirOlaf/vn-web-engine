@@ -1,20 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaLogicalGridManager,
-  AokanaLogicalGridManagers,
-} from '../dist/engines/buriko/games/aokana/native/logical-grid.js';
+  BurikoLogicalGridManager,
+  BurikoLogicalGridManagers,
+} from '../dist/engines/buriko/native/logical-grid.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaGridEvaluator} from '../dist/engines/buriko/games/aokana/native/grid-evaluator.js';
-import {AokanaGridEvaluatorRecords} from '../dist/engines/buriko/games/aokana/native/grid-evaluator-records.js';
-import {AokanaGridEvaluationWorkers} from '../dist/engines/buriko/games/aokana/native/grid-evaluation-workers.js';
-import {simulateGridEvaluation} from '../dist/engines/buriko/games/aokana/native/grid-evaluator-simulation.js';
-import {createGroupD0Evaluator} from '../dist/engines/buriko/games/aokana/native/group-d0-evaluator.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoGridEvaluator} from '../dist/engines/buriko/native/grid-evaluator.js';
+import {BurikoGridEvaluatorRecords} from '../dist/engines/buriko/native/grid-evaluator-records.js';
+import {BurikoGridEvaluationWorkers} from '../dist/engines/buriko/native/grid-evaluation-workers.js';
+import {simulateGridEvaluation} from '../dist/engines/buriko/native/grid-evaluator-simulation.js';
+import {createGroupD0Evaluator} from '../dist/engines/buriko/native/group-d0-evaluator.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 function storage(size) {
   const bytes = new Uint8Array(size),
@@ -22,7 +22,7 @@ function storage(size) {
   return {bytes, view, pointer: (offset = 0) => ({bytes, offset})};
 }
 
-function actorsFixture(positions = [0, 4], grid = new AokanaLogicalGridManager(1)) {
+function actorsFixture(positions = [0, 4], grid = new BurikoLogicalGridManager(1)) {
   const input = storage(0x834 * positions.length),
     output = storage(16);
   grid.setCells(5, 1, storage(80).pointer());
@@ -49,7 +49,7 @@ function actorsFixture(positions = [0, 4], grid = new AokanaLogicalGridManager(1
 
 function simulation(kind, changes = [], targetChanges = [], jobChanges = [], order = [-1]) {
   const {grid, input} = actorsFixture([1, 2]),
-    state = new AokanaGridEvaluatorRecords(),
+    state = new BurikoGridEvaluatorRecords(),
     job = storage(76);
   for (const [word, value] of changes) input.view.setInt32(word * 4, value, true);
   for (const [word, value] of targetChanges) input.view.setInt32(0x834 + word * 4, value, true);
@@ -220,8 +220,8 @@ test('evaluator incoming abilities and area actions follow each native behavior 
 
 test('full evaluator ranks copied jobs through every configured worker and preserves output bounds', () => {
   const {grid, input} = actorsFixture(),
-    allocator = new AokanaDistributedAllocator(4),
-    state = new AokanaGridEvaluator(allocator, 3),
+    allocator = new BurikoDistributedAllocator(4),
+    state = new BurikoGridEvaluator(allocator, 3),
     output = storage(1024);
   state.setTypeCount(3);
   assert.equal(state.initialize(grid, 2, input.pointer()), 0);
@@ -244,8 +244,8 @@ test('full evaluator ranks copied jobs through every configured worker and prese
 
 test('full evaluator enumerates ordinary attacks, targeted abilities and untargeted abilities together', () => {
   const {grid, input} = actorsFixture([1, 2]),
-    allocator = new AokanaDistributedAllocator(2),
-    state = new AokanaGridEvaluator(allocator, 2),
+    allocator = new BurikoDistributedAllocator(2),
+    state = new BurikoGridEvaluator(allocator, 2),
     output = storage(8192);
   for (const [word, value] of [
     [0x98, 2],
@@ -282,11 +282,11 @@ test('full evaluator enumerates ordinary attacks, targeted abilities and untarge
 });
 
 test('all nine evaluator VM wrappers preserve pop order, independent progress and consuming statuses', async () => {
-  const allocator = new AokanaDistributedAllocator(3),
-    main = new AokanaDistributedProcessing(allocator, 2),
-    grids = new AokanaLogicalGridManagers(),
-    memory = new AokanaBpMemory(new Uint8Array(16384));
-  const thread = new AokanaBpThread({
+  const allocator = new BurikoDistributedAllocator(3),
+    main = new BurikoDistributedProcessing(allocator, 2),
+    grids = new BurikoLogicalGridManagers(),
+    memory = new BurikoBpMemory(new Uint8Array(16384));
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 0,
@@ -300,7 +300,7 @@ test('all nine evaluator VM wrappers preserve pop order, independent progress an
   const gridId = view.getUint32(4, true),
     {input} = actorsFixture([0, 4], grids.get(gridId));
   bytes.set(input.bytes, 1024);
-  const workers = new AokanaGridEvaluationWorkers(allocator, main, grids),
+  const workers = new BurikoGridEvaluationWorkers(allocator, main, grids),
     slots = new Map(createGroupD0Evaluator(workers).map((slot) => [slot.secondary, slot.execute]));
   assert.equal(slots.size, 9);
   const invoke = async (slot, values, hasResult = true) => {
@@ -346,11 +346,11 @@ test('all nine evaluator VM wrappers preserve pop order, independent progress an
 });
 
 test('queued initialization preserves a destroyed native grid as an access fault', async () => {
-  const allocator = new AokanaDistributedAllocator(1),
-    main = new AokanaDistributedProcessing(allocator, 1),
-    grids = new AokanaLogicalGridManagers(),
+  const allocator = new BurikoDistributedAllocator(1),
+    main = new BurikoDistributedProcessing(allocator, 1),
+    grids = new BurikoLogicalGridManagers(),
     output = storage(16),
-    workers = new AokanaGridEvaluationWorkers(allocator, main, grids);
+    workers = new BurikoGridEvaluationWorkers(allocator, main, grids);
   grids.create(output.pointer(), 0, 1);
   const gridId = output.view.getUint32(0, true);
   grids.get(gridId).setCells(1, 1, storage(16).pointer());

@@ -1,36 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  AokanaInlineTextState,
-  aokanaInlineTextWidth,
-} from '../dist/engines/buriko/games/aokana/native/inline-text-state.js';
+  BurikoInlineTextState,
+  burikoInlineTextWidth,
+} from '../dist/engines/buriko/native/inline-text-state.js';
 import {
-  aokanaDisplayViewport,
-  aokanaDisplayScaleSize,
-  aokanaDisplayTransformRectangle,
-} from '../dist/engines/buriko/games/aokana/native/display-geometry.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaCrtRandom} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {
-  aokanaShakeRandom,
-  aokanaShakeTarget,
-} from '../dist/engines/buriko/games/aokana/native/shake-math.js';
+  burikoDisplayViewport,
+  burikoDisplayScaleSize,
+  burikoDisplayTransformRectangle,
+} from '../dist/engines/buriko/native/display-geometry.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoCrtRandom} from '../dist/engines/buriko/native/system-timing.js';
+import {burikoShakeRandom, burikoShakeTarget} from '../dist/engines/buriko/native/shake-math.js';
 
 function display() {
-  const value = new AokanaNativeDisplayState(1920, 1080);
+  const value = new BurikoNativeDisplayState(1920, 1080);
   value.requestedWidth = 1200;
   value.requestedHeight = 900;
   return value;
 }
 
 test('inline width counts supplementary Unicode once and preserves the native half-width ranges', () => {
-  assert.equal(aokanaInlineTextWidth('A日\uff76\ud83d\ude00\ud800'), 8);
-  assert.equal(aokanaInlineTextWidth('A\0日本'), 1);
-  assert.equal(aokanaInlineTextWidth('\x7f\x80\uff60\uff61\uff9f\uffa0'), 9);
+  assert.equal(burikoInlineTextWidth('A日\uff76\ud83d\ude00\ud800'), 8);
+  assert.equal(burikoInlineTextWidth('A\0日本'), 1);
+  assert.equal(burikoInlineTextWidth('\x7f\x80\uff60\uff61\uff9f\uffa0'), 9);
 });
 
 test('inline WM_CHAR distinguishes full-width filtering, editing controls, selection and paste', () => {
-  const state = new AokanaInlineTextState();
+  const state = new BurikoInlineTextState();
   state.limit = 4;
   assert.equal(state.character(65, '日本', 0, 1), 'default');
   assert.equal(state.character(65, '日本', 2, 2), 'consume');
@@ -51,7 +48,7 @@ test('inline WM_CHAR distinguishes full-width filtering, editing controls, selec
 });
 
 test('inline specification validates in native order without performing later lifecycle geometry', () => {
-  const state = new AokanaInlineTextState(),
+  const state = new BurikoInlineTextState(),
     d = display(),
     fonts = {
       name(id) {
@@ -78,39 +75,39 @@ test('inline specification validates in native order without performing later li
 
 test('viewport scaling preserves odd fit margins, wrapping products and half-open caller corners', () => {
   const d = display();
-  assert.deepEqual(aokanaDisplayTransformRectangle(d, [2, 3, 22, 23]), [3, 4, 33, 34]);
-  assert.deepEqual(aokanaDisplayScaleSize(d, 20, 24), [30, 36]);
-  assert.deepEqual(aokanaDisplayScaleSize(d, 0x80000000, 1), [0, 1]);
+  assert.deepEqual(burikoDisplayTransformRectangle(d, [2, 3, 22, 23]), [3, 4, 33, 34]);
+  assert.deepEqual(burikoDisplayScaleSize(d, 20, 24), [30, 36]);
+  assert.deepEqual(burikoDisplayScaleSize(d, 0x80000000, 1), [0, 1]);
   d.fullscreen = 1;
   d.desktopWidth = 1001;
   d.desktopHeight = 751;
-  assert.deepEqual(aokanaDisplayViewport(d), [0, 0, 1000, 750]);
+  assert.deepEqual(burikoDisplayViewport(d), [0, 0, 1000, 750]);
   d.desktopHeight = 750;
-  assert.deepEqual(aokanaDisplayViewport(d), [0, 0, 1000, 749]);
-  assert.equal(aokanaDisplayScaleSize(d, 800, 600)[0], 1001);
+  assert.deepEqual(burikoDisplayViewport(d), [0, 0, 1000, 749]);
+  assert.equal(burikoDisplayScaleSize(d, 800, 600)[0], 1001);
   d.displayMode = 2;
-  assert.deepEqual(aokanaDisplayViewport(d), [100, 75, 900, 674]);
+  assert.deepEqual(burikoDisplayViewport(d), [100, 75, 900, 674]);
   d.displayMode = 3;
-  assert.throws(() => aokanaDisplayViewport(d), /unwritten/);
+  assert.throws(() => burikoDisplayViewport(d), /unwritten/);
 });
 
 test('shake targets consume exactly thirty-two shared CRT draws including invalid quadrants', () => {
-  const expected = new AokanaCrtRandom(),
-    actual = new AokanaCrtRandom();
+  const expected = new BurikoCrtRandom(),
+    actual = new BurikoCrtRandom();
   expected.seed(123);
   actual.seed(123);
-  const pair = aokanaShakeTarget(actual, 3, 100, 0, [10, 20]);
+  const pair = burikoShakeTarget(actual, 3, 100, 0, [10, 20]);
   assert.ok(pair[0] >= 0 && pair[0] <= 100);
   assert.ok(pair[1] <= 0 && pair[1] >= -100);
   for (let i = 0; i < 32; i++) expected.next();
   assert.equal(actual.next(), expected.next());
-  assert.deepEqual(aokanaShakeTarget(actual, 3, 0, 0, [10, 20]), [0, 0]);
-  assert.deepEqual(aokanaShakeTarget(actual, 2, 100, 0, [10, 20]), [10, 20]);
+  assert.deepEqual(burikoShakeTarget(actual, 3, 0, 0, [10, 20]), [0, 0]);
+  assert.deepEqual(burikoShakeTarget(actual, 2, 100, 0, [10, 20]), [10, 20]);
   assert.equal(actual.next(), expected.next());
-  assert.deepEqual(aokanaShakeTarget(actual, 3, 100, 4, [10, 20]), [10, 20]);
+  assert.deepEqual(burikoShakeTarget(actual, 3, 100, 4, [10, 20]), [10, 20]);
   for (let i = 0; i < 32; i++) expected.next();
   assert.equal(actual.next(), expected.next());
-  assert.throws(() => aokanaShakeRandom(actual, -1), /IDIV/);
+  assert.throws(() => burikoShakeRandom(actual, -1), /IDIV/);
   expected.next();
   expected.next();
   assert.equal(actual.next(), expected.next());

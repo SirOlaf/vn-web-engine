@@ -1,30 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaFrameMetrics} from '../dist/engines/buriko/games/aokana/native/frame-metrics.js';
-import {createGroup80Metrics} from '../dist/engines/buriko/games/aokana/native/group-80-metrics.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoFrameMetrics} from '../dist/engines/buriko/native/frame-metrics.js';
+import {createGroup80Metrics} from '../dist/engines/buriko/native/group-80-metrics.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('80 06/07 expose the actual committed frame metrics with native stack and DWORD output order', () => {
   let ticks = 0n;
-  const metrics = new AokanaFrameMetrics(
+  const metrics = new BurikoFrameMetrics(
     {queryCounter: () => ticks, queryFrequency: () => 1000000n},
-    new AokanaNativeClock(() => 0),
+    new BurikoNativeClock(() => 0),
     {refreshRate: 60, readRasterScanline: () => 0x81000000},
   );
   const slots = createGroup80Metrics(metrics);
   assert.equal(slots.length, 2);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
     moduleCapacity: 16,
     frameCapacity: 0,
   });
-  const memory = new AokanaBpMemory(),
+  const memory = new BurikoBpMemory(),
     context = {thread, memory};
   const enable = (value) => {
     push32(thread, value);

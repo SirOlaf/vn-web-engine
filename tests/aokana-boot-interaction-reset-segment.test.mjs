@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaProductionDisplayResourceGraph} from '../dist/engines/buriko/games/aokana/native/production-display-resource-graph.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramMedia} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaBpThread} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBootInteractionResetSegment} from '../dist/engines/buriko/games/aokana/native/boot-interaction-reset-segment.js';
+import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramMedia} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBootInteractionResetSegment} from '../dist/engines/buriko/native/boot-interaction-reset-segment.js';
 
 class Element {
   constructor(tag) {
@@ -44,26 +44,26 @@ class Element {
 test('ECB90 interaction segment clears the shared Knob, Sprite, input and wait owners', async () => {
   const backing = new MountedFileSystem();
   backing.mount('/game', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
       records: [],
       volumes: [{path: '/', identity: {}, writable: true}],
       canonical: (path) => path.toLowerCase(),
       currentFileTime: () => 123n,
       accessTimePolicy: 'disabled',
     }),
-    paths = new AokanaMountedProgramPaths(
+    paths = new BurikoMountedProgramPaths(
       [
         {native: 'C:\\game', mounted: '/game'},
         {native: 'D:\\Drops', mounted: '/drops'},
       ],
       'C:\\game',
     ),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
     document = {createElement: (tag) => new Element(tag)},
     parent = document.createElement('div'),
     canvas = document.createElement('canvas'),
-    graph = new AokanaProductionDisplayResourceGraph({
+    graph = new BurikoProductionDisplayResourceGraph({
       document,
       parent,
       canvas,
@@ -92,7 +92,7 @@ test('ECB90 interaction segment clears the shared Knob, Sprite, input and wait o
         verticalScrollbarWidth: 0,
         horizontalScrollbarHeight: 0,
       },
-      nativeWindowTitle: encode('Aokana'),
+      nativeWindowTitle: encode('Buriko'),
       preferredDialogTitle: null,
       cursorResource: null,
       performance: {now: () => 0},
@@ -125,7 +125,7 @@ test('ECB90 interaction segment clears the shared Knob, Sprite, input and wait o
       resource: {
         mounted,
         paths,
-        media: new AokanaProgramMedia(),
+        media: new BurikoProgramMedia(),
         configuration: {
           nativeFileRoot: 'C:\\game\\',
           primaryRoot: encode('C:\\game\\'),
@@ -140,14 +140,14 @@ test('ECB90 interaction segment clears the shared Knob, Sprite, input and wait o
         errorDirectory: encode('C:\\game\\'),
         workingDirectory: encode('C:\\game\\'),
         audioRootWide: 'C:\\game\\',
-        backend: new AokanaMemorySpeakerBackend(1000),
+        backend: new BurikoMemorySpeakerBackend(1000),
         output: {prefer24Bit: false},
         resourceWorkerCount: 1,
         sleep: async () => {},
       },
     });
   try {
-    const segment = new AokanaBootInteractionResetSegment(graph),
+    const segment = new BurikoBootInteractionResetSegment(graph),
       spriteHandle = graph.manager.createSprite(),
       sprite = graph.manager.find('sprite', spriteHandle);
     assert.ok(sprite);
@@ -165,7 +165,7 @@ test('ECB90 interaction segment clears the shared Knob, Sprite, input and wait o
     assert.ok(before.pointer.some((entry) => entry.object === sprite));
     assert.ok(before.pointer.some((entry) => entry.object === knobObject));
 
-    const waitingThread = new AokanaBpThread({
+    const waitingThread = new BurikoBpThread({
       id: 1,
       operandCapacity: 0,
       moduleCapacity: 0,

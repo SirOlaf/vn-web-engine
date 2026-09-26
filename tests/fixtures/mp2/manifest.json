@@ -1,0 +1,42 @@
+{
+  "generator": "generate.mjs",
+  "reference": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "fixtures": [
+    {
+      "name": "tone-44100-2",
+      "sampleRate": 44100,
+      "channels": 2,
+      "description": "Independent440/997Hz tone channels followed by exact zero input; encoder-generated frames.",
+      "samples": 9216,
+      "encodedSha256": "ccb2eadad57a1d9a6fc98af3d3d8e1801b63697e5be41b35ad009a48b9bec4c1",
+      "pcmSha256": "5b8cfe39cfc62822c66e273abd401f1712abb3a415adf991bfb7b14d79325231"
+    },
+    {
+      "name": "tone-48000-2",
+      "sampleRate": 48000,
+      "channels": 2,
+      "description": "Independent440/997Hz tone channels followed by exact zero input; encoder-generated frames.",
+      "samples": 9216,
+      "encodedSha256": "974dfb02ef1633187c23117dfcaf0e67a757d745e147be6da426c23985b2e363",
+      "pcmSha256": "67bac32e9c04667018ea2447996bdf5cba696dcf853f1dfd3d9215ead9d44804"
+    },
+    {
+      "name": "tone-32000-1",
+      "sampleRate": 32000,
+      "channels": 1,
+      "description": "Independent440/997Hz tone channels followed by exact zero input; encoder-generated frames.",
+      "samples": 9216,
+      "encodedSha256": "e13f0acc6fa7f733f6bcb0e57d103ecfcadc8c41067d333e41f32ab7da76a925",
+      "pcmSha256": "4107da7f39a956a27bace62c40861d8cb04a478fb7e637c1715b87aa6d1889a3"
+    },
+    {
+      "name": "joint-crc-44100",
+      "sampleRate": 44100,
+      "channels": 2,
+      "description": "Constructed joint-stereo grouped samples with independent6/12 scalefactors and validated LayerII CRC.",
+      "samples": 9216,
+      "encodedSha256": "53756ecfd4659d072e107789052b37e118bcd7cdf79285006ddaa93ea8478983",
+      "pcmSha256": "05a4a600e4a95b5df29adb22b2d33f8f77f63d5c99324b484f92d8e6da2327c3"
+    }
+  ]
+}

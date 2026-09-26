@@ -1,32 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpInterpreter} from '../dist/engines/buriko/games/aokana/bp/interpreter.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpModuleExtensions} from '../dist/engines/buriko/games/aokana/bp/module-extensions.js';
-import {controlOpcodes} from '../dist/engines/buriko/games/aokana/bp/opcodes/control.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
+import {BurikoBpInterpreter} from '../dist/engines/buriko/bp/interpreter.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpModuleExtensions} from '../dist/engines/buriko/bp/module-extensions.js';
+import {controlOpcodes} from '../dist/engines/buriko/bp/opcodes/control.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
-import {createGroup91RasterSettings} from '../dist/engines/buriko/games/aokana/native/group-91-raster-settings.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup81SharedInterpreters} from '../dist/engines/buriko/games/aokana/native/group-81-shared-interpreters.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
+import {createGroup91RasterSettings} from '../dist/engines/buriko/native/group-91-raster-settings.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup81SharedInterpreters} from '../dist/engines/buriko/native/group-81-shared-interpreters.js';
 import {
-  AOKANA_NATIVE_SLOT_ADDRESSES,
-  AOKANA_PRIMARY_SLOT_ADDRESSES,
-} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaNativeBank} from '../dist/engines/buriko/games/aokana/native/registry.js';
-import {AokanaSharedInterpreters} from '../dist/engines/buriko/games/aokana/native/shared-interpreters.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BURIKO_NATIVE_SLOT_ADDRESSES,
+  BURIKO_PRIMARY_SLOT_ADDRESSES,
+} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoNativeBank} from '../dist/engines/buriko/native/registry.js';
+import {BurikoSharedInterpreters} from '../dist/engines/buriko/native/shared-interpreters.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const nativeDefinitions = () =>
-  Object.entries(AOKANA_NATIVE_SLOT_ADDRESSES).flatMap(([primary, slots]) =>
+  Object.entries(BURIKO_NATIVE_SLOT_ADDRESSES).flatMap(([primary, slots]) =>
     Object.entries(slots).map(([secondary, nativeAddress]) => ({
       primary: Number(primary),
       secondary: Number(secondary),
@@ -40,9 +40,9 @@ const nativeDefinitions = () =>
 
 const directHandlers = () =>
   Object.fromEntries(
-    Object.keys(AOKANA_PRIMARY_SLOT_ADDRESSES)
+    Object.keys(BURIKO_PRIMARY_SLOT_ADDRESSES)
       .map(Number)
-      .filter((opcode) => !AOKANA_NATIVE_SLOT_ADDRESSES[opcode] && opcode !== 0xff)
+      .filter((opcode) => !BURIKO_NATIVE_SLOT_ADDRESSES[opcode] && opcode !== 0xff)
       .map((opcode) => [
         opcode,
         () => {
@@ -52,21 +52,21 @@ const directHandlers = () =>
   );
 
 test('81 48 runs one short result-four child per indexed global worker and restores shared owners', async () => {
-  const allocator = new AokanaDistributedAllocator(3),
-    processing = new AokanaDistributedProcessing(allocator, 3),
-    locks = new AokanaNativeLocks(allocator),
-    compositor = new AokanaBitmapCompositor(),
-    control = new AokanaVmControlState(),
-    diagnostics = new AokanaBpDiagnostics(() => assert.fail('Unexpected write-watch notice')),
-    memory = new AokanaBpMemory(new Uint8Array()),
-    text = new AokanaNativeText(),
-    errors = new AokanaEngineErrors(
+  const allocator = new BurikoDistributedAllocator(3),
+    processing = new BurikoDistributedProcessing(allocator, 3),
+    locks = new BurikoNativeLocks(allocator),
+    compositor = new BurikoBitmapCompositor(),
+    control = new BurikoVmControlState(),
+    diagnostics = new BurikoBpDiagnostics(() => assert.fail('Unexpected write-watch notice')),
+    memory = new BurikoBpMemory(new Uint8Array()),
+    text = new BurikoNativeText(),
+    errors = new BurikoEngineErrors(
       {text},
       {show: () => assert.fail('Unexpected shared-interpreter error dialog')},
       Uint8Array.of(0),
       Uint8Array.of(0),
     ),
-    parent = new AokanaBpThread({
+    parent = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 64,
@@ -78,7 +78,7 @@ test('81 48 runs one short result-four child per indexed global worker and resto
   push32(parent, 1);
   const rasterControl = createGroup91RasterSettings(
     compositor,
-    new AokanaNativeFonts(text),
+    new BurikoNativeFonts(text),
     control,
   ).find((slot) => slot.secondary === 0x0b);
   assert.equal(rasterControl.execute({thread: parent, memory, diagnostics}), 0);
@@ -86,16 +86,16 @@ test('81 48 runs one short result-four child per indexed global worker and resto
   compositor.processing = processing;
   const entryActor = allocator.currentActor,
     seen = [];
-  const shared = new AokanaSharedInterpreters(control, processing, compositor, locks, null, errors),
+  const shared = new BurikoSharedInterpreters(control, processing, compositor, locks, null, errors),
     [definition] = createGroup81SharedInterpreters(shared);
-  const interpreter = new AokanaBpInterpreter(
+  const interpreter = new BurikoBpInterpreter(
     {...directHandlers(), 0x17: controlOpcodes[0x17]},
-    new AokanaNativeBank(
+    new BurikoNativeBank(
       nativeDefinitions().map((slot) =>
         slot.primary === 0x81 && slot.secondary === 0x48 ? definition : slot,
       ),
     ),
-    new AokanaBpModuleExtensions({readModule: () => null}),
+    new BurikoBpModuleExtensions({readModule: () => null}),
     (thread) => {
       seen.push({
         id: thread.id,

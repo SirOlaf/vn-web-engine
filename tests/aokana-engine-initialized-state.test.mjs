@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {AokanaEngineInitializedState} from '../dist/engines/buriko/games/aokana/native/engine-initialized-state.js';
+import {BurikoEngineInitializedState} from '../dist/engines/buriko/native/engine-initialized-state.js';
 
 test('engine lifecycle bit separates grouped startup return from final publication and clears at teardown ingress', () => {
   const events = [];
-  const state = new AokanaEngineInitializedState();
+  const state = new BurikoEngineInitializedState();
   assert.equal(state.initialized, false);
 
   assert.equal(

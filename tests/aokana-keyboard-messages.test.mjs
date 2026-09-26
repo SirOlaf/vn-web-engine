@@ -1,21 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
 import {
-  AokanaKeyboardMessages,
-  aokanaWindowsScanCode,
-} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
+  BurikoKeyboardMessages,
+  burikoWindowsScanCode,
+} from '../dist/engines/buriko/native/keyboard-messages.js';
 function setup() {
-  const input = new AokanaNativeInput(
-    new AokanaNativeDisplayState(1920, 1080),
-    new AokanaNativeClock(() => 10),
+  const input = new BurikoNativeInput(
+    new BurikoNativeDisplayState(1920, 1080),
+    new BurikoNativeClock(() => 10),
   );
   input.foreground = true;
-  const queue = new AokanaWindowMessages(input),
-    keyboard = new AokanaKeyboardMessages(queue);
+  const queue = new BurikoWindowMessages(input),
+    keyboard = new BurikoKeyboardMessages(queue);
   const post = (code, keyCode, down = true, repeat = false, altGraph = false, target = 'main') =>
     keyboard.post(target, {
       code,
@@ -56,7 +56,7 @@ test('keyboard generic modifiers remain held when the opposite physical modifier
   assert.equal(input.keyboardState[16], 0);
   post('NumpadEnter', 13);
   assert.equal(queue.take().lParam, 0x011c0001);
-  assert.equal(aokanaWindowsScanCode('NumLock'), 0xe045);
+  assert.equal(burikoWindowsScanCode('NumLock'), 0xe045);
 });
 test('Alt menu latch, Ctrl+Alt and F10 produce distinct native system-key sequences', () => {
   const s = setup();

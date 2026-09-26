@@ -2,20 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaSpeakerContext} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaAudioChannels} from '../dist/engines/buriko/games/aokana/native/audio/channel-registry.js';
-import {AokanaAudioArchiveCache} from '../dist/engines/buriko/games/aokana/native/audio/archive-cache.js';
-import {AokanaFileStorage} from '../dist/engines/buriko/games/aokana/native/audio/file-storage.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
+import {BurikoAudioArchiveCache} from '../dist/engines/buriko/native/audio/archive-cache.js';
+import {BurikoFileStorage} from '../dist/engines/buriko/native/audio/file-storage.js';
 
 function wave(sample) {
   const bytes = new Uint8Array(72),
@@ -36,14 +36,14 @@ function wave(sample) {
 test('shared audio wide path search resolves mounted PCM and real directories in configured order', async () => {
   const actor = {},
     actors = {currentActor: actor},
-    locks = new AokanaNativeLocks(actors);
+    locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
-  const backend = new AokanaMemorySpeakerBackend(1000),
-    channels = new AokanaAudioChannels(
-      new AokanaSpeakerContext(backend),
+  const backend = new BurikoMemorySpeakerBackend(1000),
+    channels = new BurikoAudioChannels(
+      new BurikoSpeakerContext(backend),
       locks,
       actors,
-      new AokanaSystemTicks({now: () => 0}),
+      new BurikoSystemTicks({now: () => 0}),
       {prefer24Bit: false},
     );
   channels.initialize({});
@@ -53,7 +53,7 @@ test('shared audio wide path search resolves mounted PCM and real directories in
     {kind: 'write', path: '/game/audio/voice.bw', data: wave(16384)},
     {kind: 'write', path: '/game/other/voice.bw', data: wave(-8192)},
   ]);
-  const mounted = new AokanaMountedFileMetadata(backing, {
+  const mounted = new BurikoMountedFileMetadata(backing, {
     records: ['audio', 'other'].map((name) => ({
       path: `/game/${name}/voice.bw`,
       kind: 'file',
@@ -67,13 +67,13 @@ test('shared audio wide path search resolves mounted PCM and real directories in
     currentFileTime: () => 123n,
     accessTimePolicy: 'disabled',
   });
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       mounted,
-      new AokanaNativeText(),
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+      new BurikoNativeText(),
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
     ),
-    cache = new AokanaAudioArchiveCache(channels, files);
+    cache = new BurikoAudioArchiveCache(channels, files);
   cache.rootWide = 'C:\\game\\';
   const storages = [];
   try {
@@ -85,7 +85,7 @@ test('shared audio wide path search resolves mounted PCM and real directories in
       assert.equal(selected, 'C:\\game\\audio\\voice.bw');
       assert.equal(await cache.resolveLoosePath('audio', actor), 'C:\\game\\audio');
       assert.equal(channels.section.depth, 1);
-      const storage = new AokanaFileStorage(files);
+      const storage = new BurikoFileStorage(files);
       storages.push(storage);
       assert.equal(await storage.open(selected), true);
       const bytes = new Uint8Array(storage.size),

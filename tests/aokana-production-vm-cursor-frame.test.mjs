@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBrowserCursorPosition} from '../dist/engines/buriko/games/aokana/native/cursor-motion.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBrowserCursorPosition} from '../dist/engines/buriko/native/cursor-motion.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted cursor frame steps motion, auto-hide and custom Sprite in native order', async () => {
@@ -28,7 +28,7 @@ test('mounted cursor frame steps motion, auto-hide and custom Sprite in native o
     assert.equal(graph.cursorMotion.platform, graph.cursorPosition);
     assert.equal(graph.cursorFrame.motion, graph.cursorMotion);
     assert.equal(graph.cursorFrame.policy, graph.cursorPolicy);
-    assert.ok(graph.cursorPosition instanceof AokanaBrowserCursorPosition);
+    assert.ok(graph.cursorPosition instanceof BurikoBrowserCursorPosition);
     assert.equal(graph.manager.configureDescriptor(64, 32, 1, 64 * 32), 1);
     assert.equal(graph.device.isPresent(), false);
     graph.display.requestedWidth = 800;

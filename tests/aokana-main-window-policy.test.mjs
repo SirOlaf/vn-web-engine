@@ -1,47 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
 import {
-  AokanaNativeCursor,
-  AokanaEngineDialogs,
-} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
-import {AokanaCursorPolicy} from '../dist/engines/buriko/games/aokana/native/cursor-policy.js';
+  BurikoNativeCursor,
+  BurikoEngineDialogs,
+} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
+import {BurikoCursorPolicy} from '../dist/engines/buriko/native/cursor-policy.js';
 import {
-  AokanaBrowserMainWindow,
-  aokanaWindowCenteredPosition,
-  aokanaWindowPositionAllowed,
-} from '../dist/engines/buriko/games/aokana/native/browser-main-window.js';
-import {AokanaInlineTextControl} from '../dist/engines/buriko/games/aokana/native/inline-text-control.js';
-import {AokanaShakeProcess} from '../dist/engines/buriko/games/aokana/native/shake-process.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaCrtRandom} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
+  BurikoBrowserMainWindow,
+  burikoWindowCenteredPosition,
+  burikoWindowPositionAllowed,
+} from '../dist/engines/buriko/native/browser-main-window.js';
+import {BurikoInlineTextControl} from '../dist/engines/buriko/native/inline-text-control.js';
+import {BurikoShakeProcess} from '../dist/engines/buriko/native/shake-process.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoCrtRandom} from '../dist/engines/buriko/native/system-timing.js';
 import {
   createGroupB0Blit,
   createGroupB0Geometry,
   createGroupB0CursorPolicy,
   createGroupB0Shake,
   createGroupB0InlineText,
-} from '../dist/engines/buriko/games/aokana/native/group-b0-main.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+} from '../dist/engines/buriko/native/group-b0-main.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 // A DOM primitive fixture: it never creates a browser, canvas context, image, or rendered asset.
 class Element {
@@ -131,34 +131,34 @@ function setup() {
   };
   const parent = document.createElement('div'),
     surface = document.createElement('canvas');
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   text.selectMode(1);
-  const fonts = new AokanaNativeFonts(text, {
+  const fonts = new BurikoNativeFonts(text, {
     async create(request) {
       fontRequests.push(request);
       return {cssFamily: 'Fixture Sans', emSize: request.height - 2, horizontalScale: 1.25};
     },
   });
   fonts.registerName(new TextEncoder().encode('Fixture Sans'), 0);
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
   const bounds = {left: 0, top: 0, right: 799, bottom: 599};
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(1024, bounds),
+    new BurikoDisplayDamage(1024, bounds),
   );
-  const display = new AokanaNativeDisplayState(1920, 1080);
+  const display = new BurikoNativeDisplayState(1920, 1080);
   display.requestedWidth = 800;
   display.requestedHeight = 600;
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     environment,
-    new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1)),
+    new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1)),
     display,
   );
   manager.bindDisplayContext({
     bounds,
     bitmap: {
-      storage: new AokanaBitmapStorage(new Uint8Array(800 * 600 * 4), true),
+      storage: new BurikoBitmapStorage(new Uint8Array(800 * 600 * 4), true),
       offset: 0,
       stride: 3200,
       width: 800,
@@ -167,12 +167,12 @@ function setup() {
       bytesPerPixel: 4,
     },
   });
-  const clock = new AokanaNativeClock(() => time.now);
+  const clock = new BurikoNativeClock(() => time.now);
   clock.setGapLimit(60000);
-  const input = new AokanaNativeInput(display, clock);
+  const input = new BurikoNativeInput(display, clock);
   input.foreground = input.pointerAvailable = true;
-  const physical = new AokanaNativeCursor(surface),
-    cursor = new AokanaCursorPolicy(manager, input, clock, physical);
+  const physical = new BurikoNativeCursor(surface),
+    cursor = new BurikoCursorPolicy(manager, input, clock, physical);
   const calls = {
     geometry: 0,
     geometryValues: [],
@@ -181,7 +181,7 @@ function setup() {
     suppressed: false,
     refreshed: 0,
   };
-  const host = new AokanaBrowserMainWindow(document, parent, surface, manager, {
+  const host = new BurikoBrowserMainWindow(document, parent, surface, manager, {
     isReady: () => calls.ready,
     presentTransient: (x, y) => {
       calls.presented.push([x, y]);
@@ -193,7 +193,7 @@ function setup() {
       calls.geometryValues.push(y);
     },
   });
-  const dialogs = new AokanaEngineDialogs(
+  const dialogs = new BurikoEngineDialogs(
     {},
     text,
     clock,
@@ -209,19 +209,19 @@ function setup() {
     null,
     new Uint8Array(),
   );
-  const messages = new AokanaWindowMessages(input),
-    keyboard = new AokanaKeyboardMessages(messages);
-  const inline = new AokanaInlineTextControl(host, fonts, dialogs, messages, keyboard);
-  const thread = new AokanaBpThread({
+  const messages = new BurikoWindowMessages(input),
+    keyboard = new BurikoKeyboardMessages(messages);
+  const inline = new BurikoInlineTextControl(host, fonts, dialogs, messages, keyboard);
+  const thread = new BurikoBpThread({
     id: 7,
     operandCapacity: 32,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const procedures = new AokanaProcedureState(),
-    random = new AokanaCrtRandom();
+  const procedures = new BurikoProcedureState(),
+    random = new BurikoCrtRandom();
   const shake = () =>
-    new AokanaShakeProcess(
+    new BurikoShakeProcess(
       thread,
       procedures,
       clock,
@@ -274,17 +274,17 @@ test('mode geometry preserves the requested window size, focus and device storag
   assert.deepEqual([display.windowX, display.windowY], [100, 200]);
   assert.deepEqual([parent.style.width, parent.style.height], ['816px', '639px']);
   assert.deepEqual([surface.style.width, surface.style.height], ['800px', '600px']);
-  assert.equal(parent['data-aokana-window-style'], '90ca0000');
+  assert.equal(parent['data-buriko-window-style'], '90ca0000');
   assert.equal(parent.style.zIndex, 'auto');
   host.applyFullscreenGeometry(-1920, -100, 1920, 1080);
   assert.deepEqual([parent.style.width, parent.style.height], ['1920px', '1080px']);
   assert.deepEqual([display.windowX, display.windowY], [-1920, -100]);
   assert.deepEqual([display.requestedWidth, display.requestedHeight], [800, 600]);
-  assert.equal(parent['data-aokana-window-style'], '90000000');
+  assert.equal(parent['data-buriko-window-style'], '90000000');
   host.applyWindowedGeometry(1024, 768, [50, 60], 0x90ce0000);
   assert.deepEqual([display.windowX, display.windowY], [50, 60]);
   assert.deepEqual([display.requestedWidth, display.requestedHeight], [1024, 768]);
-  assert.equal(parent['data-aokana-window-style'], '90ce0000');
+  assert.equal(parent['data-buriko-window-style'], '90ce0000');
   assert.equal(document.activeElement, surface);
   assert.deepEqual([surface.width, surface.height], [320, 240]);
   assert.equal(manager.environment.displayContext, descriptor);
@@ -304,14 +304,14 @@ test('window monitor containment, centering and pending/direct moves use the one
     31,
   );
   d.frameInsetWidth = 17;
-  assert.deepEqual(aokanaWindowCenteredPosition(d), [-1369, 171]);
+  assert.deepEqual(burikoWindowCenteredPosition(d), [-1369, 171]);
   assert.equal(host.center(), 1);
   assert.deepEqual(
     [d.windowX, d.windowY, parent.style.left, parent.style.top],
     [-1369, 171, '-1369px', '171px'],
   );
-  assert.equal(aokanaWindowPositionAllowed(d, -2620, -625), true);
-  assert.equal(aokanaWindowPositionAllowed(d, -2621, -625), false);
+  assert.equal(burikoWindowPositionAllowed(d, -2620, -625), true);
+  assert.equal(burikoWindowPositionAllowed(d, -2621, -625), false);
   assert.equal(host.move(-500, 200), 1);
   assert.deepEqual(d.pendingWindowPosition, [-500, 200]);
   assert.equal(d.windowPositionPending, 1);
@@ -322,7 +322,7 @@ test('window monitor containment, centering and pending/direct moves use the one
   assert.equal(calls.geometry, 1);
   assert.deepEqual(calls.geometryValues, [250]);
   d.fullscreen = 1;
-  assert.deepEqual(aokanaWindowCenteredPosition(d), [0, 0]);
+  assert.deepEqual(burikoWindowCenteredPosition(d), [0, 0]);
   assert.equal(host.center(), 0);
   assert.equal(host.move(10, 10), 0);
   assert.equal(d.windowX, 100);
@@ -332,7 +332,7 @@ test('custom cursor activation, logical movement and independent visibility use 
   const {cursor, input, manager, environment, physical} = setup();
   const handle = manager.createSimple(
     'sprite',
-    (order) => new AokanaDisplayObject(environment, 1, order, 1),
+    (order) => new BurikoDisplayObject(environment, 1, order, 1),
   );
   input.pointerClientX = 12;
   input.pointerClientY = 30;
@@ -429,7 +429,7 @@ test('shake skips late presentations while advancing phase and shares its CRT dr
   ]);
   process.dispose();
   const t = setup(),
-    expected = new AokanaCrtRandom();
+    expected = new BurikoCrtRandom();
   t.random.seed(123);
   expected.seed(123);
   const randomShake = t.shake();
@@ -625,8 +625,8 @@ test('inline synthetic navigation updates the selection while physical key prove
 
 test('all eighteen B0 wrapper definitions preserve stack order and install the actual shake procedure', async () => {
   const s = setup(),
-    memory = new AokanaBpMemory(new Uint8Array(128));
-  const scheduler = new AokanaBpScheduler(s.thread, () => 0);
+    memory = new BurikoBpMemory(new Uint8Array(128));
+  const scheduler = new BurikoBpScheduler(s.thread, () => 0);
   const errors = {
     threadFatal() {
       assert.fail('normal B0 operations should succeed');
@@ -641,14 +641,14 @@ test('all eighteen B0 wrapper definitions preserve stack order and install the a
   ];
   assert.equal(slots.length, 18);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0xb0][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0xb0][slot.secondary]);
   const run = async (secondary, values = []) => {
     for (const value of values) push32(s.thread, value);
     return slots.find((slot) => slot.secondary === secondary).execute({thread: s.thread, memory});
   };
   const handle = s.manager.createSimple(
     'sprite',
-    (order) => new AokanaDisplayObject(s.environment, 1, order, 1),
+    (order) => new BurikoDisplayObject(s.environment, 1, order, 1),
   );
   await run(0x04, [handle, 6, 9]);
   assert.deepEqual(s.manager.resolve(handle).position(), {x: 6, y: 9});
@@ -664,7 +664,7 @@ test('all eighteen B0 wrapper definitions preserve stack order and install the a
   assert.equal(pop32(s.thread), 1);
   assert.equal(s.inline.state.alignment, 2);
   assert.equal(await run(0x08, [1, 8, 1, 1, 0, 4, 0]), 2);
-  assert.equal(scheduler.root.process instanceof AokanaShakeProcess, true);
+  assert.equal(scheduler.root.process instanceof BurikoShakeProcess, true);
   assert.equal(scheduler.root.process.mode, 1);
   assert.equal(s.thread.stackIndex, 0);
   for (let tick = 0; tick < 4; tick++) {

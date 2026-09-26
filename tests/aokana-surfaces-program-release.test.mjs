@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 test('0405C0 releases every fixed surface slot in order under one actor', () => {
-  const allocator = new AokanaDistributedAllocator(1),
-    fonts = new AokanaNativeFonts(new AokanaNativeText()),
-    surfaces = new AokanaSurfaces(fonts, new AokanaBitmapCompositor(), allocator),
+  const allocator = new BurikoDistributedAllocator(1),
+    fonts = new BurikoNativeFonts(new BurikoNativeText()),
+    surfaces = new BurikoSurfaces(fonts, new BurikoBitmapCompositor(), allocator),
     actor = {},
     originalActor = allocator.currentActor,
     visited = [];

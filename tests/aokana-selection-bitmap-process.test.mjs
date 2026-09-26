@@ -1,57 +1,57 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaIndependentIconState} from '../dist/engines/buriko/games/aokana/native/independent-icon.js';
-import {createGroup90SelectionBitmapProcess} from '../dist/engines/buriko/games/aokana/native/group-90-selection-bitmap-process.js';
-import {AokanaBitmapSelectionState} from '../dist/engines/buriko/games/aokana/native/selection-bitmap-state.js';
-import {AokanaSelectionState} from '../dist/engines/buriko/games/aokana/native/selection-state.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoIndependentIconState} from '../dist/engines/buriko/native/independent-icon.js';
+import {createGroup90SelectionBitmapProcess} from '../dist/engines/buriko/native/group-90-selection-bitmap-process.js';
+import {BurikoBitmapSelectionState} from '../dist/engines/buriko/native/selection-bitmap-state.js';
+import {BurikoSelectionState} from '../dist/engines/buriko/native/selection-state.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 function fixture() {
-  const text = new AokanaNativeText(),
-    compositor = new AokanaBitmapCompositor();
+  const text = new BurikoNativeText(),
+    compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(text),
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(text),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
   const bounds = {left: 0, top: 0, right: 63, bottom: 31},
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(128, bounds),
+      new BurikoDisplayDamage(128, bounds),
     );
-  const display = new AokanaNativeDisplayState(64, 32),
-    manager = new AokanaDisplayManager(environment, surfaces, display);
+  const display = new BurikoNativeDisplayState(64, 32),
+    manager = new BurikoDisplayManager(environment, surfaces, display);
   assert.equal(display.setSizePreset(display.selectedSizePreset, 64, 32), 0);
   display.requestedWidth = 64;
   display.requestedHeight = 32;
   display.refreshPointerStep();
-  manager.bindDisplayContext({bitmap: allocateAokanaBitmap(64, 32, 1), bounds});
-  const windows = new AokanaWindowDisplayState(manager);
+  manager.bindDisplayContext({bitmap: allocateBurikoBitmap(64, 32, 1), bounds});
+  const windows = new BurikoWindowDisplayState(manager);
   const created = manager.createConfigured(
     'window',
-    (order) => new AokanaWindowDisplayObject(windows, order),
+    (order) => new BurikoWindowDisplayObject(windows, order),
     (window) => window.configureInitial(32, 32),
   );
   assert.equal(created.result, 0);
@@ -68,31 +68,31 @@ function fixture() {
   }
 
   window.setLayer(3);
-  const clock = new AokanaNativeClock(() => 100),
-    input = new AokanaNativeInput(display, clock);
+  const clock = new BurikoNativeClock(() => 100),
+    input = new BurikoNativeInput(display, clock);
   input.foreground = true;
   input.pointerAvailable = true;
   input.pointerClientX = 3;
   input.pointerClientY = 4;
   input.resetCaptures();
-  const procedures = new AokanaProcedureState(),
-    waits = new AokanaWindowMessages(),
-    notifications = new AokanaNativeNotifications(),
-    settings = new AokanaBitmapSelectionState(),
-    textSettings = new AokanaSelectionState(),
-    iconSettings = new AokanaIndependentIconState();
-  const thread = new AokanaBpThread({
+  const procedures = new BurikoProcedureState(),
+    waits = new BurikoWindowMessages(),
+    notifications = new BurikoNativeNotifications(),
+    settings = new BurikoBitmapSelectionState(),
+    textSettings = new BurikoSelectionState(),
+    iconSettings = new BurikoIndependentIconState();
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const scheduler = new AokanaBpScheduler(
-      new AokanaBpThread({id: 0, operandCapacity: 0, moduleCapacity: 0, frameCapacity: 0}),
+  const scheduler = new BurikoBpScheduler(
+      new BurikoBpThread({id: 0, operandCapacity: 0, moduleCapacity: 0, frameCapacity: 0}),
       () => 0,
     ),
     node = scheduler.append(thread);
-  const memory = new AokanaBpMemory(new Uint8Array(1024)),
+  const memory = new BurikoBpMemory(new Uint8Array(1024)),
     view = new DataView(memory.globalMemory.buffer);
   const slots = createGroup90SelectionBitmapProcess(
     manager,
@@ -116,7 +116,7 @@ function fixture() {
     values.forEach((value, i) => view.setInt32(offset + i * 4, value, true));
   const call = async (secondary, args, result = 0) => {
     const slot = slots.find((s) => s.secondary === secondary);
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][secondary]);
     args.forEach((value) => push32(thread, value));
     assert.equal(await slot.execute({thread, memory, diagnostics: {}}), result);
     assert.equal(thread.stackIndex, 0);

@@ -1,18 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaPanBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop-pan.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoPanBackdrop} from '../dist/engines/buriko/native/display-backdrop-pan.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM pan backdrop selects four graph surfaces through software pixels', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke} = fixture;
-  const output = allocateAokanaBitmap(3, 2, 1);
+  const output = allocateBurikoBitmap(3, 2, 1);
   const call = async (secondary, args) => {
     assert.equal(await invoke(0x90, secondary, args, 0), 0);
     assert.equal(child.state.stackIndex, 0);
@@ -22,7 +19,7 @@ test('mounted VM pan backdrop selects four graph surfaces through software pixel
     Array.from({length: 6}, (_, index) =>
       bitmapRead32(output, output.offset + Math.floor(index / 3) * output.stride + (index % 3) * 4),
     );
-  const draw = () => graph.manager.backdrop.draw(output, aokanaBitmapRectangle(output), 0);
+  const draw = () => graph.manager.backdrop.draw(output, burikoBitmapRectangle(output), 0);
   const colors = [0x102030, 0x405060, 0x708090, 0xa0b0c0];
   try {
     assert.deepEqual(
@@ -45,7 +42,7 @@ test('mounted VM pan backdrop selects four graph surfaces through software pixel
     graph.damage.clear();
     await call(0x42, [0, 1, 2, 3, 1, 1]);
     const selected = graph.manager.backdrop;
-    assert.ok(selected instanceof AokanaPanBackdrop);
+    assert.ok(selected instanceof BurikoPanBackdrop);
     assert.deepEqual(
       [selected.activation, selected.contentEnabled, graph.manager.backdropRenderType],
       [1, 1, 3],

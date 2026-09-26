@@ -11,7 +11,7 @@ const roots = process.argv[2]
   : [current];
 const modules = await Promise.all(
   roots.map(async (root) => {
-    const native = new URL('engines/buriko/games/aokana/native/', root);
+    const native = new URL('engines/buriko/native/', root);
     const imports = await Promise.all(
       [
         'bitmap',
@@ -29,9 +29,9 @@ const modules = await Promise.all(
       {},
       ...imports,
       await import(new URL('audio/ogg-vorbis.js', native)),
-      await import(new URL('engines/buriko/games/aokana/bp/decode.js', root)),
-      await import(new URL('engines/buriko/games/aokana/bp/memory.js', root)),
-      await import(new URL('engines/buriko/games/aokana/bp/opcodes/operands.js', root)),
+      await import(new URL('engines/buriko/bp/decode.js', root)),
+      await import(new URL('engines/buriko/bp/memory.js', root)),
+      await import(new URL('engines/buriko/bp/opcodes/operands.js', root)),
     );
   }),
 );
@@ -47,7 +47,7 @@ function populate(bytes, seed) {
 }
 
 function bitmap(lib, seed, format = 2) {
-  const storage = new lib.AokanaBitmapStorage(new Uint8Array(1280 * 720 * 4), true);
+  const storage = new lib.BurikoBitmapStorage(new Uint8Array(1280 * 720 * 4), true);
   populate(storage.bytes, seed);
   return {storage, offset: 0, stride: 1280 * 4, width: 1280, height: 720, format, bytesPerPixel: 4};
 }
@@ -58,9 +58,9 @@ function blend(lib, operation) {
   const second = bitmap(lib, 789);
   return {
     run() {
-      if (operation === 'fused') lib.blendMixedAokanaBitmapsIntoRgb(output, first, second, 127, 63);
-      else if (operation === 'crossfade') lib.mixAokanaAllChannels(output, first, 127);
-      else lib.blendAokanaAlphaIntoRgb(output, first);
+      if (operation === 'fused') lib.blendMixedBurikoBitmapsIntoRgb(output, first, second, 127, 63);
+      else if (operation === 'crossfade') lib.mixBurikoAllChannels(output, first, 127);
+      else lib.blendBurikoAlphaIntoRgb(output, first);
       return output.storage.bytes;
     },
   };
@@ -68,8 +68,8 @@ function blend(lib, operation) {
 
 function copyRows(lib, shared) {
   const pitch = shared ? 2048 * 4 : 1280 * 4;
-  const input = new lib.AokanaBitmapStorage(new Uint8Array(pitch * 720 * (shared ? 2 : 1)), true);
-  const output = shared ? input : new lib.AokanaBitmapStorage(new Uint8Array(pitch * 720), true);
+  const input = new lib.BurikoBitmapStorage(new Uint8Array(pitch * 720 * (shared ? 2 : 1)), true);
+  const output = shared ? input : new lib.BurikoBitmapStorage(new Uint8Array(pitch * 720), true);
   populate(input.bytes, 123);
   const source = {
     storage: input,
@@ -83,7 +83,7 @@ function copyRows(lib, shared) {
   const destination = {...source, storage: output, offset: shared ? pitch * 720 : 0};
   return {
     run() {
-      lib.copyAokanaBitmapRows(destination, source);
+      lib.copyBurikoBitmapRows(destination, source);
       return output.bytes;
     },
   };
@@ -94,18 +94,18 @@ function copyRgbToAlpha(lib) {
   const destination = {...source, format: 2};
   return {
     run() {
-      destination.storage = new lib.AokanaBitmapStorage(new Uint8Array(1280 * 720 * 4), false);
-      lib.copyAokanaRgbToAlpha(destination, source);
+      destination.storage = new lib.BurikoBitmapStorage(new Uint8Array(1280 * 720 * 4), false);
+      lib.copyBurikoRgbToAlpha(destination, source);
       return destination.storage.bytes;
     },
   };
 }
 
 function raster(lib, width, height) {
-  const texture = new lib.AokanaDisplayTexture(2048, 1024, 21);
+  const texture = new lib.BurikoDisplayTexture(2048, 1024, 21);
   populate(texture.storage.bytes, 123);
   // Supply the device's raster inputs directly; never construct a presentation sink.
-  const device = Object.create(lib.AokanaDisplayDevice.prototype);
+  const device = Object.create(lib.BurikoDisplayDevice.prototype);
   device.manager = {displayState: {logicalWidth: 1280, logicalHeight: 720}};
   device.frame = {width, height, data: new Uint8ClampedArray(width * height * 4)};
   device.vertices = new Uint8Array(112);
@@ -136,7 +136,7 @@ function prepare(lib, patchWidth, patchHeight, fullUpload) {
   const {device, texture} = raster(lib, 1280, 720);
   Object.assign(device, {
     source: texture,
-    sampled: new lib.AokanaDisplayTexture(2048, 1024, 21),
+    sampled: new lib.BurikoDisplayTexture(2048, 1024, 21),
     logicalDeviceReady: true,
     rasterValid: false,
     rasterVertices: new Uint8Array(112),
@@ -171,7 +171,7 @@ function bytecode(lib) {
 }
 
 function scalarMemory(lib) {
-  const memory = new lib.AokanaBpMemory(new Uint8Array(4096));
+  const memory = new lib.BurikoBpMemory(new Uint8Array(4096));
   const thread = {moduleMemory: new Uint8Array(4096), frameMemory: new Uint8Array(4096)};
   const context = {memory, thread};
   return {
@@ -194,7 +194,7 @@ function oggChecksum(lib) {
   return {
     run() {
       let sum = 0;
-      for (let i = 0; i < 128; i++) sum += lib.aokanaOggChecksum(page);
+      for (let i = 0; i < 128; i++) sum += lib.burikoOggChecksum(page);
       return sum;
     },
   };
@@ -203,10 +203,10 @@ function oggChecksum(lib) {
 function importRgb(lib) {
   const bytes = new Uint8Array(1280 * 720 * 3);
   populate(bytes, 123);
-  const surfaces = new lib.AokanaSurfaces(
+  const surfaces = new lib.BurikoSurfaces(
     null,
-    new lib.AokanaBitmapCompositor(),
-    new lib.AokanaDistributedAllocator(1),
+    new lib.BurikoBitmapCompositor(),
+    new lib.BurikoDistributedAllocator(1),
   );
   return {
     run() {

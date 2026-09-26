@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 import {modernCbg, singleArchive} from './aokana-resource-direct-fixtures.mjs';
 const bytes = (value) => new TextEncoder().encode(value);
 
@@ -23,15 +23,15 @@ test('actual resource FIFO decodes initialized loose and archive CBG with a capt
       cwd: 'C:\\game',
       mounts: [{windows: 'C:\\', virtual: '/'}],
     }),
-    media = new AokanaProgramMedia();
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(fs, new AokanaNativeText(), media),
-    allocator = new AokanaDistributedAllocator(2),
+  const files = new BurikoProgramFiles(fs, new BurikoNativeText(), media),
+    allocator = new BurikoDistributedAllocator(2),
     mainActor = allocator.currentActor,
     workerActor = {},
-    processing = new AokanaDistributedProcessing(allocator, 2),
+    processing = new BurikoDistributedProcessing(allocator, 2),
     unavailable = () => assert.fail('ordinary initialized resource fixture'),
-    resources = new AokanaProgramResources(
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -48,7 +48,7 @@ test('actual resource FIFO decodes initialized loose and archive CBG with a capt
       {fatal: unavailable},
       processing,
     ),
-    loading = new AokanaResourceLoadingState(resources),
+    loading = new BurikoResourceLoadingState(resources),
     encoded = modernCbg();
   sources.attach('/game/image', new BlobSource(new Blob([encoded])));
   sources.attach('/game/data.arc', new BlobSource(new Blob([singleArchive('entry', encoded)])));

@@ -1,27 +1,27 @@
-import {bitmapWrite32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
+import {bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayRenderer} from '../dist/engines/buriko/games/aokana/native/display-renderer.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayRenderer} from '../dist/engines/buriko/native/display-renderer.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const rectangle = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, values = []) => ({
-  storage: new AokanaBitmapStorage(
+  storage: new BurikoBitmapStorage(
     new Uint8Array(
       new Uint32Array(Array.from({length: width * height}, (_, index) => values[index] ?? 0))
         .buffer,
@@ -36,40 +36,40 @@ const bitmap = (width, height, values = []) => ({
   bytesPerPixel: 4,
 });
 
-function fixture(width, height) {
-  const compositor = new AokanaBitmapCompositor();
+function fixture(width, height, compatibility = '1.72') {
+  const compositor = new BurikoBitmapCompositor(compatibility);
   compositor.defaultFormat = 1;
   const bounds = rectangle(0, 0, width - 1, height - 1),
     output = bitmap(width, height),
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(16, {...bounds}),
+      new BurikoDisplayDamage(16, {...bounds}),
     );
   environment.displayContext = {bitmap: output, bounds};
-  const allocator = new AokanaDistributedAllocator(2),
-    text = new AokanaNativeText(),
-    surfaces = new AokanaSurfaces(new AokanaNativeFonts(text), compositor, allocator),
-    manager = new AokanaDisplayManager(
+  const allocator = new BurikoDistributedAllocator(2),
+    text = new BurikoNativeText(),
+    surfaces = new BurikoSurfaces(new BurikoNativeFonts(text), compositor, allocator),
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     );
-  const processing = new AokanaDistributedProcessing(allocator, 2);
-  const renderer = new AokanaDisplayRenderer(manager, width * height * 8, processing);
-  const thread = new AokanaBpThread({
+  const processing = new BurikoDistributedProcessing(allocator, 2);
+  const renderer = new BurikoDisplayRenderer(manager, width * height * 8, processing);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const slots = createGroup90SurfaceEffects(new AokanaSurfaceEffects(surfaces), {
+  const slots = createGroup90SurfaceEffects(new BurikoSurfaceEffects(surfaces), {
     threadFatal() {
       assert.fail('ordinary surface effect');
     },
   });
   const call = (secondary, args) => {
     const slot = slots.find((entry) => entry.secondary === secondary);
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][secondary]);
     args.forEach((value) => push32(thread, value));
     const previousProcessing = compositor.processing;
     compositor.processing = processing;
@@ -112,11 +112,26 @@ function fixture(width, height) {
     );
     manager.find('sprite', handle).setActivation(0);
   }
-  return {surface, call, render};
+  function maskedBackdrop(first, second, mask, parameter, level, expected) {
+    assert.equal(
+      manager.configureMaskedBackdrop(0, 0, first, 0, 0, second, mask, parameter, level),
+      0,
+    );
+    manager.setBackdropActivation(1, 1);
+    renderer.drawFull();
+    assert.deepEqual(
+      Array.from(
+        {length: width * height},
+        (_, i) => output.storage.view.getUint32(i * 4, true) & 0xffffff,
+      ),
+      Array.from({length: width * height}, (_, i) => expected(i % width, Math.floor(i / width))),
+    );
+  }
+  return {surface, call, render, maskedBackdrop};
 }
 
-import {AokanaSurfaceEffects} from '../dist/engines/buriko/games/aokana/native/surface-effects.js';
-import {createGroup90SurfaceEffects} from '../dist/engines/buriko/games/aokana/native/group-90-surface-effects.js';
+import {BurikoSurfaceEffects} from '../dist/engines/buriko/native/surface-effects.js';
+import {createGroup90SurfaceEffects} from '../dist/engines/buriko/native/group-90-surface-effects.js';
 const gray = (value) => value * 0x010101;
 
 test('masked transition and optional-mask mix feed real sprites', () => {
@@ -130,6 +145,20 @@ test('masked transition and optional-mask mix feed real sprites', () => {
   s.render(1, (x) => gray([32, 64, 96, 159][x]));
   s.call(0x19, [4, 1, 0, 2, -1, 0, 128]);
   s.render(4, (x) => gray(x === 0 ? 32 : 96));
+});
+
+test('1.69 surface and backdrop transitions select low-three-bit triangle frequency', () => {
+  const s = fixture(7, 2, '1.69'),
+    coverage = [20, 40, 80, 120, 160, 200, 240],
+    expected = (x) => gray(32 + coverage[x] / 2);
+  s.surface(1, 1, () => gray(32));
+  s.surface(2, 1, () => gray(160));
+  s.surface(3, 3, (x) => coverage[x]);
+  s.surface(4, 1, () => gray(32));
+  s.call(0x19, [4, 0, 0, 2, 3, 8, 128]);
+  s.render(4, expected);
+  // Different high selector bits are the same frequency in this native revision.
+  s.maskedBackdrop(2, 1, 3, 24, 128, expected);
 });
 
 test('vector strips retain source bounds across rows and select actual endpoint maps', () => {

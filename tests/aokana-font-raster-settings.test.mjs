@@ -1,16 +1,16 @@
 import test from 'node:test';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {createGroup91FontRasterSettings} from '../dist/engines/buriko/games/aokana/native/group-91-font-raster-settings.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {createGroup91FontRasterSettings} from '../dist/engines/buriko/native/group-91-font-raster-settings.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import assert from 'node:assert/strict';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {releaseAokanaHorizontalTextLayout} from '../dist/engines/buriko/games/aokana/native/text-layout-horizontal.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {releaseBurikoHorizontalTextLayout} from '../dist/engines/buriko/native/text-layout-horizontal.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 function pointer(value) {
   const encoded = new TextEncoder().encode(value);
@@ -21,7 +21,7 @@ function pointer(value) {
 
 async function setup(size = 8) {
   const created = [];
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const browser = {
     async queryCharset() {
       return 1;
@@ -47,14 +47,14 @@ async function setup(size = 8) {
     },
     dispose() {},
   };
-  const fonts = new AokanaNativeFonts(text, browser);
+  const fonts = new BurikoNativeFonts(text, browser);
   fonts.rasterSettings.setQuality(-1);
   const selected = await fonts.get(new TextEncoder().encode('Synthetic'), size, 100, 0);
   assert.equal(selected.result, 0);
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
-  const state = new AokanaTextLayoutState(surfaces);
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
+  const state = new BurikoTextLayoutState(surfaces);
   return {created, fonts, state, fontId: selected.id};
 }
 
@@ -89,19 +89,19 @@ test('font raster settings affect real layout and reset at raster replacement', 
       assert.fail('ordinary font raster setting');
     },
   });
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(128));
+  const memory = new BurikoBpMemory(new Uint8Array(128));
   memory.globalMemory.set(name, 16);
   const context = {thread, memory, diagnostics: {}};
   async function invoke(secondary, args) {
     const slot = slots.find((entry) => entry.secondary === secondary);
     assert.equal(slot.primary, 0x91);
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x91][secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x91][secondary]);
     for (const value of args) push32(thread, value);
     assert.equal(await slot.execute(context), 0);
     assert.equal(thread.stackIndex, 0);
@@ -117,7 +117,7 @@ test('font raster settings affect real layout and reset at raster replacement', 
       assert.deepEqual(result.cursor, {x: cursorX, y: 0});
       assert.equal(firstPixel(result.nodes[0].bitmap), 0xff445566);
     } finally {
-      releaseAokanaHorizontalTextLayout(result.nodes);
+      releaseBurikoHorizontalTextLayout(result.nodes);
     }
   }
   await invoke(0x0e, [16, 0x10000, 0x10000, 0, 0]);

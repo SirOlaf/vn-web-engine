@@ -26,7 +26,7 @@
       "tool": "get_function_by_address",
       "program": "/aokana.exe",
       "address": "1400DE050",
-      "name": "AokanaNative90_01_SetPresentationEnabled",
+      "name": "BurikoNative90_01_SetPresentationEnabled",
       "entry": "1400de050",
       "reportedBodyStart": "1400de050",
       "reportedBodyEnd": "1400de066"

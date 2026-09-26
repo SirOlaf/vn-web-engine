@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBrowserMainWindow} from '../dist/engines/buriko/games/aokana/native/browser-main-window.js';
-import {AokanaDisplayAdapters} from '../dist/engines/buriko/games/aokana/native/display-adapters.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
+import {BurikoBrowserMainWindow} from '../dist/engines/buriko/native/browser-main-window.js';
+import {BurikoDisplayAdapters} from '../dist/engines/buriko/native/display-adapters.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
 
 class Element {
   style = {};
@@ -31,20 +31,20 @@ class Element {
 }
 
 test('main host supplies measured outer screen rectangle and retains it across minimize', () => {
-  const display = new AokanaNativeDisplayState(1000, 1000),
-    compositor = new AokanaBitmapCompositor(),
-    allocator = new AokanaDistributedAllocator(1),
-    manager = new AokanaDisplayManager(
-      new AokanaDisplayObjectEnvironment(
+  const display = new BurikoNativeDisplayState(1000, 1000),
+    compositor = new BurikoBitmapCompositor(),
+    allocator = new BurikoDistributedAllocator(1),
+    manager = new BurikoDisplayManager(
+      new BurikoDisplayObjectEnvironment(
         compositor,
-        new AokanaDisplayDamage(64, {left: 0, top: 0, right: 999, bottom: 999}),
+        new BurikoDisplayDamage(64, {left: 0, top: 0, right: 999, bottom: 999}),
       ),
-      new AokanaSurfaces(null, compositor, allocator),
+      new BurikoSurfaces(null, compositor, allocator),
       display,
     ),
     parent = new Element(),
     surface = new Element(),
-    host = new AokanaBrowserMainWindow({}, parent, surface, manager, {
+    host = new BurikoBrowserMainWindow({}, parent, surface, manager, {
       isReady: () => false,
       presentTransient: () => 0,
       inlinePaintSuppressed: () => false,
@@ -63,7 +63,7 @@ test('main host supplies measured outer screen rectangle and retains it across m
     nativePixelsPerCssX: 2,
     nativePixelsPerCssY: 2,
   }));
-  const adapters = new AokanaDisplayAdapters(
+  const adapters = new BurikoDisplayAdapters(
     display,
     [
       {

@@ -1,23 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaParticleVariants} from '../dist/engines/buriko/games/aokana/native/particle-images.js';
+import {BurikoParticleVariants} from '../dist/engines/buriko/native/particle-images.js';
 import {
-  AokanaFireflyMovement,
-  AokanaFireflyParticle,
-  AokanaSnowParticle,
-} from '../dist/engines/buriko/games/aokana/native/particle-objects.js';
-import {AokanaCrtRandom} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {
-  allocateAokanaBitmap,
-  fillAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
+  BurikoFireflyMovement,
+  BurikoFireflyParticle,
+  BurikoSnowParticle,
+} from '../dist/engines/buriko/native/particle-objects.js';
+import {BurikoCrtRandom} from '../dist/engines/buriko/native/system-timing.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {allocateBurikoBitmap, fillBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
 
 function frames(variants, kind, colors, option = 0) {
   const images = colors.map((color) => {
-    const bitmap = allocateAokanaBitmap(32, 32, 2);
-    fillAokanaBitmap(bitmap, color);
+    const bitmap = allocateBurikoBitmap(32, 32, 2);
+    fillBurikoBitmap(bitmap, color);
     return bitmap;
   });
   assert.equal(variants.configureImages(kind, 0, images, colors.length, 32768, 0, option), 0);
@@ -46,10 +43,10 @@ function fireflyParameters(variants, values = {}) {
 }
 
 test('snow particles preserve Q16 frame progression, Q8 air and constant integer movement', () => {
-  const variants = new AokanaParticleVariants();
+  const variants = new BurikoParticleVariants();
   frames(variants, 'snow', [0xff102030, 0xff405060]);
   variants.configureSnow(0, [0, 2560, 0, 256, 0, 512, 0, -256, 0, 512]);
-  const particle = new AokanaSnowParticle(0, variants, new AokanaCrtRandom());
+  const particle = new BurikoSnowParticle(0, variants, new BurikoCrtRandom());
   assert.deepEqual(particle.position(), {x: 0, y: 10, z: 0});
   particle.applyAir({x: 128, y: 256, z: -128});
   assert.deepEqual(particle.position(), {x: 1, y: 12, z: -1});
@@ -67,15 +64,15 @@ test('snow particles preserve Q16 frame progression, Q8 air and constant integer
 });
 
 test('firefly particles follow lifespan, transition and fade counters independently', () => {
-  const variants = new AokanaParticleVariants();
+  const variants = new BurikoParticleVariants();
   frames(variants, 'firefly', [0xff102030, 0xff405060]);
   fireflyParameters(variants);
-  const particle = new AokanaFireflyParticle(
+  const particle = new BurikoFireflyParticle(
     0,
     variants,
-    new AokanaCrtRandom(),
-    new AokanaFireflyMovement(),
-    new AokanaBitmapCompositor(),
+    new BurikoCrtRandom(),
+    new BurikoFireflyMovement(),
+    new BurikoBitmapCompositor(),
   );
   assert.equal(particle.transparency(), 256);
   for (let age = 1; age <= 5; age++) {
@@ -88,29 +85,29 @@ test('firefly particles follow lifespan, transition and fade counters independen
 });
 
 test('firefly movement retains normalization, lifetime adjustment and half-away angle rotation', () => {
-  const variants = new AokanaParticleVariants();
+  const variants = new BurikoParticleVariants();
   frames(variants, 'firefly', [0xff112233]);
   fireflyParameters(variants, {life: 8, vx: 3, vy: 4, vz: 0});
-  const normalized = new AokanaFireflyMovement();
+  const normalized = new BurikoFireflyMovement();
   normalized.configure([0, 0, 0, 1, 512, 0, 65536, 65536, 65536, 1, 1, 0, 0, 0]);
-  const first = new AokanaFireflyParticle(
+  const first = new BurikoFireflyParticle(
     0,
     variants,
-    new AokanaCrtRandom(),
+    new BurikoCrtRandom(),
     normalized,
-    new AokanaBitmapCompositor(),
+    new BurikoBitmapCompositor(),
   );
   assert.equal(first.update(), 1);
   assert.deepEqual(first.position(), {x: 1, y: 11, z: 0});
   fireflyParameters(variants, {life: 10, vx: 1, vy: 0, vz: 0, duration: 1});
-  const rotated = new AokanaFireflyMovement();
+  const rotated = new BurikoFireflyMovement();
   rotated.configure([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 90 * 65536 * 256, 0]);
-  const second = new AokanaFireflyParticle(
+  const second = new BurikoFireflyParticle(
     0,
     variants,
-    new AokanaCrtRandom(),
+    new BurikoCrtRandom(),
     rotated,
-    new AokanaBitmapCompositor(),
+    new BurikoBitmapCompositor(),
   );
   assert.equal(second.update(), 1);
   assert.deepEqual(second.position(), {x: 1, y: 10, z: 0});
@@ -119,16 +116,16 @@ test('firefly movement retains normalization, lifetime adjustment and half-away 
 });
 
 test('firefly special images use independent animation counts and the concrete alpha mixer', () => {
-  const variants = new AokanaParticleVariants();
+  const variants = new BurikoParticleVariants();
   frames(variants, 'firefly', [0xfffefcf8]);
   frames(variants, 'special', [0xff000000], 128);
   fireflyParameters(variants);
-  const particle = new AokanaFireflyParticle(
+  const particle = new BurikoFireflyParticle(
     0,
     variants,
-    new AokanaCrtRandom(),
-    new AokanaFireflyMovement(),
-    new AokanaBitmapCompositor(),
+    new BurikoCrtRandom(),
+    new BurikoFireflyMovement(),
+    new BurikoBitmapCompositor(),
   );
   assert.equal(particle.refreshSpecial(0), true);
   const image = particle.image(0);

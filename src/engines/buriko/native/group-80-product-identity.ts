@@ -1,0 +1,24 @@
+import {pop32} from '../bp/state.js';
+import type {BurikoProductIdentity} from './product-identity.js';
+import {copyText} from './text.js';
+import type {BurikoNativeSlotDefinition} from './types.js';
+
+export function createGroup80ProductIdentity(
+  identity: BurikoProductIdentity,
+): BurikoNativeSlotDefinition[] {
+  return [
+    {
+      primary: 0x80,
+      secondary: 0xe8,
+      nativeAddress: 0x1400e6a30,
+      name: 'CopyProductIdentifier',
+      execute: (h) => {
+        const output = h.memory.resolve(h.thread, pop32(h.thread)),
+          source = identity.pointer();
+        if (output === null) throw new Error('Buriko product identifier writes a null output');
+        copyText(output, source);
+        return 0;
+      },
+    },
+  ];
+}

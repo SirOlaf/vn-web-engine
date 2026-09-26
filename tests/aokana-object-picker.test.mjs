@@ -1,29 +1,29 @@
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeTouch} from '../dist/engines/buriko/games/aokana/native/touch-input.js';
-import {AokanaCursorPolicy} from '../dist/engines/buriko/games/aokana/native/cursor-policy.js';
-import {AokanaNativeCursor} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {bitmapWrite32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {createGroup92ObjectPicker} from '../dist/engines/buriko/games/aokana/native/group-92-object-picker.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeTouch} from '../dist/engines/buriko/native/touch-input.js';
+import {BurikoCursorPolicy} from '../dist/engines/buriko/native/cursor-policy.js';
+import {BurikoNativeCursor} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {createGroup92ObjectPicker} from '../dist/engines/buriko/native/group-92-object-picker.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const rectangle = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, values = []) => ({
-  storage: new AokanaBitmapStorage(
+  storage: new BurikoBitmapStorage(
     new Uint8Array(
       new Uint32Array(Array.from({length: width * height}, (_, index) => values[index] ?? 0))
         .buffer,
@@ -39,22 +39,22 @@ const bitmap = (width, height, values = []) => ({
 });
 
 function fixture() {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
   const bounds = rectangle(0, 0, 7, 3),
     output = bitmap(8, 4),
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(16, {...bounds}),
+      new BurikoDisplayDamage(16, {...bounds}),
     );
   environment.displayContext = {bitmap: output, bounds};
-  const allocator = new AokanaDistributedAllocator(2),
-    text = new AokanaNativeText(),
-    surfaces = new AokanaSurfaces(new AokanaNativeFonts(text), compositor, allocator),
-    manager = new AokanaDisplayManager(
+  const allocator = new BurikoDistributedAllocator(2),
+    text = new BurikoNativeText(),
+    surfaces = new BurikoSurfaces(new BurikoNativeFonts(text), compositor, allocator),
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     );
   return {allocator, compositor, environment, manager, output, surfaces, text};
 }
@@ -65,28 +65,28 @@ test('pointer picker follows rendered order, real masks and shared cursor/touch 
   display.setSizePreset(2, 8, 4);
   display.requestedWidth = 16;
   display.requestedHeight = 8;
-  const clock = new AokanaNativeClock(() => 0),
-    input = new AokanaNativeInput(display, clock);
+  const clock = new BurikoNativeClock(() => 0),
+    input = new BurikoNativeInput(display, clock);
   input.foreground = input.pointerAvailable = true;
-  const physical = new AokanaNativeCursor({style: {cursor: ''}});
-  const cursor = new AokanaCursorPolicy(manager, input, clock, physical);
+  const physical = new BurikoNativeCursor({style: {cursor: ''}});
+  const cursor = new BurikoCursorPolicy(manager, input, clock, physical);
   const touchHost = {
     available: false,
     register: () => 1,
     unregister: () => 1,
     screenToClient: (x, y) => [x, y],
   };
-  const touch = new AokanaNativeTouch(input, clock, touchHost);
-  const thread = new AokanaBpThread({
+  const touch = new BurikoNativeTouch(input, clock, touchHost);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(8)),
+  const memory = new BurikoBpMemory(new Uint8Array(8)),
     context = {thread, memory, diagnostics: {}};
   const [slot] = createGroup92ObjectPicker(manager, input, cursor, touch);
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x92][0x3d]);
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x92][0x3d]);
   assert.equal(surfaces.allocate(0, 2, 1, 1), 1);
   assert.equal(surfaces.allocate(1, 2, 1, 1), 1);
   surfaces.fill(0, 0x204060);

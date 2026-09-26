@@ -11,8 +11,8 @@ try {
     ['linear-rgb', 'LINEAR_RGB_WASM_BINARY', 'src/graphics/linear-rgb-wasm-binary.ts'],
     [
       'aokana-bitmap',
-      'AOKANA_BITMAP_WASM_BINARY',
-      'src/engines/buriko/games/aokana/native/bitmap-alpha-wasm-binary.ts',
+      'BURIKO_BITMAP_WASM_BINARY',
+      'src/engines/buriko/native/bitmap-alpha-wasm-binary.ts',
     ],
   ]) {
     const result = spawnSync(

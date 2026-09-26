@@ -4,12 +4,12 @@ import {
   playBrowserMediaWithActivation,
   subscribeBrowserMediaActivation,
 } from '../dist/video/browser-media-activation.js';
-import {AokanaBrowserMfController} from '../dist/engines/buriko/games/aokana/native/movie-mf-browser-session.js';
-import {AokanaBrowserTraditionalMovieSession} from '../dist/engines/buriko/games/aokana/native/movie-traditional-browser-graph.js';
-import {AokanaFullscreenMovieState} from '../dist/engines/buriko/games/aokana/native/movie-fullscreen-state.js';
-import {AokanaTraditionalMovieAudioPolicy} from '../dist/engines/buriko/games/aokana/native/movie-traditional-audio-policy.js';
-import {AokanaMovieImageConfiguration} from '../dist/engines/buriko/games/aokana/native/movie-image.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
+import {BurikoBrowserMfController} from '../dist/engines/buriko/native/movie-mf-browser-session.js';
+import {BurikoBrowserTraditionalMovieSession} from '../dist/engines/buriko/native/movie-traditional-browser-graph.js';
+import {BurikoFullscreenMovieState} from '../dist/engines/buriko/native/movie-fullscreen-state.js';
+import {BurikoTraditionalMovieAudioPolicy} from '../dist/engines/buriko/native/movie-traditional-audio-policy.js';
+import {BurikoMovieImageConfiguration} from '../dist/engines/buriko/native/movie-image.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 import {subscribeRuntimeActivity} from '../dist/platform/runtime-activity.js';
 
 class Element extends EventTarget {
@@ -170,12 +170,12 @@ test('browser policy gate publishes host recovery actions, retries in the gestur
 
 test('MF and traditional movie owners retain their clocks during activation and remove pending controls on skip/reset', async () => {
   const s = fixture(),
-    fullscreen = new AokanaFullscreenMovieState();
+    fullscreen = new BurikoFullscreenMovieState();
   let activities = [];
   const stopObserving = subscribeRuntimeActivity((current) => {
     activities = current.map((activity) => activity.label);
   });
-  const controller = new AokanaBrowserMfController(
+  const controller = new BurikoBrowserMfController(
     s.document,
     {surface: s.canvas, presentationMode: 'canvas'},
     fullscreen,
@@ -207,7 +207,7 @@ test('MF and traditional movie owners retain their clocks during activation and 
     display: {logicalWidth: 2, logicalHeight: 2},
     dynamicTexture: {
       lock: () => ({
-        storage: new AokanaBitmapStorage(new Uint8Array(16), true),
+        storage: new BurikoBitmapStorage(new Uint8Array(16), true),
         offset: 0,
         pitch: 8,
       }),
@@ -223,14 +223,14 @@ test('MF and traditional movie owners retain their clocks during activation and 
     }
     return element;
   };
-  const session = new AokanaBrowserTraditionalMovieSession(
+  const session = new BurikoBrowserTraditionalMovieSession(
     resources,
     documents,
     s.document,
     device,
-    new AokanaMovieImageConfiguration(),
+    new BurikoMovieImageConfiguration(),
     fullscreen,
-    new AokanaTraditionalMovieAudioPolicy(),
+    new BurikoTraditionalMovieAudioPolicy(),
   );
   try {
     assert.equal(await session.start(null, {bytes: Uint8Array.of(1, 0), offset: 0}), 5000);

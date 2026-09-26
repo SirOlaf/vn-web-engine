@@ -4,19 +4,19 @@ import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
 import {MountedFileSystem} from '../dist/platform/filesystem.js';
 import {BrowserWindowsNamedFileMappingHost} from '../dist/platform/windows-named-file-mapping.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaDroppedFiles} from '../dist/engines/buriko/games/aokana/native/dropped-files.js';
-import {createGroup80DroppedFiles} from '../dist/engines/buriko/games/aokana/native/group-80-dropped-files.js';
-import {AokanaMainWindowMessageReceiver} from '../dist/engines/buriko/games/aokana/native/main-window-messages.js';
-import {AokanaWindowMessages as Waits} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaKnobDisplays} from '../dist/engines/buriko/games/aokana/native/knob-displays.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoDroppedFiles} from '../dist/engines/buriko/native/dropped-files.js';
+import {createGroup80DroppedFiles} from '../dist/engines/buriko/native/group-80-dropped-files.js';
+import {BurikoMainWindowMessageReceiver} from '../dist/engines/buriko/native/main-window-messages.js';
+import {BurikoWindowMessages as Waits} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoKnobDisplays} from '../dist/engines/buriko/native/knob-displays.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('80:6C/6D deliver actual dropped Blobs through the shared path buffer and mounted file reader', async () => {
   const s = deviceServiceFixture(),
@@ -24,18 +24,18 @@ test('80:6C/6D deliver actual dropped Blobs through the shared path buffer and m
   s.canvas.addEventListener = (name, listener) => listeners.set(name, listener);
   s.canvas.removeEventListener = (name) => listeners.delete(name);
   const fs = new MountedFileSystem(),
-    text = new AokanaNativeText(),
-    paths = new AokanaMountedProgramPaths([{native: 'D:\\Drops', mounted: '/drops'}], 'D:\\Drops'),
-    files = new AokanaProgramFiles(fs, text, new AokanaProgramMedia(), paths),
-    drops = new AokanaDroppedFiles(s.canvas, s.messages, files, fs, '/drops', 'D:\\Drops'),
+    text = new BurikoNativeText(),
+    paths = new BurikoMountedProgramPaths([{native: 'D:\\Drops', mounted: '/drops'}], 'D:\\Drops'),
+    files = new BurikoProgramFiles(fs, text, new BurikoProgramMedia(), paths),
+    drops = new BurikoDroppedFiles(s.canvas, s.messages, files, fs, '/drops', 'D:\\Drops'),
     mappings = new BrowserWindowsNamedFileMappingHost();
-  new AokanaMainWindowMessageReceiver(
+  new BurikoMainWindowMessageReceiver(
     s.messages,
     new Waits(),
     s.input,
     s.notifications,
     s.controller.host,
-    new AokanaKnobDisplays(s.manager, s.input, s.notifications),
+    new BurikoKnobDisplays(s.manager, s.input, s.notifications),
     s.controller,
     null,
     drops,
@@ -47,11 +47,11 @@ test('80:6C/6D deliver actual dropped Blobs through the shared path buffer and m
     mappings,
   );
   const [enable, read] = createGroup80DroppedFiles(drops),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 4, moduleCapacity: 0, frameCapacity: 0}),
-    memory = new AokanaBpMemory(new Uint8Array(1024)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 4, moduleCapacity: 0, frameCapacity: 0}),
+    memory = new BurikoBpMemory(new Uint8Array(1024)),
     context = {thread, memory, diagnostics: {}};
-  assert.equal(enable.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x80][0x6c]);
-  assert.equal(read.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x80][0x6d]);
+  assert.equal(enable.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][0x6c]);
+  assert.equal(read.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][0x6d]);
   push32(thread, 1);
   assert.equal(enable.execute(context), 0);
   const retained = [];

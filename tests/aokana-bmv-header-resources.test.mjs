@@ -1,25 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {createGroup92BmvResources} from '../dist/engines/buriko/games/aokana/native/group-92-bmv-resources.js';
-import {AokanaBmvRegistry} from '../dist/engines/buriko/games/aokana/native/bmv-registry.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {createGroup92BmvResources} from '../dist/engines/buriko/native/group-92-bmv-resources.js';
+import {BurikoBmvRegistry} from '../dist/engines/buriko/native/bmv-registry.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
 
@@ -31,13 +31,13 @@ function setup() {
       cwd: 'C:\\game',
       mounts: [{windows: 'C:\\', virtual: '/'}],
     }),
-    text = new AokanaNativeText(),
-    media = new AokanaProgramMedia();
+    text = new BurikoNativeText(),
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(fs, text, media),
-    allocator = new AokanaDistributedAllocator(1),
+  const files = new BurikoProgramFiles(fs, text, media),
+    allocator = new BurikoDistributedAllocator(1),
     unavailable = () => assert.fail('Successful synthetic resource service opened a diagnostic'),
-    resources = new AokanaProgramResources(
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -52,20 +52,20 @@ function setup() {
       },
       {show: unavailable},
       {fatal: unavailable, threadFatal: unavailable},
-      new AokanaDistributedProcessing(allocator, 1),
+      new BurikoDistributedProcessing(allocator, 1),
     ),
-    loading = new AokanaResourceLoadingState(resources),
-    thread = new AokanaBpThread({
+    loading = new BurikoResourceLoadingState(resources),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(1024)),
-    scheduler = new AokanaBpScheduler(thread, () => 1),
-    procedures = new AokanaProcedureState(),
-    clock = new AokanaNativeClock(() => 100),
-    registry = new AokanaBmvRegistry(allocator),
+    memory = new BurikoBpMemory(new Uint8Array(1024)),
+    scheduler = new BurikoBpScheduler(thread, () => 1),
+    procedures = new BurikoProcedureState(),
+    clock = new BurikoNativeClock(() => 100),
+    registry = new BurikoBmvRegistry(allocator),
     slots = createGroup92BmvResources(registry, loading, scheduler, procedures, clock),
     context = {thread, memory, diagnostics: {}};
   let nextText = 32;
@@ -116,7 +116,7 @@ test('92 F1 uses full loading or two staged FIFO reads with real partial-resourc
   const slot = state.slots[0];
   assert.equal(slot.primary, 0x92);
   assert.equal(slot.secondary, 0xf1);
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x92][0xf1]);
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x92][0xf1]);
   for (const mode of [0, 1]) {
     assert.equal(await state.call(0xf1, output, info, 0, name, mode), 2);
     assert.equal(state.thread.stackIndex, 0);

@@ -1,32 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {clearAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaRubyAnnotations} from '../dist/engines/buriko/games/aokana/native/text-annotations.js';
-import {releaseAokanaHorizontalTextLayout} from '../dist/engines/buriko/games/aokana/native/text-layout-horizontal.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoRubyAnnotations} from '../dist/engines/buriko/native/text-annotations.js';
+import {releaseBurikoHorizontalTextLayout} from '../dist/engines/buriko/native/text-layout-horizontal.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT as effect,
-  drawAokanaVerticalText,
-  drawAokanaHorizontalTextToWindow,
-} from '../dist/engines/buriko/games/aokana/native/text-layout-pipeline.js';
+  BURIKO_DISABLED_HORIZONTAL_TEXT_EFFECT as effect,
+  drawBurikoVerticalText,
+  drawBurikoHorizontalTextToWindow,
+} from '../dist/engines/buriko/native/text-layout-pipeline.js';
 import {
-  buildAokanaVerticalTextLayout,
-  addAokanaVerticalReadings,
-  alignAokanaVerticalTextNodes,
-  rotateAokanaVerticalGlyph,
-} from '../dist/engines/buriko/games/aokana/native/text-layout-vertical.js';
+  buildBurikoVerticalTextLayout,
+  addBurikoVerticalReadings,
+  alignBurikoVerticalTextNodes,
+  rotateBurikoVerticalGlyph,
+} from '../dist/engines/buriko/native/text-layout-vertical.js';
 
 const pointer = (value) => ({
   bytes:
@@ -37,7 +37,7 @@ const pointer = (value) => ({
 });
 
 async function setup() {
-  const text = new AokanaNativeText(),
+  const text = new BurikoNativeText(),
     browser = {
       async queryCharset() {
         return 1;
@@ -62,22 +62,22 @@ async function setup() {
       },
       dispose() {},
     },
-    fonts = new AokanaNativeFonts(text, browser);
+    fonts = new BurikoNativeFonts(text, browser);
   fonts.rasterSettings.setQuality(-1);
   const name = new TextEncoder().encode('SyntheticVertical');
   assert.equal(fonts.registerName(name, 1), 0);
   const selected = await fonts.get(name, 8, 100, 0);
   assert.equal(selected.result, 0);
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1)),
-    state = new AokanaTextLayoutState(surfaces);
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1)),
+    state = new BurikoTextLayoutState(surfaces);
   return {state, surfaces, fontId: selected.id};
 }
 
 test('vertical preparation, parent-local ruby, alignment and real window emission share native owners', async () => {
   const {state, surfaces, fontId} = await setup(),
-    annotations = new AokanaRubyAnnotations(state.text),
+    annotations = new BurikoRubyAnnotations(state.text),
     options = {
       source: pointer([65, 0x81, 0x41, 66]),
       readingEnabled: 0,
@@ -91,7 +91,7 @@ test('vertical preparation, parent-local ruby, alignment and real window emissio
       color: 0x445566,
       effect,
     };
-  let prepared = buildAokanaVerticalTextLayout(state, options);
+  let prepared = buildBurikoVerticalTextLayout(state, options);
   assert.deepEqual(
     prepared.nodes.map((n) => [n.kind, n.x, n.y, n.revealTime]),
     [
@@ -101,7 +101,7 @@ test('vertical preparation, parent-local ruby, alignment and real window emissio
     ],
   );
   assert.deepEqual(options.cursor, {x: 31, y: 24});
-  alignAokanaVerticalTextNodes(
+  alignBurikoVerticalTextNodes(
     state,
     prepared.nodes,
     options.cursor,
@@ -120,17 +120,17 @@ test('vertical preparation, parent-local ruby, alignment and real window emissio
     prepared.nodes[0].bitmap.storage.bytes.every((value) => value === 0),
     true,
   );
-  releaseAokanaHorizontalTextLayout(prepared.nodes);
+  releaseBurikoHorizontalTextLayout(prepared.nodes);
 
   annotations.import(pointer('AB\\xy\n'));
   const rubyOptions = {...options, source: pointer('AB'), readingEnabled: 1, cursor: {x: 31, y: 0}};
-  prepared = buildAokanaVerticalTextLayout(state, rubyOptions);
+  prepared = buildBurikoVerticalTextLayout(state, rubyOptions);
   // Configured horizontal reading offsets/width do not participate in 079F00.
   state.readingXOffset = 99;
   state.readingYOffset = 99;
   state.readingWidth = 37;
   assert.equal(
-    await addAokanaVerticalReadings(state, prepared.nodes, fontId, 0x112233, effect, annotations),
+    await addBurikoVerticalReadings(state, prepared.nodes, fontId, 0x112233, effect, annotations),
     1,
   );
   assert.deepEqual(
@@ -145,10 +145,10 @@ test('vertical preparation, parent-local ruby, alignment and real window emissio
   assert.equal(prepared.outputCount, 1);
   assert.equal(prepared.nodes[0].next, prepared.nodes[1]);
   assert.equal(prepared.nodes[2].next, prepared.nodes[3]);
-  releaseAokanaHorizontalTextLayout(prepared.nodes);
+  releaseBurikoHorizontalTextLayout(prepared.nodes);
   annotations.clear();
 
-  prepared = buildAokanaVerticalTextLayout(state, {
+  prepared = buildBurikoVerticalTextLayout(state, {
     ...options,
     source: pointer([65, 66, 10, 67]),
     cursor: {x: 31, y: 0},
@@ -163,17 +163,17 @@ test('vertical preparation, parent-local ruby, alignment and real window emissio
       [8, 0],
     ],
   );
-  releaseAokanaHorizontalTextLayout(prepared.nodes);
+  releaseBurikoHorizontalTextLayout(prepared.nodes);
 
-  const square = allocateAokanaBitmap(2, 2, 3);
+  const square = allocateBurikoBitmap(2, 2, 3);
   square.storage.bytes.set([1, 2, 3, 4]);
   square.storage.written(0, 4);
-  assert.equal(rotateAokanaVerticalGlyph(square), true);
+  assert.equal(rotateBurikoVerticalGlyph(square), true);
   assert.deepEqual([...square.storage.bytes], [3, 1, 4, 2]);
   square.storage.release();
 
-  const destination = allocateAokanaBitmap(32, 40, 2);
-  clearAokanaBitmap(destination);
+  const destination = allocateBurikoBitmap(32, 40, 2);
+  clearBurikoBitmap(destination);
   const output = {value: 77},
     count = {value: 88},
     cursor = {x: 31, y: 0},
@@ -190,9 +190,9 @@ test('vertical preparation, parent-local ruby, alignment and real window emissio
       lineSpacingPercent: 0,
       readingColor: 0x112233,
     };
-  assert.deepEqual(await drawAokanaVerticalText(state, {...drawOptions, fontId: 999}), {result: 0});
+  assert.deepEqual(await drawBurikoVerticalText(state, {...drawOptions, fontId: 999}), {result: 0});
   assert.deepEqual([count.value, output.value, cursor], [88, 77, {x: 31, y: 0}]);
-  const emitted = await drawAokanaVerticalText(state, drawOptions);
+  const emitted = await drawBurikoVerticalText(state, drawOptions);
   assert.equal(emitted.result, 1);
   assert.equal(count.value, 4);
   assert.equal(output.value, 1);
@@ -204,13 +204,13 @@ test('vertical preparation, parent-local ruby, alignment and real window emissio
   ]);
   destination.storage.release();
 
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
       surfaces.compositor,
-      new AokanaDisplayDamage(16, {left: 0, top: 0, right: 31, bottom: 23}),
+      new BurikoDisplayDamage(16, {left: 0, top: 0, right: 31, bottom: 23}),
     ),
-    manager = new AokanaDisplayManager(environment, surfaces, new AokanaNativeDisplayState(32, 24)),
-    windows = new AokanaWindowDisplayState(manager, state),
-    window = new AokanaWindowDisplayObject(windows, 7);
+    manager = new BurikoDisplayManager(environment, surfaces, new BurikoNativeDisplayState(32, 24)),
+    windows = new BurikoWindowDisplayState(manager, state),
+    window = new BurikoWindowDisplayObject(windows, 7);
   assert.equal(window.configureInitial(32, 24), 1);
   window.fontId = fontId;
   window.fontSize = 8;
@@ -218,7 +218,7 @@ test('vertical preparation, parent-local ruby, alignment and real window emissio
   assert.equal(window.setWritingDirection(1), 1);
   // EF40 takes the existing conversion bypass and exercises actual shared raster/compositor writes.
   assert.equal(
-    await drawAokanaHorizontalTextToWindow(
+    await drawBurikoHorizontalTextToWindow(
       state,
       window,
       pointer([0xef, 0x40, 10, 0xef, 0x40]),

@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBrowserMainWindow} from '../dist/engines/buriko/games/aokana/native/browser-main-window.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+import {BurikoBrowserMainWindow} from '../dist/engines/buriko/native/browser-main-window.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
 
 class Element {
   constructor(tag) {
@@ -39,19 +39,19 @@ test('main Close policy retains native menu state without a browser button and p
   const document = {createElement: (tag) => new Element(tag)},
     parent = document.createElement('div'),
     canvas = document.createElement('canvas'),
-    display = new AokanaNativeDisplayState(16, 8),
-    compositor = new AokanaBitmapCompositor(),
-    manager = new AokanaDisplayManager(
-      new AokanaDisplayObjectEnvironment(
+    display = new BurikoNativeDisplayState(16, 8),
+    compositor = new BurikoBitmapCompositor(),
+    manager = new BurikoDisplayManager(
+      new BurikoDisplayObjectEnvironment(
         compositor,
-        new AokanaDisplayDamage(64, {left: 0, top: 0, right: 15, bottom: 7}),
+        new BurikoDisplayDamage(64, {left: 0, top: 0, right: 15, bottom: 7}),
       ),
-      new AokanaSurfaces(null, compositor, new AokanaDistributedAllocator(1)),
+      new BurikoSurfaces(null, compositor, new BurikoDistributedAllocator(1)),
       display,
     ),
-    input = new AokanaNativeInput(display, new AokanaNativeClock(() => 0)),
-    messages = new AokanaWindowMessages(input),
-    host = new AokanaBrowserMainWindow(document, parent, canvas, manager, {
+    input = new BurikoNativeInput(display, new BurikoNativeClock(() => 0)),
+    messages = new BurikoWindowMessages(input),
+    host = new BurikoBrowserMainWindow(document, parent, canvas, manager, {
       isReady: () => true,
       presentTransient: () => 0,
       inlinePaintSuppressed: () => false,

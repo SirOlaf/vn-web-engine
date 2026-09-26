@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {displaceAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-displacement.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {displaceBurikoBitmap} from '../dist/engines/buriko/native/bitmap-displacement.js';
 
 const gray = (value) => Math.imul(value, 0x1010101) >>> 0;
 function bitmap(width, height, values, format = 2, padding = 4) {
@@ -13,7 +13,7 @@ function bitmap(width, height, values, format = 2, padding = 4) {
     for (let x = 0; x < width; x++)
       view.setUint32(y * stride + x * 4, values[y * width + x] ?? 0, true);
   return {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride,
     width,
@@ -35,7 +35,7 @@ function map(width, height, points) {
       view.setUint16(offset + 4, index, true);
     }
   return {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride,
     width,
@@ -53,13 +53,13 @@ function pixels(bitmap) {
 }
 
 test('displacement nearest rounds signed products before pair and tail sampling', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.filterProperty = 1;
   const source = bitmap(3, 3, [0, 16, 32, 64, 80, 96, 128, 144, 160].map(gray));
   const table = Uint32Array.of(0x40004000);
   const output = bitmap(3, 3, []);
   assert.equal(
-    displaceAokanaBitmap(
+    displaceBurikoBitmap(
       compositor,
       output,
       source,
@@ -71,7 +71,7 @@ test('displacement nearest rounds signed products before pair and tail sampling'
     0,
   );
   assert.deepEqual(pixels(output), [80, 96, 0, 144, 160, 0, 0, 0, 0].map(gray));
-  displaceAokanaBitmap(
+  displaceBurikoBitmap(
     compositor,
     output,
     source,
@@ -84,13 +84,13 @@ test('displacement nearest rounds signed products before pair and tail sampling'
 });
 
 test('displacement bilinear retains Q4 horizontal-then-vertical flooring and zero border samples', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.filterProperty = 1;
   for (const format of [1, 2]) {
     const source = bitmap(3, 3, [0, 16, 32, 64, 80, 96, 128, 144, 160].map(gray), format);
     const output = bitmap(3, 3, [], format);
     assert.equal(
-      displaceAokanaBitmap(
+      displaceBurikoBitmap(
         compositor,
         output,
         source,
@@ -111,7 +111,7 @@ test('displacement bilinear retains Q4 horizontal-then-vertical flooring and zer
 });
 
 test('displacement uses the real full-image descriptor around its cropped source pointer', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.filterProperty = 1;
   const full = bitmap(
     5,
@@ -121,7 +121,7 @@ test('displacement uses the real full-image descriptor around its cropped source
   const source = {...full, offset: full.stride + 4, width: 3, height: 2};
   const output = bitmap(3, 2, []);
   for (const bilinear of [0, 1]) {
-    displaceAokanaBitmap(
+    displaceBurikoBitmap(
       compositor,
       output,
       source,
@@ -135,7 +135,7 @@ test('displacement uses the real full-image descriptor around its cropped source
 });
 
 test('displacement shares the compositor property selecting rectangular or linear source spans', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   const full = bitmap(4, 2, [1, 2, 3, 4, 5, 6, 7, 8].map(gray), 2, 0);
   const source = {...full, offset: 4, width: 3, height: 1};
   const output = bitmap(3, 1, []),
@@ -146,7 +146,7 @@ test('displacement shares the compositor property selecting rectangular or linea
     ]);
   for (const bilinear of [0, 1]) {
     compositor.filterProperty = 1;
-    displaceAokanaBitmap(
+    displaceBurikoBitmap(
       compositor,
       output,
       source,
@@ -157,7 +157,7 @@ test('displacement shares the compositor property selecting rectangular or linea
     );
     assert.deepEqual(pixels(output), [2, 3, 0].map(gray));
     compositor.filterProperty = 0;
-    displaceAokanaBitmap(
+    displaceBurikoBitmap(
       compositor,
       output,
       source,

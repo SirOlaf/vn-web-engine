@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
 
 function fixture() {
-  const input = new AokanaNativeInput(
-      new AokanaNativeDisplayState(1920, 1080),
-      new AokanaNativeClock(() => 10),
+  const input = new BurikoNativeInput(
+      new BurikoNativeDisplayState(1920, 1080),
+      new BurikoNativeClock(() => 10),
     ),
-    messages = new AokanaWindowMessages(input),
-    keyboard = new AokanaKeyboardMessages(messages);
+    messages = new BurikoWindowMessages(input),
+    keyboard = new BurikoKeyboardMessages(messages);
   input.foreground = true;
   messages.createMainTarget();
   const key = (code, keyCode, type = 'keydown', altGraph = false) =>

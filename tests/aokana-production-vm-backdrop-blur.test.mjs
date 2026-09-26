@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaBlurBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop-blur.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoBlurBackdrop} from '../dist/engines/buriko/native/display-backdrop-blur.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 const gray = (value) => value * 0x010101;
@@ -20,9 +17,9 @@ test('mounted VM blur backdrop transforms graph surface rows in software', async
     assert.equal(child.process, null);
   };
   const draw = () => {
-    const output = allocateAokanaBitmap(3, 2, 1);
+    const output = allocateBurikoBitmap(3, 2, 1);
     try {
-      graph.manager.backdrop.draw(output, aokanaBitmapRectangle(output), 0);
+      graph.manager.backdrop.draw(output, burikoBitmapRectangle(output), 0);
       return Array.from({length: 6}, (_, index) =>
         bitmapRead32(
           output,
@@ -68,7 +65,7 @@ test('mounted VM blur backdrop transforms graph surface rows in software', async
     graph.damage.clear();
     await call(0x46, [0, 0, 0]);
     const selected = graph.manager.backdrop;
-    assert.ok(selected instanceof AokanaBlurBackdrop);
+    assert.ok(selected instanceof BurikoBlurBackdrop);
     assert.deepEqual(
       [selected.activation, selected.contentEnabled, graph.manager.backdropRenderType],
       [1, 1, 7],

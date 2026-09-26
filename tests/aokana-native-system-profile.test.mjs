@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaSystemProfile} from '../dist/engines/buriko/games/aokana/native/system-profile.js';
-import {createGroupSystemProfile} from '../dist/engines/buriko/games/aokana/native/group-system-profile.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoSystemProfile} from '../dist/engines/buriko/native/system-profile.js';
+import {createGroupSystemProfile} from '../dist/engines/buriko/native/group-system-profile.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const ansi = (text) => Uint8Array.from(text, (character) => character.charCodeAt(0));
 function fixture() {
@@ -31,7 +31,7 @@ function fixture() {
       return {total: (8n << 30n) + 700n, available: (1536n << 20n) + 333n};
     },
   };
-  return {host, calls, profile: new AokanaSystemProfile(host)};
+  return {host, calls, profile: new BurikoSystemProfile(host)};
 }
 
 test('all five system wrappers use the selected Windows profile and preserve native result order', () => {
@@ -39,14 +39,14 @@ test('all five system wrappers use the selected Windows profile and preserve nat
   const slots = createGroupSystemProfile(profile);
   assert.equal(slots.length, 5);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
-  const thread = new AokanaBpThread({
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
     moduleCapacity: 256,
     frameCapacity: 0,
   });
-  const memory = new AokanaBpMemory(),
+  const memory = new BurikoBpMemory(),
     context = {thread, memory};
   const call = (primary, secondary, args = []) => {
     args.forEach((value) => push32(thread, value));

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {decodeAokanaSdcInto} from '../dist/engines/buriko/games/aokana/native/sdc.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {decodeBurikoSdcInto} from '../dist/engines/buriko/native/sdc.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM encodes and restores a three-record table through one core scratch owner', async () => {
@@ -64,7 +64,7 @@ test('mounted VM encodes and restores a three-record table through one core scra
     assert.equal(memory.globalMemory[0x200 + encodedLength], 0x5a);
     const decodedDcfs = new Uint8Array(expectedDcfs.length);
     assert.equal(
-      decodeAokanaSdcInto(
+      decodeBurikoSdcInto(
         {bytes: decodedDcfs, offset: 0},
         {bytes: memory.globalMemory, offset: 0x200},
       ),

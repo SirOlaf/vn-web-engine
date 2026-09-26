@@ -4,11 +4,12 @@
   import Sidebar from './player/Sidebar.svelte';
   import RuntimeNotices from './player/RuntimeNotices.svelte';
   import SourceActivity from './player/SourceActivity.svelte';
+  import {burikoTitle} from './player/buriko-library.js';
   export let game: GameId;
-  $: title = game === 'aokana' ? 'Aokana' : 'CHAOS;HEAD NOAH';
+  $: title = game === 'buriko' ? $burikoTitle : 'CHAOS;HEAD NOAH';
 
   onMount(() => {
-    const boot = game === 'aokana' ? import('./runtimes/aokana.js') : import('./runtimes/noah.js');
+    const boot = game === 'buriko' ? import('./runtimes/buriko.js') : import('./runtimes/noah.js');
     void boot.catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       const fatal = document.getElementById('fatal-error')!;
@@ -22,7 +23,7 @@
 
 <main id="game" aria-label="Game">
   <section id="display" aria-label={`${title} display`}>
-    {#if game === 'aokana'}
+    {#if game === 'buriko'}
       <div id="display-viewport">
         <div id="surface"><canvas id="game-canvas" tabindex="0"></canvas></div>
         <div id="window-layer"></div>

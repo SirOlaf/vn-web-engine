@@ -1,53 +1,50 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaParticleDisplays} from '../dist/engines/buriko/games/aokana/native/particle-displays.js';
-import {AokanaParticleVariants} from '../dist/engines/buriko/games/aokana/native/particle-images.js';
-import {AokanaThreadedCrtRandom} from '../dist/engines/buriko/games/aokana/native/system-timing.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
+import {BurikoParticleDisplays} from '../dist/engines/buriko/native/particle-displays.js';
+import {BurikoParticleVariants} from '../dist/engines/buriko/native/particle-images.js';
+import {BurikoThreadedCrtRandom} from '../dist/engines/buriko/native/system-timing.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {
-  allocateAokanaBitmap,
-  fillAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {createGroupC0Particle} from '../dist/engines/buriko/games/aokana/native/group-c0-particle.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {allocateBurikoBitmap, fillBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {createGroupC0Particle} from '../dist/engines/buriko/native/group-c0-particle.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 
 function fixture() {
   let now = 100;
-  const allocator = new AokanaDistributedAllocator(3);
-  const processing = new AokanaDistributedProcessing(allocator, 3);
-  const random = new AokanaThreadedCrtRandom(() => allocator.currentActor);
-  const compositor = new AokanaBitmapCompositor();
+  const allocator = new BurikoDistributedAllocator(3);
+  const processing = new BurikoDistributedProcessing(allocator, 3);
+  const random = new BurikoThreadedCrtRandom(() => allocator.currentActor);
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const damage = new AokanaDisplayDamage(64, {left: 0, top: 0, right: 999, bottom: 999});
-  const environment = new AokanaDisplayObjectEnvironment(compositor, damage);
-  const surfaces = new AokanaSurfaces(null, compositor, allocator);
+  const damage = new BurikoDisplayDamage(64, {left: 0, top: 0, right: 999, bottom: 999});
+  const environment = new BurikoDisplayObjectEnvironment(compositor, damage);
+  const surfaces = new BurikoSurfaces(null, compositor, allocator);
   for (let i = 0; i < 3; i++) {
     surfaces.allocate(i, 32, 32, 2);
-    fillAokanaBitmap(surfaces.snapshot(i), 0xff112233 + i);
+    fillBurikoBitmap(surfaces.snapshot(i), 0xff112233 + i);
   }
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     environment,
     surfaces,
-    new AokanaNativeDisplayState(1000, 1000),
+    new BurikoNativeDisplayState(1000, 1000),
   );
-  const particles = new AokanaParticleDisplays(
+  const particles = new BurikoParticleDisplays(
     manager,
-    new AokanaParticleVariants(),
+    new BurikoParticleVariants(),
     random,
-    new AokanaNativeClock(() => now),
+    new BurikoNativeClock(() => now),
     processing,
   );
   return {
@@ -114,8 +111,8 @@ test('particle screen refresh collects two ordinary frame histories and composit
   object.refreshParticle();
   assert.deepEqual(object.damageHistory[1], object.damageHistory[0]);
   assert.equal(object.damageIndex, 0);
-  const destination = allocateAokanaBitmap(64, 64, 1);
-  fillAokanaBitmap(destination, 0);
+  const destination = allocateBurikoBitmap(64, 64, 1);
+  fillBurikoBitmap(destination, 0);
   object.draw(destination, {left: 0, top: 0, right: 63, bottom: 63}, object.sortKey());
   assert.equal(bitmapRead32(destination, 19 * destination.stride + 24 * 4), 0x00112233);
 });
@@ -172,15 +169,15 @@ test('all24 particle wrappers use native slots, stack order and shared concrete 
   const definitions = createGroupC0Particle(particles, errors);
   assert.equal(definitions.length, 24);
   for (const slot of definitions)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0xc0][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0xc0][slot.secondary]);
   const handlers = new Map(definitions.map((slot) => [slot.secondary, slot.execute]));
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 64,
     frameCapacity: 0,
   });
-  const memory = new AokanaBpMemory(),
+  const memory = new BurikoBpMemory(),
     context = {thread, memory, diagnostics: {}};
   memory.writeU32(thread, 0x10000000, 65536);
   memory.writeU32(thread, 0x10000004, 100);

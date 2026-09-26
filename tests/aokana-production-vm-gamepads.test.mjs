@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBrowserGamepads} from '../dist/engines/buriko/games/aokana/native/browser-gamepads.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBrowserGamepads} from '../dist/engines/buriko/native/browser-gamepads.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted 81:1B/1D use one explicitly initialized and polled in-memory gamepad owner', async () => {
@@ -26,7 +26,7 @@ test('mounted 81:1B/1D use one explicitly initialized and polled in-memory gamep
     hardwareRevision: 0,
     forceFeedbackDriverVersion: 0,
   };
-  const gamepadHost = new AokanaBrowserGamepads({getGamepads: () => [pad]}, [
+  const gamepadHost = new BurikoBrowserGamepads({getGamepads: () => [pad]}, [
     {
       browserIndex: 0,
       browserId: pad.id,

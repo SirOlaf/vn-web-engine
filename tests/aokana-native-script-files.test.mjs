@@ -2,19 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaNativeFile} from '../dist/engines/buriko/games/aokana/native/native-file.js';
-import {AokanaScriptFiles} from '../dist/engines/buriko/games/aokana/native/script-files.js';
-import {AokanaAsyncCriticalSection} from '../dist/engines/buriko/games/aokana/native/async-critical-section.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {createGroup81Files} from '../dist/engines/buriko/games/aokana/native/group-81-files.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoNativeFile} from '../dist/engines/buriko/native/native-file.js';
+import {BurikoScriptFiles} from '../dist/engines/buriko/native/script-files.js';
+import {BurikoAsyncCriticalSection} from '../dist/engines/buriko/native/async-critical-section.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {createGroup81Files} from '../dist/engines/buriko/native/group-81-files.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 const bytes = (value) => new TextEncoder().encode(value),
   pointer = (value) => ({bytes: bytes(value + '\0'), offset: 0});
 const readFile = async (fs, path) => {
@@ -24,7 +24,7 @@ const readFile = async (fs, path) => {
 
 test('mounted output and CFileDX cursors preserve overwrite tails and OPEN_ALWAYS starts at zero', async () => {
   const fs = new StoredFileSystem(new MemoryStore()),
-    files = new AokanaProgramFiles(fs, new AokanaNativeText(), new AokanaProgramMedia());
+    files = new BurikoProgramFiles(fs, new BurikoNativeText(), new BurikoProgramMedia());
   await fs.commit([{kind: 'write', path: '/output', data: bytes('previous')}]);
   const output = await files.createOutput(bytes('/output'));
   assert.equal(output.size(), 0n);
@@ -33,7 +33,7 @@ test('mounted output and CFileDX cursors preserve overwrite tails and OPEN_ALWAY
   assert.equal(await output.write(bytes('XY')), 2);
   assert.equal(await readFile(fs, '/output'), 'abXYef');
   output.close();
-  const native = new AokanaNativeFile(files);
+  const native = new BurikoNativeFile(files);
   assert.equal(await native.openWrite(pointer('/output'), 1), 1);
   assert.equal(native.size(), 6n);
   assert.equal(await native.write(pointer('Q'), 1), 1);
@@ -41,7 +41,7 @@ test('mounted output and CFileDX cursors preserve overwrite tails and OPEN_ALWAY
   assert.equal(native.seekAbsolute(native.size()), true);
   assert.equal(await native.write(pointer('!'), 1), 1);
   native.close();
-  const input = new AokanaNativeFile(files),
+  const input = new BurikoNativeFile(files),
     result = {bytes: new Uint8Array(16), offset: 2};
   assert.equal(await input.openRead(pointer('/output')), 1);
   assert.equal(input.size(), 7n);
@@ -53,25 +53,25 @@ test('mounted output and CFileDX cursors preserve overwrite tails and OPEN_ALWAY
 
 test('all four file wrappers retain transfer pointers and publish queued completion through the shared worker step', async () => {
   const fs = new StoredFileSystem(new MemoryStore()),
-    files = new AokanaProgramFiles(fs, new AokanaNativeText(), new AokanaProgramMedia()),
-    allocator = new AokanaDistributedAllocator(1),
+    files = new BurikoProgramFiles(fs, new BurikoNativeText(), new BurikoProgramMedia()),
+    allocator = new BurikoDistributedAllocator(1),
     worker = {},
-    registry = new AokanaScriptFiles(files, allocator, async () => {
+    registry = new BurikoScriptFiles(files, allocator, async () => {
       await registry.processFirst(worker);
     });
   await fs.commit([{kind: 'write', path: '/data', data: bytes('abcdef')}]);
   registry.initialize();
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 256,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(),
+    memory = new BurikoBpMemory(),
     slots = createGroup81Files(registry);
   assert.equal(slots.length, 4);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][slot.secondary]);
   const path = memory.resolve(thread, 0x10000020),
     source = memory.resolve(thread, 0x10000060);
   path.bytes.set(pointer('/data').bytes, path.offset);
@@ -139,10 +139,10 @@ test('script read releases its section during mounted I/O and preserves a normal
       };
     },
   };
-  const files = new AokanaProgramFiles(fs, new AokanaNativeText(), new AokanaProgramMedia()),
-    allocator = new AokanaDistributedAllocator(1),
+  const files = new BurikoProgramFiles(fs, new BurikoNativeText(), new BurikoProgramMedia()),
+    allocator = new BurikoDistributedAllocator(1),
     worker = {};
-  registry = new AokanaScriptFiles(files, allocator, async () => {
+  registry = new BurikoScriptFiles(files, allocator, async () => {
     await registry.processFirst(worker);
   });
   registry.initialize();
@@ -165,7 +165,7 @@ test('script read releases its section during mounted I/O and preserves a normal
 });
 
 test('async recursive section carries explicit actor ownership through ordinary nesting and queued acquisition', async () => {
-  const section = new AokanaAsyncCriticalSection(),
+  const section = new BurikoAsyncCriticalSection(),
     first = {},
     second = {};
   section.initialize();

@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaRain} from '../dist/engines/buriko/games/aokana/native/rain.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {drawAokanaRainLine} from '../dist/engines/buriko/games/aokana/native/rain-line.js';
+import {BurikoRain} from '../dist/engines/buriko/native/rain.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {drawBurikoRainLine} from '../dist/engines/buriko/native/rain-line.js';
 import {
-  blendAokanaMaskedAlphaIntoRgb,
-  copyAokanaMaskedAlpha,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-mask.js';
+  blendBurikoMaskedAlphaIntoRgb,
+  copyBurikoMaskedAlpha,
+} from '../dist/engines/buriko/native/bitmap-mask.js';
 
 function bitmap(width, height = 1, format = 2) {
   const bytesPerPixel = format === 3 ? 1 : 4;
   return {
-    storage: new AokanaBitmapStorage(new Uint8Array(width * height * bytesPerPixel), true),
+    storage: new BurikoBitmapStorage(new Uint8Array(width * height * bytesPerPixel), true),
     offset: 0,
     width,
     height,
@@ -37,7 +37,7 @@ function rainFixture() {
       return time;
     },
   };
-  const rain = new AokanaRain({next: () => random++}, ticks);
+  const rain = new BurikoRain({next: () => random++}, ticks);
   return {
     rain,
     calls,
@@ -50,7 +50,7 @@ function rainFixture() {
 
 test('raw system ticks truncate and wrap independently of BGI clock suspension', () => {
   let time = 17.9;
-  const ticks = new AokanaSystemTicks({now: () => time});
+  const ticks = new BurikoSystemTicks({now: () => time});
   assert.equal(ticks.timeGetTime(), 17);
   time = 0x100000000 + 9.8;
   assert.equal(ticks.getTickCount(), 9);
@@ -196,7 +196,7 @@ test('rain line covers both directions, equal-axis ties and native bottom-edge b
     for (const endpoints of [line, [...line.slice(2), ...line.slice(0, 2)]]) {
       const image = bitmap(8, 8),
         expected = new Uint32Array(64);
-      drawAokanaRainLine(image, clip, 0x76543210, ...endpoints);
+      drawBurikoRainLine(image, clip, 0x76543210, ...endpoints);
       for (const [x, y] of pixels) expected[y * 8 + x] = 0x76543210;
       assert.deepEqual(words(image), [...expected], String(endpoints));
     }
@@ -210,7 +210,7 @@ test('rain mask copying handles four/two/one pixel groups and nonzero mask value
     const pixels = Array.from({length: width}, (_, i) => (0x81234567 + i * 0x123456) >>> 0);
     writeWords(source, pixels);
     mask.storage.bytes.set(Array.from({length: width}, (_, i) => [0, 1, 128, 255][i % 4]));
-    copyAokanaMaskedAlpha(destination, source, mask);
+    copyBurikoMaskedAlpha(destination, source, mask);
     assert.deepEqual(
       words(destination),
       pixels.map((value, i) => (i % 4 === 0 ? 0 : value)),
@@ -230,7 +230,7 @@ test('masked RGB blending matches integer alpha quantization for every alpha and
   for (let transparency = 0; transparency < 256; transparency++) {
     destination.storage.bytes.fill(0);
     writeWords(destination, Array(256).fill(0xb12dfa07));
-    blendAokanaMaskedAlphaIntoRgb(destination, source, mask, transparency);
+    blendBurikoMaskedAlphaIntoRgb(destination, source, mask, transparency);
     const expected = Array.from({length: 256}, (_, alpha) => {
       const coefficient = Math.floor((Math.floor(alpha / 2) * (256 - transparency)) / 256);
       const channel = (before, after) =>

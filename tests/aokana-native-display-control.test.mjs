@@ -1,45 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup90DisplayControl} from '../dist/engines/buriko/games/aokana/native/group-90-display-control.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup90DisplayControl} from '../dist/engines/buriko/native/group-90-display-control.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 test('display controls share scheduled waits, sprite state, redraws, and input/message completion', async () => {
   let tick = 0;
-  const clock = new AokanaNativeClock(() => tick),
-    text = new AokanaNativeText(),
-    fonts = new AokanaNativeFonts(text),
-    compositor = new AokanaBitmapCompositor(),
-    allocator = new AokanaDistributedAllocator(1),
-    surfaces = new AokanaSurfaces(fonts, compositor, allocator),
-    environment = new AokanaDisplayObjectEnvironment(
+  const clock = new BurikoNativeClock(() => tick),
+    text = new BurikoNativeText(),
+    fonts = new BurikoNativeFonts(text),
+    compositor = new BurikoBitmapCompositor(),
+    allocator = new BurikoDistributedAllocator(1),
+    surfaces = new BurikoSurfaces(fonts, compositor, allocator),
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(16, {left: 0, top: 0, right: 1, bottom: 1}),
+      new BurikoDisplayDamage(16, {left: 0, top: 0, right: 1, bottom: 1}),
     ),
-    display = new AokanaNativeDisplayState(1920, 1080),
-    manager = new AokanaDisplayManager(environment, surfaces, display),
-    input = new AokanaNativeInput(display, clock),
-    procedures = new AokanaProcedureState(),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 32, moduleCapacity: 0, frameCapacity: 0}),
-    scheduler = new AokanaBpScheduler(
-      new AokanaBpThread({id: 0, operandCapacity: 0, moduleCapacity: 0, frameCapacity: 0}),
+    display = new BurikoNativeDisplayState(1920, 1080),
+    manager = new BurikoDisplayManager(environment, surfaces, display),
+    input = new BurikoNativeInput(display, clock),
+    procedures = new BurikoProcedureState(),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 32, moduleCapacity: 0, frameCapacity: 0}),
+    scheduler = new BurikoBpScheduler(
+      new BurikoBpThread({id: 0, operandCapacity: 0, moduleCapacity: 0, frameCapacity: 0}),
       () => 0,
     ),
     node = scheduler.append(thread),
-    context = {thread, memory: new AokanaBpMemory(new Uint8Array(0)), diagnostics: {}},
+    context = {thread, memory: new BurikoBpMemory(new Uint8Array(0)), diagnostics: {}},
     slots = createGroup90DisplayControl(manager, scheduler, procedures, clock, input, {
       files: {text},
       threadFatal() {

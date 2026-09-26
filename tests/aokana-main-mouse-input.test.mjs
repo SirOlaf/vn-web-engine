@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaMainMouseInput} from '../dist/engines/buriko/games/aokana/native/main-mouse-input.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoMainMouseInput} from '../dist/engines/buriko/native/main-mouse-input.js';
 
 class Element {
   constructor() {
@@ -49,9 +49,9 @@ function fixture(wheel = null) {
     parent = new Element(),
     document = new Element(),
     outside = new Element(),
-    display = new AokanaNativeDisplayState(640, 480),
-    input = new AokanaNativeInput(display, new AokanaNativeClock(() => 0)),
-    messages = new AokanaWindowMessages(input);
+    display = new BurikoNativeDisplayState(640, 480),
+    input = new BurikoNativeInput(display, new BurikoNativeClock(() => 0)),
+    messages = new BurikoWindowMessages(input);
   document.visibilityState = 'visible';
   messages.createMainTarget();
   const host = {
@@ -70,7 +70,7 @@ function fixture(wheel = null) {
       clientY: (y - 20) * 2,
     }),
   };
-  const mouse = new AokanaMainMouseInput(host, input, messages, wheel);
+  const mouse = new BurikoMainMouseInput(host, input, messages, wheel);
   return {canvas, parent, document, outside, input, messages, mouse};
 }
 

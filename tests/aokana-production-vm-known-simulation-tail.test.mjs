@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaIndependentProcedure} from '../dist/engines/buriko/games/aokana/native/independent-procedure.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoIndependentProcedure} from '../dist/engines/buriko/native/independent-procedure.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted known simulation tail orders metrics, particle, rain and pre-input owners', async () => {
@@ -64,7 +64,7 @@ test('mounted known simulation tail orders metrics, particle, rain and pre-input
     await call(0x90, 0x56, [spriteHandle, 10, 28, 0, 0x80, 0, 0]);
     await call(0x90, 0x54, [spriteHandle, 1]);
     await call(0x90, 0xfa, [spriteHandle]);
-    const procedure = new AokanaIndependentProcedure(data.procedures, sprite);
+    const procedure = new BurikoIndependentProcedure(data.procedures, sprite);
     assert.equal(data.procedures.register(procedure), 1);
     view.setUint32(0x400, 0, true);
     view.setUint32(0x404, 0, true);

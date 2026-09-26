@@ -1,24 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {createGroup7f} from '../dist/engines/buriko/games/aokana/native/group-7f.js';
-import {sortNativeRecords} from '../dist/engines/buriko/games/aokana/native/record-sort.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {createGroup7f} from '../dist/engines/buriko/native/group-7f.js';
+import {sortNativeRecords} from '../dist/engines/buriko/native/record-sort.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 function fixture() {
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 128,
     frameCapacity: 128,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(2048));
-  const diagnostics = new AokanaBpDiagnostics(() => {});
+  const memory = new BurikoBpMemory(new Uint8Array(2048));
+  const diagnostics = new BurikoBpDiagnostics(() => {});
   const slots = new Map(
-    createGroup7f(new AokanaNativeText()).map((slot) => [slot.secondary, slot]),
+    createGroup7f(new BurikoNativeText()).map((slot) => [slot.secondary, slot]),
   );
   const h = {thread, memory, diagnostics};
   return {
@@ -35,7 +35,7 @@ function fixture() {
 test('7F installs exactly the twelve verified native addresses', () => {
   const h = fixture();
   assert.equal(h.slots.size, 12);
-  for (const [secondary, address] of Object.entries(AOKANA_NATIVE_SLOT_ADDRESSES[0x7f])) {
+  for (const [secondary, address] of Object.entries(BURIKO_NATIVE_SLOT_ADDRESSES[0x7f])) {
     assert.equal(h.slots.get(Number(secondary)).nativeAddress, address);
   }
 });

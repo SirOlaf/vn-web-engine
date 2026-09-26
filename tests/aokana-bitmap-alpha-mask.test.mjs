@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 import {
-  applyAokanaAlphaMask,
-  applyAokanaBitmapMask,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-alpha-mask.js';
+  applyBurikoAlphaMask,
+  applyBurikoBitmapMask,
+} from '../dist/engines/buriko/native/bitmap-alpha-mask.js';
 
 function bitmap(width, height, values, format = 2, padding = 4) {
   const bytesPerPixel = format === 3 ? 1 : 4;
@@ -18,7 +18,7 @@ function bitmap(width, height, values, format = 2, padding = 4) {
       else view.setUint32(y * stride + x * 4, value, true);
     }
   return {
-    storage: new AokanaBitmapStorage(bytes, true),
+    storage: new BurikoBitmapStorage(bytes, true),
     offset: 0,
     stride,
     width,
@@ -49,7 +49,7 @@ const rgbaMask = () =>
 test('RGBA mask supplies RGB alpha across four, two, and one-pixel groups', () => {
   const source = bitmap(7, 1, sourcePixels, 1, 8);
   const destination = bitmap(7, 2, Array(14).fill(0x11223344));
-  assert.equal(applyAokanaAlphaMask(destination, source, rgbaMask(), 128), 0);
+  assert.equal(applyBurikoAlphaMask(destination, source, rgbaMask(), 128), 0);
   const expected = sourcePixels.map(
     (pixel, index) => ((pixel & 0xffffff) | (Math.floor(maskValues[index] / 2) << 24)) >>> 0,
   );
@@ -66,23 +66,23 @@ test('RGBA mask multiplies source alpha through separate and same-pointer descri
         (Math.floor((alphaValues[index] * maskValues[index] * 128) / 65536) << 24)) >>>
       0,
   );
-  assert.equal(applyAokanaAlphaMask(destination, source, rgbaMask(), 128), 0);
+  assert.equal(applyBurikoAlphaMask(destination, source, rgbaMask(), 128), 0);
   assert.deepEqual(pixels(destination), expected);
   const inPlace = bitmap(7, 1, sourcePixels);
-  assert.equal(applyAokanaAlphaMask(inPlace, {...inPlace}, rgbaMask(), 128), 0);
+  assert.equal(applyBurikoAlphaMask(inPlace, {...inPlace}, rgbaMask(), 128), 0);
   assert.deepEqual(pixels(inPlace), expected);
 });
 
 test('one-byte masks preserve the distinct RGB, RGBA, and byte product conventions', () => {
   const mask = bitmap(7, 1, maskValues, 3, 3);
   const rgbDestination = bitmap(7, 1, Array(7).fill(0));
-  assert.equal(applyAokanaBitmapMask(rgbDestination, bitmap(7, 1, sourcePixels, 1), mask), 0);
+  assert.equal(applyBurikoBitmapMask(rgbDestination, bitmap(7, 1, sourcePixels, 1), mask), 0);
   assert.deepEqual(
     pixels(rgbDestination),
     sourcePixels.map((pixel, index) => ((pixel & 0xffffff) | (maskValues[index] << 24)) >>> 0),
   );
   const alphaDestination = bitmap(7, 1, Array(7).fill(0));
-  assert.equal(applyAokanaBitmapMask(alphaDestination, bitmap(7, 1, sourcePixels), mask), 0);
+  assert.equal(applyBurikoBitmapMask(alphaDestination, bitmap(7, 1, sourcePixels), mask), 0);
   assert.deepEqual(
     pixels(alphaDestination),
     sourcePixels.map(
@@ -93,7 +93,7 @@ test('one-byte masks preserve the distinct RGB, RGBA, and byte product conventio
     ),
   );
   const byteDestination = bitmap(7, 1, Array(7).fill(0), 3, 3);
-  assert.equal(applyAokanaBitmapMask(byteDestination, bitmap(7, 1, alphaValues, 3), mask), 0);
+  assert.equal(applyBurikoBitmapMask(byteDestination, bitmap(7, 1, alphaValues, 3), mask), 0);
   assert.deepEqual(
     pixels(byteDestination),
     alphaValues.map((value, index) => Math.floor((value * (maskValues[index] + 1)) / 256)),

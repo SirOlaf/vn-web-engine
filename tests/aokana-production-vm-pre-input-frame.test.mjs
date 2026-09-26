@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaIndependentProcedure} from '../dist/engines/buriko/games/aokana/native/independent-procedure.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoIndependentProcedure} from '../dist/engines/buriko/native/independent-procedure.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted pre-input frame polls independent work before Sprite targets and cursor policy', async () => {
@@ -66,7 +66,7 @@ test('mounted pre-input frame polls independent work before Sprite targets and c
     await call(0x90, 0x56, [customHandle, 0, 0, 0, 0x80, 0, 0]);
     await call(0x90, 0xfa, [targetHandle]);
     assert.equal(await result(0x90, 0xfd, [0]), 0);
-    const procedure = new AokanaIndependentProcedure(data.procedures, target);
+    const procedure = new BurikoIndependentProcedure(data.procedures, target);
     assert.equal(data.procedures.register(procedure), 1);
     view.setUint32(0x400, 0, true);
     view.setUint32(0x404, 0, true);

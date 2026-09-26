@@ -1,26 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBrowserMainWindow} from '../dist/engines/buriko/games/aokana/native/browser-main-window.js';
-import {AokanaMainWindowCallbackBinding} from '../dist/engines/buriko/games/aokana/native/main-window-callbacks.js';
-import {AokanaMainWindowMessageReceiver} from '../dist/engines/buriko/games/aokana/native/main-window-messages.js';
-import {AokanaInlineTextControl} from '../dist/engines/buriko/games/aokana/native/inline-text-control.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaWindowMessages as AokanaWaitWindowMessages} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {createGroup80MainClose} from '../dist/engines/buriko/games/aokana/native/group-80-main-close.js';
+import {BurikoBrowserMainWindow} from '../dist/engines/buriko/native/browser-main-window.js';
+import {BurikoMainWindowCallbackBinding} from '../dist/engines/buriko/native/main-window-callbacks.js';
+import {BurikoMainWindowMessageReceiver} from '../dist/engines/buriko/native/main-window-messages.js';
+import {BurikoInlineTextControl} from '../dist/engines/buriko/native/inline-text-control.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoWindowMessages as BurikoWaitWindowMessages} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {createGroup80MainClose} from '../dist/engines/buriko/native/group-80-main-close.js';
 
 class Element {
   constructor(tag) {
@@ -51,33 +51,33 @@ test('main lifecycle publishes real readiness, preserves nested close order and 
   const document = {title: '', createElement: (tag) => new Element(tag)},
     parent = document.createElement('div'),
     canvas = document.createElement('canvas'),
-    display = new AokanaNativeDisplayState(16, 8),
-    compositor = new AokanaBitmapCompositor(),
-    manager = new AokanaDisplayManager(
-      new AokanaDisplayObjectEnvironment(
+    display = new BurikoNativeDisplayState(16, 8),
+    compositor = new BurikoBitmapCompositor(),
+    manager = new BurikoDisplayManager(
+      new BurikoDisplayObjectEnvironment(
         compositor,
-        new AokanaDisplayDamage(64, {left: 0, top: 0, right: 15, bottom: 7}),
+        new BurikoDisplayDamage(64, {left: 0, top: 0, right: 15, bottom: 7}),
       ),
-      new AokanaSurfaces(null, compositor, new AokanaDistributedAllocator(1)),
+      new BurikoSurfaces(null, compositor, new BurikoDistributedAllocator(1)),
       display,
     ),
-    callbacks = new AokanaMainWindowCallbackBinding(display),
-    host = new AokanaBrowserMainWindow(document, parent, canvas, manager, callbacks),
-    input = new AokanaNativeInput(display, new AokanaNativeClock(() => 0)),
-    messages = new AokanaWindowMessages(input),
-    waits = new AokanaWaitWindowMessages(),
-    notifications = new AokanaNativeNotifications(),
-    inline = new AokanaInlineTextControl(
+    callbacks = new BurikoMainWindowCallbackBinding(display),
+    host = new BurikoBrowserMainWindow(document, parent, canvas, manager, callbacks),
+    input = new BurikoNativeInput(display, new BurikoNativeClock(() => 0)),
+    messages = new BurikoWindowMessages(input),
+    waits = new BurikoWaitWindowMessages(),
+    notifications = new BurikoNativeNotifications(),
+    inline = new BurikoInlineTextControl(
       host,
-      new AokanaNativeFonts(new AokanaNativeText()),
+      new BurikoNativeFonts(new BurikoNativeText()),
       {},
       messages,
-      new AokanaKeyboardMessages(messages),
+      new BurikoKeyboardMessages(messages),
     ),
     order = [];
   messages.createMainTarget();
   host.bindCloseMenu(input, messages);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 4,
       moduleCapacity: 0,
@@ -91,7 +91,7 @@ test('main lifecycle publishes real readiness, preserves nested close order and 
     postClose = () => {
       assert.equal(slots.find((slot) => slot.secondary === 0x69).execute({thread}), 0);
     };
-  const receiver = new AokanaMainWindowMessageReceiver(
+  const receiver = new BurikoMainWindowMessageReceiver(
     messages,
     waits,
     input,
@@ -175,33 +175,33 @@ test('direct WM_DESTROY detaches the scoped host and queues thread quit', () => 
   const document = {createElement: (tag) => new Element(tag)},
     parent = document.createElement('div'),
     canvas = document.createElement('canvas'),
-    display = new AokanaNativeDisplayState(16, 8),
-    compositor = new AokanaBitmapCompositor(),
-    manager = new AokanaDisplayManager(
-      new AokanaDisplayObjectEnvironment(
+    display = new BurikoNativeDisplayState(16, 8),
+    compositor = new BurikoBitmapCompositor(),
+    manager = new BurikoDisplayManager(
+      new BurikoDisplayObjectEnvironment(
         compositor,
-        new AokanaDisplayDamage(64, {left: 0, top: 0, right: 15, bottom: 7}),
+        new BurikoDisplayDamage(64, {left: 0, top: 0, right: 15, bottom: 7}),
       ),
-      new AokanaSurfaces(null, compositor, new AokanaDistributedAllocator(1)),
+      new BurikoSurfaces(null, compositor, new BurikoDistributedAllocator(1)),
       display,
     ),
-    callbacks = new AokanaMainWindowCallbackBinding(display),
-    host = new AokanaBrowserMainWindow(document, parent, canvas, manager, callbacks),
-    input = new AokanaNativeInput(display, new AokanaNativeClock(() => 0)),
-    messages = new AokanaWindowMessages(input),
-    inline = new AokanaInlineTextControl(
+    callbacks = new BurikoMainWindowCallbackBinding(display),
+    host = new BurikoBrowserMainWindow(document, parent, canvas, manager, callbacks),
+    input = new BurikoNativeInput(display, new BurikoNativeClock(() => 0)),
+    messages = new BurikoWindowMessages(input),
+    inline = new BurikoInlineTextControl(
       host,
-      new AokanaNativeFonts(new AokanaNativeText()),
+      new BurikoNativeFonts(new BurikoNativeText()),
       {},
       messages,
-      new AokanaKeyboardMessages(messages),
+      new BurikoKeyboardMessages(messages),
     );
   messages.createMainTarget();
-  const receiver = new AokanaMainWindowMessageReceiver(
+  const receiver = new BurikoMainWindowMessageReceiver(
     messages,
-    new AokanaWaitWindowMessages(),
+    new BurikoWaitWindowMessages(),
     input,
-    new AokanaNativeNotifications(),
+    new BurikoNativeNotifications(),
     host,
     {},
     null,

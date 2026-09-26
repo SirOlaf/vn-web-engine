@@ -1,33 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  AokanaBpThread,
-  AokanaBpSharedThread,
-} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
+import {BurikoBpThread, BurikoBpSharedThread} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
 
 test('root child teardown retires the native linked chain from tail to head', () => {
-  const root = new AokanaBpThread({
+  const root = new BurikoBpThread({
       id: 0,
       operandCapacity: 0,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    owner = new AokanaBpThread({
+    owner = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 64,
       frameCapacity: 64,
     }),
-    shared = new AokanaBpSharedThread({id: 2, operandCapacity: 8}),
-    sibling = new AokanaBpThread({
+    shared = new BurikoBpSharedThread({id: 2, operandCapacity: 8}),
+    sibling = new BurikoBpThread({
       id: 3,
       operandCapacity: 8,
       moduleCapacity: 64,
       frameCapacity: 64,
     }),
     removed = [],
-    scheduler = new AokanaBpScheduler(root, undefined, (node) => removed.push(node.state.id));
+    scheduler = new BurikoBpScheduler(root, undefined, (node) => removed.push(node.state.id));
   scheduler.append(owner);
   assert.equal(
     shared.initialize(owner, 32, 32, 0, (child) => scheduler.append(child)),

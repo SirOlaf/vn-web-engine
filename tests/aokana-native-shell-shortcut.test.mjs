@@ -2,26 +2,26 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
-import {createGroup81ShellShortcuts} from '../dist/engines/buriko/games/aokana/native/group-81-shell-shortcuts.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
+import {createGroup81ShellShortcuts} from '../dist/engines/buriko/native/group-81-shell-shortcuts.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaShellShortcuts} from '../dist/engines/buriko/games/aokana/native/shell-shortcuts.js';
-import {AokanaSpecialFolders} from '../dist/engines/buriko/games/aokana/native/special-folders.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeRegistry} from '../dist/engines/buriko/games/aokana/native/windows-registry.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoShellShortcuts} from '../dist/engines/buriko/native/shell-shortcuts.js';
+import {BurikoSpecialFolders} from '../dist/engines/buriko/native/special-folders.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeRegistry} from '../dist/engines/buriko/native/windows-registry.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 
 test('81 F7 creates and retains a Programs shortcut through the exact ShellLink host sequence', async () => {
   const canonical = (path) => path.toLowerCase();
-  const metadata = new AokanaMountedFileMetadata(
+  const metadata = new BurikoMountedFileMetadata(
     new StoredFileSystem(new MemoryStore(), canonical),
     {
       canonical,
@@ -48,12 +48,12 @@ test('81 F7 creates and retains a Programs shortcut through the exact ShellLink 
       accessTimePolicy: 'disabled',
     },
   );
-  const text = new AokanaNativeText();
-  const files = new AokanaProgramFiles(
+  const text = new BurikoNativeText();
+  const files = new BurikoProgramFiles(
     metadata,
     text,
-    new AokanaProgramMedia(),
-    new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+    new BurikoProgramMedia(),
+    new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
   );
   const userFolders = {
     desktop: 'C:\\Desktop',
@@ -61,9 +61,9 @@ test('81 F7 creates and retains a Programs shortcut through the exact ShellLink 
     documents: 'C:\\Documents',
     profile: 'C:\\Users\\Current',
   };
-  const folders = new AokanaSpecialFolders(
+  const folders = new BurikoSpecialFolders(
     text,
-    new AokanaNativeRegistry(new MemoryStore()),
+    new BurikoNativeRegistry(new MemoryStore()),
     {primaryRoot: bytes('C:\\Game\\\0'), secondaryRoot: Uint8Array.of(0)},
     {
       shellAllocatorAvailable: true,
@@ -120,23 +120,23 @@ test('81 F7 creates and retains a Programs shortcut through the exact ShellLink 
       };
     },
   };
-  const [definition] = createGroup81ShellShortcuts(new AokanaShellShortcuts(files, folders, host));
+  const [definition] = createGroup81ShellShortcuts(new BurikoShellShortcuts(files, folders, host));
   const memoryBytes = new Uint8Array(512);
   const values = [
-    [32, 'Aokana\\Tools\0'],
-    [96, 'Aokana.lnk\0'],
-    [160, 'C:\\Game\\Aokana.exe\0'],
+    [32, 'Buriko\\Tools\0'],
+    [96, 'Buriko.lnk\0'],
+    [160, 'C:\\Game\\Buriko.exe\0'],
     [224, '--route misaki\0'],
   ];
   for (const [offset, value] of values) memoryBytes.set(bytes(value), offset);
-  const memory = new AokanaBpMemory(memoryBytes);
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(memoryBytes);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory, diagnostics: new AokanaBpDiagnostics(() => {})};
+  const context = {thread, memory, diagnostics: new BurikoBpDiagnostics(() => {})};
 
   for (const address of [32, 96, 160, 224]) push32(thread, address);
   assert.equal(await definition.execute(context), 0);
@@ -147,11 +147,11 @@ test('81 F7 creates and retains a Programs shortcut through the exact ShellLink 
   assert.equal(definition.nativeAddress, 0x1400ea400);
   assert.deepEqual(calls, [
     ['create'],
-    ['path', 'C:\\Game\\Aokana.exe'],
+    ['path', 'C:\\Game\\Buriko.exe'],
     ['arguments', '--route misaki'],
     ['working-directory', ''],
     ['query-persist'],
-    ['save', 'C:\\Programs\\Aokana\\Tools\\Aokana.lnk', true],
+    ['save', 'C:\\Programs\\Buriko\\Tools\\Buriko.lnk', true],
     ['release-persist'],
     ['release-link'],
   ]);

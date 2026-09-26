@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decodeAokanaBmvIndexedFrame} from '../dist/engines/buriko/games/aokana/native/bmv-frame.js';
-import {decodeAokanaBfFrame} from '../dist/engines/buriko/games/aokana/native/bf-frame.js';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBmvRegistry} from '../dist/engines/buriko/games/aokana/native/bmv-registry.js';
+import {decodeBurikoBmvIndexedFrame} from '../dist/engines/buriko/native/bmv-frame.js';
+import {decodeBurikoBfFrame} from '../dist/engines/buriko/native/bf-frame.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBmvRegistry} from '../dist/engines/buriko/native/bmv-registry.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 
 function frame(version, color, alpha) {
   // Single-symbol DC/AC trees yield zero coefficients: neutral BGR128.
@@ -47,9 +47,9 @@ function movie(version) {
 }
 
 test('registered modern BMV versions decode into actual retained bitmap storage', () => {
-  const allocator = new AokanaDistributedAllocator(1),
-    processing = new AokanaDistributedProcessing(allocator, 2),
-    registry = new AokanaBmvRegistry(allocator);
+  const allocator = new BurikoDistributedAllocator(1),
+    processing = new BurikoDistributedProcessing(allocator, 2),
+    registry = new BurikoBmvRegistry(allocator);
   for (const version of [0x10000, 0x10001]) {
     const encoded = movie(version),
       handle = new Uint8Array(4),
@@ -65,9 +65,9 @@ test('registered modern BMV versions decode into actual retained bitmap storage'
     );
     const id = new DataView(handle.buffer).getUint32(0, true),
       resource = registry.find(id).resource,
-      destination = allocateAokanaBitmap(8, 8, 1),
+      destination = allocateBurikoBitmap(8, 8, 1),
       backing = destination.storage.bytes;
-    assert.equal(decodeAokanaBmvIndexedFrame(resource.bytes, 0, destination, processing), 0);
+    assert.equal(decodeBurikoBmvIndexedFrame(resource.bytes, 0, destination, processing), 0);
     assert.equal(destination.storage.bytes, backing);
     for (let pixel = 0; pixel < 64; pixel++)
       assert.deepEqual(
@@ -76,7 +76,7 @@ test('registered modern BMV versions decode into actual retained bitmap storage'
       );
     destination.storage.range(0, 256, true);
     if (version === 0x10001) {
-      const ordinaryDefault = decodeAokanaBfFrame(
+      const ordinaryDefault = decodeBurikoBfFrame(
         frame(version, true, 170),
         8,
         8,
@@ -88,7 +88,7 @@ test('registered modern BMV versions decode into actual retained bitmap storage'
       assert.deepEqual(ordinaryDefault.initialized, new Uint8Array(256).fill(1));
     }
     assert.deepEqual(destination.storage.initializedRange(0, 256), new Uint8Array(256).fill(1));
-    assert.equal(decodeAokanaBmvIndexedFrame(resource.bytes, 1, destination, processing), 0);
+    assert.equal(decodeBurikoBmvIndexedFrame(resource.bytes, 1, destination, processing), 0);
     for (let pixel = 0; pixel < 64; pixel++)
       assert.deepEqual(Array.from(backing.subarray(pixel * 4, pixel * 4 + 4)), [128, 128, 128, 85]);
     assert.equal(registry.remove(id), 0);

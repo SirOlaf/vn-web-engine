@@ -2,30 +2,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaLocalizedMessages} from '../dist/engines/buriko/games/aokana/native/localized-messages.js';
-import {AokanaNativeLanguage} from '../dist/engines/buriko/games/aokana/native/group-81-language.js';
-import {AokanaImportedTextMaps} from '../dist/engines/buriko/games/aokana/native/imported-text-maps.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoLocalizedMessages} from '../dist/engines/buriko/native/localized-messages.js';
+import {BurikoNativeLanguage} from '../dist/engines/buriko/native/group-81-language.js';
+import {BurikoImportedTextMaps} from '../dist/engines/buriko/native/imported-text-maps.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaSecondaryMediaDiscovery} from '../dist/engines/buriko/games/aokana/native/secondary-media.js';
-import {createGroup80SecondaryMedia} from '../dist/engines/buriko/games/aokana/native/group-80-secondary-media.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoSecondaryMediaDiscovery} from '../dist/engines/buriko/native/secondary-media.js';
+import {createGroup80SecondaryMedia} from '../dist/engines/buriko/native/group-80-secondary-media.js';
 
 test('80:3F discovers the first eligible mounted marker and publishes the actual secondary resource path', async () => {
   const fs = new StoredFileSystem(new MemoryStore(), (p) => p.toLowerCase()),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),
     events = [],
     payload = Uint8Array.of(11, 22, 33, 44, 55);
@@ -35,7 +35,7 @@ test('80:3F discovers the first eligible mounted marker and publishes the actual
     {kind: 'write', path: '/f/data/marker', data: Uint8Array.of(1)},
     {kind: 'write', path: '/e/data/hello.bin', data: payload},
   ]);
-  const media = new AokanaProgramMedia();
+  const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
   for (const index of [3, 4, 5]) {
     media.setDriveType(index, 2);
@@ -46,11 +46,11 @@ test('80:3F discovers the first eligible mounted marker and publishes the actual
     events.push(['media', path]);
     return available(path);
   };
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       fs,
       text,
       media,
-      new AokanaMountedProgramPaths(
+      new BurikoMountedProgramPaths(
         ['C', 'D', 'E', 'F'].map((letter) => ({
           native: letter + ':\\',
           mounted: '/' + letter.toLowerCase(),
@@ -63,9 +63,9 @@ test('80:3F discovers the first eligible mounted marker and publishes the actual
     events.push(['stat', path]);
     return stat(path);
   };
-  const dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, encode('C:\\save\\'), encode('C:\\')),
-    processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+  const dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, encode('C:\\save\\'), encode('C:\\')),
+    processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
     config = {
       nativeFileRoot: 'C:\\assets\\',
       primaryRoot: encode('C:\\assets\\'),
@@ -77,11 +77,11 @@ test('80:3F discovers the first eligible mounted marker and publishes the actual
       retryMessage: Uint8Array.of(0),
       quitConfirmation: Uint8Array.of(0),
     },
-    resources = new AokanaProgramResources(files, config, dialogs, errors, processing),
-    localized = new AokanaLocalizedMessages(
+    resources = new BurikoProgramResources(files, config, dialogs, errors, processing),
+    localized = new BurikoLocalizedMessages(
       text,
-      new AokanaNativeLanguage(() => 0x409),
-      new AokanaImportedTextMaps(text),
+      new BurikoNativeLanguage(() => 0x409),
+      new BurikoImportedTextMaps(text),
     ),
     drives = {
       readLogicalDriveStrings() {
@@ -105,10 +105,10 @@ test('80:3F discovers the first eligible mounted marker and publishes the actual
         return 0;
       },
     },
-    discovery = new AokanaSecondaryMediaDiscovery(resources, localized, drives, timing, window),
+    discovery = new BurikoSecondaryMediaDiscovery(resources, localized, drives, timing, window),
     [slot] = createGroup80SecondaryMedia(discovery),
-    memory = new AokanaBpMemory(new Uint8Array(0x1000)),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(new Uint8Array(0x1000)),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 4096,

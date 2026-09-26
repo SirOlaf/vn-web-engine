@@ -1,21 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {
-  allocateAokanaBitmap,
-  aokanaBitmapRectangle,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {
-  bitmapRead8,
-  bitmapRead32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaMaskedBackdrop} from '../dist/engines/buriko/games/aokana/native/display-backdrop-mask.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead8, bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoMaskedBackdrop} from '../dist/engines/buriko/native/display-backdrop-mask.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM alpha extraction feeds the masked backdrop software draw', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke, memory} = fixture;
-  const output = allocateAokanaBitmap(5, 3, 1);
+  const output = allocateBurikoBitmap(5, 3, 1);
   const call = async (primary, secondary, args) => {
     assert.equal(await invoke(primary, secondary, args, 0), 0);
     assert.equal(child.state.stackIndex, 0);
@@ -80,7 +74,7 @@ test('mounted VM alpha extraction feeds the masked backdrop software draw', asyn
     graph.damage.clear();
     await call(0x90, 0x43, [0, 0, 4, 0, 0, 5, 3, 1, 64]);
     const selected = graph.manager.backdrop;
-    assert.ok(selected instanceof AokanaMaskedBackdrop);
+    assert.ok(selected instanceof BurikoMaskedBackdrop);
     assert.deepEqual(
       [selected.activation, selected.contentEnabled, graph.manager.backdropRenderType],
       [1, 1, 4],
@@ -90,7 +84,7 @@ test('mounted VM alpha extraction feeds the masked backdrop software draw', asyn
       graph.manager.lists.snapshot(false).map(({object}) => object),
       [selected],
     );
-    selected.draw(output, aokanaBitmapRectangle(output), 0);
+    selected.draw(output, burikoBitmapRectangle(output), 0);
     assert.deepEqual(
       outputPixels(),
       [

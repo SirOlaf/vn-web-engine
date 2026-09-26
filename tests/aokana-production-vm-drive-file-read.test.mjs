@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaDriveGeometryProfile} from '../dist/engines/buriko/games/aokana/native/program-files.js';
+import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoDriveGeometryProfile} from '../dist/engines/buriko/native/program-files.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted 81:32 reads a real file with the selected sector geometry', async () => {
   const sectors = Array(26).fill(null);
   sectors[2] = 4;
-  const profile = new AokanaDriveGeometryProfile(sectors);
+  const profile = new BurikoDriveGeometryProfile(sectors);
   const roots = [];
   const driveGeometryHost = {
     readBytesPerSector(root) {

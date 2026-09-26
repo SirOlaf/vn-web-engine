@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nativeAffineSineCosine} from '../dist/engines/buriko/games/aokana/bp/opcodes/native-math.js';
+import {nativeAffineSineCosine} from '../dist/engines/buriko/bp/opcodes/native-math.js';
 
 test('affine trigonometry evaluates each independently rounded angle over the signed DWORD input domain', () => {
   const inputs = [

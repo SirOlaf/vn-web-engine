@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMovieRenderTiming} from '../dist/engines/buriko/games/aokana/native/movie-render-timing.js';
+import {BurikoMovieRenderTiming} from '../dist/engines/buriko/native/movie-render-timing.js';
 
 test('movie render policy preserves the native bias and schedules early samples', () => {
-  const timing = new AokanaMovieRenderTiming(123);
+  const timing = new BurikoMovieRenderTiming(123);
   assert.equal(timing.sampleLateness(1000000n, 0n), -920000);
   assert.equal(timing.sampleLateness(79999n, 0n), -79999);
   assert.deepEqual(timing.quality(-920000n, 0n), {
@@ -35,7 +35,7 @@ test('movie render policy preserves the native bias and schedules early samples'
 });
 
 test('late drop, quality feedback, force-draw and long-wait branches remain distinct', () => {
-  const timing = new AokanaMovieRenderTiming(0);
+  const timing = new BurikoMovieRenderTiming(0);
   timing.renderAverage = 200000;
   timing.duration = timing.frameAverage = 400000;
   timing.lastDraw = 0n;
@@ -58,7 +58,7 @@ test('late drop, quality feedback, force-draw and long-wait branches remain dist
 });
 
 test('quality uses integer ratios and native signed throttling', () => {
-  const timing = new AokanaMovieRenderTiming(0);
+  const timing = new BurikoMovieRenderTiming(0);
   timing.frameAverage = 400000;
   timing.renderAverage = 101;
   timing.waitAverage = 100000;
@@ -83,7 +83,7 @@ test('quality uses integer ratios and native signed throttling', () => {
 });
 
 test('quality statistics and timer arithmetic keep the native count exclusions and wrap', () => {
-  const timing = new AokanaMovieRenderTiming(0xfffffff0);
+  const timing = new BurikoMovieRenderTiming(0xfffffff0);
   timing.recordFrame(20000000, 1230000);
   timing.recordFrame(-20000000, -10000);
   timing.recordFrame(20000000, -10000);

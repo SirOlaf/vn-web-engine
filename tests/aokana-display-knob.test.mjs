@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayKnob} from '../dist/engines/buriko/games/aokana/native/display-knob.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayKnob} from '../dist/engines/buriko/native/display-knob.js';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
 
-class KnobTarget extends AokanaDisplayObject {
+class KnobTarget extends BurikoDisplayObject {
   constructor(environment) {
     super(environment, 2, 4, 1);
     assert.equal(this.configureGeometry(3, 2), 1);
@@ -20,14 +20,14 @@ class KnobTarget extends AokanaDisplayObject {
 }
 
 test('CDspObjKnob owns its target and maps ordinary range, precision, drag and wheel state', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(32, {left: 0, top: 0, right: 99, bottom: 99}),
+      new BurikoDisplayDamage(32, {left: 0, top: 0, right: 99, bottom: 99}),
     ),
     target = new KnobTarget(environment),
-    knob = new AokanaDisplayKnob(environment, 7, target);
+    knob = new BurikoDisplayKnob(environment, 7, target);
 
   assert.equal(target.parent, knob);
   assert.deepEqual([knob.category, knob.depthOrder, knob.value120], [10, 7, 1]);

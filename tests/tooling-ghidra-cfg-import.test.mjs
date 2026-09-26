@@ -211,7 +211,7 @@ test('Ghidra CFG import: unsupported effects and unstable live state never produ
 
 test('Ghidra CFG import: reviewed direct call binds native names to a real imported implementation', async (t) => {
   // This graph is deliberately authored synthetic CALL evidence, separate from the
-  // three untouched decoder captures. It is not claimed to decode Aokana bytes.
+  // three untouched decoder captures. It is not claimed to decode Buriko bytes.
   const exported = fixture('add');
   delete exported.raw;
   const syntheticHash = sha256('invented call graph to a source scalar helper');
@@ -272,7 +272,7 @@ test('Ghidra CFG import: reviewed direct call binds native names to a real impor
   const generatedFile = path.join(directory, 'generated.mts');
   const emitted = emitCfgTypeScript(imported.module, db, {root, fromFile: generatedFile});
   assert.match(emitted.source, /import \{nativeVectorAngle as mapped_\d+\} from/);
-  assert.ok(emitted.source.includes('src/engines/buriko/games/aokana/bp/opcodes/native-math.js'));
+  assert.ok(emitted.source.includes('src/engines/buriko/bp/opcodes/native-math.js'));
   await writeFile(generatedFile, emitted.source);
   const compiledDir = path.join(directory, 'compiled');
   const checked = spawnSync(

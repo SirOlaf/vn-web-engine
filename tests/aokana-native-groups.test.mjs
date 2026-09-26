@@ -1,43 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayGroup} from '../dist/engines/buriko/games/aokana/native/display-group.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup90Groups} from '../dist/engines/buriko/games/aokana/native/group-90-groups.js';
-import {createGroup91KnobPointer} from '../dist/engines/buriko/games/aokana/native/group-90-knobs.js';
-import {AokanaGroupDisplays} from '../dist/engines/buriko/games/aokana/native/group-displays.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaKnobDisplays} from '../dist/engines/buriko/games/aokana/native/knob-displays.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayGroup} from '../dist/engines/buriko/native/display-group.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup90Groups} from '../dist/engines/buriko/native/group-90-groups.js';
+import {createGroup91KnobPointer} from '../dist/engines/buriko/native/group-90-knobs.js';
+import {BurikoGroupDisplays} from '../dist/engines/buriko/native/group-displays.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoKnobDisplays} from '../dist/engines/buriko/native/knob-displays.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 test('Group services share child propagation and the existing Knob pointer receiver', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(64, {left: 0, top: 0, right: 99, bottom: 99}),
+    new BurikoDisplayDamage(64, {left: 0, top: 0, right: 99, bottom: 99}),
   );
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
-  const display = new AokanaNativeDisplayState(100, 100),
-    manager = new AokanaDisplayManager(environment, surfaces, display);
-  const groups = new AokanaGroupDisplays(manager),
-    input = new AokanaNativeInput(display, {read: () => 0n}),
-    notifications = new AokanaNativeNotifications(),
-    knobs = new AokanaKnobDisplays(manager, input, notifications);
+  const display = new BurikoNativeDisplayState(100, 100),
+    manager = new BurikoDisplayManager(environment, surfaces, display);
+  const groups = new BurikoGroupDisplays(manager),
+    input = new BurikoNativeInput(display, {read: () => 0n}),
+    notifications = new BurikoNativeNotifications(),
+    knobs = new BurikoKnobDisplays(manager, input, notifications);
   const definitions = createGroup90Groups(groups, {
     files: {text: {encodeWide: (message) => message}},
     threadFatal() {
@@ -45,13 +45,13 @@ test('Group services share child propagation and the existing Knob pointer recei
     },
   });
   const pointer = createGroup91KnobPointer(knobs)[0];
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    context = {thread, memory: new AokanaBpMemory(new Uint8Array(0)), diagnostics: {}};
+    context = {thread, memory: new BurikoBpMemory(new Uint8Array(0)), diagnostics: {}};
   const call = (secondary, args = [], pushed = 0) => {
     const depth = thread.stackIndex;
     args.forEach((value) => push32(thread, value));
@@ -63,7 +63,7 @@ test('Group services share child propagation and the existing Knob pointer recei
     [0xe0, 0xe1, 0xe4, 0xe5, 0xe8, 0xe9],
   );
   for (const slot of [...definitions, pointer])
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
   const firstHandle = manager.createSprite(),
     secondHandle = manager.createSprite(),
     first = manager.resolve(firstHandle),
@@ -74,7 +74,7 @@ test('Group services share child propagation and the existing Knob pointer recei
   const handle = pop32(thread),
     group = manager.find('group', handle);
   assert.equal(handle, 0xf1000000);
-  assert.ok(group instanceof AokanaDisplayGroup);
+  assert.ok(group instanceof BurikoDisplayGroup);
   assert.equal(group.category, 9);
   assert.equal(manager.categoryCount(0x11), 1);
   assert.equal(

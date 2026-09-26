@@ -1,24 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaVirtualDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-virtual.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoVirtualDisplayObject} from '../dist/engines/buriko/native/display-virtual.js';
 
 function environment() {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  return new AokanaDisplayObjectEnvironment(
+  return new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(32, {left: 0, top: 0, right: 799, bottom: 599}),
+    new BurikoDisplayDamage(32, {left: 0, top: 0, right: 799, bottom: 599}),
   );
 }
 const mask = (width, height, bytes) => ({
-  storage: new AokanaBitmapStorage(Uint8Array.from(bytes), true),
+  storage: new BurikoBitmapStorage(Uint8Array.from(bytes), true),
   offset: 0,
   stride: width,
   width,
@@ -29,7 +29,7 @@ const mask = (width, height, bytes) => ({
 
 test('virtual object construction only sets the native parent pointer and forwards its three query virtuals', () => {
   const env = environment();
-  class Parent extends AokanaDisplayObject {
+  class Parent extends BurikoDisplayObject {
     sortKey() {
       return 0xffffc000;
     }
@@ -37,7 +37,7 @@ test('virtual object construction only sets the native parent pointer and forwar
   const parent = new Parent(env, 2, 7, 1);
   parent.layer = 4;
   parent.setActivation(1);
-  const child = new AokanaVirtualDisplayObject(env, 3, parent);
+  const child = new BurikoVirtualDisplayObject(env, 3, parent);
   assert.deepEqual(
     [child.category, child.depthOrder, child.value120, child.value170],
     [8, 3, 1, 1],
@@ -62,13 +62,13 @@ test('virtual object construction only sets the native parent pointer and forwar
 
 test('virtual hit testing rescales the child mask then preserves original coordinates in its parent', () => {
   const env = environment(),
-    parent = new AokanaDisplayObject(env, 2, 0, 1);
+    parent = new BurikoDisplayObject(env, 2, 0, 1);
   parent.configureGeometry(8, 8);
   parent.move(100, 200);
   const parentBytes = new Uint8Array(64);
   parentBytes[5] = 1;
   parent.setHitMask(mask(8, 8, parentBytes));
-  const child = new AokanaVirtualDisplayObject(env, 0, parent);
+  const child = new BurikoVirtualDisplayObject(env, 0, parent);
   child.configureGeometry(4, 4);
   child.move(102, 199);
   child.setHitMask(mask(2, 2, [0, 1, 0, 0]));
@@ -88,13 +88,13 @@ test('virtual hit testing rescales the child mask then preserves original coordi
 test('virtual objects retain the native empty base draw instead of painting a forwarded parent', () => {
   const env = environment();
   let draws = 0;
-  class Parent extends AokanaDisplayObject {
+  class Parent extends BurikoDisplayObject {
     draw() {
       draws++;
     }
   }
   const parent = new Parent(env, 2, 0, 1),
-    child = new AokanaVirtualDisplayObject(env, 0, parent);
+    child = new BurikoVirtualDisplayObject(env, 0, parent);
   const target = mask(2, 2, [7, 8, 9, 10]);
   child.draw(target, {left: 0, top: 0, right: 1, bottom: 1}, 0);
   assert.equal(draws, 0);

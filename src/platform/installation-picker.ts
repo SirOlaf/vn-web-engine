@@ -7,6 +7,8 @@ export interface SelectedInstallationFile {
 }
 export interface InstallationSelection {
   readonly files: readonly SelectedInstallationFile[];
+  /** Paths of directories below the installation root, including empty directories. */
+  readonly directories?: readonly string[];
   readonly directory: boolean;
   /** A reusable reference to device files, when the browser provides one. */
   readonly directoryHandle?: FileSystemDirectoryHandle;
@@ -15,20 +17,33 @@ export interface InstallationSelection {
 /** Folder selection replaces the tree; individual picks fill in or replace its entries. */
 export class InstallationSelectionFiles {
   private readonly files = new Map<string, SelectedInstallationFile>();
+  private readonly directories = new Map<string, string>();
   constructor(
     private readonly canonical: (path: string) => string = filePath,
     private readonly selectedPath: (path: string, directory: boolean) => string = (path) => path,
   ) {}
   add(selection: InstallationSelection): InstallationSelection {
-    if (selection.directory) this.files.clear();
+    if (selection.directory) {
+      this.files.clear();
+      this.directories.clear();
+    }
+    for (const directory of selection.directories ?? []) {
+      const path = filePath(this.selectedPath(directory, selection.directory));
+      this.directories.set(this.canonical(path), path);
+    }
     for (const entry of selection.files) {
       const path = filePath(this.selectedPath(entry.path, selection.directory));
       this.files.set(this.canonical(path), {path, file: entry.file});
     }
-    return {files: Array.from(this.files.values()), directory: true};
+    return {
+      files: Array.from(this.files.values()),
+      directories: Array.from(this.directories.values()),
+      directory: true,
+    };
   }
   clear(): void {
     this.files.clear();
+    this.directories.clear();
   }
 }
 
@@ -39,6 +54,7 @@ export function selectedInstallationFiles(
 ): InstallationSelection {
   let root: string | undefined;
   const paths = new Set<string>();
+  const directories = new Set<string>();
   const selected: SelectedInstallationFile[] = [];
   for (const file of files) {
     const parts = directory ? file.webkitRelativePath.split('/') : [file.name];
@@ -54,8 +70,15 @@ export function selectedInstallationFiles(
     if (paths.has(path)) throw new Error(`Duplicate selected file: ${path}`);
     paths.add(path);
     selected.push({path, file});
+    if (directory) {
+      let parent = '';
+      for (const part of parts.slice(0, -1)) {
+        parent += '/' + part;
+        directories.add(filePath(parent));
+      }
+    }
   }
-  return {files: selected, directory};
+  return {files: selected, directories: Array.from(directories), directory};
 }
 
 type DirectoryPickerWindow = Window & {
@@ -120,6 +143,7 @@ export async function readInstallationDirectory(
   root: FileSystemDirectoryHandle,
 ): Promise<InstallationSelection> {
   const files: SelectedInstallationFile[] = [];
+  const directories: string[] = [];
   async function visit(directory: FileSystemDirectoryHandle, prefix: string): Promise<void> {
     // The browser's async directory iterator is not yet included in every TS DOM library.
     const entries = directory as FileSystemDirectoryHandle & {
@@ -128,10 +152,12 @@ export async function readInstallationDirectory(
     for await (const handle of entries.values()) {
       if (isInstallationMetadata(handle.name)) continue;
       const path = filePath(prefix + '/' + handle.name);
-      if (handle.kind === 'directory') await visit(handle as FileSystemDirectoryHandle, path);
-      else files.push({path, file: await (handle as FileSystemFileHandle).getFile()});
+      if (handle.kind === 'directory') {
+        directories.push(path);
+        await visit(handle as FileSystemDirectoryHandle, path);
+      } else files.push({path, file: await (handle as FileSystemFileHandle).getFile()});
     }
   }
   await visit(root, '');
-  return {files, directory: true, directoryHandle: root};
+  return {files, directories, directory: true, directoryHandle: root};
 }

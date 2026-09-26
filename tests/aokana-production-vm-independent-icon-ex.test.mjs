@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted IconEx configures Window children and polls queued independent messages', async () => {
@@ -50,7 +50,7 @@ test('mounted IconEx configures Window children and polls queued independent mes
 
     const windowHandle = await result(0x90, 0x80, [32, 32]);
     const window = graph.manager.find('window', windowHandle);
-    assert.ok(window instanceof AokanaWindowDisplayObject);
+    assert.ok(window instanceof BurikoWindowDisplayObject);
     await call(0x90, 0x84, [windowHandle, 1]);
     for (const [id, color] of [
       [0, 0xff0000],

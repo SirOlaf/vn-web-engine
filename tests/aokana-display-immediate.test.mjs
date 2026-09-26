@@ -1,32 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup90DisplayImmediate} from '../dist/engines/buriko/games/aokana/native/group-90-display-immediate.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup90DisplayImmediate} from '../dist/engines/buriko/native/group-90-display-immediate.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('immediate object wrappers mutate shared sprites, propagate children, damage and resort', () => {
-  const text = new AokanaNativeText(),
-    compositor = new AokanaBitmapCompositor(),
-    allocator = new AokanaDistributedAllocator(1),
-    surfaces = new AokanaSurfaces(new AokanaNativeFonts(text), compositor, allocator),
-    damage = new AokanaDisplayDamage(64, {left: 0, top: 0, right: 127, bottom: 127}),
-    manager = new AokanaDisplayManager(
-      new AokanaDisplayObjectEnvironment(compositor, damage),
+  const text = new BurikoNativeText(),
+    compositor = new BurikoBitmapCompositor(),
+    allocator = new BurikoDistributedAllocator(1),
+    surfaces = new BurikoSurfaces(new BurikoNativeFonts(text), compositor, allocator),
+    damage = new BurikoDisplayDamage(64, {left: 0, top: 0, right: 127, bottom: 127}),
+    manager = new BurikoDisplayManager(
+      new BurikoDisplayObjectEnvironment(compositor, damage),
       surfaces,
-      new AokanaNativeDisplayState(128, 128),
+      new BurikoNativeDisplayState(128, 128),
     ),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 32, moduleCapacity: 0, frameCapacity: 0}),
-    context = {thread, memory: new AokanaBpMemory(new Uint8Array(0)), diagnostics: {}},
+    thread = new BurikoBpThread({id: 1, operandCapacity: 32, moduleCapacity: 0, frameCapacity: 0}),
+    context = {thread, memory: new BurikoBpMemory(new Uint8Array(0)), diagnostics: {}},
     slots = createGroup90DisplayImmediate(manager, {
       files: {text},
       threadFatal() {
@@ -43,7 +43,7 @@ test('immediate object wrappers mutate shared sprites, propagate children, damag
   assert.equal(manager.initializeSimpleSprite(otherHandle, 12, 13, 0, 0x80, 256, 4), 0);
   assert.equal(sprite.addChild(other, 0, 0), 1);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][slot.secondary]);
   const call = (secondary, ...args) => {
     args.forEach((value) => push32(thread, value));
     assert.equal(slots.find((slot) => slot.secondary === secondary).execute(context), 0);

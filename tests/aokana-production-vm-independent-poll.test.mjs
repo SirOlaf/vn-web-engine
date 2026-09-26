@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaIndependentProcedure} from '../dist/engines/buriko/games/aokana/native/independent-procedure.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoIndependentProcedure} from '../dist/engines/buriko/native/independent-procedure.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM polls one graph-owned independent procedure through the core lane', async () => {
@@ -25,7 +25,7 @@ test('mounted VM polls one graph-owned independent procedure through the core la
     assert.ok(sprite);
     await call(0x56, [handle, 2, 3, 0, 0x80, 0, 0]);
 
-    const procedure = new AokanaIndependentProcedure(data.procedures, sprite);
+    const procedure = new BurikoIndependentProcedure(data.procedures, sprite);
     assert.equal(data.procedures.register(procedure), 1);
     assert.equal(sprite.getOwner(), procedure);
     procedure.dirty = 1;

@@ -10,8 +10,11 @@ export interface PeResource {
   bytes: Uint8Array;
 }
 
-/** Read a file-layout PE32/PE32+ resource tree. Does not execute or retain the file. */
-export function parsePeResources(bytes: Uint8Array): PeResource[] {
+/** Read a file-layout PE32/PE32+ resource tree. Does not execute or retain the file.
+ * When types are selected, unrelated payloads are not mapped. Packed images can
+ * expose ordinary version resources while retaining other resources in packed sections.
+ */
+export function parsePeResources(bytes: Uint8Array, types?: readonly PeResourceId[]): PeResource[] {
   if (bytes.length > 512 * 1024 * 1024) throw new Error('PE file exceeds allocation limit');
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const u16 = (p: number): number => {
@@ -76,14 +79,14 @@ export function parsePeResources(bytes: Uint8Array): PeResource[] {
   if (!resourceRva && !resourceSize) return [];
   if (!resourceRva || resourceSize < 16 || resourceSize > 64 * 1024 * 1024)
     throw new Error('Invalid PE resource directory size');
-  const root = fileOffset(resourceRva, resourceSize),
-    result: PeResource[] = [],
+  fileOffset(resourceRva, 16);
+  const result: PeResource[] = [],
     visited = new Set<number>();
   let entries = 0,
     nameUnits = 0;
   const relative = (offset: number, size: number): number => {
     checkRange(resourceSize, offset, size);
-    return root + offset;
+    return fileOffset(resourceRva + offset, size);
   };
   function walk(offset: number, path: PeResourceId[]): void {
     if (visited.has(offset)) throw new Error('Cyclic or shared PE resource directory');
@@ -116,6 +119,7 @@ export function parsePeResources(bytes: Uint8Array): PeResource[] {
       } else if (name > 0xffff) throw new Error('Invalid PE numeric resource ID');
       if (keys.has(id)) throw new Error('Duplicate PE resource entry');
       keys.add(id);
+      if (path.length === 0 && types !== undefined && !types.includes(id)) continue;
       if (path.length < 2) {
         if (!(target & 0x80000000)) throw new Error('Missing PE resource directory level');
         walk(target & 0x7fffffff, [...path, id]);

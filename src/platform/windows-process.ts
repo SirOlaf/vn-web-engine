@@ -81,6 +81,56 @@ export interface WindowsProcessHost {
   closeHandle(handle: WindowsProcessHandle): void;
 }
 
+/** Launch through the selected host without waiting or retaining process handles. */
+export async function launchWindowsProcess(
+  host: WindowsProcessHost,
+  commandLine: Uint16Array,
+  showWindow: number,
+): Promise<boolean> {
+  if (commandLine.length === 0 || commandLine[commandLine.length - 1] !== 0)
+    throw new RangeError('Windows process command line must be NUL terminated');
+  const created = await host.createProcessW({
+    applicationName: null,
+    commandLine: commandLine.slice(),
+    processAttributes: null,
+    threadAttributes: null,
+    inheritHandles: false,
+    creationFlags: 0,
+    environment: null,
+    currentDirectory: null,
+    startup: {
+      cb: 0x68,
+      reserved: null,
+      desktop: null,
+      title: null,
+      x: 0,
+      y: 0,
+      xSize: 0,
+      ySize: 0,
+      xCountChars: 0,
+      yCountChars: 0,
+      fillAttribute: 0,
+      flags: 1,
+      showWindow: showWindow >>> 0,
+      reserved2Size: 0,
+      reserved2: null,
+      standardInput: null,
+      standardOutput: null,
+      standardError: null,
+    },
+  });
+  if (created === null) return false;
+  try {
+    return true;
+  } finally {
+    try {
+      host.closeHandle(created.thread);
+    } finally {
+      host.closeHandle(created.process);
+    }
+  }
+}
+
 /** Borrow the shell's primary token, closing both temporary handles in native order. */
 export async function duplicateWindowsShellPrimaryToken(
   host: WindowsProcessHost,

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaNativeSplines} from '../dist/engines/buriko/games/aokana/native/spline-registry.js';
-import {createGroupC0Splines} from '../dist/engines/buriko/games/aokana/native/group-c0-splines.js';
-import {decodeBwefPairs} from '../dist/engines/buriko/games/aokana/native/bwef.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+import {BurikoNativeSplines} from '../dist/engines/buriko/native/spline-registry.js';
+import {createGroupC0Splines} from '../dist/engines/buriko/native/group-c0-splines.js';
+import {decodeBwefPairs} from '../dist/engines/buriko/native/bwef.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 function storage(size) {
   const bytes = new Uint8Array(size),
@@ -13,7 +13,7 @@ function storage(size) {
 }
 
 test('C0 spline registry retains signed-bank IDs, validation precedence and uninitialized duration', () => {
-  const splines = new AokanaNativeSplines(),
+  const splines = new BurikoNativeSplines(),
     first = splines.create(),
     second = splines.create(),
     points = storage(32),
@@ -37,7 +37,7 @@ test('C0 spline registry retains signed-bank IDs, validation precedence and unin
 });
 
 test('C0 spline initialization reads excess points while retaining the native 100-point cap', () => {
-  const splines = new AokanaNativeSplines(),
+  const splines = new BurikoNativeSplines(),
     id = splines.create(),
     points = storage(101 * 16),
     output = storage(12);
@@ -51,11 +51,11 @@ test('C0 spline initialization reads excess points while retaining the native 10
 });
 
 test('C0 spline wrappers preserve all four native stack contracts', () => {
-  const memory = new AokanaBpMemory(new Uint8Array(256)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
+  const memory = new BurikoBpMemory(new Uint8Array(256)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
     context = {memory, thread};
   const handlers = new Map(
-    createGroupC0Splines(new AokanaNativeSplines()).map((slot) => [slot.secondary, slot.execute]),
+    createGroupC0Splines(new BurikoNativeSplines()).map((slot) => [slot.secondary, slot.execute]),
   );
   const call = (opcode, args = []) => {
     args.forEach((value) => push32(thread, value));

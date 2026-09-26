@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {createGroup91TextTags} from '../dist/engines/buriko/games/aokana/native/group-91-text-tags.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {createGroup91TextTags} from '../dist/engines/buriko/native/group-91-text-tags.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('raw link extraction and in-place tag stripping preserve encoded text and native records', () => {
-  const text = new AokanaNativeText(),
-    memory = new AokanaBpMemory(new Uint8Array(2048));
-  const thread = new AokanaBpThread({
+  const text = new BurikoNativeText(),
+    memory = new BurikoBpMemory(new Uint8Array(2048));
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
@@ -22,7 +22,7 @@ test('raw link extraction and in-place tag stripping preserve encoded text and n
     [0x9e, 0x9f],
   );
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
   const call = (secondary, output, source) => {
     const depth = thread.stackIndex;
     push32(thread, output);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaDisplayGroup} from '../dist/engines/buriko/games/aokana/native/display-group.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoDisplayGroup} from '../dist/engines/buriko/native/display-group.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM binds Group hierarchy to its graph and propagates display state', async () => {
@@ -29,7 +29,7 @@ test('mounted VM binds Group hierarchy to its graph and propagates display state
     assert.equal(child.state.stackIndex, 0);
     assert.equal(groupHandle, 0xf1000000);
     const group = graph.manager.find('group', groupHandle);
-    assert.ok(group instanceof AokanaDisplayGroup);
+    assert.ok(group instanceof BurikoDisplayGroup);
     assert.equal(graph.manager.categoryCount(0x11), 1);
     assert.equal(await invoke(0x90, 0xe8, [groupHandle, spriteHandle, 3, 5], 0), 0);
     assert.equal(sprite.parent, group);

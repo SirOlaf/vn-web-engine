@@ -1,18 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {controlOpcodes} from '../dist/engines/buriko/games/aokana/bp/opcodes/control.js';
-import {integerOpcodes} from '../dist/engines/buriko/games/aokana/bp/opcodes/integer.js';
-import {memoryOpcodes} from '../dist/engines/buriko/games/aokana/bp/opcodes/memory.js';
-import {localOpcodes} from '../dist/engines/buriko/games/aokana/bp/opcodes/locals.js';
-import {
-  fixedOpcodes,
-  fixedResult,
-  roundToInt32,
-} from '../dist/engines/buriko/games/aokana/bp/opcodes/fixed.js';
-import {nativeMathOpcodes} from '../dist/engines/buriko/games/aokana/bp/opcodes/native-math.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {controlOpcodes} from '../dist/engines/buriko/bp/opcodes/control.js';
+import {integerOpcodes} from '../dist/engines/buriko/bp/opcodes/integer.js';
+import {memoryOpcodes} from '../dist/engines/buriko/bp/opcodes/memory.js';
+import {localOpcodes} from '../dist/engines/buriko/bp/opcodes/locals.js';
+import {fixedOpcodes, fixedResult, roundToInt32} from '../dist/engines/buriko/bp/opcodes/fixed.js';
+import {nativeMathOpcodes} from '../dist/engines/buriko/bp/opcodes/native-math.js';
 
 const handlers = {
   ...controlOpcodes,
@@ -23,15 +19,15 @@ const handlers = {
   ...nativeMathOpcodes,
 };
 function fixture(operands = [], bytes = []) {
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 256,
     frameCapacity: 256,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(1024));
+  const memory = new BurikoBpMemory(new Uint8Array(1024));
   const notices = [];
-  const diagnostics = new AokanaBpDiagnostics((notice) => notices.push(notice));
+  const diagnostics = new BurikoBpDiagnostics((notice) => notices.push(notice));
   thread.pc = 33;
   thread.instructionStart = 32;
   thread.frameCursor = 64;

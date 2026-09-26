@@ -1,10 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  allocateAokanaBitmap,
-  bitmapStorage,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {decodeAokanaLegacyBfFrame} from '../dist/engines/buriko/games/aokana/native/bf-legacy-frame.js';
+import {allocateBurikoBitmap, bitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {decodeBurikoLegacyBfFrame} from '../dist/engines/buriko/native/bf-legacy-frame.js';
 
 // These small fixed alphabets have independently specified tree codewords.
 // Every listed frequency is one; the bitstream stores each codeword low-bit first.
@@ -86,11 +83,11 @@ function expected(values, depth) {
 test('legacy BF key and delta frames retain the real bitmap and snapshot signed motion sources', () => {
   for (const depth of [24, 32]) {
     const encoded = movie(depth),
-      destination = allocateAokanaBitmap(2, 2, depth === 24 ? 1 : 2);
+      destination = allocateBurikoBitmap(2, 2, depth === 24 ? 1 : 2);
     const backing = destination.storage;
-    assert.equal(decodeAokanaLegacyBfFrame(encoded, 0, destination), true);
+    assert.equal(decodeBurikoLegacyBfFrame(encoded, 0, destination), true);
     assert.deepEqual(pixels(destination), expected([1, 2, 2, 3], depth));
-    assert.equal(decodeAokanaLegacyBfFrame(encoded, 1, destination), true);
+    assert.equal(decodeBurikoLegacyBfFrame(encoded, 1, destination), true);
     assert.deepEqual(pixels(destination), expected([2, 1, 0, 2], depth));
     assert.equal(destination.storage, backing);
   }

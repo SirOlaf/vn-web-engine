@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 import {
-  AokanaSpeakerContext,
-  AokanaStaticSpeaker,
-} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaStreamSpeaker} from '../dist/engines/buriko/games/aokana/native/audio/stream-speaker.js';
-import {AokanaSpeakerModel} from '../dist/engines/buriko/games/aokana/native/audio/speaker-model.js';
-import {createAokanaWaveStatic} from '../dist/engines/buriko/games/aokana/native/audio/wave-static.js';
-import {createAokanaWaveStream} from '../dist/engines/buriko/games/aokana/native/audio/wave-stream.js';
+  BurikoSpeakerContext,
+  BurikoStaticSpeaker,
+} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoStreamSpeaker} from '../dist/engines/buriko/native/audio/stream-speaker.js';
+import {BurikoSpeakerModel} from '../dist/engines/buriko/native/audio/speaker-model.js';
+import {createBurikoWaveStatic} from '../dist/engines/buriko/native/audio/wave-static.js';
+import {createBurikoWaveStream} from '../dist/engines/buriko/native/audio/wave-stream.js';
 
 function pcm(samples, rate) {
   const bytes = new Uint8Array(64 + samples.length * 2),
@@ -34,13 +34,13 @@ function close(actual, expected) {
 }
 
 test('static speaker owns real WaveBox fill, level application, pause and restart through memory PCM output', async () => {
-  const backend = new AokanaMemorySpeakerBackend(24000),
-    speaker = new AokanaStaticSpeaker(new AokanaSpeakerContext(backend));
-  const wave = await createAokanaWaveStatic(pcm([0, 16384, 0, -16384], 24000), {
+  const backend = new BurikoMemorySpeakerBackend(24000),
+    speaker = new BurikoStaticSpeaker(new BurikoSpeakerContext(backend));
+  const wave = await createBurikoWaveStatic(pcm([0, 16384, 0, -16384], 24000), {
     gain: 1,
     prefer24Bit: false,
   });
-  const model = new AokanaSpeakerModel(wave);
+  const model = new BurikoSpeakerModel(wave);
   try {
     assert.equal(await speaker.attach(model), 0);
     assert.equal(speaker.descriptor.flags, 0x180e8);
@@ -67,15 +67,15 @@ test('static speaker owns real WaveBox fill, level application, pause and restar
 });
 
 test('stream speaker fills and refills its real five-block ring from the existing WaveBox FIFO worker', async () => {
-  const backend = new AokanaMemorySpeakerBackend(1000),
-    speaker = new AokanaStreamSpeaker(new AokanaSpeakerContext(backend));
+  const backend = new BurikoMemorySpeakerBackend(1000),
+    speaker = new BurikoStreamSpeaker(new BurikoSpeakerContext(backend));
   const samples = Array.from({length: 2000}, (_, index) => (Math.floor(index / 100) + 1) * 1024);
-  const wave = await createAokanaWaveStream(
+  const wave = await createBurikoWaveStream(
     pcm(samples, 1000),
     {gain: 1, prefer24Bit: false},
     () => 0,
   );
-  const model = new AokanaSpeakerModel(wave);
+  const model = new BurikoSpeakerModel(wave);
   try {
     assert.equal(await speaker.attach(model), 0);
     assert.equal(wave.framePosition, 400);

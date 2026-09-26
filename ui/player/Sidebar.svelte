@@ -3,6 +3,7 @@
   import InstallationFiles from './InstallationFiles.svelte';
   import SaveFiles from './SaveFiles.svelte';
   import AudioDiagnostics from './AudioDiagnostics.svelte';
+  import {legacyAokanaProfile} from '../game-profiles/aokana.js';
   export let game: GameId;
 </script>
 
@@ -23,9 +24,9 @@
     <section>
       <h2>Game</h2>
       <a class="sidebar-library-link" href="./">← Library</a>
-      <label for="viewer-game">Select game</label>
+      <label for="viewer-game">Select player</label>
       <select id="viewer-game" value={game}>
-        <option value="noah">CHAOS;HEAD NOAH</option><option value="aokana">Aokana</option>
+        <option value="noah">CHAOS;HEAD NOAH</option><option value="buriko">BGI / Ethornell</option>
       </select>
     </section>
     <section>
@@ -42,6 +43,13 @@
       <p id="fullscreen-help" role="status" hidden></p>
     </section>
     <InstallationFiles />
+    {#if game === 'buriko'}
+      <p>
+        <a href={legacyAokanaProfile.legacyRoute}
+          >Open the previous {legacyAokanaProfile.title} installation cache</a
+        >
+      </p>
+    {/if}
     <section>
       <h2>Text rendering</h2>
       <label class="sr-only" for="text-mode">Text rendering mode</label>
@@ -49,11 +57,12 @@
         <option value="native">Native</option><option value="dom">DOM text</option>
       </select>
       <p id="text-help">
-        DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and visual effects are approximate.
+        DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and
+        visual effects are approximate.
       </p>
     </section>
     <SaveFiles {game} runtime />
-    {#if game === 'aokana'}
+    {#if game === 'buriko'}
       <section id="playback-options" hidden>
         <h2>Playback</h2>
         <button id="skip-startup" type="button" aria-pressed="false" disabled hidden

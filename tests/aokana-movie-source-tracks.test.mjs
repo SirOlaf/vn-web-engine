@@ -2,22 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaMovieSources} from '../dist/engines/buriko/games/aokana/native/movie-sources.js';
-import {AokanaMovieSourceDocument} from '../dist/engines/buriko/games/aokana/native/movie-source-document.js';
-import {AokanaMovieSourceTracks} from '../dist/engines/buriko/games/aokana/native/movie-source-tracks.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoMovieSources} from '../dist/engines/buriko/native/movie-sources.js';
+import {BurikoMovieSourceDocument} from '../dist/engines/buriko/native/movie-source-document.js';
+import {BurikoMovieSourceTracks} from '../dist/engines/buriko/native/movie-source-tracks.js';
 
 function join(...parts) {
   const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -133,20 +133,20 @@ test('explicit movie tracks retain direct and archive document identity through 
     {kind: 'write', path: '/game/video/direct.iso', data: directBytes},
     {kind: 'write', path: '/game/physical.arc', data: arc(archiveBytes)},
   ]);
-  const text = new AokanaNativeText(),
+  const text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
     pointer = (value) => ({bytes: encode(value), offset: 0}),
-    media = new AokanaProgramMedia();
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       fs,
       text,
       media,
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
     ),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, Uint8Array.of(0), Uint8Array.of(0)),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -161,13 +161,13 @@ test('explicit movie tracks retain direct and archive document identity through 
       },
       dialogs,
       errors,
-      new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+      new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
     );
   assert.equal(
     await resources.archives.registerComplex(pointer('virtual'), [pointer('physical.arc')]),
     1,
   );
-  const sources = new AokanaMovieSources(resources),
+  const sources = new BurikoMovieSources(resources),
     actors = {currentActor: {}};
 
   for (const {archive, name, bytes, payload, expectedOffset} of [
@@ -186,7 +186,7 @@ test('explicit movie tracks retain direct and archive document identity through 
       expectedOffset: 275,
     },
   ]) {
-    const document = await AokanaMovieSourceDocument.open(
+    const document = await BurikoMovieSourceDocument.open(
       sources,
       archive,
       pointer(name),
@@ -196,7 +196,7 @@ test('explicit movie tracks retain direct and archive document identity through 
     );
     assert.ok(document);
     assert.equal(document.source.offset, expectedOffset);
-    const selected = AokanaMovieSourceTracks.prepare(document, 7, 9);
+    const selected = BurikoMovieSourceTracks.prepare(document, 7, 9);
     assert.strictEqual(selected.document, document);
     assert.strictEqual(selected.movie, document.movie);
     assert.strictEqual(selected.video.track, document.movie.tracks[0]);
@@ -214,11 +214,11 @@ test('explicit movie tracks retain direct and archive document identity through 
     assert.equal(selected.audio.configurations.get(1).codec, 'mp4a.40.2');
     assert.equal(selected.audio.configurations.get(1).sampleRate, 48000);
     assert.deepEqual([...selected.audio.configurations.get(1).description], [0x11, 0x90]);
-    const other = AokanaMovieSourceTracks.prepare(document, 11, null);
+    const other = BurikoMovieSourceTracks.prepare(document, 11, null);
     assert.deepEqual([...other.video.sampleBytes(0)], [...payload[2]]);
     assert.equal(other.audio, null);
-    assert.throws(() => AokanaMovieSourceTracks.prepare(document, 9, null), /vide track/);
-    assert.throws(() => AokanaMovieSourceTracks.prepare(document, 7, 11), /soun track/);
+    assert.throws(() => BurikoMovieSourceTracks.prepare(document, 9, null), /vide track/);
+    assert.throws(() => BurikoMovieSourceTracks.prepare(document, 7, 11), /soun track/);
     assert.throws(() => selected.video.sampleBytes(1), RangeError);
   }
 });

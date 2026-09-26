@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaBpThread,
-  AokanaBpSharedThread,
+  BurikoBpThread,
+  BurikoBpSharedThread,
   push32,
   pop32,
   setPc,
@@ -12,17 +12,13 @@ import {
   validFrameAddress,
   reserveThreadRegions,
   releaseThreadRegions,
-} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import * as decode from '../dist/engines/buriko/games/aokana/bp/decode.js';
-import {
-  AokanaBpMemory,
-  AokanaBpHeap,
-  pointerView,
-} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {attachModule, detachLastModule} from '../dist/engines/buriko/games/aokana/bp/modules.js';
+} from '../dist/engines/buriko/bp/state.js';
+import * as decode from '../dist/engines/buriko/bp/decode.js';
+import {BurikoBpMemory, BurikoBpHeap, pointerView} from '../dist/engines/buriko/bp/memory.js';
+import {attachModule, detachLastModule} from '../dist/engines/buriko/bp/modules.js';
 
 const thread = (options = {}) =>
-  new AokanaBpThread({
+  new BurikoBpThread({
     id: 1,
     operandCapacity: 3,
     moduleCapacity: 128,
@@ -38,7 +34,7 @@ function moduleBytes(payload, offset = 16) {
   return bytes;
 }
 
-test('Aokana operand stack wraps with retained cells and separate frame storage', () => {
+test('Buriko operand stack wraps with retained cells and separate frame storage', () => {
   const t = thread();
   push32(t, 11);
   push32(t, -1);
@@ -52,7 +48,7 @@ test('Aokana operand stack wraps with retained cells and separate frame storage'
   assert.throws(() => push32(thread({operandCapacity: 0}), 0));
 });
 
-test('Aokana immediate readers preserve instruction start and consume exact widths', () => {
+test('Buriko immediate readers preserve instruction start and consume exact widths', () => {
   const t = thread();
   t.moduleMemory.set([0xaa, 0x80, 0x00, 0x80, 0xef, 0xcd, 0xab, 0x89, 1, 2, 3, 4, 5, 6, 7, 0x80]);
   assert.equal(decode.fetchOpcode(t), 0xaa);
@@ -67,7 +63,7 @@ test('Aokana immediate readers preserve instruction start and consume exact widt
   assert.equal(t.instructionStart, 5);
 });
 
-test('Aokana signed and typed varints retain x64 shift behavior, including overlong encodings', () => {
+test('Buriko signed and typed varints retain x64 shift behavior, including overlong encodings', () => {
   const t = thread();
   for (const [bytes, value] of [
     [[0x7f], -1],
@@ -99,7 +95,7 @@ test('Aokana signed and typed varints retain x64 shift behavior, including overl
   assert.equal(t.pc, 0);
 });
 
-test('Aokana module attachment retains raw names, ordered bases, and detached payload bytes', () => {
+test('Buriko module attachment retains raw names, ordered bases, and detached payload bytes', () => {
   const t = thread({moduleCapacity: 5});
   const name = Uint8Array.of(0x81, 0xff, 0, 66);
   assert.equal(attachModule(t, name, moduleBytes([1, 2], 8)), 0);
@@ -119,9 +115,9 @@ test('Aokana module attachment retains raw names, ordered bases, and detached pa
   assert.equal(validCodeAddress(t, 5), false);
 });
 
-test('Aokana tagged memory preserves byte overlap in global/module/frame/heap banks', () => {
+test('Buriko tagged memory preserves byte overlap in global/module/frame/heap banks', () => {
   const t = thread();
-  const m = new AokanaBpMemory(new Uint8Array(64));
+  const m = new BurikoBpMemory(new Uint8Array(64));
   t.heap.allocate(32);
   for (const address of [1, 0x10000001, 0x20000001, 0x30000001]) {
     m.writeU64(t, address, 0x8070605040302010n);
@@ -141,9 +137,9 @@ test('Aokana tagged memory preserves byte overlap in global/module/frame/heap ba
   assert.throws(() => pointerView({bytes: new Uint8Array(8).subarray(0, 2), offset: 1}, 2));
 });
 
-test('Aokana pooled addresses select every bank and forbid freeing interior addresses', () => {
+test('Buriko pooled addresses select every bank and forbid freeing interior addresses', () => {
   const t = thread();
-  const m = new AokanaBpMemory(new Uint8Array(1));
+  const m = new BurikoBpMemory(new Uint8Array(1));
   const cases = [
     [4, 0, 0],
     [5, 1, 0],
@@ -176,8 +172,8 @@ test('Aokana pooled addresses select every bank and forbid freeing interior addr
   assert.equal(m.allocatePooled(0x10000001), 0);
 });
 
-test('Aokana heap first-fit, growth, free coalescing, and address reuse preserve contents', () => {
-  const heap = new AokanaBpHeap();
+test('Buriko heap first-fit, growth, free coalescing, and address reuse preserve contents', () => {
+  const heap = new BurikoBpHeap();
   assert.equal(heap.allocate(7), 0);
   assert.equal(heap.allocate(9), 7);
   assert.equal(heap.allocate(0x8000 - 16), 16);
@@ -196,9 +192,9 @@ test('Aokana heap first-fit, growth, free coalescing, and address reuse preserve
   assert.equal(heap.free(zero), true);
 });
 
-test('Aokana indirect buffers retain handle identity across resize and insertion', () => {
+test('Buriko indirect buffers retain handle identity across resize and insertion', () => {
   const t = thread();
-  const m = new AokanaBpMemory(new Uint8Array(1));
+  const m = new BurikoBpMemory(new Uint8Array(1));
   const {result, address} = m.createBuffer(4);
   assert.equal(result, 0);
   assert.equal(address, 0x0fff001f);
@@ -222,9 +218,9 @@ test('Aokana indirect buffers retain handle identity across resize and insertion
   assert.equal(m.freeIndirect(empty.address, 0), 0);
 });
 
-test('Aokana indirect slot stepping visits all 256 slots and string storage retains raw bytes', () => {
+test('Buriko indirect slot stepping visits all 256 slots and string storage retains raw bytes', () => {
   const t = thread();
-  const m = new AokanaBpMemory(new Uint8Array(1));
+  const m = new BurikoBpMemory(new Uint8Array(1));
   const addresses = Array.from({length: 256}, () => m.createBuffer(0).address);
   assert.equal(new Set(addresses).size, 256);
   assert.equal(addresses.at(-1), 0x0fff0000);
@@ -240,7 +236,7 @@ test('Aokana indirect slot stepping visits all 256 slots and string storage reta
   assert.equal(m.readCString(t, s.address).length, 0);
 });
 
-test('Aokana paired reservations reuse gaps but release retains reduced usable capacities', () => {
+test('Buriko paired reservations reuse gaps but release retains reduced usable capacities', () => {
   const owner = thread({moduleCapacity: 100, frameCapacity: 80});
   const first = thread({id: 2}),
     second = thread({id: 3}),
@@ -269,9 +265,9 @@ test('Aokana paired reservations reuse gaps but release retains reduced usable c
   assert.equal(reserveThreadRegions(owner, first, 60, 1).result, 0x80000002);
 });
 
-test('Aokana child threads share bases, forward allocation and validation, and release before disposal', () => {
+test('Buriko child threads share bases, forward allocation and validation, and release before disposal', () => {
   const owner = thread({moduleCapacity: 100, frameCapacity: 80});
-  const child = new AokanaBpSharedThread({id: 2, operandCapacity: 2});
+  const child = new BurikoBpSharedThread({id: 2, operandCapacity: 2});
   const appended = [];
   assert.equal(
     child.initialize(owner, 20, 10, 7, (t) => appended.push(t)),

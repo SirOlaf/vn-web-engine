@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {
-  AokanaMovieImage,
-  AokanaMovieImageConfiguration,
-} from '../dist/engines/buriko/games/aokana/native/movie-image.js';
+  BurikoMovieImage,
+  BurikoMovieImageConfiguration,
+} from '../dist/engines/buriko/native/movie-image.js';
 import {
-  AokanaMovieMediaGraph,
-  AokanaMovieRenderer,
-} from '../dist/engines/buriko/games/aokana/native/movie-renderer.js';
-import {AokanaMovieRegistry} from '../dist/engines/buriko/games/aokana/native/movie-registry.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
+  BurikoMovieMediaGraph,
+  BurikoMovieRenderer,
+} from '../dist/engines/buriko/native/movie-renderer.js';
+import {BurikoMovieRegistry} from '../dist/engines/buriko/native/movie-registry.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
 
 class Video extends EventTarget {
   currentTime = 0;
@@ -36,22 +36,22 @@ class Video extends EventTarget {
 }
 
 test('surface slot replacement retires each HTML graph after registry unlink and owns its join', async () => {
-  const surfaces = new AokanaSurfaces(
+  const surfaces = new BurikoSurfaces(
       null,
-      new AokanaBitmapCompositor(),
-      new AokanaDistributedAllocator(1),
+      new BurikoBitmapCompositor(),
+      new BurikoDistributedAllocator(1),
     ),
-    registry = new AokanaMovieRegistry();
+    registry = new BurikoMovieRegistry();
   surfaces.attachMovies(registry);
   const attach = (slot) => {
     assert.equal(surfaces.allocate(slot, 2, 2, 1), 1);
     const video = new Video(),
-      graph = new AokanaMovieMediaGraph(video, URL.createObjectURL(new Blob())),
-      renderer = new AokanaMovieRenderer(
+      graph = new BurikoMovieMediaGraph(video, URL.createObjectURL(new Blob())),
+      renderer = new BurikoMovieRenderer(
         surfaces,
         slot,
-        new AokanaMovieImage(new AokanaMovieImageConfiguration()),
-        new AokanaNativeNotifications(),
+        new BurikoMovieImage(new BurikoMovieImageConfiguration()),
+        new BurikoNativeNotifications(),
       ),
       id = registry.append(renderer);
     renderer.attachGraph(graph, 0, id);
@@ -85,11 +85,11 @@ test('surface slot replacement retires each HTML graph after registry unlink and
   assert.equal(registry.hasPendingRetirement(4), false);
   assert.equal(
     registry.append(
-      new AokanaMovieRenderer(
+      new BurikoMovieRenderer(
         surfaces,
         5,
-        new AokanaMovieImage(new AokanaMovieImageConfiguration()),
-        new AokanaNativeNotifications(),
+        new BurikoMovieImage(new BurikoMovieImageConfiguration()),
+        new BurikoNativeNotifications(),
       ),
     ),
     2,

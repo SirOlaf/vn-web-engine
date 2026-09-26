@@ -1,35 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeTouch} from '../dist/engines/buriko/games/aokana/native/touch-input.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeTouch} from '../dist/engines/buriko/native/touch-input.js';
 import {
   createGroup80Input,
   createGroup81Input,
-} from '../dist/engines/buriko/games/aokana/native/group-80-input.js';
-import {createGroup81Display} from '../dist/engines/buriko/games/aokana/native/group-81-display.js';
+} from '../dist/engines/buriko/native/group-80-input.js';
+import {createGroup81Display} from '../dist/engines/buriko/native/group-81-display.js';
 import {
-  AokanaNativeLanguage,
+  BurikoNativeLanguage,
   createGroup81Language,
   group81Constant,
-} from '../dist/engines/buriko/games/aokana/native/group-81-language.js';
+} from '../dist/engines/buriko/native/group-81-language.js';
 import {
-  AokanaNativeCursorMotion,
-  AokanaBrowserCursorPosition,
+  BurikoNativeCursorMotion,
+  BurikoBrowserCursorPosition,
   createGroup80CursorMotion,
-} from '../dist/engines/buriko/games/aokana/native/cursor-motion.js';
-import {nativeCursorInterpolation} from '../dist/engines/buriko/games/aokana/bp/opcodes/native-math.js';
+} from '../dist/engines/buriko/native/cursor-motion.js';
+import {nativeCursorInterpolation} from '../dist/engines/buriko/bp/opcodes/native-math.js';
 
 function fixture() {
   let now = 100;
-  const clock = new AokanaNativeClock(() => now);
-  const display = new AokanaNativeDisplayState(1920, 1080);
+  const clock = new BurikoNativeClock(() => now);
+  const display = new BurikoNativeDisplayState(1920, 1080);
   display.requestedWidth = 800;
   display.requestedHeight = 600;
-  const input = new AokanaNativeInput(display, clock);
+  const input = new BurikoNativeInput(display, clock);
   input.foreground = true;
   input.inputActive = true;
   input.pointerAvailable = true;
@@ -207,14 +207,14 @@ test('native display conversion preserves fit, stretch, native size and desktop 
 
 test('native input slot pop order, capture flushing and click-index validation', () => {
   const {input} = fixture();
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
   const bytes = new Uint8Array(1024),
-    memory = new AokanaBpMemory(bytes),
+    memory = new BurikoBpMemory(bytes),
     h = {thread, memory};
   const definitions = [...createGroup80Input(input), ...createGroup81Input(input)];
   const call = (primary, secondary, ...args) => {
@@ -255,7 +255,7 @@ test('native input slot pop order, capture flushing and click-index validation',
 test('native touch receiver retains two-pass order, metadata and distance-filtered history', () => {
   const {input, clock} = fixture();
   const calls = [];
-  const touch = new AokanaNativeTouch(input, clock, {
+  const touch = new BurikoNativeTouch(input, clock, {
     available: true,
     register(flags) {
       calls.push(['register', flags]);
@@ -316,7 +316,7 @@ test('native cursor interpolation uses wrapped fixed products and motion cancell
   display.refreshPointerStep();
   assert.deepEqual([display.pointerStepX, display.pointerStepY], [65536, 65536]);
   const calls = [],
-    motion = new AokanaNativeCursorMotion(input, clock, {
+    motion = new BurikoNativeCursorMotion(input, clock, {
       setClientPosition(x, y) {
         calls.push([x, y]);
         return false;
@@ -350,7 +350,7 @@ test('native cursor interpolation uses wrapped fixed products and motion cancell
   input.foreground = false;
   motion.advance();
   assert.equal(motion.active, false);
-  assert.equal(new AokanaBrowserCursorPosition().setClientPosition(10, 20), false);
+  assert.equal(new BurikoBrowserCursorPosition().setClientPosition(10, 20), false);
   assert.equal(nativeCursorInterpolation(100, 1, 1, 4), 14);
   assert.equal(nativeCursorInterpolation(-100, 1, 1, 4), -15);
   assert.equal(nativeCursorInterpolation(100, 1, 2, 4), 50);
@@ -360,16 +360,16 @@ test('native cursor interpolation uses wrapped fixed products and motion cancell
 test('display and language slot boundaries retain native pop order and Boolean/status distinctions', () => {
   const {input, display, clock, advance} = fixture();
   const bytes = new Uint8Array(64),
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
       moduleCapacity: 64,
       frameCapacity: 64,
     });
-  const memory = new AokanaBpMemory(bytes),
-    language = new AokanaNativeLanguage(() => 0x409);
+  const memory = new BurikoBpMemory(bytes),
+    language = new BurikoNativeLanguage(() => 0x409);
   const moved = [],
-    motion = new AokanaNativeCursorMotion(input, clock, {
+    motion = new BurikoNativeCursorMotion(input, clock, {
       setClientPosition(x, y) {
         moved.push([x, y]);
         return false;

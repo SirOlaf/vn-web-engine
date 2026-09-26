@@ -2,63 +2,63 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
-import {AokanaRegisterSoundProcess} from '../dist/engines/buriko/games/aokana/native/register-sound-process.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
+import {BurikoRegisterSoundProcess} from '../dist/engines/buriko/native/register-sound-process.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaSpeakerContext} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaAudioChannels} from '../dist/engines/buriko/games/aokana/native/audio/channel-registry.js';
-import {AokanaAudioArchiveCache} from '../dist/engines/buriko/games/aokana/native/audio/archive-cache.js';
-import {AokanaAudioResourceStreams} from '../dist/engines/buriko/games/aokana/native/audio/resource-streams.js';
-import {AokanaAudioMusicResources} from '../dist/engines/buriko/games/aokana/native/audio/resource-music.js';
-import {AokanaAudioStaticResources} from '../dist/engines/buriko/games/aokana/native/audio/resource-static.js';
-import {AokanaAudioLoaderQueues} from '../dist/engines/buriko/games/aokana/native/audio/loader-queues.js';
-import {createGroupA0StaticPlay} from '../dist/engines/buriko/games/aokana/native/group-a0-static-play.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
+import {BurikoAudioArchiveCache} from '../dist/engines/buriko/native/audio/archive-cache.js';
+import {BurikoAudioResourceStreams} from '../dist/engines/buriko/native/audio/resource-streams.js';
+import {BurikoAudioMusicResources} from '../dist/engines/buriko/native/audio/resource-music.js';
+import {BurikoAudioStaticResources} from '../dist/engines/buriko/native/audio/resource-static.js';
+import {BurikoAudioLoaderQueues} from '../dist/engines/buriko/native/audio/loader-queues.js';
+import {createGroupA0StaticPlay} from '../dist/engines/buriko/native/group-a0-static-play.js';
 
 test('direct sound process queues borrowed PCM, completes through the real static worker and plays through A0:24', async () => {
   const actor = {},
-    actors = new AokanaDistributedAllocator(1),
-    locks = new AokanaNativeLocks(actors);
+    actors = new BurikoDistributedAllocator(1),
+    locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
-  const backend = new AokanaMemorySpeakerBackend(1000),
-    channels = new AokanaAudioChannels(
-      new AokanaSpeakerContext(backend),
+  const backend = new BurikoMemorySpeakerBackend(1000),
+    channels = new BurikoAudioChannels(
+      new BurikoSpeakerContext(backend),
       locks,
       actors,
-      new AokanaSystemTicks({now: () => 0}),
+      new BurikoSystemTicks({now: () => 0}),
       {prefer24Bit: false},
     );
   channels.initialize({});
   channels.activate();
-  const text = new AokanaNativeText(),
+  const text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
-    files = new AokanaProgramFiles(
+    files = new BurikoProgramFiles(
       new StoredFileSystem(new MemoryStore()),
       text,
-      new AokanaProgramMedia(),
+      new BurikoProgramMedia(),
     ),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, encode('/save/'), encode('/')),
-    processing = new AokanaDistributedProcessing(actors, 1),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, encode('/save/'), encode('/')),
+    processing = new BurikoDistributedProcessing(actors, 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\',
@@ -75,25 +75,25 @@ test('direct sound process queues borrowed PCM, completes through the real stati
       errors,
       processing,
     ),
-    loading = new AokanaResourceLoadingState(resources),
-    cache = new AokanaAudioArchiveCache(channels, files),
-    streams = new AokanaAudioResourceStreams(channels, cache, files),
-    music = new AokanaAudioMusicResources(resources, streams),
-    statics = new AokanaAudioStaticResources(channels),
-    queues = new AokanaAudioLoaderQueues(loading, music, statics),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 2, frameCapacity: 0}),
+    loading = new BurikoResourceLoadingState(resources),
+    cache = new BurikoAudioArchiveCache(channels, files),
+    streams = new BurikoAudioResourceStreams(channels, cache, files),
+    music = new BurikoAudioMusicResources(resources, streams),
+    statics = new BurikoAudioStaticResources(channels),
+    queues = new BurikoAudioLoaderQueues(loading, music, statics),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 2, frameCapacity: 0}),
     sourceBytes = new Uint8Array(80),
     source = {bytes: sourceBytes, offset: 8},
     view = new DataView(sourceBytes.buffer),
-    process = new AokanaRegisterSoundProcess(
+    process = new BurikoRegisterSoundProcess(
       {
         thread,
         actor,
-        memory: new AokanaBpMemory(new Uint8Array(16)),
-        diagnostics: new AokanaBpDiagnostics(() => {}),
+        memory: new BurikoBpMemory(new Uint8Array(16)),
+        diagnostics: new BurikoBpDiagnostics(() => {}),
       },
-      new AokanaProcedureState(),
-      new AokanaNativeClock(() => 0),
+      new BurikoProcedureState(),
+      new BurikoNativeClock(() => 0),
       loading,
       queues,
       0,
@@ -139,7 +139,7 @@ test('direct sound process queues borrowed PCM, completes through the real stati
     const [play] = createGroupA0StaticPlay(statics, errors);
     for (const value of [0, 128, 64]) push32(thread, value);
     assert.equal(
-      await play.execute({thread, actor, diagnostics: new AokanaBpDiagnostics(() => {})}),
+      await play.execute({thread, actor, diagnostics: new BurikoBpDiagnostics(() => {})}),
       0,
     );
     assert.equal(pop32(thread), 4);

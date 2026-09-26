@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMovieFilterEvents} from '../dist/engines/buriko/games/aokana/native/movie-filter-events.js';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+import {BurikoMovieFilterEvents} from '../dist/engines/buriko/native/movie-filter-events.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 
 test('actual movie event readiness follows window publication and both renderer completions', () => {
-  const messages = new AokanaWindowMessages(
-      new AokanaNativeInput(new AokanaNativeDisplayState(640, 480), new AokanaNativeClock(() => 0)),
+  const messages = new BurikoWindowMessages(
+      new BurikoNativeInput(new BurikoNativeDisplayState(640, 480), new BurikoNativeClock(() => 0)),
     ),
     target = messages.createMainTarget(),
-    events = new AokanaMovieFilterEvents(messages),
+    events = new BurikoMovieFilterEvents(messages),
     video = {},
     audio = {},
     readiness = [];

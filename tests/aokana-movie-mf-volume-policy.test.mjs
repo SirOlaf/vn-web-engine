@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaFullscreenMovieState} from '../dist/engines/buriko/games/aokana/native/movie-fullscreen-state.js';
-import {AokanaMfMovieVolumePolicy} from '../dist/engines/buriko/games/aokana/native/movie-mf-volume-policy.js';
+import {BurikoFullscreenMovieState} from '../dist/engines/buriko/native/movie-fullscreen-state.js';
+import {BurikoMfMovieVolumePolicy} from '../dist/engines/buriko/native/movie-mf-volume-policy.js';
 
 test('MF volume policy preserves initialized saved state when no controller is present', () => {
-  const fullscreen = new AokanaFullscreenMovieState(),
-    policy = new AokanaMfMovieVolumePolicy(fullscreen);
+  const fullscreen = new BurikoFullscreenMovieState(),
+    policy = new BurikoMfMovieVolumePolicy(fullscreen);
   assert.equal(policy.fullscreen, fullscreen);
   assert.equal(fullscreen.controller, null);
   assert.equal(policy.savedVolume, 0);

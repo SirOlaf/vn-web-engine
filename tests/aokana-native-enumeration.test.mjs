@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {BrowserWindowsDirectoryNamespaceHost} from '../dist/platform/windows-directory-namespace.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaFileEnumeration} from '../dist/engines/buriko/games/aokana/native/file-enumeration.js';
-import {createGroup80Enumeration} from '../dist/engines/buriko/games/aokana/native/group-80-enumeration.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoFileEnumeration} from '../dist/engines/buriko/native/file-enumeration.js';
+import {createGroup80Enumeration} from '../dist/engines/buriko/native/group-80-enumeration.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('browser mounted namespace keeps enumeration available without imported short names', async () => {
@@ -43,7 +43,7 @@ test('80 enumeration uses the live shared namespace, imported aliases and ordere
   const canonical = (value) => value.toLowerCase(),
     backing = new StoredFileSystem(new MemoryStore(), canonical);
   await backing.commit([{kind: 'write', path: '/Long Name.txt', data: Uint8Array.of(1, 2)}]);
-  const metadata = new AokanaMountedFileMetadata(backing, {
+  const metadata = new BurikoMountedFileMetadata(backing, {
     canonical,
     volumes: [{path: '/', identity: {}, writable: true}],
     currentFileTime: () => 2n,
@@ -64,21 +64,21 @@ test('80 enumeration uses the live shared namespace, imported aliases and ordere
       fold: (value) => value.toUpperCase(),
     },
   });
-  const text = new AokanaNativeText(),
-    files = new AokanaProgramFiles(
+  const text = new BurikoNativeText(),
+    files = new BurikoProgramFiles(
       metadata,
       text,
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
     );
   await metadata.createDirectory('/Child');
   await metadata.createDirectory('/Empty');
   await files.write(text.encodeWide('C:\\Child\\資料.txt', 1), Uint8Array.of(3));
   await files.write(text.encodeWide('C:\\Child\\Second.txt', 1), Uint8Array.of(4));
-  const definitions = createGroup80Enumeration(new AokanaFileEnumeration(files));
+  const definitions = createGroup80Enumeration(new BurikoFileEnumeration(files));
   const bytes = new Uint8Array(4096),
-    memory = new AokanaBpMemory(bytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(bytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 16,

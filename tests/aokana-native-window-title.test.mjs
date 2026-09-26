@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaWindowTitle} from '../dist/engines/buriko/games/aokana/native/window-title.js';
-import {createGroup80WindowTitle} from '../dist/engines/buriko/games/aokana/native/group-80-window-title.js';
-import {AokanaPropertyEditors} from '../dist/engines/buriko/games/aokana/native/property-editor.js';
-import {AokanaChildWindows} from '../dist/engines/buriko/games/aokana/native/child-windows.js';
-import {AokanaBitmapText} from '../dist/engines/buriko/games/aokana/native/font-bitmap.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaKeyboardMessages} from '../dist/engines/buriko/games/aokana/native/keyboard-messages.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoWindowTitle} from '../dist/engines/buriko/native/window-title.js';
+import {createGroup80WindowTitle} from '../dist/engines/buriko/native/group-80-window-title.js';
+import {BurikoPropertyEditors} from '../dist/engines/buriko/native/property-editor.js';
+import {BurikoChildWindows} from '../dist/engines/buriko/native/child-windows.js';
+import {BurikoBitmapText} from '../dist/engines/buriko/native/font-bitmap.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
 
 // DOM storage primitives only; no browser or image presentation is executed.
 class Element {
@@ -33,12 +33,12 @@ test('80:66 updates actual caption and shared default property-window title', ()
     host = fixture.controller.host,
     document = host.document,
     parent = new Element(),
-    text = new AokanaNativeText(),
-    title = new AokanaWindowTitle(text.encodeWide('Initial caption', 0)),
+    text = new BurikoNativeText(),
+    title = new BurikoWindowTitle(text.encodeWide('Initial caption', 0)),
     dialogs = fixture.controller.inline.dialogs;
   document.createElement = () => new Element();
   dialogs.fallbackTitle = title.bytes;
-  const properties = new AokanaPropertyEditors(
+  const properties = new BurikoPropertyEditors(
       document,
       parent,
       text,
@@ -46,24 +46,24 @@ test('80:66 updates actual caption and shared default property-window title', ()
       title.bytes,
     ),
     compositor = fixture.manager.environment.compositor,
-    children = new AokanaChildWindows(
+    children = new BurikoChildWindows(
       document,
       parent,
       {},
       text,
       fixture.manager.surfaces,
       compositor,
-      new AokanaBitmapText(new AokanaNativeFonts(text), compositor),
+      new BurikoBitmapText(new BurikoNativeFonts(text), compositor),
       dialogs,
       fixture.messages,
-      new AokanaKeyboardMessages(fixture.messages),
+      new BurikoKeyboardMessages(fixture.messages),
       {frameWidth: 0, frameHeight: 0, verticalScrollbarWidth: 0, horizontalScrollbarHeight: 0},
       title.bytes,
       fixture.canvas,
     ),
     [slot] = createGroup80WindowTitle(title, text, host, dialogs, children, properties),
-    memory = new AokanaBpMemory(new Uint8Array(1024)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
+    memory = new BurikoBpMemory(new Uint8Array(1024)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
     first = text.encodeWide('蒼の彼方のフォーリズム', 0),
     second = text.encodeWide('蒼空', 0);
   memory.globalMemory.set(first, 64);

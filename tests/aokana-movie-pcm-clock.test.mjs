@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaMemoryMoviePcmOutput} from '../dist/engines/buriko/games/aokana/native/movie-pcm-output.js';
-import {AokanaMoviePcmGraphClock} from '../dist/engines/buriko/games/aokana/native/movie-pcm-clock.js';
-import {aokanaIsoTime} from '../dist/engines/buriko/games/aokana/native/movie-iso-timeline.js';
+import {BurikoMemoryMoviePcmOutput} from '../dist/engines/buriko/native/movie-pcm-output.js';
+import {BurikoMoviePcmGraphClock} from '../dist/engines/buriko/native/movie-pcm-clock.js';
+import {burikoIsoTime} from '../dist/engines/buriko/native/movie-iso-timeline.js';
 
-const f = aokanaIsoTime.fraction;
+const f = burikoIsoTime.fraction;
 const span = (values, start) => ({
   planes: [Float32Array.from(values)],
   sampleRate: 3,
@@ -13,12 +13,12 @@ const span = (values, start) => ({
   endFrame: values.length,
   editIndex: 0,
   start,
-  end: aokanaIsoTime.add(start, f(BigInt(values.length), 3n)),
+  end: burikoIsoTime.add(start, f(BigInt(values.length), 3n)),
 });
 
 test('PCM graph clock reads actual output position across rendering, pause and acknowledged seek', () => {
-  const output = new AokanaMemoryMoviePcmOutput({channels: 1, capacityFrames: 4}, 3);
-  const clock = new AokanaMoviePcmGraphClock(output);
+  const output = new BurikoMemoryMoviePcmOutput({channels: 1, capacityFrames: 4}, 3);
+  const clock = new BurikoMoviePcmGraphClock(output);
   const command = (value) => output.command({generation: 0, ...value});
   assert.equal(clock.now(), 0n);
   command({kind: 'enqueue', span: span([0.25, 0.5, 0.75], f(0n))});

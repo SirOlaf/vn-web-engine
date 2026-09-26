@@ -1,29 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {
-  bitmapRead32,
-  bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup90ToneCurves} from '../dist/engines/buriko/games/aokana/native/group-90-tone-curves.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaRawSurfaceExport} from '../dist/engines/buriko/games/aokana/native/raw-surface-export.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup90ToneCurves} from '../dist/engines/buriko/native/group-90-tone-curves.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoRawSurfaceExport} from '../dist/engines/buriko/native/raw-surface-export.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 test('90:CC/CD live tone curves transform RGB and RGBA pair/tail pixels consumed by raw export', () => {
-  const text = new AokanaNativeText(),
-    surfaces = new AokanaSurfaces(
-      new AokanaNativeFonts(text),
-      new AokanaBitmapCompositor(),
-      new AokanaDistributedAllocator(1),
+  const text = new BurikoNativeText(),
+    surfaces = new BurikoSurfaces(
+      new BurikoNativeFonts(text),
+      new BurikoBitmapCompositor(),
+      new BurikoDistributedAllocator(1),
     ),
-    memory = new AokanaBpMemory(new Uint8Array(256)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
+    memory = new BurikoBpMemory(new Uint8Array(256)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
     slots = createGroup90ToneCurves(surfaces, {
       threadFatal() {
         assert.fail('ordinary tone curve');
@@ -32,7 +29,7 @@ test('90:CC/CD live tone curves transform RGB and RGBA pair/tail pixels consumed
     view = new DataView(memory.globalMemory.buffer),
     call = (secondary, args) => {
       const slot = slots.find((item) => item.secondary === secondary);
-      assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][secondary]);
+      assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][secondary]);
       args.forEach((arg) => push32(thread, arg));
       assert.equal(slot.execute({thread, memory, diagnostics: {}}), 0);
       assert.equal(thread.stackIndex, 0);
@@ -67,7 +64,7 @@ test('90:CC/CD live tone curves transform RGB and RGBA pair/tail pixels consumed
   call(0xcd, [4, 1, 0x4080c0, 256, 17, 0x204080, 8, 256]);
   assert.deepEqual(pixels(4), [0xff224281, 0x80000000, 0x40224281]);
   assert.equal(
-    new AokanaRawSurfaceExport(surfaces).export(
+    new BurikoRawSurfaceExport(surfaces).export(
       {bytes: memory.globalMemory, offset: 128},
       {bytes: memory.globalMemory, offset: 112},
       64,

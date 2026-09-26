@@ -4,12 +4,12 @@
   import SaveFiles from './player/SaveFiles.svelte';
 
   const games = {
-    aokana: {
-      title: 'Aokana',
+    buriko: {
+      title: 'BGI / Ethornell',
       engine: 'BURIKO',
-      route: './aokana.html',
-      explorerRoute: './aokana-assets.html',
-      initials: 'AO',
+      route: './buriko.html',
+      explorerRoute: './buriko-assets.html',
+      initials: 'BG',
     },
     noah: {
       title: 'CHAOS;HEAD NOAH',
@@ -19,9 +19,9 @@
       initials: 'CH',
     },
   } as const;
-  let selected: GameId = 'aokana';
+  let selected: GameId = 'buriko';
   let tab: 'overview' | 'files' = 'overview';
-  let installations: Record<GameId, InstallationStatus | null> = {aokana: null, noah: null};
+  let installations: Record<GameId, InstallationStatus | null> = {buriko: null, noah: null};
   let checking = false;
   let overviewTab: HTMLButtonElement;
   let filesTab: HTMLButtonElement;
@@ -31,11 +31,11 @@
 
   async function refreshInstallations(): Promise<void> {
     checking = true;
-    const [aokana, noah] = await Promise.all([
-      installationStatus('aokana'),
+    const [buriko, noah] = await Promise.all([
+      installationStatus('buriko'),
       installationStatus('noah'),
     ]);
-    installations = {aokana, noah};
+    installations = {buriko, noah};
     checking = false;
   }
 
@@ -80,13 +80,13 @@
       <section class="shelf" aria-label="Games">
         <div class="section-heading">
           <h2>Library</h2>
-          <span>2 titles</span>
+          <span>2 players</span>
           <button class="refresh" type="button" onclick={refreshInstallations} disabled={checking}>
             <span aria-hidden="true">↻</span>
             {checking ? 'Checking…' : 'Refresh browser files'}
           </button>
         </div>
-        {#each ['aokana', 'noah'] as GameId[] as id}
+        {#each ['buriko', 'noah'] as GameId[] as id}
           <button
             type="button"
             class:selected={selected === id}
@@ -117,7 +117,7 @@
 
       <section class="detail" aria-labelledby="detail-title">
         <div class="detail-topline">
-          <span>SELECTED GAME</span><span class="engine-tag">{game.engine}</span>
+          <span>SELECTED PLAYER</span><span class="engine-tag">{game.engine}</span>
         </div>
         <div class="detail-heading">
           <div>

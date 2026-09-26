@@ -1,22 +1,22 @@
 import test from 'node:test';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
-import {createGroupA0StaticDuration} from '../dist/engines/buriko/games/aokana/native/group-a0-static-duration.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
+import {createGroupA0StaticDuration} from '../dist/engines/buriko/native/group-a0-static-duration.js';
 import assert from 'node:assert/strict';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaSpeakerContext} from '../dist/engines/buriko/games/aokana/native/audio/speaker.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
-import {AokanaAudioChannels} from '../dist/engines/buriko/games/aokana/native/audio/channel-registry.js';
-import {AokanaAudioStaticResources} from '../dist/engines/buriko/games/aokana/native/audio/resource-static.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
+import {BurikoAudioStaticResources} from '../dist/engines/buriko/native/audio/resource-static.js';
 
 test('A0:2F consumes actual registered PCM metadata through the BP stack, then observes release', async () => {
   const bytes = new Uint8Array(72),
@@ -33,31 +33,31 @@ test('A0:2F consumes actual registered PCM metadata through the BP stack, then o
     header.setUint32(offset, value, true);
   [0, 16384, 0, -16384].forEach((value, index) => header.setInt16(64 + index * 2, value, true));
   const actors = {currentActor: {}},
-    locks = new AokanaNativeLocks(actors);
+    locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
-  const backend = new AokanaMemorySpeakerBackend(1000),
-    channels = new AokanaAudioChannels(
-      new AokanaSpeakerContext(backend),
+  const backend = new BurikoMemorySpeakerBackend(1000),
+    channels = new BurikoAudioChannels(
+      new BurikoSpeakerContext(backend),
       locks,
       actors,
-      new AokanaSystemTicks({now: () => 0}),
+      new BurikoSystemTicks({now: () => 0}),
       {prefer24Bit: false},
     ),
-    resources = new AokanaAudioStaticResources(channels),
-    text = new AokanaNativeText(),
-    files = new AokanaProgramFiles(
+    resources = new BurikoAudioStaticResources(channels),
+    text = new BurikoNativeText(),
+    files = new BurikoProgramFiles(
       new StoredFileSystem(new MemoryStore()),
       text,
-      new AokanaProgramMedia(),
+      new BurikoProgramMedia(),
     ),
-    errors = new AokanaEngineErrors(
+    errors = new BurikoEngineErrors(
       files,
-      new AokanaEngineDialogs(),
+      new BurikoEngineDialogs(),
       text.encodeWide('/save/', 1),
       text.encodeWide('/', 1),
     ),
     [slot] = createGroupA0StaticDuration(resources, errors),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0});
+    thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0});
   const duration = async () => {
     push32(thread, 0);
     assert.equal(await slot.execute({thread}), 0);

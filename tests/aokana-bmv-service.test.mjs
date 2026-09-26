@@ -1,30 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {createGroup90BmvFrame} from '../dist/engines/buriko/games/aokana/native/group-90-bmv-frame.js';
-import {AokanaBmvService} from '../dist/engines/buriko/games/aokana/native/bmv-service.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaBmvRegistry} from '../dist/engines/buriko/games/aokana/native/bmv-registry.js';
-import {AokanaProcedureState} from '../dist/engines/buriko/games/aokana/native/procedure.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {createGroup90BmvFrame} from '../dist/engines/buriko/native/group-90-bmv-frame.js';
+import {BurikoBmvService} from '../dist/engines/buriko/native/bmv-service.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoBmvRegistry} from '../dist/engines/buriko/native/bmv-registry.js';
+import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaResourceLoadingState} from '../dist/engines/buriko/games/aokana/native/resource-loading.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
 
@@ -36,13 +36,13 @@ function setup() {
       cwd: 'C:\\game',
       mounts: [{windows: 'C:\\', virtual: '/'}],
     }),
-    text = new AokanaNativeText(),
-    media = new AokanaProgramMedia();
+    text = new BurikoNativeText(),
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(fs, text, media),
-    allocator = new AokanaDistributedAllocator(1),
+  const files = new BurikoProgramFiles(fs, text, media),
+    allocator = new BurikoDistributedAllocator(1),
     unavailable = () => assert.fail('Successful synthetic resource service opened a diagnostic'),
-    resources = new AokanaProgramResources(
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -57,33 +57,33 @@ function setup() {
       },
       {show: unavailable},
       {fatal: unavailable, threadFatal: unavailable},
-      new AokanaDistributedProcessing(allocator, 1),
+      new BurikoDistributedProcessing(allocator, 1),
     ),
-    loading = new AokanaResourceLoadingState(resources),
-    thread = new AokanaBpThread({
+    loading = new BurikoResourceLoadingState(resources),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(new Uint8Array(1024)),
-    scheduler = new AokanaBpScheduler(thread, () => 1),
-    procedures = new AokanaProcedureState(),
-    clock = new AokanaNativeClock(() => 100),
-    registry = new AokanaBmvRegistry(allocator),
-    surfaces = new AokanaSurfaces(
-      new AokanaNativeFonts(text),
-      new AokanaBitmapCompositor(),
+    memory = new BurikoBpMemory(new Uint8Array(1024)),
+    scheduler = new BurikoBpScheduler(thread, () => 1),
+    procedures = new BurikoProcedureState(),
+    clock = new BurikoNativeClock(() => 100),
+    registry = new BurikoBmvRegistry(allocator),
+    surfaces = new BurikoSurfaces(
+      new BurikoNativeFonts(text),
+      new BurikoBitmapCompositor(),
       allocator,
     ),
-    service = new AokanaBmvService(
+    service = new BurikoBmvService(
       registry,
       surfaces,
       loading.ranges,
-      new AokanaDistributedProcessing(allocator, 2),
-      new AokanaDistributedProcessing(allocator, 2),
+      new BurikoDistributedProcessing(allocator, 2),
+      new BurikoDistributedProcessing(allocator, 2),
     ),
-    control = new AokanaVmControlState(),
+    control = new BurikoVmControlState(),
     slots = createGroup90BmvFrame(service, loading, scheduler, procedures, clock, control),
     context = {thread, memory, diagnostics: {}};
   let nextText = 32;
@@ -190,7 +190,7 @@ test('90 F6 uses actual surface bytes, range reads and serialized movie admissio
         alpha,
       ]);
   };
-  assert.equal(state.slots[0].nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][0xf6]);
+  assert.equal(state.slots[0].nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][0xf6]);
   assert.equal(await state.call(state.thread, 0, resident, 0), 0);
   assert.equal(pop32(state.thread), 0);
   assertPixels(0, 170);
@@ -198,7 +198,7 @@ test('90 F6 uses actual surface bytes, range reads and serialized movie admissio
   assert.equal(pop32(state.thread), 0);
   assertPixels(0, 85);
 
-  const child = new AokanaBpThread({
+  const child = new BurikoBpThread({
       id: 2,
       operandCapacity: 32,
       moduleCapacity: 0,

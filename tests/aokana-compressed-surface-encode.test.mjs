@@ -1,48 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
 import {
-  bitmapRead32,
-  bitmapWrite32,
-} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaSystemTicks} from '../dist/engines/buriko/games/aokana/native/system-ticks.js';
-import {AokanaCompressedSurfaceEncoder} from '../dist/engines/buriko/games/aokana/native/surface-compressed-encode.js';
-import {createGroup90CompressedEncode} from '../dist/engines/buriko/games/aokana/native/group-90-compressed-encode.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
+import {BurikoCompressedSurfaceEncoder} from '../dist/engines/buriko/native/surface-compressed-encode.js';
+import {createGroup90CompressedEncode} from '../dist/engines/buriko/native/group-90-compressed-encode.js';
 import {decodeCompressedBgLegacy} from '../dist/formats/buriko/compressed-bg.js';
-import {decodeAokanaCompressedBgV2} from '../dist/engines/buriko/games/aokana/native/compressed-bg-v2.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {decodeBurikoCompressedBgV2} from '../dist/engines/buriko/native/compressed-bg-v2.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('90:CE exports both real surface formats through complete encoders and imports decoded pixels', async () => {
-  const allocator = new AokanaDistributedAllocator(2),
-    processing = new AokanaDistributedProcessing(allocator, 2),
-    surfaces = new AokanaSurfaces(
-      new AokanaNativeFonts(new AokanaNativeText()),
-      new AokanaBitmapCompositor(),
+  const allocator = new BurikoDistributedAllocator(2),
+    processing = new BurikoDistributedProcessing(allocator, 2),
+    surfaces = new BurikoSurfaces(
+      new BurikoNativeFonts(new BurikoNativeText()),
+      new BurikoBitmapCompositor(),
       allocator,
     ),
-    encoder = new AokanaCompressedSurfaceEncoder(
+    encoder = new BurikoCompressedSurfaceEncoder(
       surfaces,
       processing,
-      new AokanaSystemTicks({now: () => 1234}),
+      new BurikoSystemTicks({now: () => 1234}),
     ),
     [slot] = createGroup90CompressedEncode(encoder, {
       threadFatal() {
         assert.fail('ordinary complete surface encoding');
       },
     }),
-    memory = new AokanaBpMemory(new Uint8Array(20000)),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
+    memory = new BurikoBpMemory(new Uint8Array(20000)),
+    thread = new BurikoBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
     view = new DataView(memory.globalMemory.buffer);
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][0xce]);
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][0xce]);
   for (const mode of [0, 1]) {
     const height = mode === 0 ? 1 : 16,
       format = mode === 0 ? 1 : 2;
@@ -66,7 +63,7 @@ test('90:CE exports both real surface formats through complete encoders and impo
       assert.equal(length, 353);
       pixels = decodeCompressedBgLegacy(encoded).pixels;
     } else {
-      const decoded = await decodeAokanaCompressedBgV2(encoded, processing);
+      const decoded = await decodeBurikoCompressedBgV2(encoded, processing);
       assert.equal(decoded.initializedLength, 16 + 64 * height * 4);
       pixels = decoded.bytes.subarray(16);
     }

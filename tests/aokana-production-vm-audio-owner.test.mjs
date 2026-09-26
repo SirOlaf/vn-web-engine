@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMemorySpeakerBackend} from '../dist/engines/buriko/games/aokana/native/audio/speaker-backend.js';
+import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 import {BrowserWindowsPlaySoundHost} from '../dist/platform/windows-sound.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
@@ -51,10 +51,13 @@ test('mounted A0 volume, status, and release callbacks share inactive graph PCM 
     assert.equal(channels.actors, graph.allocator);
     assert.equal(channels.ticks, graph.ticks);
     assert.equal(graph.resource.errors.files, graph.resource.files);
-    assert.ok(backend instanceof AokanaMemorySpeakerBackend);
+    assert.ok(backend instanceof BurikoMemorySpeakerBackend);
     assert.deepEqual(
       definitions.filter(({primary}) => primary === 0xa0).map(({secondary}) => secondary),
-      [0, 8, 9, 0xc0, 0x15, 0x22, 0x1c, 0x2c, 0x10, 0x11, 0x12, 0x20, 0x21, 0x23, 0x27, 0x28, 0x2f, 0x24],
+      [
+        0, 8, 9, 0xc0, 0x15, 0x22, 0x1c, 0x2c, 0x10, 0x11, 0x12, 0x20, 0x21, 0x23, 0x27, 0x28, 0x2f,
+        0x24,
+      ],
     );
     assert.ok(graph.playSoundHost instanceof BrowserWindowsPlaySoundHost);
     assert.equal(graph.playSound.resources, graph.resource.resources);

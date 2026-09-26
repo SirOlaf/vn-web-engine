@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {clearAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM shakes and hits a Sprite, then fits graph surface pixels with bars', async () => {
@@ -24,7 +24,7 @@ test('mounted VM shakes and hits a Sprite, then fits graph surface pixels with b
     assert.equal(graph.surfaces.fill(0, 0x224466), 1);
     assert.equal(graph.surfaces.allocate(1, 4, 2, 3), 1);
     const mask = graph.surfaces.descriptor(1);
-    clearAokanaBitmap(mask);
+    clearBurikoBitmap(mask);
     mask.storage.bytes[2] = 1;
     mask.storage.written(2, 1);
     assert.equal(await invoke(0x90, 0x50, [], 0), 1);
@@ -82,7 +82,7 @@ test('mounted VM shakes and hits a Sprite, then fits graph surface pixels with b
     assert.equal(await invoke(0x90, 0x3c, [handle, 1], 0), 0);
     assert.equal(await invoke(0x90, 0x3d, [handle], 0), 1);
     assert.equal(pop32(child.state), 4);
-    clearAokanaBitmap(mask);
+    clearBurikoBitmap(mask);
     assert.equal(await invoke(0x90, 0x3d, [handle], 0), 1);
     assert.equal(pop32(child.state), 4);
     graph.input.pointerClientX = 16;

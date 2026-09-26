@@ -3,37 +3,37 @@ import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeLocks} from '../dist/engines/buriko/games/aokana/native/exclusion-locks.js';
-import {createGroup80Locks} from '../dist/engines/buriko/games/aokana/native/group-80-locks.js';
-import {createGroup80ResourceSettings} from '../dist/engines/buriko/games/aokana/native/group-80-resource-settings.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeRegistry} from '../dist/engines/buriko/games/aokana/native/windows-registry.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeLocks} from '../dist/engines/buriko/native/exclusion-locks.js';
+import {createGroup80Locks} from '../dist/engines/buriko/native/group-80-locks.js';
+import {createGroup80ResourceSettings} from '../dist/engines/buriko/native/group-80-resource-settings.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeRegistry} from '../dist/engines/buriko/native/windows-registry.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaSpecialFolders} from '../dist/engines/buriko/games/aokana/native/special-folders.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoSpecialFolders} from '../dist/engines/buriko/native/special-folders.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 function vm(slots) {
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const memory = new AokanaBpMemory(new Uint8Array(2048));
+  const memory = new BurikoBpMemory(new Uint8Array(2048));
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][slot.secondary]);
   return {
     thread,
     memory,
@@ -61,7 +61,7 @@ test('all five lock wrappers share native IDs and translate successful recursive
   const firstActor = {},
     secondActor = {},
     actors = {currentActor: firstActor};
-  const locks = new AokanaNativeLocks(actors);
+  const locks = new BurikoNativeLocks(actors);
   locks.initializeEngine();
   const slots = createGroup80Locks(locks),
     state = vm(slots);
@@ -89,12 +89,12 @@ test('all five lock wrappers share native IDs and translate successful recursive
 });
 
 function resourceSetup() {
-  const text = new AokanaNativeText(),
+  const text = new BurikoNativeText(),
     sources = new SourceFileSystem();
-  const media = new AokanaProgramMedia();
+  const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const paths = new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/drive'}], 'C:\\game');
-  const files = new AokanaProgramFiles(sources, text, media, paths);
+  const paths = new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/drive'}], 'C:\\game');
+  const files = new BurikoProgramFiles(sources, text, media, paths);
   const configuration = {
     nativeFileRoot: 'C:\\game\\',
     primaryRoot: bytes('C:\\game\\'),
@@ -107,12 +107,12 @@ function resourceSetup() {
     quitConfirmation: bytes('Quit?'),
   };
   const fatal = () => assert.fail('Synthetic resource settings do not open a diagnostic');
-  const resources = new AokanaProgramResources(
+  const resources = new BurikoProgramResources(
     files,
     configuration,
     {show: fatal},
     {fatal},
-    new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+    new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
   );
   const profile = {
     shellAllocatorAvailable: true,
@@ -135,9 +135,9 @@ function resourceSetup() {
     debugPrivilegeAvailable: false,
     shellAccountName: 'Shell',
   };
-  const folders = new AokanaSpecialFolders(
+  const folders = new BurikoSpecialFolders(
     text,
-    new AokanaNativeRegistry(new MemoryStore()),
+    new BurikoNativeRegistry(new MemoryStore()),
     configuration,
     profile,
   );

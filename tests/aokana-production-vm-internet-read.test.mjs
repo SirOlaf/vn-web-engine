@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AOKANA_INTERNET_USER_AGENT} from '../dist/engines/buriko/games/aokana/native/internet-reads.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BURIKO_INTERNET_USER_AGENT} from '../dist/engines/buriko/native/internet-reads.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted 81:31 shares selected internet owner for synchronous and serial process reads', async () => {
@@ -54,10 +54,13 @@ test('mounted 81:31 shares selected internet owner for synchronous and serial pr
     assert.equal(child.state.stackIndex, 0);
     assert.equal(core.pendingNativeCallbackCount, 0);
 
-    assert.deepEqual(requests.map(([kind]) => kind), ['read', 'start']);
+    assert.deepEqual(
+      requests.map(([kind]) => kind),
+      ['read', 'start'],
+    );
     for (const [kind, request] of requests) {
       assert.equal(request.url, 'https://example.test/data.bin');
-      assert.equal(request.userAgent, AOKANA_INTERNET_USER_AGENT);
+      assert.equal(request.userAgent, BURIKO_INTERNET_USER_AGENT);
       assert.equal(request.reload, true);
       assert.equal(request.destination.bytes, memory.globalMemory);
       assert.equal(request.destination.offset, kind === 'read' ? 0x300 : 0x400);

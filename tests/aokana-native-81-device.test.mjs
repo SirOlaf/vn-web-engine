@@ -1,23 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {createGroup81Device} from '../dist/engines/buriko/games/aokana/native/group-81-device.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {createGroup81Device} from '../dist/engines/buriko/native/group-81-device.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 function vm(controller) {
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 256,
       frameCapacity: 0,
     }),
-    memory = new AokanaBpMemory(),
+    memory = new BurikoBpMemory(),
     slots = createGroup81Device(controller);
   assert.equal(slots.length, 6);
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][slot.secondary]);
   return {
     thread,
     memory,
@@ -68,7 +68,7 @@ test('six device wrappers use actual cached adapter, current mode, shader and wi
   assert.equal(s.device.filterMode, 4);
   await v.call(0x66, [7]);
   assert.equal(s.display.windowStyleOption, 7);
-  assert.equal(s.parent['data-aokana-window-style'], '90ce0000');
+  assert.equal(s.parent['data-buriko-window-style'], '90ce0000');
   await v.call(0x64, [6, 3]);
   assert.deepEqual(
     [s.display.requestedWidth, s.display.requestedHeight, s.display.useSizePreset],
@@ -99,6 +99,6 @@ test('client-size preset selection and fullscreen deferred size retain the same 
   assert.deepEqual([s.canvas.width, s.canvas.height], [16, 8]);
   await v.call(0x66, [0]);
   assert.equal(s.display.windowStyleOption, 0);
-  assert.equal(s.parent['data-aokana-window-style'], '90000000');
+  assert.equal(s.parent['data-buriko-window-style'], '90000000');
   assert.equal(v.thread.stackIndex, 0);
 });

@@ -1,21 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpThread} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaNativeBank} from '../dist/engines/buriko/games/aokana/native/registry.js';
+import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoNativeBank} from '../dist/engines/buriko/native/registry.js';
 import {
-  AOKANA_NATIVE_SLOT_ADDRESSES,
-  AOKANA_PRIMARY_SLOT_ADDRESSES,
-} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaBpModuleExtensions} from '../dist/engines/buriko/games/aokana/bp/module-extensions.js';
-import {AokanaBpInterpreter} from '../dist/engines/buriko/games/aokana/bp/interpreter.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {attachModule} from '../dist/engines/buriko/games/aokana/bp/modules.js';
-import {controlOpcodes} from '../dist/engines/buriko/games/aokana/bp/opcodes/control.js';
+  BURIKO_NATIVE_SLOT_ADDRESSES,
+  BURIKO_PRIMARY_SLOT_ADDRESSES,
+} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoBpModuleExtensions} from '../dist/engines/buriko/bp/module-extensions.js';
+import {BurikoBpInterpreter} from '../dist/engines/buriko/bp/interpreter.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {attachModule} from '../dist/engines/buriko/bp/modules.js';
+import {controlOpcodes} from '../dist/engines/buriko/bp/opcodes/control.js';
 
 const thread = (id) =>
-  new AokanaBpThread({
+  new BurikoBpThread({
     id,
     operandCapacity: 16,
     moduleCapacity: 256,
@@ -32,7 +32,7 @@ function module(payload) {
 }
 
 test('scheduler binds an interpreter after a test-only complete bank is constructed', async () => {
-  const scheduler = new AokanaBpScheduler(thread(0)),
+  const scheduler = new BurikoBpScheduler(thread(0)),
     state = thread(1);
   attachModule(state, 'program fixture', module([0x17]));
   scheduler.append(state);
@@ -40,7 +40,7 @@ test('scheduler binds an interpreter after a test-only complete bank is construc
   assert.equal(state.pc, 0);
 
   // The unselected fillers only satisfy the bank constructor in this wiring fixture.
-  const definitions = Object.entries(AOKANA_NATIVE_SLOT_ADDRESSES).flatMap(([primary, slots]) =>
+  const definitions = Object.entries(BURIKO_NATIVE_SLOT_ADDRESSES).flatMap(([primary, slots]) =>
     Object.entries(slots).map(([secondary, nativeAddress]) => ({
       primary: Number(primary),
       secondary: Number(secondary),
@@ -50,17 +50,17 @@ test('scheduler binds an interpreter after a test-only complete bank is construc
     })),
   );
   const primary = Object.fromEntries(
-    Object.keys(AOKANA_PRIMARY_SLOT_ADDRESSES)
+    Object.keys(BURIKO_PRIMARY_SLOT_ADDRESSES)
       .map(Number)
-      .filter((opcode) => !AOKANA_NATIVE_SLOT_ADDRESSES[opcode] && opcode !== 0xff)
+      .filter((opcode) => !BURIKO_NATIVE_SLOT_ADDRESSES[opcode] && opcode !== 0xff)
       .map((opcode) => [opcode, () => assert.fail('Unselected primary slot executed')]),
   );
-  const diagnostics = new AokanaBpDiagnostics(() => assert.fail('Unexpected diagnostic')),
-    memory = new AokanaBpMemory(new Uint8Array(64)),
-    interpreter = new AokanaBpInterpreter(
+  const diagnostics = new BurikoBpDiagnostics(() => assert.fail('Unexpected diagnostic')),
+    memory = new BurikoBpMemory(new Uint8Array(64)),
+    interpreter = new BurikoBpInterpreter(
       {...primary, 0x17: controlOpcodes[0x17]},
-      new AokanaNativeBank(definitions),
-      new AokanaBpModuleExtensions({readModule: () => null}),
+      new BurikoNativeBank(definitions),
+      new BurikoBpModuleExtensions({readModule: () => null}),
       (current) => ({thread: current, memory, diagnostics}),
     );
   scheduler.bindInstructionExecutor((current) => interpreter.step(current));

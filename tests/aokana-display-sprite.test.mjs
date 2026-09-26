@@ -1,25 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {blendMixedAokanaBitmapsIntoRgb} from '../dist/engines/buriko/games/aokana/native/bitmap-mix.js';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplaySprite} from '../dist/engines/buriko/games/aokana/native/display-sprite.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {createGroup90SpriteConfiguration} from '../dist/engines/buriko/games/aokana/native/group-90-sprite-configuration.js';
-import {createGroup90SpriteNotifications} from '../dist/engines/buriko/games/aokana/native/group-90-sprite-notifications.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {blendMixedBurikoBitmapsIntoRgb} from '../dist/engines/buriko/native/bitmap-mix.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplaySprite} from '../dist/engines/buriko/native/display-sprite.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {createGroup90SpriteConfiguration} from '../dist/engines/buriko/native/group-90-sprite-configuration.js';
+import {createGroup90SpriteNotifications} from '../dist/engines/buriko/native/group-90-sprite-notifications.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
 
 const rectangle = (width, height) => ({left: 0, top: 0, right: width - 1, bottom: height - 1});
 const rgba = (value, alpha = 255) => (Math.imul(value, 0x010101) | (alpha << 24)) >>> 0;
@@ -27,7 +27,7 @@ const rgba = (value, alpha = 255) => (Math.imul(value, 0x010101) | (alpha << 24)
 function bitmap(width, height, format = 2, values = []) {
   const bytesPerPixel = format === 3 ? 1 : format === 6 ? 6 : 4,
     bytes = new Uint8Array(width * height * bytesPerPixel),
-    storage = new AokanaBitmapStorage(bytes, true),
+    storage = new BurikoBitmapStorage(bytes, true),
     result = {
       storage,
       offset: 0,
@@ -54,20 +54,20 @@ function pixels(value) {
   ).flat();
 }
 
-function fixture(width = 80, height = 80, actors = 2) {
-  const compositor = new AokanaBitmapCompositor();
+function fixture(width = 80, height = 80, actors = 2, compatibility = '1.72') {
+  const compositor = new BurikoBitmapCompositor(compatibility);
   compositor.defaultFormat = 2;
   const bounds = rectangle(width, height),
-    environment = new AokanaDisplayObjectEnvironment(
+    environment = new BurikoDisplayObjectEnvironment(
       compositor,
-      new AokanaDisplayDamage(32, {...bounds}),
+      new BurikoDisplayDamage(32, {...bounds}),
     ),
     output = bitmap(width, height, 2, Array(width * height).fill(0));
   environment.displayContext = {bitmap: output, bounds};
-  const allocator = new AokanaDistributedAllocator(actors),
-    processing = new AokanaDistributedProcessing(allocator, actors),
-    surfaces = new AokanaSurfaces(
-      new AokanaNativeFonts(new AokanaNativeText()),
+  const allocator = new BurikoDistributedAllocator(actors),
+    processing = new BurikoDistributedProcessing(allocator, actors),
+    surfaces = new BurikoSurfaces(
+      new BurikoNativeFonts(new BurikoNativeText()),
       compositor,
       allocator,
     );
@@ -95,10 +95,10 @@ function zeroMap(surfaces, slot, width, height) {
 
 test('display manager inserts the real sprite and preserves ordinary mask association state', () => {
   const {environment, surfaces} = fixture(),
-    manager = new AokanaDisplayManager(
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     ),
     ownerHandle = manager.createSprite(),
     maskHandle = manager.createSprite(),
@@ -106,8 +106,8 @@ test('display manager inserts the real sprite and preserves ordinary mask associ
     mask = manager.find('sprite', maskHandle);
   assert.equal(ownerHandle, 0x80000000);
   assert.equal(maskHandle, 0x80000001);
-  assert.ok(owner instanceof AokanaDisplaySprite);
-  assert.ok(mask instanceof AokanaDisplaySprite);
+  assert.ok(owner instanceof BurikoDisplaySprite);
+  assert.ok(mask instanceof BurikoDisplaySprite);
   assert.deepEqual([owner.category, owner.depthOrder, owner.value120], [2, 0, 1]);
   assert.equal(owner.setDynamicMask(mask), 0);
   assert.equal(owner.setDynamicMask(null), 0);
@@ -119,7 +119,7 @@ test('modes zero, one and two select simple, fused blend and affine lowers', () 
   const {environment, surfaces} = fixture();
   install(surfaces, 1, bitmap(2, 2, 2, [rgba(10), rgba(20), rgba(30), rgba(40)]));
   install(surfaces, 2, bitmap(2, 2, 2, [rgba(110), rgba(120), rgba(130), rgba(140)]));
-  const sprite = new AokanaDisplaySprite(environment, surfaces, 0);
+  const sprite = new BurikoDisplaySprite(environment, surfaces, 0);
   assert.equal(sprite.configureSimple(1), 0);
   const simple = bitmap(2, 2, 2, Array(4).fill(0));
   sprite.draw(simple, rectangle(2, 2), 0);
@@ -158,15 +158,63 @@ test('modes zero, one and two select simple, fused blend and affine lowers', () 
   );
 });
 
+test('animated reveal progress remains separate from the owned mask exponent in both native revisions', () => {
+  const colors = [0xffe0e0e0, 0x80c0c0c0, 0xffa0a0a0, 0xff808080];
+  const masks = [0, 16, 32, 48];
+  for (const compatibility of ['1.69', '1.72']) {
+    const {environment, surfaces} = fixture(2, 2, 1, compatibility);
+    install(surfaces, 1, bitmap(2, 2, 2, colors));
+    install(surfaces, 2, bitmap(2, 2, 3, masks));
+    const sprite = new BurikoDisplaySprite(environment, surfaces, 0);
+    assert.equal(sprite.initializeReveal(0, 0, 1, 2, 2, 0, 0x20, 64, 0), 0);
+    for (const progress of [0, 32, 64, 128, 255, 256]) {
+      sprite.setValueD8(0, progress);
+      const direct = bitmap(2, 2, 1, Array(4).fill(0x05080808));
+      sprite.draw(direct, rectangle(2, 2), 0);
+      const expectedRgb = colors.map((pixel, index) => {
+        const coverage = Math.max(0, Math.min(256, 5 * progress - masks[index] * 4));
+        const tableIndex = (coverage * (pixel >>> 24)) >>> 9;
+        const coefficient = Math.floor((tableIndex * 192) / (compatibility === '1.69' ? 256 : 8));
+        const value =
+          progress >= 256
+            ? 8 + Math.floor((((pixel & 255) - 8) * Math.floor(((pixel >>> 25) * 192) / 256)) / 128)
+            : 8 +
+              Math.floor(
+                (((pixel & 255) - 8) * coefficient) / (compatibility === '1.69' ? 128 : 4096),
+              );
+        return rgba(value, 5);
+      });
+      assert.deepEqual(pixels(direct), expectedRgb, `${compatibility} direct progress ${progress}`);
+      sprite.blendMode = 0x80;
+      const temporary = bitmap(2, 2, 2, Array(4).fill(0));
+      sprite.draw(temporary, rectangle(2, 2), 0);
+      assert.deepEqual(
+        pixels(temporary),
+        colors.map((pixel, index) => {
+          if (progress === 0) return 0;
+          const coverage = Math.max(
+            0,
+            Math.min(compatibility === '1.69' ? 256 : 255, 5 * progress - masks[index] * 4),
+          );
+          const alpha = progress >= 256 ? pixel >>> 24 : ((pixel >>> 24) * coverage) >>> 8;
+          return ((pixel & 0xffffff) | (alpha << 24)) >>> 0;
+        }),
+        `${compatibility} temporary progress ${progress}`,
+      );
+      sprite.blendMode = 0x20;
+    }
+  }
+});
+
 test('modes three and four use owned reveal data and shared surface coefficients', () => {
   const {environment, surfaces} = fixture();
   install(surfaces, 1, bitmap(2, 2, 2, [rgba(9), rgba(19), rgba(29), rgba(39)]));
   install(surfaces, 2, bitmap(2, 2, 3, [0, 64, 128, 255]));
   zeroMap(surfaces, 3, 2, 2);
   assert.equal(surfaces.coefficientTables.configureRipple(1, 1, 256, 1, 1), 0);
-  const sprite = new AokanaDisplaySprite(environment, surfaces, 0);
+  const sprite = new BurikoDisplaySprite(environment, surfaces, 0);
   assert.equal(sprite.configureReveal(1, 2), 0);
-  sprite.revealProgress = 256;
+  sprite.setValueD8(0, 256);
   sprite.blendMode = 0x80;
   const revealed = bitmap(2, 2, 2, Array(4).fill(0));
   sprite.draw(revealed, rectangle(2, 2), 0);
@@ -193,7 +241,7 @@ test('modes five and six consume mip/mix/wave and the shared mesh worker', () =>
       return rgba((y < 2 ? 0 : 20) + (x < 2 ? 10 : 20));
     });
   install(surfaces, 1, bitmap(4, 4, 2, quadrants));
-  const sprite = new AokanaDisplaySprite(environment, surfaces, 0);
+  const sprite = new BurikoDisplaySprite(environment, surfaces, 0);
   sprite.setCoordinates(0, 0, 0x10000);
   assert.equal(
     sprite.configureAffineBlend({
@@ -246,7 +294,7 @@ test('modes five and six consume mip/mix/wave and the shared mesh worker', () =>
 test('mode-five fractional origin reaches affine sampling while mode two ignores its stale phase', () => {
   const {environment, surfaces} = fixture();
   install(surfaces, 1, bitmap(2, 2, 2, [rgba(16), rgba(32), rgba(48), rgba(64)]));
-  const sprite = new AokanaDisplaySprite(environment, surfaces, 0);
+  const sprite = new BurikoDisplaySprite(environment, surfaces, 0);
   sprite.setCoordinates(0x8000, 0, 0);
   assert.equal(
     sprite.configureAffineBlend({
@@ -284,10 +332,10 @@ test('mode-five fractional origin reaches affine sampling while mode two ignores
 
 test('explicit source-region notification records simple damage and refreshes mode-five mipmaps', () => {
   const {environment, surfaces} = fixture(),
-    manager = new AokanaDisplayManager(
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     ),
     handle = manager.createSprite(),
     sprite = manager.find('sprite', handle),
@@ -296,7 +344,7 @@ test('explicit source-region notification records simple damage and refreshes mo
         y = Math.floor(index / 4);
       return rgba((y < 2 ? 0 : 20) + (x < 2 ? 10 : 20));
     });
-  assert.ok(sprite instanceof AokanaDisplaySprite);
+  assert.ok(sprite instanceof BurikoDisplaySprite);
   install(surfaces, 1, bitmap(4, 4, 2, quadrants));
   assert.equal(sprite.configureSimple(1), 0);
   assert.equal(manager.notifySpriteSourceRegionChanged(handle, 1, 1, 2, 2), 0);
@@ -336,10 +384,10 @@ test('explicit source-region notification records simple damage and refreshes mo
 
 test('Bank 90:53 preserves five-pop order and its two exact status diagnostics', async () => {
   const {environment, surfaces} = fixture(),
-    manager = new AokanaDisplayManager(
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     ),
     handle = manager.createSprite(),
     sprite = manager.find('sprite', handle),
@@ -358,19 +406,19 @@ test('Bank 90:53 preserves five-pop order and its two exact status diagnostics',
       },
     }),
     slot = slots[0],
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    context = {thread, memory: new AokanaBpMemory(new Uint8Array(0)), diagnostics: {}};
-  assert.ok(sprite instanceof AokanaDisplaySprite);
+    context = {thread, memory: new BurikoBpMemory(new Uint8Array(0)), diagnostics: {}};
+  assert.ok(sprite instanceof BurikoDisplaySprite);
   install(surfaces, 1, bitmap(4, 4, 2, Array(16).fill(rgba(7))));
   assert.equal(sprite.configureSimple(1), 0);
   assert.deepEqual(
     [slot.primary, slot.secondary, slot.nativeAddress],
-    [0x90, 0x53, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][0x53]],
+    [0x90, 0x53, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][0x53]],
   );
   const call = (values) => {
     const before = thread.stackIndex;
@@ -393,14 +441,14 @@ test('Bank 90:53 preserves five-pop order and its two exact status diagnostics',
 
 test('Bank 90:56-5D configures all seven sprite modes through the shared manager', async () => {
   const {environment, surfaces} = fixture(),
-    manager = new AokanaDisplayManager(
+    manager = new BurikoDisplayManager(
       environment,
       surfaces,
-      new AokanaNativeDisplayState(1920, 1080),
+      new BurikoNativeDisplayState(1920, 1080),
     ),
     handle = manager.createSprite(),
     sprite = manager.find('sprite', handle);
-  assert.ok(sprite instanceof AokanaDisplaySprite);
+  assert.ok(sprite instanceof BurikoDisplaySprite);
   install(surfaces, 1, bitmap(8, 8, 2, Array(64).fill(rgba(11))));
   install(surfaces, 2, bitmap(8, 8, 2, Array(64).fill(rgba(22))));
   install(surfaces, 3, bitmap(8, 8, 2, Array(64).fill(rgba(33))));
@@ -421,18 +469,18 @@ test('Bank 90:56-5D configures all seven sprite modes through the shared manager
       },
     }),
     bySecondary = new Map(slots.map((slot) => [slot.secondary, slot])),
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 64,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    context = {thread, memory: new AokanaBpMemory(new Uint8Array(0)), diagnostics: {}};
+    context = {thread, memory: new BurikoBpMemory(new Uint8Array(0)), diagnostics: {}};
   assert.deepEqual(
     slots.map(({primary, secondary, nativeAddress}) => [primary, secondary, nativeAddress]),
     Array.from({length: 8}, (_, index) => {
       const secondary = 0x56 + index;
-      return [0x90, secondary, AOKANA_NATIVE_SLOT_ADDRESSES[0x90][secondary]];
+      return [0x90, secondary, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][secondary]];
     }),
   );
 
@@ -509,7 +557,7 @@ test('Bank 90:56-5D configures all seven sprite modes through the shared manager
     [
       sprite.mode,
       sprite.sourceSurface,
-      sprite.revealProgress,
+      sprite.revealExponent,
       sprite.getValueD8(0),
       sprite.position(),
       sprite.blendMode,
@@ -615,6 +663,6 @@ test('fused blend preserves destination pairs and odd tails when both mixed alph
     destination = bitmap(3, 1, 1, destinationValues),
     first = bitmap(3, 1, 2, [0x00102030, 0x00405060, 0x00708090]),
     second = bitmap(3, 1, 2, [0x0090a0b0, 0x00c0d0e0, 0x00112233]);
-  assert.equal(blendMixedAokanaBitmapsIntoRgb(destination, first, second, 128, 0), 0);
+  assert.equal(blendMixedBurikoBitmapsIntoRgb(destination, first, second, 128, 0), 0);
   assert.deepEqual(pixels(destination), destinationValues);
 });

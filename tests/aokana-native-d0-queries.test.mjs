@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaLogicalSpatialManager,
-  AokanaLogicalSpatialManagers,
-} from '../dist/engines/buriko/games/aokana/native/logical-spatial.js';
-import {AokanaLogicalSpatialQueries} from '../dist/engines/buriko/games/aokana/native/logical-spatial-queries.js';
-import {createGroupD0SpatialQueries} from '../dist/engines/buriko/games/aokana/native/group-d0-spatial-queries.js';
-import {createGroupD0SpatialRecords} from '../dist/engines/buriko/games/aokana/native/group-d0-spatial.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+  BurikoLogicalSpatialManager,
+  BurikoLogicalSpatialManagers,
+} from '../dist/engines/buriko/native/logical-spatial.js';
+import {BurikoLogicalSpatialQueries} from '../dist/engines/buriko/native/logical-spatial-queries.js';
+import {createGroupD0SpatialQueries} from '../dist/engines/buriko/native/group-d0-spatial-queries.js';
+import {createGroupD0SpatialRecords} from '../dist/engines/buriko/native/group-d0-spatial.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
-  const manager = new AokanaLogicalSpatialManager(),
-    queries = new AokanaLogicalSpatialQueries(manager),
+  const manager = new BurikoLogicalSpatialManager(),
+    queries = new BurikoLogicalSpatialQueries(manager),
     bytes = new Uint8Array(2048),
     view = new DataView(bytes.buffer);
   const pointer = (offset) => ({bytes, offset});
@@ -120,14 +120,14 @@ test('record overlap uses the derived offset and third property, retaining stale
 
 test('query wrappers consume all arguments in native order and retain lifetime references on output faults', () => {
   const {bytes, view, words} = fixture(),
-    managers = new AokanaLogicalSpatialManagers();
-  const thread = new AokanaBpThread({
+    managers = new BurikoLogicalSpatialManagers();
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const h = {thread, memory: new AokanaBpMemory(bytes)};
+  const h = {thread, memory: new BurikoBpMemory(bytes)};
   const definitions = [
     ...createGroupD0SpatialRecords(managers),
     ...createGroupD0SpatialQueries(managers),

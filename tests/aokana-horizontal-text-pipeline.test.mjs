@@ -1,32 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {clearAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
-import {AokanaWindowDisplayState} from '../dist/engines/buriko/games/aokana/native/display-window-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createHorizontalTextLayoutServices} from '../dist/engines/buriko/games/aokana/native/group-text-layout-settings.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaRubyAnnotations} from '../dist/engines/buriko/games/aokana/native/text-annotations.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
+import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-window-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createHorizontalTextLayoutServices} from '../dist/engines/buriko/native/group-text-layout-settings.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoRubyAnnotations} from '../dist/engines/buriko/native/text-annotations.js';
 import {
-  AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
-  addAokanaHorizontalReadings,
-  alignAokanaHorizontalTextNodes,
-  drawAokanaHorizontalText,
-  drawAokanaHorizontalTextToWindow,
-  emitAokanaHorizontalTextNodes,
-} from '../dist/engines/buriko/games/aokana/native/text-layout-pipeline.js';
-import {releaseAokanaHorizontalTextLayout} from '../dist/engines/buriko/games/aokana/native/text-layout-horizontal.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BURIKO_DISABLED_HORIZONTAL_TEXT_EFFECT,
+  addBurikoHorizontalReadings,
+  alignBurikoHorizontalTextNodes,
+  drawBurikoHorizontalText,
+  drawBurikoHorizontalTextToWindow,
+  emitBurikoHorizontalTextNodes,
+} from '../dist/engines/buriko/native/text-layout-pipeline.js';
+import {releaseBurikoHorizontalTextLayout} from '../dist/engines/buriko/native/text-layout-horizontal.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 function pointer(value) {
   const encoded = new TextEncoder().encode(value);
@@ -36,7 +36,7 @@ function pointer(value) {
 }
 
 async function setup(size = 8) {
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const browser = {
     async queryCharset() {
       return 1;
@@ -61,16 +61,16 @@ async function setup(size = 8) {
     },
     dispose() {},
   };
-  const fonts = new AokanaNativeFonts(text, browser);
+  const fonts = new BurikoNativeFonts(text, browser);
   fonts.rasterSettings.setQuality(-1);
   const name = new TextEncoder().encode('Synthetic');
   assert.equal(fonts.registerName(name, 1), 0);
   const selected = await fonts.get(name, size, 100, 0);
   assert.equal(selected.result, 0);
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
-  const state = new AokanaTextLayoutState(surfaces);
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
+  const state = new BurikoTextLayoutState(surfaces);
   return {fonts, state, surfaces, fontId: selected.id};
 }
 
@@ -86,27 +86,27 @@ function preparedOptions(state, fontId, source, annotations) {
     proportional: 0,
     wrapping: 0,
     color: 0x445566,
-    effect: AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
+    effect: BURIKO_DISABLED_HORIZONTAL_TEXT_EFFECT,
   };
 }
 
 test('reading chains splice after their own parents and share each line alignment offset', async () => {
   const {state, fontId} = await setup();
-  const annotations = new AokanaRubyAnnotations(state.text);
+  const annotations = new BurikoRubyAnnotations(state.text);
   annotations.import(pointer('AB\\xy\nCD\\uv\n'));
   const options = preparedOptions(state, fontId, 'ABCD', annotations);
   options.rectangle.right = 35;
   const prepared = await state.buildHorizontalText(options);
-  const destination = allocateAokanaBitmap(36, 12, 2);
-  clearAokanaBitmap(destination);
+  const destination = allocateBurikoBitmap(36, 12, 2);
+  clearBurikoBitmap(destination);
   try {
     assert.equal(
-      await addAokanaHorizontalReadings(
+      await addBurikoHorizontalReadings(
         state,
         prepared.nodes,
         fontId,
         0x112233,
-        AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
+        BURIKO_DISABLED_HORIZONTAL_TEXT_EFFECT,
         annotations,
       ),
       1,
@@ -124,14 +124,14 @@ test('reading chains splice after their own parents and share each line alignmen
         [0, 68, 12, 4],
       ],
     );
-    alignAokanaHorizontalTextNodes(
+    alignBurikoHorizontalTextNodes(
       state,
       prepared.nodes,
       options.cursor,
       options.rectangle,
       fontId,
       0,
-      AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
+      BURIKO_DISABLED_HORIZONTAL_TEXT_EFFECT,
       1,
     );
     assert.deepEqual(
@@ -139,7 +139,7 @@ test('reading chains splice after their own parents and share each line alignmen
       [4, 0, 8, 8, 12, 8, 16, 16],
     );
     assert.deepEqual(options.cursor, {x: 20, y: 0});
-    const rectangles = emitAokanaHorizontalTextNodes(state, destination, prepared.nodes);
+    const rectangles = emitBurikoHorizontalTextNodes(state, destination, prepared.nodes);
     assert.equal(rectangles.length, 8);
     assert.deepEqual(
       [rectangles[1], rectangles[2], rectangles[5], rectangles[6]],
@@ -152,15 +152,15 @@ test('reading chains splice after their own parents and share each line alignmen
     );
   } finally {
     destination.storage.release();
-    releaseAokanaHorizontalTextLayout(prepared.nodes);
+    releaseBurikoHorizontalTextLayout(prepared.nodes);
     annotations.clear();
   }
 });
 
 test('top-level horizontal orchestration leaves outputs untouched on font miss and emits on success', async () => {
   const {state, fontId} = await setup();
-  const destination = allocateAokanaBitmap(20, 12, 2);
-  clearAokanaBitmap(destination);
+  const destination = allocateBurikoBitmap(20, 12, 2);
+  clearBurikoBitmap(destination);
   const lineOutput = {value: 77},
     emittedOutput = {value: 88},
     cursor = {x: 0, y: 0},
@@ -179,15 +179,15 @@ test('top-level horizontal orchestration leaves outputs untouched on font miss a
       lineSpacingPercent: 0,
       color: 0x445566,
       readingColor: 0x112233,
-      effect: AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
+      effect: BURIKO_DISABLED_HORIZONTAL_TEXT_EFFECT,
     };
   try {
-    assert.deepEqual(await drawAokanaHorizontalText(state, {...common, fontId: 999}), {result: 0});
+    assert.deepEqual(await drawBurikoHorizontalText(state, {...common, fontId: 999}), {result: 0});
     assert.deepEqual(
       {emitted: emittedOutput.value, line: lineOutput.value, cursor},
       {emitted: 88, line: 77, cursor: {x: 0, y: 0}},
     );
-    const drawn = await drawAokanaHorizontalText(state, {...common, fontId});
+    const drawn = await drawBurikoHorizontalText(state, {...common, fontId});
     assert.equal(drawn.result, 1);
     assert.equal(drawn.emittedCount, 4);
     assert.deepEqual(drawn.rectangles, [
@@ -207,19 +207,19 @@ test('top-level horizontal orchestration leaves outputs untouched on font miss a
 
 test('the horizontal window caller commits cursor and text through the existing window owner', async () => {
   const {state, surfaces, fontId} = await setup();
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
       surfaces.compositor,
-      new AokanaDisplayDamage(16, {left: 0, top: 0, right: 31, bottom: 19}),
+      new BurikoDisplayDamage(16, {left: 0, top: 0, right: 31, bottom: 19}),
     ),
-    manager = new AokanaDisplayManager(environment, surfaces, new AokanaNativeDisplayState(32, 20)),
-    windows = new AokanaWindowDisplayState(manager, state),
-    window = new AokanaWindowDisplayObject(windows, 7);
+    manager = new BurikoDisplayManager(environment, surfaces, new BurikoNativeDisplayState(32, 20)),
+    windows = new BurikoWindowDisplayState(manager, state),
+    window = new BurikoWindowDisplayObject(windows, 7);
   assert.equal(window.configureInitial(32, 20), 1);
   window.fontId = fontId;
   window.fontSize = 8;
   window.lineExtent = 8;
   assert.equal(
-    await drawAokanaHorizontalTextToWindow(
+    await drawBurikoHorizontalTextToWindow(
       state,
       window,
       pointer('A'),
@@ -227,7 +227,7 @@ test('the horizontal window caller commits cursor and text through the existing 
       0,
       0x445566,
       0x112233,
-      AOKANA_DISABLED_HORIZONTAL_TEXT_EFFECT,
+      BURIKO_DISABLED_HORIZONTAL_TEXT_EFFECT,
     ),
     1,
   );
@@ -262,7 +262,7 @@ test('six installed wrappers expose exact addresses and the ordinary 91:9C surfa
 
   const global = new Uint8Array(128);
   global.set(new TextEncoder().encode('A'), 16);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
@@ -270,7 +270,7 @@ test('six installed wrappers expose exact addresses and the ordinary 91:9C surfa
   });
   const context = {
     thread,
-    memory: new AokanaBpMemory(global),
+    memory: new BurikoBpMemory(global),
     diagnostics: {},
   };
   for (const argument of [7, 0, 0, 16, 0, 64, 0, 8, 100, 0, 0, 0, 0, 0x445566])

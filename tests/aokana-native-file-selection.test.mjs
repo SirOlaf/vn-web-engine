@@ -1,19 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {
-  AokanaEngineDialogs,
-  AokanaNativeCursor,
-} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaFileSelectionService} from '../dist/engines/buriko/games/aokana/native/file-selection.js';
-import {createGroup81FileSelection} from '../dist/engines/buriko/games/aokana/native/group-81-file-selection.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoEngineDialogs,
+  BurikoNativeCursor,
+} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoFileSelectionService} from '../dist/engines/buriko/native/file-selection.js';
+import {createGroup81FileSelection} from '../dist/engines/buriko/native/group-81-file-selection.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const encode = (value) => new TextEncoder().encode(value);
 const OUTPUT = 0x100;
@@ -22,15 +22,15 @@ function setup() {
   const events = [],
     requests = [],
     memoryBytes = new Uint8Array(8192).fill(0xa5),
-    memory = new AokanaBpMemory(memoryBytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(memoryBytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    diagnostics = new AokanaBpDiagnostics(() => {}),
-    display = new AokanaNativeDisplayState(1920, 1080);
+    diagnostics = new BurikoBpDiagnostics(() => {}),
+    display = new BurikoNativeDisplayState(1920, 1080);
   display.fullscreen = 1;
   display.displayFlag = 0;
 
@@ -40,7 +40,7 @@ function setup() {
     observeHost = () => {},
     openResult = null,
     saveResult = null;
-  const clock = new AokanaNativeClock(() => tick);
+  const clock = new BurikoNativeClock(() => tick);
   clock.suspensionEnabled = true;
   const nativeBegin = clock.beginSuspension.bind(clock),
     nativeEnd = clock.endSuspension.bind(clock);
@@ -53,14 +53,14 @@ function setup() {
     return nativeEnd();
   };
 
-  const input = new AokanaNativeInput(display, clock),
+  const input = new BurikoNativeInput(display, clock),
     nativeClear = input.clearTransientKeys.bind(input);
   input.clearTransientKeys = () => {
     inputClears++;
     nativeClear();
   };
   const surface = {style: {cursor: ''}},
-    cursor = new AokanaNativeCursor(surface);
+    cursor = new BurikoNativeCursor(surface);
   cursor.setVisible(0);
   const device = {
       isPresent: () => true,
@@ -68,16 +68,16 @@ function setup() {
         events.push(['refresh', dialogBoxMode]);
       },
     },
-    dialogs = new AokanaEngineDialogs(
+    dialogs = new BurikoEngineDialogs(
       {},
-      new AokanaNativeText(),
+      new BurikoNativeText(),
       clock,
       input,
       cursor,
       device,
       display,
       null,
-      encode('Aokana\0'),
+      encode('Buriko\0'),
     ),
     mainWindowIdentity = {},
     host = {
@@ -94,7 +94,7 @@ function setup() {
         return saveResult;
       },
     },
-    service = new AokanaFileSelectionService(dialogs, clock, mainWindowIdentity, host),
+    service = new BurikoFileSelectionService(dialogs, clock, mainWindowIdentity, host),
     [definition] = createGroup81FileSelection(service),
     context = {thread, memory, diagnostics};
 
@@ -233,7 +233,7 @@ test('81 38 opens with exact ANSI request bytes and the shared display/clock lif
   assert.equal(state.inputClearCount(), 0);
   assert.equal(state.definition.primary, 0x81);
   assert.equal(state.definition.secondary, 0x38);
-  assert.equal(state.definition.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x81][0x38]);
+  assert.equal(state.definition.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][0x38]);
 });
 
 test('81 38 routes save cancellation with native flags and leaves the cleared output', async () => {

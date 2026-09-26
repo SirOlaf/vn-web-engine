@@ -1,18 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaAfterTeardownLaunch} from '../dist/engines/buriko/games/aokana/native/after-teardown-launch.js';
-import {AokanaExitLaunchHandoff} from '../dist/engines/buriko/games/aokana/native/exit-launch-handoff.js';
-import {AokanaExternalProcesses} from '../dist/engines/buriko/games/aokana/native/external-process.js';
-import {AokanaExternalMutexName} from '../dist/engines/buriko/games/aokana/native/external-mutex-name.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoAfterTeardownLaunch} from '../dist/engines/buriko/native/after-teardown-launch.js';
+import {BurikoExitLaunchHandoff} from '../dist/engines/buriko/native/exit-launch-handoff.js';
+import {BurikoExternalProcesses} from '../dist/engines/buriko/native/external-process.js';
+import {BurikoExternalMutexName} from '../dist/engines/buriko/native/external-mutex-name.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 
 test('80:E1 launches its copied request through selected primitives after engine teardown', async () => {
   const events = [];
   const handle = (name) => ({name});
-  const process = handle('shell-process'), sourceToken = handle('source-token');
-  const primaryToken = handle('primary-token'), childThread = handle('child-thread');
+  const process = handle('shell-process'),
+    sourceToken = handle('source-token');
+  const primaryToken = handle('primary-token'),
+    childThread = handle('child-thread');
   const childProcess = handle('child-process');
   const host = {
     isUserAdministrator: () => true,
@@ -27,8 +29,10 @@ test('80:E1 launches its copied request through selected primitives after engine
       return sourceToken;
     },
     duplicateTokenEx(found, access, attributes, level, type) {
-      assert.deepEqual([found, access, attributes, level, type],
-        [sourceToken, 0x02000000, null, 3, 1]);
+      assert.deepEqual(
+        [found, access, attributes, level, type],
+        [sourceToken, 0x02000000, null, 3, 1],
+      );
       return primaryToken;
     },
     createProcessWithTokenW(found, flags, request) {
@@ -47,9 +51,11 @@ test('80:E1 launches its copied request through selected primitives after engine
       events.push(['launch', line]);
       return {process: childProcess, thread: childThread};
     },
-    closeHandle(found) { events.push(['close', found.name]); },
+    closeHandle(found) {
+      events.push(['close', found.name]);
+    },
   };
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   const version = new Uint8Array(32);
   const view = new DataView(version.buffer);
   view.setUint32(4, 10, true);
@@ -57,7 +63,7 @@ test('80:E1 launches its copied request through selected primitives after engine
   const resources = {
     files: {text, media: {isAvailable: () => true}},
     configuration: {primaryRoot: bytes('C:\\game\\\0')},
-    dialogs: {preferredTitle: null, fallbackTitle: bytes('Aokana\0')},
+    dialogs: {preferredTitle: null, fallbackTitle: bytes('Buriko\0')},
     loosePath(root, executable, separator) {
       const prefix = root.subarray(0, root.indexOf(0));
       const result = new Uint8Array(prefix.length + Number(separator) + executable.length);
@@ -67,15 +73,15 @@ test('80:E1 launches its copied request through selected primitives after engine
       return result;
     },
   };
-  const processes = new AokanaExternalProcesses(
+  const processes = new BurikoExternalProcesses(
     resources,
     {readVersionRecord: () => version},
     {lookup: () => bytes('unused\0')},
     host,
     {readShowState: () => 1, setShowState: () => {}, pumpMessages: () => 0},
-    new AokanaExternalMutexName(),
+    new BurikoExternalMutexName(),
   );
-  const handoff = new AokanaExitLaunchHandoff({
+  const handoff = new BurikoExitLaunchHandoff({
     mainTarget: () => ({}),
     send(target, message, wParam, lParam) {
       events.push(['destroy', target, message, wParam, lParam]);
@@ -84,7 +90,7 @@ test('80:E1 launches its copied request through selected primitives after engine
   });
   assert.equal(handoff.request(bytes('D:\\Tools\0'), bytes('helper.exe --flag\0'), null), 6);
   const dialogs = {showInformation: () => assert.fail('successful launch showed failure dialog')};
-  const continuation = AokanaAfterTeardownLaunch.capture(handoff, processes, dialogs);
+  const continuation = BurikoAfterTeardownLaunch.capture(handoff, processes, dialogs);
   assert.ok(continuation);
   await processes.closeAndJoin();
   handoff.markEngineTornDown();

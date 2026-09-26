@@ -3,30 +3,30 @@ import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
 import {MountedFileSystem, SourceFileSystem} from '../dist/platform/filesystem.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {
-  AokanaEngineDialogs,
-  AokanaNativeCursor,
-} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaDiagnosticDialogs} from '../dist/engines/buriko/games/aokana/native/modal.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoEngineDialogs,
+  BurikoNativeCursor,
+} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoDiagnosticDialogs} from '../dist/engines/buriko/native/modal.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaBpThread} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpScheduler} from '../dist/engines/buriko/games/aokana/bp/scheduler.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {AokanaVmControlState} from '../dist/engines/buriko/games/aokana/native/group-80-threads.js';
-import {AokanaBootProgramLoader} from '../dist/engines/buriko/games/aokana/native/boot-program-loader.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
+import {BurikoBootProgramLoader} from '../dist/engines/buriko/native/boot-program-loader.js';
 import {singleArchive} from './aokana-resource-direct-fixtures.mjs';
 
 test('ED170 lower appends a copied mounted program under the actual scheduler root', async () => {
@@ -40,34 +40,34 @@ test('ED170 lower appends a copied mounted program under the actual scheduler ro
   const mounted = new MountedFileSystem();
   mounted.mount('/game', source);
 
-  const text = new AokanaNativeText(),
-    media = new AokanaProgramMedia(),
-    paths = new AokanaMountedProgramPaths([{native: 'C:\\game', mounted: '/game'}], 'C:\\game');
+  const text = new BurikoNativeText(),
+    media = new BurikoProgramMedia(),
+    paths = new BurikoMountedProgramPaths([{native: 'C:\\game', mounted: '/game'}], 'C:\\game');
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(mounted, text, media, paths),
-    clock = new AokanaNativeClock(() => 0),
-    display = new AokanaNativeDisplayState(16, 8),
-    input = new AokanaNativeInput(display, clock),
-    dialogs = new AokanaEngineDialogs(
-      new AokanaDiagnosticDialogs({}, {}),
+  const files = new BurikoProgramFiles(mounted, text, media, paths),
+    clock = new BurikoNativeClock(() => 0),
+    display = new BurikoNativeDisplayState(16, 8),
+    input = new BurikoNativeInput(display, clock),
+    dialogs = new BurikoEngineDialogs(
+      new BurikoDiagnosticDialogs({}, {}),
       text,
       clock,
       input,
-      new AokanaNativeCursor({style: {}}),
+      new BurikoNativeCursor({style: {}}),
       {isPresent: () => false, refresh() {}},
       display,
       null,
       Uint8Array.of(0),
     ),
-    errors = new AokanaEngineErrors(
+    errors = new BurikoEngineErrors(
       files,
       dialogs,
       text.encodeWide('C:\\game\\', 1),
       text.encodeWide('C:\\game\\', 1),
     ),
-    allocator = new AokanaDistributedAllocator(1),
-    processing = new AokanaDistributedProcessing(allocator, 1),
-    resources = new AokanaProgramResources(
+    allocator = new BurikoDistributedAllocator(1),
+    processing = new BurikoDistributedProcessing(allocator, 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -84,19 +84,19 @@ test('ED170 lower appends a copied mounted program under the actual scheduler ro
       errors,
       processing,
     ),
-    control = new AokanaVmControlState(),
-    root = new AokanaBpThread({
+    control = new BurikoVmControlState(),
+    root = new BurikoBpThread({
       id: control.allocateThreadId(),
       operandCapacity: 0,
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    scheduler = new AokanaBpScheduler(root),
-    loader = new AokanaBootProgramLoader(
+    scheduler = new BurikoBpScheduler(root),
+    loader = new BurikoBootProgramLoader(
       resources,
       control,
       scheduler,
-      new AokanaBpDiagnostics(() => {}),
+      new BurikoBpDiagnostics(() => {}),
     ),
     archiveName = text.encodeWide('system.arc', 1),
     moduleName = text.encodeWide('ipl._bp', 1);

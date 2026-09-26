@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
 
 test('work construction preserves all worker IDs, initial gates and one-worker callback path', () => {
-  const allocator = new AokanaDistributedAllocator(4),
-    pool = new AokanaDistributedProcessing(allocator, 4);
+  const allocator = new BurikoDistributedAllocator(4),
+    pool = new BurikoDistributedProcessing(allocator, 4);
   assert.equal(pool.capacity, 4);
   assert.equal(pool.activeCapacity, 4);
   assert.deepEqual(pool.workerState(0), {
@@ -46,12 +46,12 @@ test('work construction preserves all worker IDs, initial gates and one-worker c
   assert.equal(pool.alive, false);
   assert.equal(pool.workerState(3).phase, 'terminated');
   assert.throws(() => pool.run(0), /destroyed/);
-  assert.throws(() => new AokanaDistributedProcessing(allocator, 0), /worker zero/);
+  assert.throws(() => new BurikoDistributedProcessing(allocator, 0), /worker zero/);
 });
 
 test('callback setters share context without clearing priority callback and use low DWORD result', () => {
-  const allocator = new AokanaDistributedAllocator(2),
-    pool = new AokanaDistributedProcessing(allocator, 2),
+  const allocator = new BurikoDistributedAllocator(2),
+    pool = new BurikoDistributedProcessing(allocator, 2),
     seen = [];
   pool.setCallback((context) => {
     seen.push(['plain', context]);
@@ -72,9 +72,9 @@ test('callback setters share context without clearing priority callback and use 
 });
 
 test('global work allocation preserves weighted quotas, tie order and rejected over-capacity requests', () => {
-  const allocator = new AokanaDistributedAllocator(5),
-    first = new AokanaDistributedProcessing(allocator, 4),
-    second = new AokanaDistributedProcessing(allocator, 4);
+  const allocator = new BurikoDistributedAllocator(5),
+    first = new BurikoDistributedProcessing(allocator, 4),
+    second = new BurikoDistributedProcessing(allocator, 4);
   allocator.update(first, true);
   assert.equal(first.activeCapacity, 4); // Requested five is rejected, not clamped.
   allocator.update(second, true);
@@ -95,8 +95,8 @@ test('global work allocation preserves weighted quotas, tie order and rejected o
 });
 
 test('park resumes the same callback, wake does not clear parked until continuation resumes', () => {
-  const allocator = new AokanaDistributedAllocator(3),
-    pool = new AokanaDistributedProcessing(allocator, 3),
+  const allocator = new BurikoDistributedAllocator(3),
+    pool = new BurikoDistributedProcessing(allocator, 3),
     seen = [];
   pool.setWorkerCallback(function* (_context, id) {
     seen.push(['start', id]);
@@ -122,8 +122,8 @@ test('park resumes the same callback, wake does not clear parked until continuat
 });
 
 test('last eligible worker cannot park and wake-all latch prevents subsequent parks in a run', () => {
-  const allocator = new AokanaDistributedAllocator(3),
-    pool = new AokanaDistributedProcessing(allocator, 3),
+  const allocator = new BurikoDistributedAllocator(3),
+    pool = new BurikoDistributedProcessing(allocator, 3),
     seen = [];
   pool.setWorkerCallback(function* (_context, id) {
     const result = yield* pool.park(id);
@@ -148,8 +148,8 @@ test('last eligible worker cannot park and wake-all latch prevents subsequent pa
 });
 
 test('shared locking follows native conditions, recursive ownership and explicit undefined paths', () => {
-  const allocator = new AokanaDistributedAllocator(2),
-    pool = new AokanaDistributedProcessing(allocator, 2);
+  const allocator = new BurikoDistributedAllocator(2),
+    pool = new BurikoDistributedProcessing(allocator, 2);
   assert.equal(pool.enterShared(), 0);
   pool.leaveShared(0);
   assert.throws(() => pool.leaveShared(1), /unowned critical section/);
@@ -161,7 +161,7 @@ test('shared locking follows native conditions, recursive ownership and explicit
     return 0;
   }, null);
   pool.run(1);
-  const single = new AokanaDistributedProcessing(allocator, 1);
+  const single = new BurikoDistributedProcessing(allocator, 1);
   single.setWorkerCallback(function* (_context, id) {
     assert.equal(yield* single.park(id + 1), 0);
     return 0;
@@ -175,9 +175,9 @@ test('shared locking follows native conditions, recursive ownership and explicit
 });
 
 test('nested pools share allocation and restore their caller actor and active events', () => {
-  const allocator = new AokanaDistributedAllocator(2),
-    outer = new AokanaDistributedProcessing(allocator, 2),
-    inner = new AokanaDistributedProcessing(allocator, 2),
+  const allocator = new BurikoDistributedAllocator(2),
+    outer = new BurikoDistributedProcessing(allocator, 2),
+    inner = new BurikoDistributedProcessing(allocator, 2),
     seen = [];
   let nested = false;
   inner.setWorkerCallback((_context, id) => {
@@ -204,9 +204,9 @@ test('nested pools share allocation and restore their caller actor and active ev
 });
 
 test('a nested pool can resume after an ancestor worker signals its parked callback', () => {
-  const allocator = new AokanaDistributedAllocator(4),
-    outer = new AokanaDistributedProcessing(allocator, 2),
-    inner = new AokanaDistributedProcessing(allocator, 2);
+  const allocator = new BurikoDistributedAllocator(4),
+    outer = new BurikoDistributedProcessing(allocator, 2),
+    inner = new BurikoDistributedProcessing(allocator, 2);
   let innerParked = false,
     completed = false;
   inner.setWorkerCallback(function* (_context, id) {

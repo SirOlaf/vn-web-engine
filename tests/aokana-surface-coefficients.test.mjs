@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup92CoefficientTables} from '../dist/engines/buriko/games/aokana/native/group-92-coefficients.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup92CoefficientTables} from '../dist/engines/buriko/native/group-92-coefficients.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const packedWord = (value) => {
   const word = value & 0xffff;
@@ -16,13 +16,13 @@ const packedWord = (value) => {
 };
 
 function surfaces() {
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   return {
     text,
-    surfaces: new AokanaSurfaces(
-      new AokanaNativeFonts(text),
-      new AokanaBitmapCompositor(),
-      new AokanaDistributedAllocator(1),
+    surfaces: new BurikoSurfaces(
+      new BurikoNativeFonts(text),
+      new BurikoBitmapCompositor(),
+      new BurikoDistributedAllocator(1),
     ),
   };
 }
@@ -157,9 +157,9 @@ test('92 00/01 wrappers consume real stacks and configure the attached surface o
   for (const definition of definitions)
     assert.equal(
       definition.nativeAddress,
-      AOKANA_NATIVE_SLOT_ADDRESSES[definition.primary][definition.secondary],
+      BURIKO_NATIVE_SLOT_ADDRESSES[definition.primary][definition.secondary],
     );
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,
@@ -167,7 +167,7 @@ test('92 00/01 wrappers consume real stacks and configure the attached surface o
     }),
     context = {
       thread,
-      memory: new AokanaBpMemory(new Uint8Array(0)),
+      memory: new BurikoBpMemory(new Uint8Array(0)),
       diagnostics: {},
     };
   async function call(secondary, args) {

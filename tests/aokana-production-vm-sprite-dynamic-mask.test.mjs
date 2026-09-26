@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {clearAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted Sprite dynamic mask aligns shared surfaces and detaches before destruction', async () => {
@@ -41,7 +41,7 @@ test('mounted Sprite dynamic mask aligns shared surfaces and detaches before des
     assert.equal(pop32(child.state), 0);
     const output = graph.surfaces.snapshot(2);
     const draw = () => {
-      clearAokanaBitmap(output);
+      clearBurikoBitmap(output);
       owner.draw(output, bounds, owner.sortKey());
     };
     const read = async (x, y) => {

@@ -1,20 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaDisplayFrames} from '../dist/engines/buriko/games/aokana/native/display-frames.js';
-import {AokanaFrameMetrics} from '../dist/engines/buriko/games/aokana/native/frame-metrics.js';
-import {AokanaMovieRegistry} from '../dist/engines/buriko/games/aokana/native/movie-registry.js';
+import {BurikoDisplayFrames} from '../dist/engines/buriko/native/display-frames.js';
+import {BurikoFrameMetrics} from '../dist/engines/buriko/native/frame-metrics.js';
+import {BurikoMovieRegistry} from '../dist/engines/buriko/native/movie-registry.js';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
-import {AokanaChildWindows} from '../dist/engines/buriko/games/aokana/native/child-windows.js';
-import {AokanaBitmapText} from '../dist/engines/buriko/games/aokana/native/font-bitmap.js';
-import {AokanaBpThread, push32, pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoChildWindows} from '../dist/engines/buriko/native/child-windows.js';
+import {BurikoBitmapText} from '../dist/engines/buriko/native/font-bitmap.js';
+import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaMovieImage,
-  AokanaMovieImageConfiguration,
-} from '../dist/engines/buriko/games/aokana/native/movie-image.js';
-import {AokanaMovieRenderer} from '../dist/engines/buriko/games/aokana/native/movie-renderer.js';
-import {AokanaNativeNotifications} from '../dist/engines/buriko/games/aokana/native/notification-queue.js';
-import {createGroup91PresentationSettings} from '../dist/engines/buriko/games/aokana/native/group-91-presentation-settings.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  BurikoMovieImage,
+  BurikoMovieImageConfiguration,
+} from '../dist/engines/buriko/native/movie-image.js';
+import {BurikoMovieRenderer} from '../dist/engines/buriko/native/movie-renderer.js';
+import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
+import {createGroup91PresentationSettings} from '../dist/engines/buriko/native/group-91-presentation-settings.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 function media(width, height) {
   const format = new Uint8Array(88),
@@ -33,9 +33,9 @@ function media(width, height) {
 test('presentation settings reach shared frame policy and movie surface geometry', async () => {
   const s = deviceServiceFixture(),
     calls = [],
-    configuration = new AokanaMovieImageConfiguration();
+    configuration = new BurikoMovieImageConfiguration();
   const slots = createGroup91PresentationSettings(s.manager.displayState, configuration);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 0,
@@ -44,7 +44,7 @@ test('presentation settings reach shared frame policy and movie surface geometry
   function invoke(secondary, value) {
     const slot = slots.find((entry) => entry.secondary === secondary);
     assert.equal(slot.primary, 0x91);
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x91][secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x91][secondary]);
     push32(thread, value);
     assert.equal(slot.execute({thread}), 0);
     if (secondary === 9) assert.equal(pop32(thread), 1);
@@ -57,14 +57,14 @@ test('presentation settings reach shared frame policy and movie surface geometry
   s.display.verticalSynchronization = 0;
   s.manager.configureDescriptor(4, 2, 1, 8);
   assert.equal(s.device.create(0), 0);
-  const children = new AokanaChildWindows(
+  const children = new BurikoChildWindows(
     s.canvas.ownerDocument,
     s.parent,
     {},
     inline.fonts.text,
     s.manager.surfaces,
     s.manager.surfaces.compositor,
-    new AokanaBitmapText(inline.fonts, s.manager.surfaces.compositor),
+    new BurikoBitmapText(inline.fonts, s.manager.surfaces.compositor),
     inline.dialogs,
     s.messages,
     inline.keyboard,
@@ -73,18 +73,18 @@ test('presentation settings reach shared frame policy and movie surface geometry
     s.canvas,
   );
   children.initialize();
-  const metrics = new AokanaFrameMetrics(
+  const metrics = new BurikoFrameMetrics(
     {queryCounter: () => clock.read(), queryFrequency: () => 1000n},
     clock,
     {refreshRate: 60, readRasterScanline: () => 0x81000000},
   );
-  const frames = new AokanaDisplayFrames(
+  const frames = new BurikoDisplayFrames(
     s.manager,
     s.device,
     clock,
     s.controller.ticks,
     metrics,
-    new AokanaMovieRegistry(),
+    new BurikoMovieRegistry(),
     s.controller.fullscreenMovie,
     inline,
     children,
@@ -97,12 +97,12 @@ test('presentation settings reach shared frame policy and movie surface geometry
   assert.equal(await frames.poll(), -1);
   assert.equal(calls.length, 1);
 
-  const image = new AokanaMovieImage(configuration);
-  const movie = new AokanaMovieRenderer(
+  const image = new BurikoMovieImage(configuration);
+  const movie = new BurikoMovieRenderer(
     s.manager.surfaces,
     1,
     image,
-    new AokanaNativeNotifications(),
+    new BurikoNativeNotifications(),
   );
   assert.equal(image.checkMediaType(media(2, 2)), 0);
   for (const [mode, width] of [

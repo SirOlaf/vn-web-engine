@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StreamMovieVoice} from '../dist/video/stream-voice.js';
+import {BrowserStreamMoviePlayer} from '../dist/video/browser-stream-player.js';
 import {allocateFrame} from '../dist/video/frame.js';
 import {movieRgba} from '../dist/video/rgba.js';
 class WorkerFixture {
@@ -142,6 +143,59 @@ test('movie worker errors are surfaced and stale responses after disposal are ig
     globalThis.Worker = old;
   }
 });
+test('timestamped movie resumes after a video underrun when its delayed audio has already ended', () => {
+  const old = globalThis.Worker;
+  globalThis.Worker = WorkerFixture;
+  try {
+    const c = context(),
+      v = new StreamMovieVoice(c, {kind: 'blob', blob: new Blob()});
+    const w = WorkerFixture.all.at(-1);
+    const info = {
+      width: 16,
+      height: 16,
+      frameRate: 10,
+      frameCount: 6,
+      duration: 0.6,
+      sampleRate: 48000,
+      channels: 1,
+      sampleCount: 4800,
+      videoEndTime: 0.6,
+      audioEndTime: 0.18,
+    };
+    const batch = (start, done = false) =>
+      w.onmessage({
+        data: {
+          type: 'batch',
+          info,
+          done,
+          frames: [start, start + 1].map((index) => ({
+            ...allocateFrame(16, 16),
+            index,
+            timestamp: index / 10,
+            duration: 0.1,
+          })),
+          audio: start ? [] : [{start: 0, timestamp: 0.08, channels: [new Float32Array(4800)]}],
+        },
+      });
+    assert.equal(v.metadata, undefined);
+    v.pause(false);
+    batch(0);
+    assert.equal(v.metadata, info);
+    assert.ok(Math.abs(c.nodes[0].at - 0.1) < 1e-9);
+    c.currentTime = 0.27;
+    assert.equal(v.snapshot().positionMs, 200);
+    batch(2);
+    c.currentTime = 0.42;
+    assert.ok(v.snapshot().positionMs >= 329, 'video resumes beyond the completed audio track');
+    batch(4, true);
+    c.currentTime = 1;
+    assert.equal(v.snapshot().status, 6);
+    assert.equal(v.snapshot().positionMs, 600);
+    v.dispose();
+  } finally {
+    globalThis.Worker = old;
+  }
+});
 test('movie color conversion retains limited-range black/white and opaque output', () => {
   const f = allocateFrame(16, 16);
   f.y.fill(16);
@@ -150,4 +204,107 @@ test('movie color conversion retains limited-range black/white and opaque output
   assert.deepEqual([...movieRgba(f).pixels.slice(0, 4)], [0, 0, 0, 255]);
   f.y.fill(235);
   assert.deepEqual([...movieRgba(f).pixels.slice(0, 4)], [255, 255, 255, 255]);
+});
+test('movie clock crosses indexed silence beyond prefetch and surfaces a failed worker transfer', () => {
+  const old = globalThis.Worker;
+  globalThis.Worker = WorkerFixture;
+  const c = context();
+  const v = new StreamMovieVoice(c, {kind: 'blob', blob: new Blob()});
+  try {
+    const w = WorkerFixture.all.at(-1);
+    const info = {
+      width: 16,
+      height: 16,
+      frameRate: 30,
+      frameCount: 36,
+      duration: 1.2,
+      sampleRate: 48000,
+      channels: 1,
+      sampleCount: 4800,
+      videoEndTime: 1.2,
+      audioStartTime: 0.8,
+      audioEndTime: 0.9,
+    };
+    const batch = (start, audio = []) =>
+      w.onmessage({
+        data: {
+          type: 'batch',
+          info,
+          done: false,
+          frames: Array.from({length: 4}, (_, offset) => ({
+            ...allocateFrame(16, 16),
+            index: start + offset,
+          })),
+          audio,
+        },
+      });
+    v.pause(false);
+    batch(0);
+    batch(4);
+    batch(8);
+    assert.equal(c.nodes.length, 0);
+    c.currentTime = 0.22;
+    assert.equal(v.snapshot().positionMs, 200, 'known silence does not block the video clock');
+    batch(12, [{start: 0, timestamp: 0.8, channels: [new Float32Array(4800)]}]);
+    assert.ok(Math.abs(c.nodes[0].at - 0.82) < 1e-9, 'PCM retains its delayed PTS');
+    w.onmessageerror();
+    assert.equal(w.terminated, true);
+    assert.equal(c.nodes[0].stopped, true);
+    assert.throws(
+      () => v.snapshot(),
+      (error) => /could not be transferred/.test(error.cause.message),
+    );
+  } finally {
+    v.dispose();
+    globalThis.Worker = old;
+  }
+});
+test('browser movie lifecycle reports exact end time and joins a borrowed frame before closing its device', async () => {
+  const oldWorker = globalThis.Worker,
+    oldContext = globalThis.AudioContext;
+  const c = Object.assign(context(), {
+    state: 'running',
+    addEventListener() {},
+    removeEventListener() {},
+    async close() {
+      c.state = 'closed';
+    },
+  });
+  const document = {defaultView: null, addEventListener() {}, removeEventListener() {}};
+  globalThis.Worker = WorkerFixture;
+  globalThis.AudioContext = class {
+    constructor() {
+      return c;
+    }
+  };
+  let player, release;
+  try {
+    const opening = BrowserStreamMoviePlayer.open(
+      {kind: 'blob', blob: new Blob()},
+      document,
+      new AbortController().signal,
+    );
+    const worker = WorkerFixture.all.at(-1);
+    worker.batch(0, 4, {done: true, duration: 4 / 30});
+    player = await opening;
+    player.start(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    c.currentTime = 1;
+    assert.equal(player.position, 4 / 30, 'native completion poll must reach the exact duration');
+    const closing = player.closeAndJoin();
+    assert.equal(worker.terminated, true);
+    assert.equal(c.state, 'running', 'consumer still owns a frame');
+    release();
+    await closing;
+    assert.equal(c.state, 'closed');
+  } finally {
+    release?.();
+    await player?.closeAndJoin();
+    globalThis.Worker = oldWorker;
+    globalThis.AudioContext = oldContext;
+  }
 });

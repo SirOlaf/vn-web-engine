@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AokanaLogicalGridManager,
-  AokanaLogicalGridManagers,
-} from '../dist/engines/buriko/games/aokana/native/logical-grid.js';
-import {AokanaLogicalGridPath} from '../dist/engines/buriko/games/aokana/native/logical-grid-path.js';
-import {AokanaLogicalGridVisibility} from '../dist/engines/buriko/games/aokana/native/logical-grid-visibility.js';
-import {AokanaNativeSpline} from '../dist/engines/buriko/games/aokana/native/spline.js';
-import {createGroupD0Grid} from '../dist/engines/buriko/games/aokana/native/group-d0-grid.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
+  BurikoLogicalGridManager,
+  BurikoLogicalGridManagers,
+} from '../dist/engines/buriko/native/logical-grid.js';
+import {BurikoLogicalGridPath} from '../dist/engines/buriko/native/logical-grid-path.js';
+import {BurikoLogicalGridVisibility} from '../dist/engines/buriko/native/logical-grid-visibility.js';
+import {BurikoNativeSpline} from '../dist/engines/buriko/native/spline.js';
+import {createGroupD0Grid} from '../dist/engines/buriko/native/group-d0-grid.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture(width = 3, height = 3) {
-  const manager = new AokanaLogicalGridManager(1),
+  const manager = new BurikoLogicalGridManager(1),
     bytes = new Uint8Array(4096),
     view = new DataView(bytes.buffer),
     pointer = (offset) => ({bytes, offset}),
@@ -29,7 +29,7 @@ function fixture(width = 3, height = 3) {
 
 test('grid handles, validation order, copied cells and agent defaults retain native lifetime', () => {
   const {manager, pointer, view, create} = fixture(),
-    registry = new AokanaLogicalGridManagers();
+    registry = new BurikoLogicalGridManagers();
   assert.equal(registry.create(null, 1, 0), 0);
   assert.equal(registry.create(pointer(32), 0, 7), 1);
   assert.equal(view.getUint32(32, true), 0);
@@ -108,7 +108,7 @@ test('grid movement preserves budget, climb, occupancy, stop masks and unplaced-
   manager.removeAgent(second);
   manager.createAgent(pointer(16));
   assert.throws(() => manager.search(id, 9, 9, -1, -1), /exceeds its byte view/);
-  const path = new AokanaLogicalGridPath(0),
+  const path = new BurikoLogicalGridPath(0),
     cells = new Uint8Array(48);
   new DataView(cells.buffer).setUint32(16 + 12, 1, true);
   path.setCells(3, 1, cells);
@@ -118,7 +118,7 @@ test('grid movement preserves budget, climb, occupancy, stop masks and unplaced-
 });
 
 test('spline boundary, wrapped linear difference, natural cubic and point limit match native branches', () => {
-  const spline = new AokanaNativeSpline(),
+  const spline = new BurikoNativeSpline(),
     output = new Int32Array(3).fill(99);
   assert.equal(spline.sample(0, output), false);
   assert.deepEqual([...output], [0, 0, 0]);
@@ -152,7 +152,7 @@ test('spline boundary, wrapped linear difference, natural cubic and point limit 
 
 test('grid visibility uses spline terrain samples, source flags, threshold bounds and four-word corners', () => {
   const {manager, pointer, view, bytes} = fixture(3, 1),
-    visibility = new AokanaLogicalGridVisibility(manager);
+    visibility = new BurikoLogicalGridVisibility(manager);
   assert.equal(visibility.lineOfSight(null, 0, 0, 0, 0, 0, 0), 0x80000004);
   assert.equal(visibility.lineOfSight(null, 0, 0, 3, 0, 0, 0), 0x80000008);
   visibility.lineOfSight(pointer(16), 0, 0, 2, 0, 0, 0);
@@ -175,7 +175,7 @@ test('grid visibility uses spline terrain samples, source flags, threshold bound
     () => visibility.collect(null, null, null, 0, 0, 1, 0, 0, 0, 0),
     /height-threshold stack/,
   );
-  const corners = new AokanaLogicalGridManager(1),
+  const corners = new BurikoLogicalGridManager(1),
     cells = new Uint8Array(64),
     source = new DataView(cells.buffer);
   source.setInt32(0, 2, true);
@@ -189,15 +189,15 @@ test('grid visibility uses spline terrain samples, source flags, threshold bound
 
 test('all nineteen D0 grid wrappers consume the verified native arguments and map statuses', () => {
   const {bytes, view} = fixture(),
-    managers = new AokanaLogicalGridManagers(),
+    managers = new BurikoLogicalGridManagers(),
     definitions = createGroupD0Grid(managers),
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 128,
       moduleCapacity: 32,
       frameCapacity: 32,
     }),
-    h = {thread, memory: new AokanaBpMemory(bytes)},
+    h = {thread, memory: new BurikoBpMemory(bytes)},
     call = (secondary, ...args) => {
       for (const arg of args) push32(thread, arg);
       assert.equal(definitions.find((entry) => entry.secondary === secondary).execute(h), 0);

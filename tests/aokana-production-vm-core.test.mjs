@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaProductionVmCore} from '../dist/engines/buriko/games/aokana/native/production-vm-core.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoProductionVmCore} from '../dist/engines/buriko/native/production-vm-core.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('one production VM core loads a mounted boot child under its unbound root', async () => {
@@ -56,7 +56,7 @@ test('one production VM core loads a mounted boot child under its unbound root',
         .some((definition) => definition.primary === 0x80 && definition.secondary === 0x50),
     );
     assert.throws(
-      () => new AokanaProductionVmCore(graph, data, diagnostics),
+      () => new BurikoProductionVmCore(graph, data, diagnostics),
       /already has a VM core/,
     );
 

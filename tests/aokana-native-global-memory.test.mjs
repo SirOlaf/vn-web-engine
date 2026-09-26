@@ -2,41 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaEngineDialogs} from '../dist/engines/buriko/games/aokana/native/engine-dialogs.js';
-import {AokanaEngineErrors} from '../dist/engines/buriko/games/aokana/native/engine-errors.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
+import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaSaveSlots} from '../dist/engines/buriko/games/aokana/native/save-slots.js';
-import {createGroup80SaveSlots} from '../dist/engines/buriko/games/aokana/native/group-80-save-slots.js';
-import {createGroup80GlobalMemory} from '../dist/engines/buriko/games/aokana/native/group-80-global-memory.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoSaveSlots} from '../dist/engines/buriko/native/save-slots.js';
+import {createGroup80SaveSlots} from '../dist/engines/buriko/native/group-80-save-slots.js';
+import {createGroup80GlobalMemory} from '../dist/engines/buriko/native/group-80-global-memory.js';
 
 test('80:70/71 configure and clear the actual BP globals consumed by ordinary save slots', async () => {
   const fs = new StoredFileSystem(new MemoryStore(), (p) => p.toLowerCase()),
-    text = new AokanaNativeText(),
+    text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),
-    media = new AokanaProgramMedia();
+    media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
-  const files = new AokanaProgramFiles(
+  const files = new BurikoProgramFiles(
       fs,
       text,
       media,
-      new AokanaMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\'),
     ),
-    dialogs = new AokanaEngineDialogs(),
-    errors = new AokanaEngineErrors(files, dialogs, encode('C:\\save\\'), encode('C:\\')),
-    processing = new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
-    resources = new AokanaProgramResources(
+    dialogs = new BurikoEngineDialogs(),
+    errors = new BurikoEngineErrors(files, dialogs, encode('C:\\save\\'), encode('C:\\')),
+    processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\assets\\',
@@ -53,10 +53,10 @@ test('80:70/71 configure and clear the actual BP globals consumed by ordinary sa
       errors,
       processing,
     ),
-    memory = new AokanaBpMemory(new Uint8Array(0x10000)),
-    save = new AokanaSaveSlots(resources, memory, () => new Date(2026, 8, 19, 12, 34, 56, 123)),
+    memory = new BurikoBpMemory(new Uint8Array(0x10000)),
+    save = new BurikoSaveSlots(resources, memory, () => new Date(2026, 8, 19, 12, 34, 56, 123)),
     slots = [...createGroup80GlobalMemory(errors), ...createGroup80SaveSlots(save)],
-    thread = new AokanaBpThread({
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 8,
       moduleCapacity: 1024,

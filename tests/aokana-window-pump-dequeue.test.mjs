@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaWindowMessages} from '../dist/engines/buriko/games/aokana/native/window-messages.js';
+import {BurikoWindowMessages} from '../dist/engines/buriko/native/window-messages.js';
 
 test('thread-wide pump dequeue preserves FIFO, quit and generated paint order', () => {
   const transitions = [];
-  const messages = new AokanaWindowMessages({
+  const messages = new BurikoWindowMessages({
     setPhysicalKey(key, down) {
       transitions.push(['arrival', key, down]);
     },

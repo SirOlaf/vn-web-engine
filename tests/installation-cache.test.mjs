@@ -135,6 +135,54 @@ test('installation cache streams bounded ranges and reopens worker-compatible lo
   assert.equal(await backing.root.getDirectoryHandle('saves-and-registry'), unrelated);
 });
 
+test('installation cache preserves empty directories and reads older manifests without them', async () => {
+  const backing = storage(),
+    cache = new BrowserInstallationCache(backing),
+    input = installation('directory payload');
+  input.directories = ['/UserData', '/Nested/Empty'];
+  await cache.save('game', input);
+  const cached = await cache.open('game');
+  assert.deepEqual(cached.directories, input.directories);
+  cached.directories.push('/caller-owned');
+  assert.deepEqual((await cache.open('game')).directories, input.directories);
+
+  const [generation] = await generations(backing),
+    manifestFile = await generation.getFileHandle('manifest.json'),
+    savedManifest = JSON.parse(await manifestFile.contents.text());
+  delete savedManifest.directories;
+  manifestFile.contents = new Blob([JSON.stringify(savedManifest)]);
+  const older = await cache.open('game');
+  assert.equal(older.directories, undefined);
+  assert.equal(
+    await older.files[0].source
+      .read(0, older.files[0].source.size)
+      .then((b) => new TextDecoder().decode(b)),
+    'directory payload',
+  );
+});
+
+test('installation cache rejects unsafe, duplicate, and file-conflicting directories', async () => {
+  for (const directories of [
+    ['relative'],
+    ['/outside/../path'],
+    ['/duplicate', '/duplicate'],
+    ['/data/archive.bin/child'],
+  ]) {
+    const backing = storage(),
+      cache = new BrowserInstallationCache(backing),
+      input = installation('payload');
+    input.files = [
+      {path: '/data/archive.bin', source: new BlobSource(new Blob(['payload'])), lastModifiedMs: 1},
+    ];
+    input.directories = directories;
+    await assert.rejects(
+      cache.save('game', input),
+      /Invalid browser installation cache directory|Conflicting browser installation cache paths/,
+    );
+    assert.equal(await cache.open('game'), null);
+  }
+});
+
 test('cancelled or failed replacement retains the previous installation and removes partial data', async () => {
   const backing = storage(),
     cache = new BrowserInstallationCache(backing);

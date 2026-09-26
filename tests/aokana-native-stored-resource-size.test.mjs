@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBpDiagnostics} from '../dist/engines/buriko/games/aokana/native/diagnostics.js';
-import {createGroup81StoredResourceSize} from '../dist/engines/buriko/games/aokana/native/group-81-stored-resource-size.js';
-import {AokanaResourceRanges} from '../dist/engines/buriko/games/aokana/native/resource-ranges.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
+import {createGroup81StoredResourceSize} from '../dist/engines/buriko/native/group-81-stored-resource-size.js';
+import {BurikoResourceRanges} from '../dist/engines/buriko/native/resource-ranges.js';
 
 test('81 35 pops name then optional archive and pushes the shared stored size', async () => {
   const primaryRoot = Uint8Array.of(1, 0);
@@ -33,19 +33,19 @@ test('81 35 pops name then optional archive and pushes the shared stored size', 
       return path;
     },
   };
-  const ranges = new AokanaResourceRanges(resources);
+  const ranges = new BurikoResourceRanges(resources);
   const [definition] = createGroup81StoredResourceSize(ranges);
   const bytes = new Uint8Array(128);
   bytes.set(new TextEncoder().encode('present\0'), 16);
   bytes.set(new TextEncoder().encode('missing\0'), 48);
-  const memory = new AokanaBpMemory(bytes);
-  const thread = new AokanaBpThread({
+  const memory = new BurikoBpMemory(bytes);
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,
     moduleCapacity: 16,
     frameCapacity: 16,
   });
-  const context = {thread, memory, diagnostics: new AokanaBpDiagnostics(() => {})};
+  const context = {thread, memory, diagnostics: new BurikoBpDiagnostics(() => {})};
 
   push32(thread, 0);
   push32(thread, 16);

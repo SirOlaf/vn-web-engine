@@ -1,29 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {
-  AokanaBackdrop,
-  AokanaNormalBackdrop,
-} from '../dist/engines/buriko/games/aokana/native/display-backdrop.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
+  BurikoBackdrop,
+  BurikoNormalBackdrop,
+} from '../dist/engines/buriko/native/display-backdrop.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
 import {
-  AOKANA_DISPLAY_POOLS,
-  AokanaDisplayManager,
-} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
+  BURIKO_DISPLAY_POOLS,
+  BurikoDisplayManager,
+} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 
 const rect = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, words = []) => ({
-  storage: new AokanaBitmapStorage(
+  storage: new BurikoBitmapStorage(
     new Uint8Array(
       new Uint32Array(Array.from({length: width * height}, (_, index) => words[index] ?? 0)).buffer,
     ),
@@ -38,23 +38,23 @@ const bitmap = (width, height, words = []) => ({
 });
 const words = (bitmap) => Array.from(new Uint32Array(bitmap.storage.bytes.buffer));
 function setup() {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(1024, rect(0, 0, 3, 2)),
+    new BurikoDisplayDamage(1024, rect(0, 0, 3, 2)),
   );
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
-  const state = new AokanaNativeDisplayState(1920, 1080);
+  const state = new BurikoNativeDisplayState(1920, 1080);
   return {compositor, environment, surfaces, state};
 }
 function managerSetup() {
   const setupResult = setup();
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     setupResult.environment,
     setupResult.surfaces,
     setupResult.state,
@@ -73,7 +73,7 @@ test('backdrop uses a copied global descriptor and base virtuals during construc
     format: 0,
     bytesPerPixel: 0,
   });
-  const empty = new AokanaBackdrop(environment, 1);
+  const empty = new BurikoBackdrop(environment, 1);
   assert.equal(empty.inputActive(), 1);
   assert.equal(empty.bitmap.width, 0);
   environment.displayContext = {bitmap: bitmap(4, 3), bounds: rect(0, 0, 3, 2)};
@@ -82,7 +82,7 @@ test('backdrop uses a copied global descriptor and base virtuals during construc
   assert.equal(environment.displayContext.bitmap.width, 4);
   assert.equal(copy.storage, environment.displayContext.bitmap.storage);
   let configured = 0;
-  class DerivedBackdrop extends AokanaBackdrop {
+  class DerivedBackdrop extends BurikoBackdrop {
     configureGeometry(width, height) {
       configured++;
       return super.configureGeometry(width, height);
@@ -111,7 +111,7 @@ test('backdrop uses a copied global descriptor and base virtuals during construc
 
 test('backdrop clear/content paths affect only the supplied destination descriptor', () => {
   const {environment} = setup();
-  const backdrop = new AokanaBackdrop(environment, 1);
+  const backdrop = new BurikoBackdrop(environment, 1);
   const target = bitmap(4, 2, [1, 2, 3, 4, 5, 6, 7, 8]);
   backdrop.draw({...target, offset: 4, width: 2}, rect(1, 0, 2, 1), 0);
   assert.deepEqual(words(target), [1, 0, 0, 4, 5, 0, 0, 8]);
@@ -128,7 +128,7 @@ test('backdrop clear/content paths affect only the supplied destination descript
 test('normal backdrop selects matching geometry and retains the selected surface image identity', () => {
   const {environment, surfaces} = setup();
   environment.displayContext = {bitmap: bitmap(4, 3), bounds: rect(0, 0, 3, 2)};
-  const backdrop = new AokanaNormalBackdrop(environment, surfaces);
+  const backdrop = new BurikoNormalBackdrop(environment, surfaces);
   assert.equal(surfaces.allocate(7, 4, 3, 1), 1);
   const source = surfaces.descriptor(7);
   source.storage.view.setUint32(5 * 4, 0x112233, true);
@@ -153,7 +153,7 @@ test('shared pools preserve first-empty reuse, independent counters and all hand
   const orders = [];
   const construct = (order) => {
     orders.push(order);
-    return new AokanaDisplayObject(environment, 1, order, 1);
+    return new BurikoDisplayObject(environment, 1, order, 1);
   };
   const first = manager.createSimple('sprite', construct);
   const second = manager.createSimple('sprite', construct);
@@ -168,7 +168,7 @@ test('shared pools preserve first-empty reuse, independent counters and all hand
   assert.equal(manager.find('rain', second), null);
   assert.equal(manager.resolve(0x80000800), null);
   assert.equal(manager.categoryCount(8), 0xffffffff);
-  for (const [family, definition] of Object.entries(AOKANA_DISPLAY_POOLS)) {
+  for (const [family, definition] of Object.entries(BURIKO_DISPLAY_POOLS)) {
     if (family === 'sprite') continue;
     const create = ['window', 'particle', 'rain'].includes(family)
       ? manager.createConfigured(family, construct, () => (family === 'rain' ? 0 : 1)).handle
@@ -188,7 +188,7 @@ test('shared pools preserve first-empty reuse, independent counters and all hand
 test('simple and configured pools expose their native count at list insertion', () => {
   const {manager, environment} = managerSetup();
   const seen = [];
-  class Observed extends AokanaDisplayObject {
+  class Observed extends BurikoDisplayObject {
     constructor(family, category, order) {
       super(environment, 1, order, 1);
       this.family = family;
@@ -223,7 +223,7 @@ test('rain capacity is checked before construction and count declines after ordi
   let constructed = 0;
   const construct = (order) => {
     constructed++;
-    return new AokanaDisplayObject(environment, 7, order, 1);
+    return new BurikoDisplayObject(environment, 7, order, 1);
   };
   for (let index = 0; index < 8; index++)
     assert.deepEqual(
@@ -247,7 +247,7 @@ test('rain capacity is checked before construction and count declines after ordi
 test('pool destruction uses the effector full-redraw rule and skips drawing operations for groups', () => {
   const {manager, environment} = managerSetup();
   const calls = [];
-  class Observed extends AokanaDisplayObject {
+  class Observed extends BurikoDisplayObject {
     constructor(family, order) {
       super(environment, 1, order, 1);
       this.family = family;
@@ -283,7 +283,7 @@ test('pool destruction uses the effector full-redraw rule and skips drawing oper
 test('generic activation and movement preserve zero transitions and initial move visibility', () => {
   const {manager, environment} = managerSetup();
   const calls = [];
-  class Observed extends AokanaDisplayObject {
+  class Observed extends BurikoDisplayObject {
     invalidate() {
       calls.push('invalidate');
     }

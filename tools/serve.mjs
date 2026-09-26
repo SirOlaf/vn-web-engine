@@ -22,12 +22,12 @@ const mime = {
   '.json': 'application/json',
   '.map': 'application/json',
 };
-const aokanaRuntimeName = (name) =>
+const burikoRuntimeName = (name) =>
   name === 'BGI.gdb' || (/^[^./\\][^/\\]*\.arc$/i.test(name) && !name.includes('\0'));
-async function aokanaRuntimeFiles() {
+async function burikoRuntimeFiles() {
   const files = [];
   for (const entry of (await readdir(aokana, {withFileTypes: true}))
-    .filter((entry) => entry.isFile() && aokanaRuntimeName(entry.name))
+    .filter((entry) => entry.isFile() && burikoRuntimeName(entry.name))
     .sort((left, right) => left.name.localeCompare(right.name))) {
     const details = await stat(path.join(aokana, entry.name));
     files.push({
@@ -44,30 +44,30 @@ function cursorError(req, res, status, code, message) {
     .writeHead(status, {'Content-Type': 'application/json; charset=utf-8'})
     .end(req.method === 'HEAD' ? undefined : JSON.stringify({error: code, message}));
 }
-async function serveAokanaCursor(req, res) {
+async function serveBurikoCursor(req, res) {
   let entries;
   try {
     entries = await readdir(aokana, {withFileTypes: true});
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    cursorError(req, res, 404, 'missing-executable', 'No Aokana executable found');
+    cursorError(req, res, 404, 'missing-executable', 'No Buriko executable found');
     return;
   }
   const executables = entries.filter(
     (entry) => entry.isFile() && !isInstallationMetadata(entry.name) && /\.exe$/i.test(entry.name),
   );
   if (executables.length === 0) {
-    cursorError(req, res, 404, 'missing-executable', 'No Aokana executable found');
+    cursorError(req, res, 404, 'missing-executable', 'No Buriko executable found');
     return;
   }
   if (executables.length !== 1) {
-    cursorError(req, res, 409, 'ambiguous-executable', 'More than one Aokana executable found');
+    cursorError(req, res, 409, 'ambiguous-executable', 'More than one Buriko executable found');
     return;
   }
   const name = executables[0].name;
   const file = path.join(aokana, name);
   if (!(await lstat(file)).isFile()) {
-    cursorError(req, res, 404, 'missing-executable', 'No regular Aokana executable found');
+    cursorError(req, res, 404, 'missing-executable', 'No regular Buriko executable found');
     return;
   }
   const realBase = await realpath(aokana);
@@ -88,7 +88,7 @@ async function serveAokanaCursor(req, res) {
       res,
       503,
       'cursor-reader-unavailable',
-      'Build the project before serving Aokana',
+      'Build the project before serving Buriko',
     );
     return;
   }
@@ -97,7 +97,7 @@ async function serveAokanaCursor(req, res) {
     cursor = new PeCursorReader(new Uint8Array(await readFile(file))).read(106);
   } catch (error) {
     if (error.code === 'ENOENT') {
-      cursorError(req, res, 404, 'missing-executable', 'Aokana executable disappeared');
+      cursorError(req, res, 404, 'missing-executable', 'Buriko executable disappeared');
       return;
     }
     const ambiguous = error instanceof Error && /ambiguous/i.test(error.message);
@@ -124,7 +124,7 @@ async function serveAokanaCursor(req, res) {
       'Content-Length': cursor.bytes.byteLength,
       'Cache-Control': 'no-cache',
       'X-Content-Type-Options': 'nosniff',
-      'X-Aokana-Executable-Name': encodeURIComponent(name),
+      'X-Buriko-Executable-Name': encodeURIComponent(name),
     })
     .end(req.method === 'HEAD' ? undefined : cursor.bytes);
 }
@@ -136,14 +136,14 @@ createServer(async (req, res) => {
     }
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     if (pathname === '/api/aokana/archives' || pathname === '/api/aokana/files') {
-      const files = await aokanaRuntimeFiles();
+      const files = await burikoRuntimeFiles();
       res
         .writeHead(200, {'Content-Type': 'application/json'})
         .end(req.method === 'HEAD' ? undefined : JSON.stringify(files));
       return;
     }
     if (pathname === '/api/aokana/cursor') {
-      await serveAokanaCursor(req, res);
+      await serveBurikoCursor(req, res);
       return;
     }
     if (pathname === '/api/executable') {
@@ -187,7 +187,7 @@ createServer(async (req, res) => {
     if (pathname.startsWith('/aokana-data/')) {
       base = aokana;
       relative = pathname.slice('/aokana-data/'.length);
-      if (!aokanaRuntimeName(relative)) {
+      if (!burikoRuntimeName(relative)) {
         res.writeHead(404).end();
         return;
       }

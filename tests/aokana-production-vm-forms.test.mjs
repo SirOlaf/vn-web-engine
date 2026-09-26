@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 function descendants(element, tagName, type) {

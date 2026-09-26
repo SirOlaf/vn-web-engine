@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaAudioBufferRenderCore} from '../dist/engines/buriko/games/aokana/native/audio/buffer-render-core.js';
-import {createAokanaWaveStatic} from '../dist/engines/buriko/games/aokana/native/audio/wave-static.js';
+import {BurikoAudioBufferRenderCore} from '../dist/engines/buriko/native/audio/buffer-render-core.js';
+import {createBurikoWaveStatic} from '../dist/engines/buriko/native/audio/wave-static.js';
 import {
-  AokanaAudioLevels,
-  aokanaAudioVolumeDecibels,
-} from '../dist/engines/buriko/games/aokana/native/audio-levels.js';
+  BurikoAudioLevels,
+  burikoAudioVolumeDecibels,
+} from '../dist/engines/buriko/native/audio-levels.js';
 
 const close = (actual, expected) => {
   assert.equal(actual.length, expected.length);
@@ -27,10 +27,10 @@ test('actual WaveBox PCM feeds the worklet render core with attenuation, cursor 
   ])
     header.setUint32(offset, value, true);
   [0, 16384, 0, -16384].forEach((value, index) => header.setInt16(64 + index * 2, value, true));
-  const model = await createAokanaWaveStatic(wave, {gain: 1, prefer24Bit: false}),
+  const model = await createBurikoWaveStatic(wave, {gain: 1, prefer24Bit: false}),
     pcm = new Uint8Array(8);
   assert.equal(model.readInto(pcm, 0, 4), 4);
-  const core = new AokanaAudioBufferRenderCore(
+  const core = new BurikoAudioBufferRenderCore(
       {
         sampleRate: model.sampleRate,
         channels: model.channels,
@@ -39,7 +39,7 @@ test('actual WaveBox PCM feeds the worklet render core with attenuation, cursor 
       },
       48000,
     ),
-    levels = new AokanaAudioLevels();
+    levels = new BurikoAudioLevels();
   levels.master = 74;
   levels.additional = 128;
   levels.volume.current = 128;
@@ -47,7 +47,7 @@ test('actual WaveBox PCM feeds the worklet render core with attenuation, cursor 
   assert.equal(levels.attenuation(), 20);
   core.command({kind: 'write', offset: 0, bytes: pcm, initialized: new Uint8Array(8).fill(1)});
   core.command({kind: 'notifications', offsets: [0, 4, 0xffffffff]});
-  core.command({kind: 'volume', decibels: aokanaAudioVolumeDecibels(levels.attenuation())});
+  core.command({kind: 'volume', decibels: burikoAudioVolumeDecibels(levels.attenuation())});
   core.command({kind: 'pan', decibels: 2000});
   assert.deepEqual(core.command({kind: 'play', loop: false}), {
     playing: true,

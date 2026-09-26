@@ -302,7 +302,8 @@ a {
   pointer-events: none;
   user-select: none;
 }
-.game-glyph-slots [data-game-text].vertical-game-text::before {
+.game-glyph-slots [data-game-text].vertical-game-text::before,
+.game-glyph-slots [data-game-text].native-lines-game-text::before {
   content: none;
 }
 

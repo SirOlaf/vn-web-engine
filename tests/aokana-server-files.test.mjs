@@ -7,7 +7,7 @@ import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {test} from 'node:test';
 
-test('Aokana data manifest and ranged file route expose only runtime inputs', async () => {
+test('Buriko data manifest and ranged file route expose only runtime inputs', async () => {
   const gameRoot = await mkdtemp(path.join(tmpdir(), 'aokana-server-'));
   await writeFile(path.join(gameRoot, 'system.arc'), Uint8Array.of(1, 2, 3));
   await writeFile(path.join(gameRoot, 'BGI.gdb'), Uint8Array.of(4));

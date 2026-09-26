@@ -2,17 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem, MountedFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {createGroup80Copy} from '../dist/engines/buriko/games/aokana/native/group-80-copy.js';
-import {AokanaFileEnumeration} from '../dist/engines/buriko/games/aokana/native/file-enumeration.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {createGroup80Copy} from '../dist/engines/buriko/native/group-80-copy.js';
+import {BurikoFileEnumeration} from '../dist/engines/buriko/native/file-enumeration.js';
 
 test('80:2f copies real files with independent readonly clearing, persistent overwrite names and cross-mount contents', async () => {
   const canonical = (path) => path.toLowerCase(),
@@ -22,7 +22,7 @@ test('80:2f copies real files with independent readonly clearing, persistent ove
   backing.mount('/one', first);
   backing.mount('/two', second);
   await first.commit([{kind: 'write', path: '/Existing Name.txt', data: Uint8Array.of(99)}]);
-  const metadata = new AokanaMountedFileMetadata(backing, {
+  const metadata = new BurikoMountedFileMetadata(backing, {
     canonical,
     volumes: [
       {path: '/one', identity: {}, writable: true},
@@ -62,12 +62,12 @@ test('80:2f copies real files with independent readonly clearing, persistent ove
       copyDeleteFailure: 'success-retain-source',
     },
   });
-  const text = new AokanaNativeText(),
-    files = new AokanaProgramFiles(
+  const text = new BurikoNativeText(),
+    files = new BurikoProgramFiles(
       metadata,
       text,
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths(
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths(
         [
           {native: 'C:\\', mounted: '/one'},
           {native: 'D:\\', mounted: '/two'},
@@ -78,8 +78,8 @@ test('80:2f copies real files with independent readonly clearing, persistent ove
   await files.write(text.encodeWide('C:\\資料.txt', 1), Uint8Array.of(3, 5, 8));
   await metadata.setTimes('/one/資料.txt', {creationTime: 6n, accessTime: 7n, writeTime: 9n});
   const bytes = new Uint8Array(4096),
-    memory = new AokanaBpMemory(bytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(bytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 16,
@@ -112,7 +112,7 @@ test('80:2f copies real files with independent readonly clearing, persistent ove
     name: 'Existing Name.txt',
     shortName: 'EXISTI~1.TXT',
   });
-  const enumeration = new AokanaFileEnumeration(files);
+  const enumeration = new BurikoFileEnumeration(files);
   bytes.set(text.encodeWide('C:\\EXISTI~1.TXT', 1), 32);
   assert.equal(
     (await enumeration.enumerate({bytes, offset: 1024}, 1024, {bytes, offset: 32}, false, 0)).count,

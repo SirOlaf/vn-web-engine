@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaDisplayDevice} from '../dist/engines/buriko/games/aokana/native/display-device.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {aokanaPresentationTextureSample} from '../dist/engines/buriko/games/aokana/native/presentation-sampling.js';
+import {BurikoDisplayDevice} from '../dist/engines/buriko/native/display-device.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {burikoPresentationTextureSample} from '../dist/engines/buriko/native/presentation-sampling.js';
 import {invalidateCanvasFrame} from '../dist/graphics/canvas-frame-presenter.js';
-import {AokanaBrowserMfController} from '../dist/engines/buriko/games/aokana/native/movie-mf-browser-session.js';
-import {AokanaFullscreenMovieState} from '../dist/engines/buriko/games/aokana/native/movie-fullscreen-state.js';
+import {BurikoBrowserMfController} from '../dist/engines/buriko/native/movie-mf-browser-session.js';
+import {BurikoFullscreenMovieState} from '../dist/engines/buriko/native/movie-fullscreen-state.js';
 
 /** No browser/DOM/image display: the canvas boundary is a byte-array commit and a queued clock callback. */
 function fixture() {
@@ -53,23 +53,23 @@ function fixture() {
     removeEventListener: (name) => events.delete(name),
     getContext: () => context,
   };
-  const display = new AokanaNativeDisplayState(8, 4);
+  const display = new BurikoNativeDisplayState(8, 4);
   display.setSizePreset(2, 4, 2);
   display.requestedWidth = 8;
   display.requestedHeight = 4;
-  const compositor = new AokanaBitmapCompositor(),
-    allocator = new AokanaDistributedAllocator(1);
-  const environment = new AokanaDisplayObjectEnvironment(
+  const compositor = new BurikoBitmapCompositor(),
+    allocator = new BurikoDistributedAllocator(1);
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 1}),
+    new BurikoDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 1}),
   );
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     environment,
-    new AokanaSurfaces(null, compositor, allocator),
+    new BurikoSurfaces(null, compositor, allocator),
     display,
   );
   manager.configureDescriptor(4, 2, 1, 8);
-  const device = new AokanaDisplayDevice(canvas, manager, new AokanaNativeClock(() => tick), {
+  const device = new BurikoDisplayDevice(canvas, manager, new BurikoNativeClock(() => tick), {
     pixelShaderVersion: 0xffff0300,
     refreshRate: 60,
   });
@@ -143,8 +143,8 @@ test('returning from a retained MF movie restores the unchanged ordinary frame',
   const document = {createElement: (tag) => (tag === 'video' ? video : retained)};
   const target = s.canvas.getContext('2d');
   target.drawImage = (source) => target.putImageData(source);
-  const fullscreen = new AokanaFullscreenMovieState();
-  const controller = new AokanaBrowserMfController(
+  const fullscreen = new BurikoFullscreenMovieState();
+  const controller = new BurikoBrowserMfController(
     document,
     {surface: s.canvas, presentationMode: 'canvas'},
     fullscreen,
@@ -300,7 +300,7 @@ test('optimized point and linear frames retain the reference quad sampling at sh
       ) {
         const u = Math.fround(Math.fround(Math.fround(column - left) / width) * uMax);
         const v = Math.fround(Math.fround(Math.fround(row - top) / height) * vMax);
-        const color = aokanaPresentationTextureSample(s.device.sampled, u, v, sampler);
+        const color = burikoPresentationTextureSample(s.device.sampled, u, v, sampler);
         const offset = (row * 11 + column) * 4;
         for (let channel = 0; channel < 3; channel++)
           expected[offset + channel] = Math.fround(color[channel] * 255);

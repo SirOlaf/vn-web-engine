@@ -2,17 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem, MountedFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaMountedFileMetadata} from '../dist/engines/buriko/games/aokana/native/file-metadata.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaMountedProgramPaths} from '../dist/engines/buriko/games/aokana/native/program-paths.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaFileEnumeration} from '../dist/engines/buriko/games/aokana/native/file-enumeration.js';
-import {createGroup80Move} from '../dist/engines/buriko/games/aokana/native/group-80-move.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoFileEnumeration} from '../dist/engines/buriko/native/file-enumeration.js';
+import {createGroup80Move} from '../dist/engines/buriko/native/group-80-move.js';
 
 test('80:27 moves real shared directory trees and copies files between independent mounted stores', async () => {
   const canonical = (path) => path.toLowerCase(),
@@ -20,7 +20,7 @@ test('80:27 moves real shared directory trees and copies files between independe
   backing.mount('/one', new StoredFileSystem(new MemoryStore(), canonical));
   backing.mount('/two', new StoredFileSystem(new MemoryStore(), canonical));
   let now = 2n;
-  const metadata = new AokanaMountedFileMetadata(backing, {
+  const metadata = new BurikoMountedFileMetadata(backing, {
     canonical,
     volumes: [
       {path: '/one', identity: {}, writable: true},
@@ -44,12 +44,12 @@ test('80:27 moves real shared directory trees and copies files between independe
       copyDeleteFailure: 'success-retain-source',
     },
   });
-  const text = new AokanaNativeText(),
-    files = new AokanaProgramFiles(
+  const text = new BurikoNativeText(),
+    files = new BurikoProgramFiles(
       metadata,
       text,
-      new AokanaProgramMedia(),
-      new AokanaMountedProgramPaths(
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths(
         [
           {native: 'C:\\', mounted: '/one'},
           {native: 'D:\\', mounted: '/two'},
@@ -67,8 +67,8 @@ test('80:27 moves real shared directory trees and copies files between independe
   });
   await metadata.setAttributes('/one/source/資料.txt', 0x22);
   const bytes = new Uint8Array(4096),
-    memory = new AokanaBpMemory(bytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(bytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 16,
@@ -100,7 +100,7 @@ test('80:27 moves real shared directory trees and copies files between independe
     writeTime: 9n,
   });
   assert.equal(await metadata.getAttributes('/one/renamed/資料.txt'), 0x22);
-  const enumeration = new AokanaFileEnumeration(files);
+  const enumeration = new BurikoFileEnumeration(files);
   bytes.set(text.encodeWide('C:\\Renamed\\*', 1), 32);
   assert.deepEqual(
     await enumeration.enumerate({bytes, offset: 1024}, 1024, {bytes, offset: 32}, false, 0),

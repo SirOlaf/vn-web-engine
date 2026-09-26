@@ -1,21 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaExternalProcesses} from '../dist/engines/buriko/games/aokana/native/external-process.js';
-import {AokanaExternalMutexName} from '../dist/engines/buriko/games/aokana/native/external-mutex-name.js';
-import {createGroup81ExternalProcess} from '../dist/engines/buriko/games/aokana/native/group-81-external-process.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoExternalProcesses} from '../dist/engines/buriko/native/external-process.js';
+import {BurikoExternalMutexName} from '../dist/engines/buriko/native/external-mutex-name.js';
+import {createGroup81ExternalProcess} from '../dist/engines/buriko/native/group-81-external-process.js';
 import {
-  AokanaProgramFiles,
-  AokanaProgramMedia,
-} from '../dist/engines/buriko/games/aokana/native/program-files.js';
-import {AokanaProgramResources} from '../dist/engines/buriko/games/aokana/native/program-resources.js';
-import {AokanaSystemProfile} from '../dist/engines/buriko/games/aokana/native/system-profile.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+  BurikoProgramFiles,
+  BurikoProgramMedia,
+} from '../dist/engines/buriko/native/program-files.js';
+import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
+import {BurikoSystemProfile} from '../dist/engines/buriko/native/system-profile.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 
@@ -40,7 +40,7 @@ function requestView(request) {
 
 test('81 E0 uses native command, token fallback, wait/window and output order on success', async () => {
   const events = [],
-    handle = (name) => ({aokanaExternalProcessHandle: true, name}),
+    handle = (name) => ({burikoExternalProcessHandle: true, name}),
     shellProcess = handle('shell-process'),
     sourceToken = handle('source-token'),
     primaryToken = handle('primary-token'),
@@ -128,11 +128,11 @@ test('81 E0 uses native command, token fallback, wait/window and output order on
       return 0;
     },
   };
-  const text = new AokanaNativeText(),
-    media = new AokanaProgramMedia(),
-    files = new AokanaProgramFiles({}, text, media),
+  const text = new BurikoNativeText(),
+    media = new BurikoProgramMedia(),
+    files = new BurikoProgramFiles({}, text, media),
     unavailable = () => assert.fail('Successful external launch opened a modal'),
-    resources = new AokanaProgramResources(
+    resources = new BurikoProgramResources(
       files,
       {
         nativeFileRoot: 'C:\\game\\',
@@ -147,9 +147,9 @@ test('81 E0 uses native command, token fallback, wait/window and output order on
       },
       {show: unavailable},
       {fatal: unavailable, threadFatal: unavailable},
-      new AokanaDistributedProcessing(new AokanaDistributedAllocator(1), 1),
+      new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
     ),
-    system = new AokanaSystemProfile({
+    system = new BurikoSystemProfile({
       readUserName: () => null,
       readComputerName: () => null,
       readVersion: () => ({
@@ -162,18 +162,18 @@ test('81 E0 uses native command, token fallback, wait/window and output order on
       readLegacyPhysicalMemory: () => null,
       readPhysicalMemory: () => null,
     }),
-    processes = new AokanaExternalProcesses(
+    processes = new BurikoExternalProcesses(
       resources,
       system,
       {lookup: unavailable},
       host,
       window,
-      new AokanaExternalMutexName(),
+      new BurikoExternalMutexName(),
     ),
     [definition] = createGroup81ExternalProcess(processes),
     memoryBytes = new Uint8Array(320).fill(0xa5),
-    memory = new AokanaBpMemory(memoryBytes),
-    thread = new AokanaBpThread({
+    memory = new BurikoBpMemory(memoryBytes),
+    thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 0,

@@ -1,27 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBitmapStorage} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
+import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
 import {
-  AokanaDisplayObject,
-  AokanaDisplayObjectEnvironment,
-} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayRenderer} from '../dist/engines/buriko/games/aokana/native/display-renderer.js';
-import {AokanaInnerDisplayObjectManager} from '../dist/engines/buriko/games/aokana/native/object-manager.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
+  BurikoDisplayObject,
+  BurikoDisplayObjectEnvironment,
+} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayRenderer} from '../dist/engines/buriko/native/display-renderer.js';
+import {BurikoInnerDisplayObjectManager} from '../dist/engines/buriko/native/object-manager.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {
-  AokanaDistributedAllocator,
-  AokanaDistributedProcessing,
-} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
+  BurikoDistributedAllocator,
+  BurikoDistributedProcessing,
+} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 
 const rect = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, initial = 0) => ({
-  storage: new AokanaBitmapStorage(
+  storage: new BurikoBitmapStorage(
     new Uint8Array(new Uint32Array(width * height).fill(initial).buffer),
     true,
   ),
@@ -33,47 +33,47 @@ const bitmap = (width, height, initial = 0) => ({
   bytesPerPixel: 4,
 });
 function setup(pixelBudget = 8, external = false) {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 1;
-  const environment = new AokanaDisplayObjectEnvironment(
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(1024, rect(0, 0, 3, 3)),
+    new BurikoDisplayDamage(1024, rect(0, 0, 3, 3)),
   );
-  const allocator = new AokanaDistributedAllocator(2);
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const allocator = new BurikoDistributedAllocator(2);
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
     allocator,
   );
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     environment,
     surfaces,
-    new AokanaNativeDisplayState(1920, 1080),
+    new BurikoNativeDisplayState(1920, 1080),
   );
   const context = {bitmap: bitmap(4, 4), bounds: rect(0, 0, 3, 3)};
   manager.bindDisplayContext(context);
   manager.backdrop.resizeToDisplay();
-  const processing = external ? new AokanaDistributedProcessing(allocator, 2) : null;
-  const renderer = new AokanaDisplayRenderer(manager, pixelBudget, processing);
+  const processing = external ? new BurikoDistributedProcessing(allocator, 2) : null;
+  const renderer = new BurikoDisplayRenderer(manager, pixelBudget, processing);
   return {compositor, environment, allocator, manager, renderer, context};
 }
 
 test('selected pre-device budget initializes one shared renderer for ordinary traversal', () => {
-  const compositor = new AokanaBitmapCompositor();
-  const environment = new AokanaDisplayObjectEnvironment(
+  const compositor = new BurikoBitmapCompositor();
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(8, rect(0, 0, 3, 3)),
+    new BurikoDisplayDamage(8, rect(0, 0, 3, 3)),
   );
-  const allocator = new AokanaDistributedAllocator(2);
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const allocator = new BurikoDistributedAllocator(2);
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
     allocator,
   );
-  const manager = new AokanaDisplayManager(
+  const manager = new BurikoDisplayManager(
     environment,
     surfaces,
-    new AokanaNativeDisplayState(1920, 1080),
+    new BurikoNativeDisplayState(1920, 1080),
   );
   assert.equal(environment.displayContext, null);
   manager.setRenderPixelBudget(6406);
@@ -89,7 +89,7 @@ test('selected pre-device budget initializes one shared renderer for ordinary tr
 test('full and partial traversals preserve native strip boundaries, recorded keys and notification order', () => {
   const {manager, renderer, environment} = setup();
   const calls = [];
-  class Observed extends AokanaDisplayObject {
+  class Observed extends BurikoDisplayObject {
     draw(destination, rectangle, key) {
       calls.push(['draw', {...rectangle}, key]);
     }
@@ -122,7 +122,7 @@ test('full and partial traversals preserve native strip boundaries, recorded key
 test('conditional invalidation precedes draw choice and damage created by notifications survives', () => {
   const {manager, renderer, environment} = setup();
   const calls = [];
-  class Observed extends AokanaDisplayObject {
+  class Observed extends BurikoDisplayObject {
     invalidate() {
       calls.push('invalidate');
       environment.damage.record(5, rect(0, 0, 0, 0));
@@ -150,7 +150,7 @@ test('effector roots retain constructor order and the separate strip and partial
   const {manager, renderer, environment} = setup();
   environment.damage.clear();
   const seen = [];
-  class Effector extends AokanaDisplayObject {
+  class Effector extends BurikoDisplayObject {
     constructor(name, visible, mode) {
       super(environment, 6, 0, 1);
       this.name = name;
@@ -189,7 +189,7 @@ test('translated output clears first and passes object-local coordinates into th
   manager.backdrop.setActivation(0);
   const target = bitmap(2, 2, 0x112233),
     calls = [];
-  class Observed extends AokanaDisplayObject {
+  class Observed extends BurikoDisplayObject {
     draw(destination, rectangle) {
       calls.push({
         offset: destination.offset,
@@ -224,7 +224,7 @@ test('CObjectManager teardown owns its private workers and preserves an external
 test('object-manager callbacks preserve same-actor recursive lock ownership across native nesting', () => {
   const {manager, renderer, environment, allocator} = setup();
   const seen = [];
-  class Observed extends AokanaDisplayObject {
+  class Observed extends BurikoDisplayObject {
     sortKey() {
       seen.push(['sort', manager.objectLock.depth]);
       return super.sortKey();
@@ -269,7 +269,12 @@ test('object-manager callbacks preserve same-actor recursive lock ownership acro
 test('window-local CObjectManager shares the actual traversal with separate descriptor and damage', () => {
   const {manager, environment} = setup();
   const context = {bitmap: bitmap(3, 2), bounds: rect(0, 0, 2, 1)};
-  const inner = new AokanaInnerDisplayObjectManager(4, context, manager.surfaces, manager.effectors);
+  const inner = new BurikoInnerDisplayObjectManager(
+    4,
+    context,
+    manager.surfaces,
+    manager.effectors,
+  );
   assert.equal(inner.context, context);
   assert.equal(inner.damage.capacity, 4);
   assert.equal(inner.damage.fullRedraw, 1);
@@ -281,7 +286,7 @@ test('window-local CObjectManager shares the actual traversal with separate desc
   assert.equal(inner.renderer.canDrawDamage(), 1);
   inner.clearDamage(); // 068040 calls 06F380 after the local constructor.
   const calls = [];
-  class LocalObject extends AokanaDisplayObject {
+  class LocalObject extends BurikoDisplayObject {
     draw(destination, rectangle, key) {
       assert.equal(destination.storage, context.bitmap.storage);
       calls.push(['draw', {...rectangle}, key]);
@@ -302,7 +307,10 @@ test('window-local CObjectManager shares the actual traversal with separate desc
     ['notify', 0xf0000000, 0, 0, 0],
   ]);
   assert.deepEqual(inner.renderer.collectOrdinary(), [object]);
-  assert.deepEqual(manager.lists.snapshot(false).map((entry) => entry.object), [manager.backdrop]);
+  assert.deepEqual(
+    manager.lists.snapshot(false).map((entry) => entry.object),
+    [manager.backdrop],
+  );
   assert.equal(inner.lists.remove(object), 1);
   object.dispose();
   inner.dispose();

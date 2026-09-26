@@ -1,18 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  allocateAokanaBitmap,
-  fillAokanaBitmap,
-} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaParticleVariants} from '../dist/engines/buriko/games/aokana/native/particle-images.js';
+import {allocateBurikoBitmap, fillBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoParticleVariants} from '../dist/engines/buriko/native/particle-images.js';
 
 test('particle variants produce all 32 native scale banks with independent frame selection', () => {
-  const first = allocateAokanaBitmap(64, 64, 2),
-    second = allocateAokanaBitmap(64, 64, 2);
-  fillAokanaBitmap(first, 0xff102030);
-  fillAokanaBitmap(second, 0xff908070);
-  const variants = new AokanaParticleVariants();
+  const first = allocateBurikoBitmap(64, 64, 2),
+    second = allocateBurikoBitmap(64, 64, 2);
+  fillBurikoBitmap(first, 0xff102030);
+  fillBurikoBitmap(second, 0xff908070);
+  const variants = new BurikoParticleVariants();
   assert.equal(variants.configureImages('snow', 2, [first, second], 2, 32768, 8192), 0);
   const images = variants.snowImages[2];
   assert.equal(images.count, 2);
@@ -36,7 +33,7 @@ test('particle variants produce all 32 native scale banks with independent frame
 });
 
 test('particle global configuration preserves Q8 conversions and raw transition/fade values', () => {
-  const variants = new AokanaParticleVariants();
+  const variants = new BurikoParticleVariants();
   assert.equal(
     variants.configureSnow(7, [-256, 512, -768, -1024, -1280, 1536, -1792, 2048, -2304, 2560]),
     true,

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  parseAokanaCrtWideInteger as integer,
-  parseAokanaCrtWideFloat as float,
-  parseAokanaPropertyNumber as property,
-  aokanaCrtWideSpace,
-} from '../dist/engines/buriko/games/aokana/native/crt-numbers.js';
+  parseBurikoCrtWideInteger as integer,
+  parseBurikoCrtWideFloat as float,
+  parseBurikoPropertyNumber as property,
+  burikoCrtWideSpace,
+} from '../dist/engines/buriko/native/crt-numbers.js';
 
 test('linked CRT integer parsing keeps Unicode digit blocks and consumes overflow tails', () => {
   assert.deepEqual(integer('  -2147483649rest', 10, true), {
@@ -30,9 +30,9 @@ test('wide whitespace follows the verified static table and declared modern Win3
   for (const character of [
     9, 13, 32, 133, 160, 0x1680, 0x2000, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
   ])
-    assert.equal(aokanaCrtWideSpace(character), true);
+    assert.equal(burikoCrtWideSpace(character), true);
   for (const character of [0x180e, 0x200b, 0xfeff, 0xffff])
-    assert.equal(aokanaCrtWideSpace(character), false);
+    assert.equal(burikoCrtWideSpace(character), false);
   assert.equal(integer('\u0085\u3000７', 10, true).value, 7);
 });
 

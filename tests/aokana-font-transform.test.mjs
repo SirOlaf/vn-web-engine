@@ -1,26 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaTextLayoutState} from '../dist/engines/buriko/games/aokana/native/text-layout-state.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
 import {
-  measureAokanaHorizontalWideText,
-  releaseAokanaHorizontalTextLayout,
-} from '../dist/engines/buriko/games/aokana/native/text-layout-horizontal.js';
-import {createGroup92FontTransform} from '../dist/engines/buriko/games/aokana/native/group-92-font-transform.js';
-import {createGroup91TextMetrics} from '../dist/engines/buriko/games/aokana/native/group-91-text-metrics.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+  measureBurikoHorizontalWideText,
+  releaseBurikoHorizontalTextLayout,
+} from '../dist/engines/buriko/native/text-layout-horizontal.js';
+import {createGroup92FontTransform} from '../dist/engines/buriko/native/group-92-font-transform.js';
+import {createGroup91TextMetrics} from '../dist/engines/buriko/native/group-91-text-metrics.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 test('92 font transforms feed cached glyph layout, measured bearings, and actual node pixels', async () => {
-  const text = new AokanaNativeText();
+  const text = new BurikoNativeText();
   let created = 0,
     rasterized = 0;
-  const fonts = new AokanaNativeFonts(text, {
+  const fonts = new BurikoNativeFonts(text, {
     async queryCharset() {
       return 1;
     },
@@ -49,21 +49,21 @@ test('92 font transforms feed cached glyph layout, measured bearings, and actual
     dispose() {},
   });
   fonts.rasterSettings.setQuality(-1);
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
-  const surfaces = new AokanaSurfaces(fonts, compositor, new AokanaDistributedAllocator(1));
-  const state = new AokanaTextLayoutState(surfaces);
+  const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
+  const state = new BurikoTextLayoutState(surfaces);
   const slots = createGroup92FontTransform(fonts, {
     threadFatal() {
       assert.fail('ordinary transform succeeds');
     },
   });
-  const memory = new AokanaBpMemory(new Uint8Array(256));
+  const memory = new BurikoBpMemory(new Uint8Array(256));
   memory.globalMemory.set(text.encodeWide('Synthetic', 0), 16);
   const vector = new DataView(memory.globalMemory.buffer, 64, 20);
   [65536, 65536, 0, 0, 0].forEach((value, index) => vector.setInt32(index * 4, value, true));
   memory.globalMemory.set([0xef, 0x40, 0xef, 0x41, 0], 128);
-  const thread = new AokanaBpThread({
+  const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 32,
     moduleCapacity: 0,
@@ -75,7 +75,7 @@ test('92 font transforms feed cached glyph layout, measured bearings, and actual
     assert.equal(await slots.find((slot) => slot.secondary === secondary).execute(context), 0);
   };
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x92][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x92][slot.secondary]);
   await call(0x0e, 16, 4, 64);
   const selected = await fonts.get(text.encodeWide('Synthetic', 0), 8, 100, 0);
   assert.equal(selected.result, 0);
@@ -108,11 +108,11 @@ test('92 font transforms feed cached glyph layout, measured bearings, and actual
         assert.equal(node.bitmap.storage.view.getUint32(node.bitmap.offset, true), 0xff123456);
       }
     } finally {
-      releaseAokanaHorizontalTextLayout(result.nodes);
+      releaseBurikoHorizontalTextLayout(result.nodes);
     }
   };
   const measured = (proportional) =>
-    measureAokanaHorizontalWideText(state, wide, font, proportional);
+    measureBurikoHorizontalWideText(state, wide, font, proportional);
   await layout(0, [0, 8], 16);
   assert.deepEqual(measured(0), {total: 16, withoutLastBearing: 16, withoutFirstBearing: 16});
   const cachedRasters = rasterized;

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaDisplayLandscape} from '../dist/engines/buriko/games/aokana/native/display-landscape.js';
-import {clearAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoDisplayLandscape} from '../dist/engines/buriko/native/display-landscape.js';
+import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted Landscape callbacks own terrain, cells, overlays, and surface readback', async () => {
@@ -47,7 +47,7 @@ test('mounted Landscape callbacks own terrain, cells, overlays, and surface read
     const handle = pop32(child.state);
     assert.equal(handle, 0xa1000000);
     const landscape = graph.manager.find('landscape', handle);
-    assert.ok(landscape instanceof AokanaDisplayLandscape);
+    assert.ok(landscape instanceof BurikoDisplayLandscape);
     assert.equal(landscape.surfaces, graph.surfaces);
     assert.equal(graph.manager.categoryCount(4), 1);
     await call(0x91, 0x75, [handle, 0, 0, 0x80, 0, 2]);
@@ -61,7 +61,7 @@ test('mounted Landscape callbacks own terrain, cells, overlays, and surface read
     const output = graph.surfaces.snapshot(4);
     const pixel = (x, y) => output.storage.view.getUint32((y * 12 + x) * 4, true);
     const draw = (key) => {
-      clearAokanaBitmap(output);
+      clearBurikoBitmap(output);
       landscape.draw(output, bounds, key);
     };
     draw(0x22000);

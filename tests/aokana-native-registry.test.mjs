@@ -1,23 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {MemoryStore} from '../dist/platform/store.js';
-import {aokanaRegistryFold} from '../dist/engines/buriko/games/aokana/native/registry-case.js';
-import {AokanaNativeRegistry} from '../dist/engines/buriko/games/aokana/native/windows-registry.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {burikoRegistryFold} from '../dist/engines/buriko/native/registry-case.js';
+import {BurikoNativeRegistry} from '../dist/engines/buriko/native/windows-registry.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
-  AokanaBrowserDesktop,
-  AokanaWallpaper,
+  BurikoBrowserDesktop,
+  BurikoWallpaper,
   createGroupB0Wallpaper,
-} from '../dist/engines/buriko/games/aokana/native/wallpaper.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
+} from '../dist/engines/buriko/native/wallpaper.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const hkcu = 0xffffffff80000001n;
 const bytes = (value) => ({bytes: new TextEncoder().encode(value + '\0'), offset: 0});
 
 test('registry preserves raw values, independent handles and persistent title storage', async () => {
   const store = new MemoryStore();
-  const registry = new AokanaNativeRegistry(store);
-  const first = await registry.createKey(hkcu, 'Software\\Aokana', 3);
+  const registry = new BurikoNativeRegistry(store);
+  const first = await registry.createKey(hkcu, 'Software\\Buriko', 3);
   assert.equal(first.disposition, 1);
   assert.ok(first.handle > 0xffffffffn);
   const second = await registry.createKey(0x80000001, 'software\\aokana\\\\', 1);
@@ -33,8 +33,8 @@ test('registry preserves raw values, independent handles and persistent title st
   assert.equal(await registry.setValue(second.handle, 'Value', 1, data), 5);
   assert.equal(registry.closeKey(first.handle), 0);
   assert.equal(registry.closeKey(first.handle), 6);
-  const reopened = new AokanaNativeRegistry(store);
-  const opened = await reopened.openKey(hkcu, 'Software\\Aokana', 1);
+  const reopened = new BurikoNativeRegistry(store);
+  const opened = await reopened.openKey(hkcu, 'Software\\Buriko', 1);
   assert.deepEqual(await reopened.queryValue(opened.handle, 'VALUE'), {
     result: 0,
     value: {type: 0xfedcba98, data: Uint8Array.of(0xff, 0, 0x81)},
@@ -42,7 +42,7 @@ test('registry preserves raw values, independent handles and persistent title st
 });
 
 test('registry retains predefined root identity and Win64 path/error distinctions', async () => {
-  const registry = new AokanaNativeRegistry(new MemoryStore());
+  const registry = new BurikoNativeRegistry(new MemoryStore());
   assert.deepEqual(await registry.openKey(hkcu, null, 0x300), {result: 0, handle: hkcu});
   assert.equal(registry.openHandleCount, 0);
   const created = await registry.createKey(hkcu, '', 3);
@@ -62,7 +62,7 @@ test('registry retains predefined root identity and Win64 path/error distinction
 
 test('wallpaper writes native UTF-16 bytes in order and leaks the key before browser failure', async () => {
   const records = [],
-    registry = new AokanaNativeRegistry(new MemoryStore()),
+    registry = new BurikoNativeRegistry(new MemoryStore()),
     storage = registry.storage;
   const original = storage.setValue.bind(storage);
   storage.setValue = async (key, name, value) => {
@@ -70,12 +70,12 @@ test('wallpaper writes native UTF-16 bytes in order and leaks the key before bro
     await original(key, name, value);
   };
   const calls = [];
-  const desktop = new AokanaBrowserDesktop();
+  const desktop = new BurikoBrowserDesktop();
   desktop.setWallpaper = (path, flags) => {
     calls.push([path, flags]);
     return false;
   };
-  const wallpaper = new AokanaWallpaper(registry, desktop, new AokanaNativeText());
+  const wallpaper = new BurikoWallpaper(registry, desktop, new BurikoNativeText());
   await wallpaper.set(bytes('wallpaper.bmp'), 1, 0);
   assert.deepEqual(records, [
     ['WallpaperStyle', 1, [50, 0, 0, 0]],
@@ -89,25 +89,25 @@ test('wallpaper writes native UTF-16 bytes in order and leaks the key before bro
     ['WallpaperStyle', 1, [48, 0, 0, 0]],
     ['TileWallpaper', 1, [49, 0, 0, 0]],
   ]);
-  assert.equal(new AokanaBrowserDesktop().setWallpaper('x', 3), false);
+  assert.equal(new BurikoBrowserDesktop().setWallpaper('x', 3), false);
   const [slot] = createGroupB0Wallpaper(wallpaper);
-  assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0xb0][0xf0]);
+  assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0xb0][0xf0]);
 });
 
 test('wallpaper ignores write errors but diagnoses an unwritten handle before decoding', async () => {
-  const registry = new AokanaNativeRegistry(new MemoryStore()),
+  const registry = new BurikoNativeRegistry(new MemoryStore()),
     storage = registry.storage,
     events = [];
   storage.setValue = async (_key, name) => {
     events.push(name);
     throw new DOMException('synthetic denied write', 'NotAllowedError');
   };
-  const desktop = new AokanaBrowserDesktop();
+  const desktop = new BurikoBrowserDesktop();
   desktop.setWallpaper = (path, flags) => {
     events.push([path, flags]);
     return false;
   };
-  const wallpaper = new AokanaWallpaper(registry, desktop, new AokanaNativeText());
+  const wallpaper = new BurikoWallpaper(registry, desktop, new BurikoNativeText());
   await wallpaper.set(bytes('x'), 0, 0);
   assert.deepEqual(events, ['WallpaperStyle', 'TileWallpaper', ['x', 3]]);
   storage.createKey = async () => {
@@ -119,14 +119,14 @@ test('wallpaper ignores write errors but diagnoses an unwritten handle before de
 });
 
 test('registry Unicode profile is nonexpanding and retains every original UTF-16 name', async () => {
-  assert.equal(aokanaRegistryFold('ßσςıé\u1f80'), 'ßΣΣIÉ\u1f88');
+  assert.equal(burikoRegistryFold('ßσςıé\u1f80'), 'ßΣΣIÉ\u1f88');
   assert.equal(
-    aokanaRegistryFold('\ud800\udc00\ud801\udc28\ud800\udfff'),
+    burikoRegistryFold('\ud800\udc00\ud801\udc28\ud800\udfff'),
     '\ud800\udc00\ud801\udc28\ud800\udfff',
   );
-  assert.notEqual(aokanaRegistryFold('é'), aokanaRegistryFold('e\u0301'));
+  assert.notEqual(burikoRegistryFold('é'), burikoRegistryFold('e\u0301'));
   const store = new MemoryStore(),
-    registry = new AokanaNativeRegistry(store);
+    registry = new BurikoNativeRegistry(store);
   const key = await registry.createKey(hkcu, 'Software\\蒼の彼方\\Straße\\\ud800a', 3);
   assert.equal(key.result, 0);
   assert.equal(await registry.setValue(key.handle, 'é\udfff', 1, Uint8Array.of(0xd8)), 0);

@@ -1,44 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AokanaBpMemory} from '../dist/engines/buriko/games/aokana/bp/memory.js';
-import {AokanaBpThread, pop32, push32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {AokanaBitmapCompositor} from '../dist/engines/buriko/games/aokana/native/bitmap-compositor.js';
-import {allocateAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap.js';
-import {clearAokanaBitmap} from '../dist/engines/buriko/games/aokana/native/bitmap-copy.js';
-import {AokanaNativeClock} from '../dist/engines/buriko/games/aokana/native/clock.js';
-import {AokanaDisplayDamage} from '../dist/engines/buriko/games/aokana/native/display-damage.js';
-import {AokanaDisplayManager} from '../dist/engines/buriko/games/aokana/native/display-manager.js';
-import {AokanaDisplayLandscape} from '../dist/engines/buriko/games/aokana/native/display-landscape.js';
-import {AokanaDisplayObjectEnvironment} from '../dist/engines/buriko/games/aokana/native/display-object.js';
-import {AokanaNativeDisplayState} from '../dist/engines/buriko/games/aokana/native/display-state.js';
-import {AokanaDistributedAllocator} from '../dist/engines/buriko/games/aokana/native/distributed-processing.js';
-import {AokanaNativeFonts} from '../dist/engines/buriko/games/aokana/native/fonts.js';
-import {createGroup91Landscapes} from '../dist/engines/buriko/games/aokana/native/group-91-landscapes.js';
-import {AokanaNativeInput} from '../dist/engines/buriko/games/aokana/native/input.js';
-import {AOKANA_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/games/aokana/native/inventory.js';
-import {AokanaLandscapeDisplays} from '../dist/engines/buriko/games/aokana/native/landscape-displays.js';
-import {AokanaSurfaces} from '../dist/engines/buriko/games/aokana/native/surfaces.js';
-import {AokanaNativeText} from '../dist/engines/buriko/games/aokana/native/text.js';
+import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
+import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
+import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
+import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {BurikoDisplayDamage} from '../dist/engines/buriko/native/display-damage.js';
+import {BurikoDisplayManager} from '../dist/engines/buriko/native/display-manager.js';
+import {BurikoDisplayLandscape} from '../dist/engines/buriko/native/display-landscape.js';
+import {BurikoDisplayObjectEnvironment} from '../dist/engines/buriko/native/display-object.js';
+import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
+import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
+import {createGroup91Landscapes} from '../dist/engines/buriko/native/group-91-landscapes.js';
+import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {BurikoLandscapeDisplays} from '../dist/engines/buriko/native/landscape-displays.js';
+import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 test('Landscape composes terrain, sorted cells, overlays and pointer queries through shared owners', () => {
-  const compositor = new AokanaBitmapCompositor();
+  const compositor = new BurikoBitmapCompositor();
   compositor.defaultFormat = 2;
   const bounds = {left: 0, top: 0, right: 11, bottom: 9},
-    output = allocateAokanaBitmap(12, 10, 2);
-  const environment = new AokanaDisplayObjectEnvironment(
+    output = allocateBurikoBitmap(12, 10, 2);
+  const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new AokanaDisplayDamage(32, bounds),
+    new BurikoDisplayDamage(32, bounds),
   );
   environment.displayContext = {bitmap: output, bounds};
-  const surfaces = new AokanaSurfaces(
-    new AokanaNativeFonts(new AokanaNativeText()),
+  const surfaces = new BurikoSurfaces(
+    new BurikoNativeFonts(new BurikoNativeText()),
     compositor,
-    new AokanaDistributedAllocator(1),
+    new BurikoDistributedAllocator(1),
   );
-  const display = new AokanaNativeDisplayState(12, 10),
-    manager = new AokanaDisplayManager(environment, surfaces, display),
-    input = new AokanaNativeInput(display, new AokanaNativeClock(() => 0));
-  const landscapes = new AokanaLandscapeDisplays(manager, input);
+  const display = new BurikoNativeDisplayState(12, 10),
+    manager = new BurikoDisplayManager(environment, surfaces, display),
+    input = new BurikoNativeInput(display, new BurikoNativeClock(() => 0));
+  const landscapes = new BurikoLandscapeDisplays(manager, input);
   const slots = createGroup91Landscapes(landscapes, {
     files: {text: {encodeWide: (message) => message}},
     threadFatal() {
@@ -47,8 +47,8 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
   });
   const bytes = new Uint8Array(1024),
     data = new DataView(bytes.buffer),
-    thread = new AokanaBpThread({id: 1, operandCapacity: 32, moduleCapacity: 0, frameCapacity: 0});
-  const context = {thread, memory: new AokanaBpMemory(bytes), diagnostics: {}};
+    thread = new BurikoBpThread({id: 1, operandCapacity: 32, moduleCapacity: 0, frameCapacity: 0});
+  const context = {thread, memory: new BurikoBpMemory(bytes), diagnostics: {}};
   const put = (offset, values) =>
     values.forEach((value, i) => data.setUint32(offset + i * 4, value, true));
   const call = (secondary, args = [], pushed = 0) => {
@@ -62,7 +62,7 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
     [0x70, 0x71, 0x73, 0x74, 0x75, 0x76, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f],
   );
   for (const slot of slots)
-    assert.equal(slot.nativeAddress, AOKANA_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
+    assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x91][slot.secondary]);
   assert.equal(surfaces.allocate(3, 8, 4, 2), 1);
   const atlas = surfaces.descriptor(3),
     red = 0xff0000e0,
@@ -81,7 +81,7 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
   const handle = pop32(thread),
     landscape = manager.find('landscape', handle);
   assert.equal(handle, 0xa1000000);
-  assert.ok(landscape instanceof AokanaDisplayLandscape);
+  assert.ok(landscape instanceof BurikoDisplayLandscape);
   assert.equal(landscape.surfaces, surfaces);
   assert.equal(landscape.environment, environment);
   assert.equal(manager.categoryCount(4), 1);
@@ -95,7 +95,7 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
   assert.deepEqual([...keys], [0x22000, 0x32000, 0x32020, 0x42020]);
   const pixel = (x, y) => output.storage.view.getUint32((y * 12 + x) * 4, true);
   const draw = (key) => {
-    clearAokanaBitmap(output);
+    clearBurikoBitmap(output);
     landscape.draw(output, bounds, key);
   };
   draw(0x22000);

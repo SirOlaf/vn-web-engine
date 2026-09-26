@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {pop32} from '../dist/engines/buriko/games/aokana/bp/state.js';
-import {bitmapRead32} from '../dist/engines/buriko/games/aokana/native/bitmap-scalar.js';
-import {AokanaWindowDisplayObject} from '../dist/engines/buriko/games/aokana/native/display-window.js';
+import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted VM selection records draw through the shared Window text layer', async () => {
@@ -36,7 +36,7 @@ test('mounted VM selection records draw through the shared Window text layer', a
     assert.equal(await invoke(0x90, 0x80, [32, 24], 0), 1);
     const handle = pop32(child.state);
     const window = graph.manager.find('window', handle);
-    assert.ok(window instanceof AokanaWindowDisplayObject);
+    assert.ok(window instanceof BurikoWindowDisplayObject);
     await call(0x88, [handle, 3, 2, 26, 19]);
     assert.deepEqual(window.getTextRectangle(), {left: 3, top: 2, right: 28, bottom: 20});
     for (const [id, color] of [
