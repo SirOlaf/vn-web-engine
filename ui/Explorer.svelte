@@ -6,14 +6,6 @@
   $: noah = game === 'noah';
 </script>
 
-<svelte:head>
-  <title>{noah ? 'NOAH' : 'Aokana'} · Asset laboratory</title>
-  <meta
-    name="description"
-    content="Inspect local visual novel archives and assets in your browser."
-  />
-</svelte:head>
-
 <MediaActivation />
 
 <header>
