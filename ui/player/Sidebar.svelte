@@ -42,7 +42,6 @@
       <p id="fullscreen-help" role="status" hidden></p>
     </section>
     <InstallationFiles />
-    <SaveFiles {game} runtime />
     <section>
       <h2>Text rendering</h2>
       <label class="sr-only" for="text-mode">Text rendering mode</label>
@@ -53,6 +52,7 @@
         DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and visual effects are approximate.
       </p>
     </section>
+    <SaveFiles {game} runtime />
     {#if game === 'aokana'}
       <section id="playback-options" hidden>
         <h2>Playback</h2>
