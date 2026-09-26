@@ -16,6 +16,7 @@ export function mountLivePlayer(
   cursors: NoahCursorResources,
   presentation: 'diagnostic' | 'game' = 'diagnostic',
   onSidebarAvailability?: (available: boolean) => void,
+  onStopped?: (message: string) => void,
 ): {panel: HTMLElement; start(): void; setTextMode(mode: 'native' | 'dom'): void; dispose(): void} {
   const panel = document.createElement('section'),
     canvas = document.createElement('canvas'),
@@ -79,6 +80,7 @@ export function mountLivePlayer(
     vm?.movies.dispose();
     readout.textContent = `Game stopped: ${error instanceof Error ? error.message : String(error)}`;
     refreshTrace();
+    onStopped?.(readout.textContent);
   };
   const unlockAudio = () => {
     void unlock().catch(fail);
@@ -158,6 +160,7 @@ export function mountLivePlayer(
             device.clear();
             readout.hidden = false;
             readout.textContent = 'Game closed';
+            onStopped?.(readout.textContent);
             return;
           }
           if (result === 'budget') throw new Error('Instruction budget exhausted');

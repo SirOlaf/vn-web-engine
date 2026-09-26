@@ -5,10 +5,19 @@
   import RuntimeNotices from './player/RuntimeNotices.svelte';
   import SourceActivity from './player/SourceActivity.svelte';
   import {burikoTitle} from './player/buriko-library.js';
+  import {playerRuntimeState} from './player/runtime-state.js';
   export let game: GameId;
   $: title = game === 'buriko' ? $burikoTitle : 'CHAOS;HEAD NOAH';
 
   onMount(() => {
+    const warnBeforeClosing = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+      event.returnValue = true;
+    };
+    const unsubscribe = playerRuntimeState.subscribe(({running, saveBusy}) => {
+      if (running || saveBusy) window.addEventListener('beforeunload', warnBeforeClosing);
+      else window.removeEventListener('beforeunload', warnBeforeClosing);
+    });
     const boot = game === 'buriko' ? import('./runtimes/buriko.js') : import('./runtimes/noah.js');
     void boot.catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -16,6 +25,10 @@
       fatal.textContent = `Unable to start the player: ${message}`;
       fatal.hidden = false;
     });
+    return () => {
+      unsubscribe();
+      window.removeEventListener('beforeunload', warnBeforeClosing);
+    };
   });
 </script>
 

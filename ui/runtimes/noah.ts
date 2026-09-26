@@ -93,6 +93,13 @@ async function ready() {
     report,
     'game',
     sidebarAvailability,
+    (message) => {
+      started = false;
+      element('welcome').hidden = false;
+      element('prompt').textContent = message;
+      report(message);
+      updateControls();
+    },
   );
   player.setTextMode(textMode.value === 'dom' ? 'dom' : 'native');
   play.hidden = false;

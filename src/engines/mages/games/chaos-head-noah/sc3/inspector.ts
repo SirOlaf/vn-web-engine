@@ -16,6 +16,7 @@ export async function inspectBoot(
   movies?: import('./browser-movies.js').BrowserNoahMovies,
   presentation: 'diagnostic' | 'game' = 'diagnostic',
   onSidebarAvailability?: (available: boolean) => void,
+  onStopped?: (message: string) => void,
 ): Promise<{
   panel: HTMLElement;
   start(): void;
@@ -44,5 +45,6 @@ export async function inspectBoot(
     cursors,
     presentation,
     onSidebarAvailability,
+    onStopped,
   );
 }

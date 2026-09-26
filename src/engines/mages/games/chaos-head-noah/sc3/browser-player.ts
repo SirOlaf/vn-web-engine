@@ -15,6 +15,7 @@ export async function openNoahPlayer(
   report: (error: unknown) => void,
   presentation: 'diagnostic' | 'game' = 'diagnostic',
   onSidebarAvailability?: (available: boolean) => void,
+  onStopped?: (message: string) => void,
 ) {
   const gameArchives = new NoahArchives(lookup);
   const sound = new SoundPlayer(async (id) => {
@@ -70,6 +71,7 @@ export async function openNoahPlayer(
       movies,
       presentation,
       onSidebarAvailability,
+      onStopped,
     );
     return {
       ...result,
