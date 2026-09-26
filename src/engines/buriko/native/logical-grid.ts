@@ -1,6 +1,8 @@
 import {pointerView} from '../bp/memory.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {nativeVectorAngle} from '../bp/opcodes/native-math.js';
+import {native1665VectorAngle} from '../bp/opcodes/legacy-1665.js';
+import type {BurikoBpAbi} from '../bp/abi.js';
 import {
   BurikoLogicalGridPath,
   gridAbsolute,
@@ -70,7 +72,10 @@ export class BurikoLogicalGridManager {
   private nextAgent = 0x20000000;
   readonly centerDistances = new Int32Array(256);
 
-  constructor(readonly verticalDivisor: number) {
+  constructor(
+    readonly verticalDivisor: number,
+    readonly revision: BurikoBpAbi['revision'] = '1.685.3',
+  ) {
     for (let y = 0; y < 16; y++)
       for (let x = 0; x < 16; x++) {
         const dx = x < 8 ? 8 - x : x - 7,
@@ -123,7 +128,7 @@ export class BurikoLogicalGridManager {
     if (this.disposed)
       throw new Error('Buriko logical-grid clone dereferences a destroyed manager');
     if (this.cells === null) return null;
-    const result = new BurikoLogicalGridManager(this.verticalDivisor);
+    const result = new BurikoLogicalGridManager(this.verticalDivisor, this.revision);
     const {width, height} = this.dimensions();
     result.setCells(width, height, {bytes: this.cells, offset: 0});
     let maximumPlane = 0;
@@ -534,7 +539,10 @@ export class BurikoLogicalGridManager {
       else if (agent.direction === 3) base = 270 * 65536;
       else if (agent.direction === 4) base = 180 * 65536;
       else if (agent.direction !== 5) status = 0x8000000b;
-      angle = gridAbsolute((nativeVectorAngle((x - agent.x) | 0, (agent.y - y) | 0) - base) | 0);
+      const directionAngle = (
+        this.revision === '1.665' ? native1665VectorAngle : nativeVectorAngle
+      )((x - agent.x) | 0, (agent.y - y) | 0);
+      angle = gridAbsolute((directionAngle - base) | 0);
       if (angle > 180 * 65536) angle = (360 * 65536 - angle) | 0;
       if (status !== 0) return status;
     }
@@ -565,7 +573,11 @@ export class BurikoLogicalGridManager {
   }
 
   directionBetween(x: number, y: number, targetX: number, targetY: number): number {
-    const angle = nativeVectorAngle((x - targetX) | 0, (targetY - y) | 0) >> 16;
+    const angle =
+      (this.revision === '1.665' ? native1665VectorAngle : nativeVectorAngle)(
+        (x - targetX) | 0,
+        (targetY - y) | 0,
+      ) >> 16;
     if ((angle - 45) >>> 0 < 90) return 2;
     if ((angle - 225) >>> 0 < 90) return 3;
     return Number((angle - 135) >>> 0 > 89) + 4;
@@ -576,13 +588,14 @@ export class BurikoLogicalGridManager {
 export class BurikoLogicalGridManagers {
   private nextId = 0;
   private readonly entries: {id: number; manager: BurikoLogicalGridManager}[] = [];
+  constructor(readonly revision: BurikoBpAbi['revision'] = '1.685.3') {}
   get(id: number): BurikoLogicalGridManager | undefined {
     return this.entries.find((entry) => entry.id === id >>> 0)?.manager;
   }
   create(output: BurikoBpPointer | null, kind: number, divisor: number): number {
     if ((kind | 0) !== 0) return 0;
     const id = this.nextId,
-      manager = new BurikoLogicalGridManager(divisor | 0);
+      manager = new BurikoLogicalGridManager(divisor | 0, this.revision);
     this.nextId = (id + 1) >>> 0;
     this.entries.unshift({id, manager});
     gridOutput(output, id);

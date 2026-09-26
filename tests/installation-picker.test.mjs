@@ -39,6 +39,7 @@ test('folder handles and input selection preserve File identity, nested paths an
       name: file.name,
       getFile: async () => assert.fail('Metadata read'),
     })),
+    directory('Empty', []),
     {kind: 'file', name: exe.name, getFile: async () => exe},
   ]);
   const handles = await pickInstallationDirectory({
@@ -68,6 +69,8 @@ test('folder handles and input selection preserve File identity, nested paths an
       unsubscribe();
     }
   }
+  assert.deepEqual(input.directories, ['/Data']);
+  assert.deepEqual(handles.directories, ['/Data', '/Empty']);
   assert.equal(selectedInstallationFiles([file], false).files[0].path, '/archive.bin');
   assert.deepEqual(
     selectedInstallationFiles([...metadata, exe], false).files.map(({file}) => file),
@@ -96,7 +99,7 @@ test('mobile single-file additions retain the folder and replace names using the
     completed.files.map(({path}) => path),
     ['/system.arc', '/Buriko.exe'],
   );
-  const replacement = new File(['new'], 'aokana.EXE');
+  const replacement = new File(['new'], 'bUrIkO.EXE');
   const replaced = selected.add(selectedInstallationFiles([replacement], false));
   assert.equal(replaced.files.length, 2);
   assert.equal(replaced.files[1].file, replacement);
@@ -107,4 +110,19 @@ test('mobile single-file additions retain the folder and replace names using the
     selected.add(selectedInstallationFiles([exe], false)).files.map(({path}) => path),
     ['/Buriko.exe'],
   );
+});
+
+test('directory selection merges, canonicalizes, and replaces preserved directories', () => {
+  const selected = new InstallationSelectionFiles(
+    (path) => path.toUpperCase(),
+    (path) => '/mounted' + path,
+  );
+  const first = selected.add({directory: true, files: [], directories: ['/UserData', '/empty']});
+  assert.deepEqual(first.directories, ['/mounted/UserData', '/mounted/empty']);
+  const merged = selected.add({directory: false, files: [], directories: ['/userdata', '/other']});
+  assert.deepEqual(merged.directories, ['/mounted/userdata', '/mounted/empty', '/mounted/other']);
+  const replaced = selected.add({directory: true, files: [], directories: ['/fresh']});
+  assert.deepEqual(replaced.directories, ['/mounted/fresh']);
+  selected.clear();
+  assert.deepEqual(selected.add({directory: false, files: []}).directories, []);
 });

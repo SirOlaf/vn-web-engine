@@ -8,11 +8,14 @@ import {burikoEngineVersion} from '../../src/engines/buriko/native/engine-versio
 import {readBurikoBootProductIdentity} from '../../src/engines/buriko/native/boot-metadata-source.js';
 import {burikoInstallationView} from '../../src/engines/buriko/installation-view.js';
 import {legacyAokanaProfile} from '../game-profiles/aokana.js';
+import {jewehaInstallationProfile} from '../game-profiles/jeweha.js';
 import type {BurikoSavedGame} from '../player/buriko-library.js';
 
 export interface BurikoExecutable {
   /** Runtime mount entries retain their original range-readable source objects. */
   readonly runtimeFiles: readonly InstallationFile[];
+  /** Verified installed directories absent from file-only browser imports. */
+  readonly installationDirectories: readonly string[];
   readonly executableName: string;
   readonly title: string;
   readonly cursor: Uint8Array | null;
@@ -184,6 +187,10 @@ export async function inspectBurikoInstallation(
   const savedGame: BurikoSavedGame = legacy ?? {id, title, namespace: ['buriko', id, 'default']};
   return {
     runtimeFiles: runtime.files,
+    installationDirectories:
+      digest === jewehaInstallationProfile.executableSha256
+        ? jewehaInstallationProfile.emptyDirectories
+        : [],
     executableName,
     title,
     cursor,

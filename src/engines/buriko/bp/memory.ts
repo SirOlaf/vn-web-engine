@@ -29,7 +29,7 @@ interface HeapBlock {
   size: number;
 }
 
-/** FUN_14006e110..3d0: byte-granular first fit, ascending free list, newest-first allocations. */
+/** 14006e110..3d0 and1.66500436010..260: byte-granular first fit, ascending free list, newest-first allocations. */
 export class BurikoBpHeap {
   bytes = new Uint8Array(0x8000);
   readonly freeBlocks: HeapBlock[] = [{offset: 0, size: 0x8000}];
@@ -115,6 +115,36 @@ export const BURIKO_BP_POOL_LAYOUT = [
   },
 ] as const;
 
+/** 1.665 x86 tables00503c20/40/60,00503cc0,00503d20/40; bank width remains26 bits. */
+export const BURIKO_BP_POOL_LAYOUT_1665 = [
+  {firstBank: 16, endBank: 20, offsetBits: 12, slots: 0x10000, maxSize: 0x1000, offsetMask: 0xfff},
+  {firstBank: 20, endBank: 24, offsetBits: 16, slots: 0x1000, maxSize: 0x10000, offsetMask: 0xffff},
+  {
+    firstBank: 24,
+    endBank: 28,
+    offsetBits: 20,
+    slots: 0x100,
+    maxSize: 0x100000,
+    offsetMask: 0xfffff,
+  },
+  {
+    firstBank: 28,
+    endBank: 32,
+    offsetBits: 24,
+    slots: 0x10,
+    maxSize: 0x1000000,
+    offsetMask: 0xffffff,
+  },
+  {
+    firstBank: 32,
+    endBank: 64,
+    offsetBits: 26,
+    slots: 0x20,
+    maxSize: 0x4000000,
+    offsetMask: 0x3ffffff,
+  },
+] as const;
+
 interface IndirectRecord {
   bytes: Uint8Array | null;
   size: number;
@@ -145,6 +175,7 @@ export function pointerView(pointer: BurikoBpPointer, length?: number): DataView
 /** The exact title-local resolver and native allocation tables; no host pointer objects in VM cells. */
 export class BurikoBpMemory {
   readonly pools: (BurikoBpPointer | null)[][];
+  private readonly poolLayout: typeof BURIKO_BP_POOL_LAYOUT | typeof BURIKO_BP_POOL_LAYOUT_1665;
   readonly indirectBanks: (IndirectRecord | null)[][] = [
     Array<IndirectRecord | null>(256).fill(null),
     Array<IndirectRecord | null>(256).fill(null),
@@ -158,13 +189,12 @@ export class BurikoBpMemory {
     readonly abi: BurikoBpAbi = BURIKO_BP_ABI_172,
   ) {
     this.globalBytes = globalMemory;
+    this.poolLayout = abi.revision === '1.665' ? BURIKO_BP_POOL_LAYOUT_1665 : BURIKO_BP_POOL_LAYOUT;
     // 00463800 assigns one complete 26-bit-offset bank per allocation, in first-free order.
     this.pools =
-      abi.compatibility === '1.69'
+      abi.revision === '1.520.6'
         ? [Array<BurikoBpPointer | null>(48).fill(null)]
-        : BURIKO_BP_POOL_LAYOUT.map((group) =>
-            Array<BurikoBpPointer | null>(group.slots).fill(null),
-          );
+        : this.poolLayout.map((group) => Array<BurikoBpPointer | null>(group.slots).fill(null));
   }
 
   /** Live DAT1E9080; existing pointers retain their own native allocation identity. */
@@ -205,18 +235,20 @@ export class BurikoBpMemory {
       if (!thread.heap) throw new BurikoBpMemoryFault(address, 'Thread has no allocator');
       return {bytes: thread.heap.bytes, offset};
     }
-    if (this.abi.compatibility === '1.69') {
+    if (this.abi.revision === '1.520.6') {
       if (bank < 16) throw new BurikoBpMemoryFault(address, 'Invalid memory bank');
       const base = this.pools[0]![bank - 16];
       if (!base) throw new BurikoBpMemoryFault(address, 'Unresolved pooled allocation');
       return {bytes: base.bytes, offset: base.offset + offset};
     }
-    const index = BURIKO_BP_POOL_LAYOUT.findIndex(
+    const index = this.poolLayout.findIndex(
       (group) => bank >= group.firstBank && bank < group.endBank,
     );
-    const group = BURIKO_BP_POOL_LAYOUT[index]!;
+    if (index < 0) throw new BurikoBpMemoryFault(address, 'Invalid memory bank');
+    const group = this.poolLayout[index]!;
     const slot =
-      ((bank - group.firstBank) << (28 - group.offsetBits)) | (offset >>> group.offsetBits);
+      ((bank - group.firstBank) << (this.abi.addressBits - group.offsetBits)) |
+      (offset >>> group.offsetBits);
     const base = this.pools[index]![slot];
     if (!base) throw new BurikoBpMemoryFault(address, 'Unresolved pooled allocation');
     return {bytes: base.bytes, offset: base.offset + (address & group.offsetMask)};
@@ -320,41 +352,41 @@ export class BurikoBpMemory {
 
   allocatePooled(size: number): number {
     size >>>= 0;
-    if (this.abi.compatibility === '1.69') {
+    if (this.abi.revision === '1.520.6') {
       const table = this.pools[0]!,
         slot = table.indexOf(null);
       if (slot < 0) return 0;
       table[slot] = {bytes: new Uint8Array(size), offset: 0};
       return ((slot + 16) * 0x04000000) >>> 0;
     }
-    for (let index = 0; index < BURIKO_BP_POOL_LAYOUT.length; index++) {
-      const group = BURIKO_BP_POOL_LAYOUT[index]!;
+    for (let index = 0; index < this.poolLayout.length; index++) {
+      const group = this.poolLayout[index]!;
       if (size > group.maxSize) continue;
       const table = this.pools[index]!;
       const slot = table.indexOf(null);
       if (slot < 0) continue;
       table[slot] = {bytes: new Uint8Array(size), offset: 0};
-      return ((group.firstBank << 28) + slot * 2 ** group.offsetBits) >>> 0;
+      return ((group.firstBank << this.abi.addressBits) + slot * 2 ** group.offsetBits) >>> 0;
     }
     return 0;
   }
 
   freePooled(address: number): boolean {
     address >>>= 0;
-    if (this.abi.compatibility === '1.69') {
+    if (this.abi.revision === '1.520.6') {
       const slot = (address >>> 26) - 16;
       if (slot < 0 || (address & 0x03ffffff) !== 0 || !this.pools[0]![slot]) return false;
       this.pools[0]![slot] = null;
       return true;
     }
-    const bank = address >>> 28;
-    for (let index = 0; index < BURIKO_BP_POOL_LAYOUT.length; index++) {
-      const group = BURIKO_BP_POOL_LAYOUT[index]!;
+    const bank = address >>> this.abi.addressBits;
+    for (let index = 0; index < this.poolLayout.length; index++) {
+      const group = this.poolLayout[index]!;
       if (bank < group.firstBank || bank >= group.endBank || (address & group.offsetMask) !== 0)
         continue;
       const slot =
-        ((bank - group.firstBank) << (28 - group.offsetBits)) |
-        ((address & 0xfffffff) >>> group.offsetBits);
+        ((bank - group.firstBank) << (this.abi.addressBits - group.offsetBits)) |
+        ((address & this.abi.addressMask) >>> group.offsetBits);
       if (this.pools[index]![slot]) {
         this.pools[index]![slot] = null;
         return true;
@@ -363,7 +395,7 @@ export class BurikoBpMemory {
     return false;
   }
 
-  /** EE4C0 frees and zeros the six initialized pooled allocation tables. */
+  /** EE4C0 / 1.6650049c400 frees and zeros the initialized pooled allocation tables. */
   clearPooled(): void {
     for (const table of this.pools) table.fill(null);
   }
@@ -385,7 +417,9 @@ export class BurikoBpMemory {
     allocate: () => Uint8Array | null,
   ): BurikoBpAllocationResult {
     if (!this.abi.indirectHandles)
-      throw new Error('Buriko compatibility 1.69 has no indirect buffer/string handle ABI');
+      throw new Error(
+        `Buriko revision ${this.abi.revision} has no indirect buffer/string handle ABI`,
+      );
     const bank = this.indirectBanks[selector]!;
     for (let remaining = 256; remaining > 0; remaining--) {
       const slot = (this.indirectNext[selector] = (this.indirectNext[selector]! + 31) & 255);

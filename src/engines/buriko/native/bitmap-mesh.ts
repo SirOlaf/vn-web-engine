@@ -1,3 +1,4 @@
+import type {BurikoBpAbi} from '../bp/abi.js';
 import {withBurikoBitmapText} from './bitmap-dom-text.js';
 import {nativeMeshSineCosine} from '../bp/opcodes/native-math.js';
 import {roundToInt32} from '../bp/opcodes/fixed.js';
@@ -372,7 +373,10 @@ function rasterizeBurikoMesh(
 }
 
 /** 0436B0 builds and transforms four float vertices in the selected phb rotation order. */
-export function buildBurikoMeshVertices(geometry: BurikoMeshGeometry): readonly BurikoMeshVertex[] {
+export function buildBurikoMeshVertices(
+  geometry: BurikoMeshGeometry,
+  revision?: BurikoBpAbi['revision'],
+): readonly BurikoMeshVertex[] {
   const scaleX = (geometry.scaleX >>> 0) * 2 ** -16,
     scaleY = (geometry.scaleY >>> 0) * 2 ** -16,
     pivotX = (geometry.sourcePivotX | 0) * 2 ** -16 * scaleX,
@@ -390,9 +394,9 @@ export function buildBurikoMeshVertices(geometry: BurikoMeshGeometry): readonly 
     [f32(right), f32(-pivotY), 0, u, 0],
   ];
   const angles = {
-      p: nativeMeshSineCosine(geometry.pitch, true),
-      h: nativeMeshSineCosine(geometry.heading, false),
-      b: nativeMeshSineCosine(geometry.bank, true),
+      p: nativeMeshSineCosine(geometry.pitch, true, revision),
+      h: nativeMeshSineCosine(geometry.heading, false, revision),
+      b: nativeMeshSineCosine(geometry.bank, true, revision),
     },
     order = rotationOrders[(geometry.rotationOrder >>> 0) % rotationOrders.length]!,
     translationX = (geometry.translationX | 0) * 2 ** -16,

@@ -1,5 +1,6 @@
 import {nativeCursorInterpolation} from '../bp/opcodes/native-math.js';
 import {pop32} from '../bp/state.js';
+import type {BurikoBpAbi} from '../bp/abi.js';
 import type {BurikoNativeClock} from './clock.js';
 import type {BurikoNativeInput} from './input.js';
 import type {BurikoCursorPolicy} from './cursor-policy.js';
@@ -38,6 +39,7 @@ export class BurikoNativeCursorMotion {
     readonly input: BurikoNativeInput,
     readonly clock: BurikoNativeClock,
     readonly platform: BurikoNativeCursorPosition,
+    readonly revision: BurikoBpAbi['revision'] = '1.685.3',
   ) {}
 
   start(
@@ -89,11 +91,23 @@ export class BurikoNativeCursorMotion {
       if (this.progress < this.steps) {
         this.expectedX =
           (this.startX +
-            nativeCursorInterpolation(this.deltaX, this.easing, this.progress, this.steps)) |
+            nativeCursorInterpolation(
+              this.deltaX,
+              this.easing,
+              this.progress,
+              this.steps,
+              this.revision,
+            )) |
           0;
         this.expectedY =
           (this.startY +
-            nativeCursorInterpolation(this.deltaY, this.easing, this.progress, this.steps)) |
+            nativeCursorInterpolation(
+              this.deltaY,
+              this.easing,
+              this.progress,
+              this.steps,
+              this.revision,
+            )) |
           0;
         this.nextAt =
           (Math.floor((Math.imul(this.progress + 1, this.duration) >>> 0) / this.steps) +

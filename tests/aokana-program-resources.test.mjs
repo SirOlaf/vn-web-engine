@@ -500,13 +500,15 @@ test('native BF color conversion reads four-word groups of partial third planes 
   assert.deepEqual(Array.from(result.bytes), [128, 219, 0, 0]);
 });
 
-test('native entropy performs full lookahead, zero-bit access, and wrapping varints', async () => {
+test('native entropy preserves numeric lookahead faults and resolves only defined short symbols', async () => {
   const {BurikoBfBits, burikoBfTree, burikoBfSymbol, burikoBfSignedBits, burikoBfVarint} =
     await import('../dist/engines/buriko/native/bf-entropy.js');
   const tree = burikoBfTree([1, 0]),
     bits = new BurikoBfBits(Uint8Array.of(0));
   assert.equal(burikoBfSymbol(bits, tree), 0);
   assert.equal(bits.position, 1);
+  assert.throws(() => bits.peekByte(), BurikoUndefinedResourceRead);
+  for (let i = 1; i < 8; i++) assert.equal(burikoBfSymbol(bits, tree), 0);
   assert.throws(() => burikoBfSymbol(bits, tree), BurikoUndefinedResourceRead);
   const empty = new BurikoBfBits(new Uint8Array());
   assert.throws(() => burikoBfSignedBits(empty, 0), BurikoUndefinedResourceRead);
@@ -516,4 +518,18 @@ test('native entropy performs full lookahead, zero-bit access, and wrapping vari
   await assert.rejects(decodeBurikoResource(truncated), BurikoUndefinedResourceRead);
   const header = bytes('CompressedBG___\0');
   await assert.rejects(decodeBurikoResource(header), BurikoUndefinedResourceRead);
+});
+
+test('resource BF final short codes do not consume speculative lookahead outside the payload', async () => {
+  const padded = frame(24),
+    exact = padded.subarray(0, padded.length - 1),
+    expected = await decodeBurikoResource(cbg(24, padded), 16, 6),
+    result = await decodeBurikoResource(cbg(24, exact), 16, 6);
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.bytes, expected.bytes);
+  // Removing an actually consumed coefficient byte remains an undefined native read.
+  await assert.rejects(
+    decodeBurikoResource(cbg(24, exact.subarray(0, exact.length - 1)), 16, 6),
+    BurikoUndefinedResourceRead,
+  );
 });

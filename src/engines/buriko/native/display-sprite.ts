@@ -338,7 +338,11 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
   private easedDelta(delta: number): number {
     return multiplyShiftSigned(
       delta,
-      nativeDisplayEasing(this.getValueD8(1), this.animation.easing),
+      nativeDisplayEasing(
+        this.getValueD8(1),
+        this.animation.easing,
+        this.environment.compositor.revision,
+      ),
       16n,
     );
   }
@@ -860,18 +864,21 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
     extraWidth: number,
     phase: BurikoDisplayPoint = {x: 0, y: 0},
   ): ReturnType<typeof burikoSpriteBounds> {
-    return burikoSpriteBounds({
-      width: source.width,
-      height: source.height,
-      extraWidth,
-      centerX: transform.pivotX,
-      centerY: transform.pivotY,
-      angle: transform.angle,
-      scaleX: transform.scaleX,
-      scaleY: transform.scaleY,
-      phaseX: phase.x,
-      phaseY: phase.y,
-    });
+    return burikoSpriteBounds(
+      {
+        width: source.width,
+        height: source.height,
+        extraWidth,
+        centerX: transform.pivotX,
+        centerY: transform.pivotY,
+        angle: transform.angle,
+        scaleX: transform.scaleX,
+        scaleY: transform.scaleY,
+        phaseX: phase.x,
+        phaseY: phase.y,
+      },
+      this.environment.compositor.revision,
+    );
   }
 
   private installAffine(
@@ -999,18 +1006,21 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
         depthScale,
         depthScale,
       ),
-      bounds = burikoSpriteBounds({
-        width: rectangleWidth(region),
-        height: rectangleHeight(region),
-        extraWidth: this.wavePeriod === 0 ? 0 : this.waveAmplitude,
-        centerX: (evaluated.pivotX - (region.left << 16)) | 0,
-        centerY: (evaluated.pivotY - (region.top << 16)) | 0,
-        angle: evaluated.angle,
-        scaleX: evaluated.scaleX,
-        scaleY: evaluated.scaleY,
-        phaseX: coordinates.x,
-        phaseY: coordinates.y,
-      }),
+      bounds = burikoSpriteBounds(
+        {
+          width: rectangleWidth(region),
+          height: rectangleHeight(region),
+          extraWidth: this.wavePeriod === 0 ? 0 : this.waveAmplitude,
+          centerX: (evaluated.pivotX - (region.left << 16)) | 0,
+          centerY: (evaluated.pivotY - (region.top << 16)) | 0,
+          angle: evaluated.angle,
+          scaleX: evaluated.scaleX,
+          scaleY: evaluated.scaleY,
+          phaseX: coordinates.x,
+          phaseY: coordinates.y,
+        },
+        this.environment.compositor.revision,
+      ),
       position = super.effectivePosition(),
       x = (position.x - bounds.offsetX) | 0,
       y = (position.y - bounds.offsetY) | 0;
@@ -1250,7 +1260,10 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
       this.setNativeGeometry(1, 1);
       return;
     }
-    const mesh = buildBurikoMeshScanlines(buildBurikoMeshVertices(geometry), clippingHeight);
+    const mesh = buildBurikoMeshScanlines(
+      buildBurikoMeshVertices(geometry, this.environment.compositor.revision),
+      clippingHeight,
+    );
     if (mesh === null) {
       this.setNativeGeometry(1, 1);
       return;
@@ -1545,7 +1558,10 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
   override inputHitTest(x: number, y: number, checkBounds: number): number {
     if (this.mode === 2 || this.mode === 6) return 0;
     if (this.mode !== 5) return super.inputHitTest(x, y, checkBounds);
-    const {cosine, sine} = nativeAffineSineCosine(-this.evaluatedAngle | 0),
+    const {cosine, sine} = nativeAffineSineCosine(
+        -this.evaluatedAngle | 0,
+        this.environment.compositor.revision,
+      ),
       deltaX = (x - this.transformOffsetX) | 0,
       inverseDeltaY = (this.transformOffsetY - y) | 0,
       sourceX =

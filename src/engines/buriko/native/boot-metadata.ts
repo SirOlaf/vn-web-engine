@@ -1,9 +1,5 @@
 import type {BurikoBpAbi} from '../bp/abi.js';
-import {BURIKO_PRIMARY_SLOT_ADDRESSES, BURIKO_NATIVE_SLOT_ADDRESSES} from './inventory.js';
-import {
-  BURIKO_169_PRIMARY_SLOT_ADDRESSES,
-  BURIKO_169_NATIVE_SLOT_ADDRESSES,
-} from './inventory-169.js';
+import {burikoPrimarySlots, burikoNativeSlots} from './registry.js';
 
 interface Instruction {
   pc: number;
@@ -31,8 +27,8 @@ export function inferBurikoBootProductIdentity(
   const bytes = program.subarray(offset, offset + size);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const old = abi.compatibility === '1.69';
-  const primary = old ? BURIKO_169_PRIMARY_SLOT_ADDRESSES : BURIKO_PRIMARY_SLOT_ADDRESSES;
-  const banks = old ? BURIKO_169_NATIVE_SLOT_ADDRESSES : BURIKO_NATIVE_SLOT_ADDRESSES;
+  const primary = burikoPrimarySlots(abi);
+  const banks = burikoNativeSlots(abi);
   const fixed = new Map([
     [0x00, 2],
     [0x01, 3],

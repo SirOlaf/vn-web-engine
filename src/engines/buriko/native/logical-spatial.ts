@@ -1,3 +1,4 @@
+import type {BurikoBpAbi} from '../bp/abi.js';
 import {fixedResult} from '../bp/opcodes/fixed.js';
 import {pointerView} from '../bp/memory.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
@@ -38,6 +39,7 @@ export function writeBurikoSpatialVector(
 
 /** DCTELgclSpcMngr record storage and both native parent/child connection groups. */
 export class BurikoLogicalSpatialManager {
+  constructor(readonly revision: BurikoBpAbi['revision'] = '1.685.3') {}
   capacity = 64;
   readonly records = new Map<number, BurikoLogicalSpatialRecord>();
 
@@ -218,6 +220,7 @@ interface SpatialHandle {
 
 /** Native 1400fa650/620 lifetime references and newest-first handle lookup. */
 export class BurikoLogicalSpatialManagers {
+  constructor(readonly revision: BurikoBpAbi['revision'] = '1.685.3') {}
   private nextId = 0;
   private readonly handles: SpatialHandle[] = [];
 
@@ -226,7 +229,7 @@ export class BurikoLogicalSpatialManagers {
     this.handles.unshift({
       id: this.nextId,
       references: 0,
-      manager: new BurikoLogicalSpatialManager(),
+      manager: new BurikoLogicalSpatialManager(this.revision),
     });
     outputWord(output, this.nextId);
     return 0;

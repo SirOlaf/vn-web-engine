@@ -16,17 +16,21 @@ import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/sp
 import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
 import {BurikoAudioArchiveCache} from '../dist/engines/buriko/native/audio/archive-cache.js';
 import {BurikoAudioResourceStreams} from '../dist/engines/buriko/native/audio/resource-streams.js';
-import {BURIKO_BP_ABI_169, BURIKO_BP_ABI_172} from '../dist/engines/buriko/bp/abi.js';
+import {Buriko1665ArchiveFileStorage} from '../dist/engines/buriko/native/audio/1665-archive-storage.js';
+import {
+  BURIKO_BP_ABI_169,
+  BURIKO_BP_ABI_1665,
+  BURIKO_BP_ABI_172,
+} from '../dist/engines/buriko/bp/abi.js';
 
-function arc(sample, abi) {
-  const legacy = abi.compatibility === '1.69',
-    payload = legacy ? 48 : 144,
+function arc(sample, pack) {
+  const payload = pack ? 48 : 144,
     bytes = new Uint8Array(payload + 64 + 5000 * 2),
     view = new DataView(bytes.buffer);
-  bytes.set(new TextEncoder().encode(legacy ? 'PackFile    ' : 'BURIKO ARC20'));
+  bytes.set(new TextEncoder().encode(pack ? 'PackFile    ' : 'BURIKO ARC20'));
   view.setUint32(12, 1, true);
   bytes.set(new TextEncoder().encode('VOICE.BW'), 16);
-  view.setUint32(legacy ? 36 : 116, 10064, true);
+  view.setUint32(pack ? 36 : 116, 10064, true);
   for (const [offset, value] of [
     [0, 64],
     [4, 0x20207762],
@@ -40,15 +44,20 @@ function arc(sample, abi) {
   for (let i = 0; i < 5000; i++) view.setInt16(payload + 64 + i * 2, sample, true);
   return bytes;
 }
-for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_172])
-  test(`BGI ${abi.compatibility} stream admission replaces loose PCM with its native archive model`, async () => {
+for (const [abi, pack] of [
+  [BURIKO_BP_ABI_169, true],
+  [BURIKO_BP_ABI_1665, false],
+  [BURIKO_BP_ABI_1665, true],
+  [BURIKO_BP_ABI_172, false],
+])
+  test(`BGI ${abi.revision} stream admission replaces loose PCM with ${pack ? 'PackFile' : 'ARC20'}`, async () => {
     const actor = {},
       actors = {currentActor: actor},
       locks = new BurikoNativeLocks(actors);
     locks.initializeEngine();
     const backend = new BurikoMemorySpeakerBackend(1000),
       channels = new BurikoAudioChannels(
-        new BurikoSpeakerContext(backend),
+        new BurikoSpeakerContext(backend, abi),
         locks,
         actors,
         new BurikoSystemTicks({now: () => 0}),
@@ -61,9 +70,9 @@ for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_172])
       {
         kind: 'write',
         path: '/game/loose.bw',
-        data: arc(16384, abi).slice(abi.compatibility === '1.69' ? 48 : 144),
+        data: arc(16384, pack).slice(pack ? 48 : 144),
       },
-      {kind: 'write', path: '/game/second.arc', data: arc(-8192, abi)},
+      {kind: 'write', path: '/game/second.arc', data: arc(-8192, pack)},
     ]);
     const mounted = new BurikoMountedFileMetadata(backing, {
       records: ['loose.bw', 'second.arc'].map((name) => ({
@@ -72,7 +81,7 @@ for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_172])
         attributes: 32,
         creationTime: null,
         accessTime: null,
-        writeTime: 123n,
+        writeTime: abi.revision === '1.665' ? null : 123n,
       })),
       volumes: [{path: '/', identity: {}, writable: true}],
       canonical: (p) => p.toLowerCase(),
@@ -142,3 +151,78 @@ for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_172])
       }
     }
   });
+
+test('BGI 1.665 archive storage retains its first duplicate index while reading current file bytes', async () => {
+  function duplicateArc(offset, size, payload) {
+    const bytes = new Uint8Array(272 + payload.length),
+      view = new DataView(bytes.buffer);
+    bytes.set(new TextEncoder().encode('BURIKO ARC20'));
+    view.setUint32(12, 2, true);
+    for (const [entry, memberOffset, memberSize] of [
+      [0, offset, size],
+      [1, 4, 4],
+    ]) {
+      bytes.set(new TextEncoder().encode('VOICE'), 16 + entry * 128);
+      view.setUint32(112 + entry * 128, memberOffset, true);
+      view.setUint32(116 + entry * 128, memberSize, true);
+    }
+    bytes.set(payload, 272);
+    return bytes;
+  }
+  const backing = new StoredFileSystem(new MemoryStore(), (p) => p.toLowerCase()),
+    files = new BurikoProgramFiles(
+      backing,
+      new BurikoNativeText(),
+      new BurikoProgramMedia(),
+      new BurikoMountedProgramPaths([{native: 'C:\\', mounted: '/'}], 'C:\\game'),
+    ),
+    actor = {},
+    storage = new Buriko1665ArchiveFileStorage(files),
+    nextOwner = new Buriko1665ArchiveFileStorage(files),
+    output = new Uint8Array(4);
+  await backing.commit([
+    {
+      kind: 'write',
+      path: '/game/second.arc',
+      data: duplicateArc(0, 4, Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8)),
+    },
+  ]);
+  try {
+    assert.equal(await storage.open('second.arc', 'VOICE'), true);
+    assert.equal(storage.size, 4);
+    assert.equal(await storage.readInto({bytes: output, offset: 0}, 4, actor), 4);
+    assert.deepEqual([...output], [1, 2, 3, 4]);
+    await backing.commit([
+      {
+        kind: 'write',
+        path: '/game/second.arc',
+        data: duplicateArc(4, 2, Uint8Array.of(9, 10, 11, 12, 13, 14, 15, 16)),
+      },
+    ]);
+    assert.equal(await storage.open('SECOND.ARC', 'voice'), true);
+    assert.equal(storage.size, 4);
+    assert.equal(await storage.readInto({bytes: output, offset: 0}, 4, actor), 4);
+    assert.deepEqual([...output], [9, 10, 11, 12]);
+    assert.equal(await nextOwner.open('second.arc', 'voice'), true);
+    assert.equal(nextOwner.size, 2);
+    assert.equal(await nextOwner.readInto({bytes: output, offset: 0}, 4, actor), 2);
+    assert.deepEqual([...output.subarray(0, 2)], [13, 14]);
+    await backing.commit([
+      {
+        kind: 'write',
+        path: '/game/second.arc',
+        data: duplicateArc(0, 4, Uint8Array.of(17)),
+      },
+    ]);
+    storage.seek(0);
+    assert.equal(await storage.readInto({bytes: output, offset: 0}, 4, actor), 1);
+    assert.equal(storage.position, 1);
+    assert.equal(output[0], 17);
+    await backing.commit([{kind: 'delete', path: '/game/second.arc'}]);
+    assert.equal(await storage.readInto({bytes: output, offset: 0}, 1, actor), 0x80000010);
+    assert.equal(storage.position, 0x80000011);
+  } finally {
+    storage.dispose();
+    nextOwner.dispose();
+  }
+});

@@ -79,11 +79,22 @@ export class BurikoCoordinateSplineControlProcess extends BurikoDisplayControlPr
       const current = BigInt(this.current | 0),
         total = BigInt(this.total | 0),
         progress = low32((current << 24n) / total);
-      this.spline.sample(nativeDisplayEasing(progress, this.positionEasing), coordinates);
+      this.spline.sample(
+        nativeDisplayEasing(
+          progress,
+          this.positionEasing,
+          this.manager.environment.compositor.revision,
+        ),
+        coordinates,
+      );
       // IMUL and SHL wrap at 64 bits before the signed division and upper-only cap.
       const blendProgress = BigInt.asIntN(64, (current * this.speed) << 8n) / total,
         capped = blendProgress <= 0x1000000n ? low32(blendProgress) : 0x1000000,
-        eased = nativeDisplayEasing(capped, this.blendEasing);
+        eased = nativeDisplayEasing(
+          capped,
+          this.blendEasing,
+          this.manager.environment.compositor.revision,
+        );
       blend =
         (this.startBlend + low32((BigInt(this.deltaBlend | 0) * BigInt(eased | 0)) >> 16n)) | 0;
       depth =

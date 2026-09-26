@@ -17,7 +17,14 @@ export function createGroup91AngularDisplacement(
     const status =
       bitmap === null
         ? 0x80000001
-        : (bend ? fillBurikoAngularBend : fillBurikoAngularProjection)(bitmap, x, y, angle, radius);
+        : (bend ? fillBurikoAngularBend : fillBurikoAngularProjection)(
+            bitmap,
+            x,
+            y,
+            angle,
+            radius,
+            h.memory.abi.revision,
+          );
     let message: string;
     if (status === 0x80000001)
       message = `指定された出力先ビットマップ [ ${surface | 0} ] は存在しません`;

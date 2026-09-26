@@ -1,5 +1,10 @@
-import {BURIKO_NATIVE_SLOT_ADDRESSES} from './inventory.js';
+import {BURIKO_NATIVE_SLOT_ADDRESSES, BURIKO_PRIMARY_SLOT_ADDRESSES} from './inventory.js';
 import {BURIKO_169_NATIVE_SLOT_ADDRESSES} from './inventory-169.js';
+import {BURIKO_169_PRIMARY_SLOT_ADDRESSES} from './inventory-169.js';
+import {
+  BURIKO_1665_NATIVE_SLOT_ADDRESSES,
+  BURIKO_1665_PRIMARY_SLOT_ADDRESSES,
+} from './inventory-1665.js';
 import {BURIKO_BP_ABI_172, type BurikoBpAbi} from '../bp/abi.js';
 import type {
   BurikoBpOpcodeContext,
@@ -12,9 +17,17 @@ const hexSlot = (primary: number, secondary: number): string =>
   `${primary.toString(16).padStart(2, '0')} ${secondary.toString(16).padStart(2, '0')}`;
 
 export function burikoNativeSlots(abi: BurikoBpAbi = BURIKO_BP_ABI_172) {
-  return abi.compatibility === '1.69'
+  if (abi.revision === '1.665') return BURIKO_1665_NATIVE_SLOT_ADDRESSES;
+  return abi.revision === '1.520.6'
     ? BURIKO_169_NATIVE_SLOT_ADDRESSES
     : BURIKO_NATIVE_SLOT_ADDRESSES;
+}
+
+export function burikoPrimarySlots(abi: BurikoBpAbi = BURIKO_BP_ABI_172) {
+  if (abi.revision === '1.665') return BURIKO_1665_PRIMARY_SLOT_ADDRESSES;
+  return abi.revision === '1.520.6'
+    ? BURIKO_169_PRIMARY_SLOT_ADDRESSES
+    : BURIKO_PRIMARY_SLOT_ADDRESSES;
 }
 
 export interface BurikoNativeMissingSlot {

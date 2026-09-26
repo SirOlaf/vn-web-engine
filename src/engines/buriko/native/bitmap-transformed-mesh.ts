@@ -16,7 +16,10 @@ export function drawBurikoTransformedMesh(
   mode: number,
   transparency: number,
 ): void {
-  const mesh = buildBurikoMeshScanlines(buildBurikoMeshVertices(geometry), destination.height);
+  const mesh = buildBurikoMeshScanlines(
+    buildBurikoMeshVertices(geometry, compositor.revision),
+    destination.height,
+  );
   if (mesh !== null) {
     drawBurikoBitmapMesh(
       compositor,

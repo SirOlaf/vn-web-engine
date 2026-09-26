@@ -58,6 +58,20 @@ export class BurikoBfBits {
     this.position = position;
     return value;
   }
+
+  /** The defined leading bits of native lookahead; the remaining bits have no numeric value. */
+  knownLookahead(): {value: number; length: number} {
+    let value = 0,
+      length = 0;
+    for (; length < 8; length++) {
+      const position = this.position + length,
+        byte = position >>> 3;
+      if (byte >= this.bytes.length || (this.initialized !== undefined && !this.initialized[byte]))
+        break;
+      value = (value << 1) | ((this.bytes[byte]! >>> (7 - (position & 7))) & 1);
+    }
+    return {value, length};
+  }
 }
 
 export interface BurikoBfTree {
@@ -119,9 +133,31 @@ export function burikoBfTree(weights: readonly number[]): BurikoBfTree {
   return {leaves, root, children, lookup};
 }
 
-/** 140103b40 always performs the full eight-bit lookahead before selecting a short code. */
+/** 140103b40 / 1.665004b0620 speculatively read eight bits even for a short code.
+ * Unknown suffix bits may be discarded only when every completion selects the same
+ * short entry and every bit the decoder actually consumes is defined. */
 export function burikoBfSymbol(bits: BurikoBfBits, tree: BurikoBfTree): number {
-  const entry = tree.lookup[bits.peekByte()];
+  let entry: BurikoBfTree['lookup'][number];
+  try {
+    entry = tree.lookup[bits.peekByte()];
+  } catch (error) {
+    if (!(error instanceof BurikoUndefinedResourceRead)) throw error;
+    const prefix = bits.knownLookahead(),
+      suffixBits = 8 - prefix.length,
+      first = prefix.value << suffixBits,
+      end = (prefix.value + 1) << suffixBits;
+    entry = tree.lookup[first];
+    if (entry === undefined || entry.length === 0 || entry.length > prefix.length) throw error;
+    for (let completion = first + 1; completion < end; completion++) {
+      const candidate = tree.lookup[completion];
+      if (
+        candidate === undefined ||
+        candidate.length !== entry.length ||
+        candidate.node !== entry.node
+      )
+        throw error;
+    }
+  }
   if (entry === undefined)
     throw new BurikoUndefinedResourceRead(
       'Buriko BF Huffman lookup reads unwritten native table entries',

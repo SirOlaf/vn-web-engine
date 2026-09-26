@@ -712,7 +712,10 @@ export class BurikoProductionDisplayResourceGraph {
       this.fontProvider = inputs.fontProvider ?? new BurikoBrowserFonts();
       this.fonts = new BurikoNativeFonts(this.text, this.fontProvider);
       rollback.push(() => this.fonts.dispose());
-      this.compositor = new BurikoBitmapCompositor(this.engineVersion.bpAbi.compatibility);
+      this.compositor = new BurikoBitmapCompositor(
+        this.engineVersion.bpAbi.compatibility,
+        this.engineVersion.bpAbi.revision,
+      );
       this.damage = new BurikoDisplayDamage(inputs.damageCapacity, {
         left: 0,
         top: 0,
@@ -775,7 +778,12 @@ export class BurikoProductionDisplayResourceGraph {
       this.touch =
         this.touchWindow === null
           ? null
-          : new BurikoNativeTouch(this.input, this.clock, this.touchWindow);
+          : new BurikoNativeTouch(
+              this.input,
+              this.clock,
+              this.touchWindow,
+              this.engineVersion.bpAbi.revision,
+            );
       // Validate the selected host geometry before borrowing it for adapter selection.
       this.host.readRestoredOuterScreenRectangle();
       this.adapters = new BurikoDisplayAdapters(
@@ -796,7 +804,12 @@ export class BurikoProductionDisplayResourceGraph {
       this.cursor = new BurikoNativeCursor(inputs.canvas);
       this.cursorPolicy = new BurikoCursorPolicy(this.manager, this.input, this.clock, this.cursor);
       this.cursorPosition = new BurikoBrowserCursorPosition();
-      this.cursorMotion = new BurikoNativeCursorMotion(this.input, this.clock, this.cursorPosition);
+      this.cursorMotion = new BurikoNativeCursorMotion(
+        this.input,
+        this.clock,
+        this.cursorPosition,
+        this.engineVersion.bpAbi.revision,
+      );
       this.cursorFrame = new BurikoCursorFrameLower(this.cursorMotion, this.cursorPolicy);
       rollback.push(() => {
         this.cursorMotion.active = false;

@@ -1,3 +1,4 @@
+import type {BurikoBpAbi} from '../bp/abi.js';
 import type {BurikoBitmap} from './bitmap.js';
 import {bitmapWrite16, bitmapWrite32} from './bitmap-scalar.js';
 import {nativeDisplacementIntegerAtan2 as atan2} from './displacement-atan2.js';
@@ -21,14 +22,15 @@ export function fillBurikoAngularProjection(
   centerY: number,
   angle: number,
   distance: number,
+  revision?: BurikoBpAbi['revision'],
 ): number {
   if (!valid(bitmap)) return 0x80000003;
   centerX |= 0;
   centerY |= 0;
   distance >>>= 0;
   const radians = ((angle >>> 0) * 3.141592653589793) / 11796480;
-  const sin = sine(radians),
-    cos = cosine(radians);
+  const sin = sine(radians, revision),
+    cos = cosine(radians, revision);
   const projectionHeight = cos > 0 ? (bitmap.height >>> 0) / cos : 2147483647;
   for (let y = 0; y < bitmap.height >>> 0; y++)
     for (let x = 0; x < bitmap.width >>> 0; x++) {
@@ -43,7 +45,7 @@ export function fillBurikoAngularProjection(
       const vertical = cvtt32(
         ((distance + projectionHeight) * radius * 16) / (radius * sin + distance),
       );
-      const theta = atan2(dx, dy);
+      const theta = atan2(dx, dy, revision);
       const horizontal = cvtt32(
         ((180 - (theta * 180) / 3.141592653589793) / 360 - 1) * (((bitmap.width - 1) << 4) >>> 0),
       );
@@ -64,14 +66,15 @@ export function fillBurikoAngularBend(
   centerY: number,
   angle: number,
   radius: number,
+  revision?: BurikoBpAbi['revision'],
 ): number {
   if (!valid(bitmap)) return 0x80000003;
   angle >>>= 0;
   radius >>>= 0;
   if (angle === 0 || radius === 0) return 0x80000008;
   const radians = (angle * 3.141592653589793) / 11796480,
-    sin = sine(radians),
-    cos = cosine(radians);
+    sin = sine(radians, revision),
+    cos = cosine(radians, revision);
   let dy = -centerY | 0,
     centerYQ4 = centerY << 4;
   for (
@@ -93,9 +96,9 @@ export function fillBurikoAngularBend(
         const t = (distance * sin) / radius,
           z = Math.sqrt(1 - t * t),
           factor = ((z - cos) * t) / z;
-        const theta = atan2(absolute32(dy), absolute32(dx));
-        outputY = cvtt32(sine(theta) * centerYQ4 * factor);
-        outputX = cvtt32(cosine(theta) * centerXQ4 * factor);
+        const theta = atan2(absolute32(dy), absolute32(dx), revision);
+        outputY = cvtt32(sine(theta, revision) * centerYQ4 * factor);
+        outputX = cvtt32(cosine(theta, revision) * centerXQ4 * factor);
       }
       const at = bitmap.offset + y * (bitmap.stride | 0) + x * 4;
       bitmapWrite16(bitmap, at, outputX);

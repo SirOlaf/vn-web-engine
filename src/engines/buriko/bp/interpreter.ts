@@ -1,6 +1,5 @@
 import {BURIKO_PRIMARY_SLOT_ADDRESSES} from '../native/inventory.js';
-import {BURIKO_169_PRIMARY_SLOT_ADDRESSES} from '../native/inventory-169.js';
-import {burikoNativeSlots, type BurikoNativeBank} from '../native/registry.js';
+import {burikoNativeSlots, burikoPrimarySlots, type BurikoNativeBank} from '../native/registry.js';
 import {BURIKO_BP_ABI_172, type BurikoBpAbi} from './abi.js';
 import type {
   BurikoBpInstructionResult,
@@ -31,12 +30,9 @@ export class BurikoBpInterpreter {
     private readonly contextForThread: (thread: BurikoBpThread) => BurikoBpOpcodeContext,
     readonly abi: BurikoBpAbi = BURIKO_BP_ABI_172,
   ) {
-    if (nativeBank.abi.compatibility !== abi.compatibility)
+    if (nativeBank.abi.revision !== abi.revision)
       throw new Error('Buriko interpreter and native bank have different bytecode ABIs');
-    const primarySlots =
-      abi.compatibility === '1.69'
-        ? BURIKO_169_PRIMARY_SLOT_ADDRESSES
-        : BURIKO_PRIMARY_SLOT_ADDRESSES;
+    const primarySlots = burikoPrimarySlots(abi);
     const nativeSlots = burikoNativeSlots(abi);
     const handlers: (BurikoBpOpcodeHandler | undefined)[] = new Array(256);
     for (const [key, handler] of Object.entries({...directPrimaryHandlers, ...writeWatchOpcodes})) {
@@ -72,7 +68,7 @@ export class BurikoBpInterpreter {
     const handler = this.primary[opcode];
     if (handler === undefined) return {defined: false, opcode};
     const original = this.contextForThread(thread);
-    if (original.memory.abi.compatibility !== this.abi.compatibility)
+    if (original.memory.abi.revision !== this.abi.revision)
       throw new Error('Buriko opcode context has a different bytecode ABI');
     const context = actor === undefined ? original : {...original, actor};
     if (context.thread !== thread)

@@ -1,3 +1,4 @@
+import type {BurikoBpAbi} from '../bp/abi.js';
 import {pointerView} from '../bp/memory.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {nativeGridEvaluatorFacingCosine} from '../bp/opcodes/native-math.js';
@@ -93,8 +94,12 @@ export function gridEvaluatorEffect(
 }
 
 /** 1400a7b80 with the fixed native cosine and inclusive 2^-14 integer snap. */
-export function gridEvaluatorFacing(angle: number, multiplier: number): number {
-  let cosine = nativeGridEvaluatorFacingCosine(angle);
+export function gridEvaluatorFacing(
+  angle: number,
+  multiplier: number,
+  revision?: BurikoBpAbi['revision'],
+): number {
+  let cosine = nativeGridEvaluatorFacingCosine(angle, revision);
   const floor = Math.floor(cosine),
     fraction = cosine - floor;
   if (1 - 2 ** -14 <= fraction) cosine = Math.ceil(cosine);

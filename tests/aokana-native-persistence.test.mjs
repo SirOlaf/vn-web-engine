@@ -104,7 +104,7 @@ async function setup() {
       id: 1,
       operandCapacity: 16,
       moduleCapacity: 4096,
-      frameCapacity: 0,
+      frameCapacity: 16,
     });
   const put = (offset, value) => {
     thread.moduleMemory.set(encode(value), offset);
@@ -239,6 +239,20 @@ test('missing GDB coordinates can be stored then overwritten, but cannot be obse
         assert.equal(s.memory.readU32(s.thread, s.memory.abi.moduleTag + offset), 123);
       }
       assert.equal(s.thread.stackIndex, 0);
+    }
+    // Jeweha stores the two native outputs through packed local DWORD stores before branching.
+    const h = {thread: s.thread, memory: s.memory, diagnostics: {writeWatchEnabled: false}};
+    assert.equal(await load.execute(h), 0);
+    assert.equal(pop32(s.thread), 1);
+    s.thread.frameCursor = 16;
+    for (const displacement of [4, 8]) {
+      s.thread.pc = 0;
+      new DataView(s.thread.moduleMemory.buffer).setUint16(0, 0x8000 | displacement, true);
+      assert.equal(memoryOpcodes[0x0f](h), 0);
+      const address = s.memory.abi.frameTag + 16 - displacement;
+      assert.throws(() => s.memory.readU32(s.thread, address), /unwritten native stack/);
+      s.memory.writeU32(s.thread, address, 0);
+      assert.equal(s.memory.readU32(s.thread, address), 0);
     }
     const bytes = s.memory.globalMemory;
     markIndeterminateMemory(bytes, 512, 4, 'unwritten native stack coordinates');

@@ -73,9 +73,9 @@ export class BurikoProductionDataOwners {
   readonly independentIcon = new BurikoIndependentIconState();
   readonly allocations = new BurikoPooledAllocationDiagnostics();
   readonly counts = new BurikoDiagnosticCounts();
-  readonly grids = new BurikoLogicalGridManagers();
+  readonly grids: BurikoLogicalGridManagers;
   readonly gridWorkers: BurikoGridEvaluationWorkers;
-  readonly spatial = new BurikoLogicalSpatialManagers();
+  readonly spatial: BurikoLogicalSpatialManagers;
   readonly worldMaps = new BurikoNativeWorldMaps();
   readonly splines = new BurikoNativeSplines();
 
@@ -83,6 +83,8 @@ export class BurikoProductionDataOwners {
     readonly graph: BurikoProductionDisplayResourceGraph,
     readonly memory: BurikoBpMemory,
   ) {
+    this.grids = new BurikoLogicalGridManagers(memory.abi.revision);
+    this.spatial = new BurikoLogicalSpatialManagers(memory.abi.revision);
     this.productIdentity = new BurikoProductIdentity(graph.productIdentity);
     if (boundGraphs.has(graph)) throw new Error('Buriko production graph already has data owners');
     if (boundMemories.has(memory))

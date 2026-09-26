@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {StoredFileSystem} from '../dist/platform/filesystem.js';
+import {
+  OverlayFileSystem,
+  SourceFileSystem,
+  StoredFileSystem,
+} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
@@ -17,9 +21,13 @@ import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/invent
 const bytes = (text) => new TextEncoder().encode(text),
   ticks = (iso) => BigInt(Date.parse(iso)) * 10000n + 116444736000000000n,
   base = ticks('2026-09-01T00:00:00.000Z');
-async function fixture(accessTimePolicy = 'disabled') {
+async function fixture(accessTimePolicy = 'disabled', installed = null) {
   const canonical = (path) => path.toLowerCase(),
-    backing = new StoredFileSystem(new MemoryStore(), canonical);
+    store = new MemoryStore(),
+    backing =
+      installed === null
+        ? new StoredFileSystem(store, canonical)
+        : new OverlayFileSystem(installed, store, canonical);
   await backing.commit([{kind: 'write', path: '/existing', data: bytes('preserved content')}]);
   const clock = {now: base + 30000000n},
     metadata = new BurikoMountedFileMetadata(backing, {
@@ -55,6 +63,21 @@ async function fixture(accessTimePolicy = 'disabled') {
     );
   return {backing, clock, metadata, files};
 }
+test('browser installation directories permit native output without device folders or implicit parents', async () => {
+  const installed = new SourceFileSystem((path) => path.toLowerCase());
+  const {backing, metadata, files} = await fixture('disabled', installed);
+  const path = bytes('UserData\\JewelryHeartsAcademia001.sud\0');
+  assert.equal(await files.createOutput(path), null);
+  await backing.installDirectories(['/UserData']);
+  assert.equal(await files.isDirectoryWide('C:\\Game\\UserData'), true);
+  const output = await files.createOutput(path);
+  assert.notEqual(output, null);
+  assert.equal(await output.write(bytes('save payload')), 12);
+  output.close();
+  assert.equal(await content(backing, '/userdata/jewelryheartsacademia001.sud'), 'save payload');
+  await metadata.commit([{kind: 'delete', path: '/userdata/jewelryheartsacademia001.sud'}]);
+  assert.deepEqual(await metadata.list('/userdata'), []);
+});
 async function content(files, path) {
   const source = await files.open(path);
   return new TextDecoder().decode(await source.read(0, source.size));

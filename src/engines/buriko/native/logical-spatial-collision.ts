@@ -1,3 +1,4 @@
+import type {BurikoBpAbi} from '../bp/abi.js';
 import {nativeSpatialAngle, nativeSpatialSineCosine} from '../bp/opcodes/native-math.js';
 import {burikoRosettaSseReciprocal} from './cpu-numerical-profile.js';
 import {pointerView} from '../bp/memory.js';
@@ -18,8 +19,9 @@ function segment(
   radius: number,
   angle: number,
   secondAxis: 1 | 2,
+  revision: BurikoBpAbi['revision'],
 ): ProjectedSegment {
-  const trig = nativeSpatialSineCosine(angle);
+  const trig = nativeSpatialSineCosine(angle, revision);
   const offset =
     secondAxis === 1
       ? [f32(trig.cosine), f32(trig.sine), 0, 0]
@@ -77,12 +79,14 @@ export class BurikoLogicalSpatialCollision {
     if (source.every((value, lane) => value === target[lane])) return 1;
     if ((mask & 255) === 0) mask |= 255;
     const dx = f32(target[0]! - source[0]!);
-    const angleXY = nativeSpatialAngle(f32(target[1]! - source[1]!), dx) + Math.PI / 2;
-    const angleXZ = nativeSpatialAngle(f32(target[2]! - source[2]!), dx) + Math.PI / 2;
-    const xy = [segment(source, target, radius, angleXY + 0, 1)];
-    const xz = [segment(source, target, radius, angleXZ + 0, 2)];
-    xy.push(segment(source, target, radius, angleXY + Math.PI, 1));
-    xz.push(segment(source, target, radius, angleXZ + Math.PI, 2));
+    const angleXY =
+      nativeSpatialAngle(f32(target[1]! - source[1]!), dx, this.manager.revision) + Math.PI / 2;
+    const angleXZ =
+      nativeSpatialAngle(f32(target[2]! - source[2]!), dx, this.manager.revision) + Math.PI / 2;
+    const xy = [segment(source, target, radius, angleXY + 0, 1, this.manager.revision)];
+    const xz = [segment(source, target, radius, angleXZ + 0, 2, this.manager.revision)];
+    xy.push(segment(source, target, radius, angleXY + Math.PI, 1, this.manager.revision));
+    xz.push(segment(source, target, radius, angleXZ + Math.PI, 2, this.manager.revision));
     const scratch: [(number | undefined)[], (number | undefined)[]] = [[], []];
     let hits = 0;
     for (let index = 0; index < this.manager.capacity; index++) {

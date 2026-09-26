@@ -1,4 +1,6 @@
 import {nativeParticleSineCosine} from '../bp/opcodes/native-math.js';
+import {native1665SineCosine} from '../bp/opcodes/legacy-1665.js';
+import type {BurikoBpAbi} from '../bp/abi.js';
 
 export interface BurikoSpriteBoundsInput {
   width: number;
@@ -33,13 +35,18 @@ const phase = (scale: number, offset: number): number =>
 
 /** 0626A0 retains DWORD width expansion, binary64 corner order, seeded extrema,
  * unsigned Q16 scale and the CRT's separate low-WORD boundary conversions. */
-export function burikoSpriteBounds(input: BurikoSpriteBoundsInput): BurikoSpriteBounds {
+export function burikoSpriteBounds(
+  input: BurikoSpriteBoundsInput,
+  revision: BurikoBpAbi['revision'] = '1.685.3',
+): BurikoSpriteBounds {
   const width = input.width >>> 0,
     height = input.height >>> 0,
     expandedWidth = (Math.imul((input.extraWidth + 65536) | 0, width) >>> 0) / 65536,
     pivotX = (expandedWidth - width) * 0.5 + (input.centerX | 0) / 65536,
     pivotY = (input.centerY | 0) / 65536,
-    {cosine, sine} = nativeParticleSineCosine(input.angle),
+    {cosine, sine} = (revision === '1.665' ? native1665SineCosine : nativeParticleSineCosine)(
+      input.angle,
+    ),
     scaleX = (input.scaleX >>> 0) / 65536,
     scaleY = (input.scaleY >>> 0) / 65536;
   const xs = [-pivotX, expandedWidth - pivotX - 1],

@@ -301,7 +301,7 @@ export class BurikoDisplayEffector extends BurikoDisplayObject {
       (this.basePivotX + Number((BigInt(this.deltaPivotX | 0) * progressBig) >> 24n)) | 0;
     this.evaluatedPivotY =
       (this.basePivotY + Number((BigInt(this.deltaPivotY | 0) * progressBig) >> 24n)) | 0;
-    const eased = nativeDisplayEasing(progress, this.easing);
+    const eased = nativeDisplayEasing(progress, this.easing, this.environment.compositor.revision);
     const angle =
       ((BigInt(eased | 0) * BigInt(this.deltaAngle | 0)) >> 16n) + BigInt(this.baseAngle | 0);
     this.evaluatedAngle = Number((angle * BigInt(blend)) >> 8n) | 0;

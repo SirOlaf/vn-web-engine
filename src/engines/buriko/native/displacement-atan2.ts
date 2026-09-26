@@ -1,3 +1,5 @@
+import type {BurikoBpAbi} from '../bp/abi.js';
+import {x87Atan2Float} from '../../../core/x87-integer.js';
 import {displacementAtanHead, displacementAtanTail} from './displacement-atan2-tables.js';
 const scratch = new DataView(new ArrayBuffer(8));
 function bits(value: number): bigint {
@@ -13,7 +15,12 @@ function exponent(value: number): number {
 }
 
 /** 1436E8 restricted to the exact signed-DWORD inputs of033EC0/033B60. */
-export function nativeDisplacementIntegerAtan2(y: number, x: number): number {
+export function nativeDisplacementIntegerAtan2(
+  y: number,
+  x: number,
+  revision?: BurikoBpAbi['revision'],
+): number {
+  if (revision === '1.665') return x87Atan2Float(y | 0, x | 0, 64);
   y |= 0;
   x |= 0;
   if (y === 0) return x < 0 ? 3.141592653589793 : 0;

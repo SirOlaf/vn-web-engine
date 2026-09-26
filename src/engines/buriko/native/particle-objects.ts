@@ -1,4 +1,5 @@
 import {nativeParticleSineCosine} from '../bp/opcodes/native-math.js';
+import {native1665SineCosine} from '../bp/opcodes/legacy-1665.js';
 import {allocateBurikoBitmap, fillBurikoBitmap, type BurikoBitmap} from './bitmap.js';
 import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import {mixBurikoBitmaps} from './bitmap-mix.js';
@@ -259,7 +260,9 @@ export class BurikoFireflyParticle extends BurikoParticle {
       this.normalizeVelocity(false);
     } else {
       const angle = this.around(p.get(12), p.get(13));
-      const {sine: s, cosine: c} = nativeParticleSineCosine(angle);
+      const {sine: s, cosine: c} = (
+        this.compositor.revision === '1.665' ? native1665SineCosine : nativeParticleSineCosine
+      )(angle);
       const y = c * v.y - s * v.z,
         z = c * v.z + s * v.y;
       const nextZ = c * z - s * v.x,

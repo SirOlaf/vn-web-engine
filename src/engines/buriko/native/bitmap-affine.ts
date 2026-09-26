@@ -1,4 +1,5 @@
 import {withBurikoBitmapText} from './bitmap-dom-text.js';
+import type {BurikoBpAbi} from '../bp/abi.js';
 import {nativeAffineSineCosine} from '../bp/opcodes/native-math.js';
 import {
   burikoBitmapRectangle,
@@ -39,9 +40,11 @@ function truncate32(value: number): number {
 /** 052030 performs each binary64 operation before its individual CVTTSD2SI store. */
 export function burikoBitmapAffineCoordinates(
   transform: BurikoBitmapAffineTransform,
+  revision?: BurikoBpAbi['revision'],
 ): BurikoBitmapAffineCoordinates {
   const {sine, cosine, perpendicularSine, perpendicularCosine} = nativeAffineSineCosine(
     transform.angle,
+    revision,
   );
   const inverseX = 65536 / (transform.scaleX >>> 0),
     inverseY = 65536 / (transform.scaleY >>> 0);
@@ -208,8 +211,9 @@ function affinePixels(
   transparency: number,
   bilinear: boolean,
   mode: 'copy' | 'dim' | 'mix' | 'alpha',
+  revision: BurikoBpAbi['revision'],
 ): void {
-  const coordinates = burikoBitmapAffineCoordinates(transform);
+  const coordinates = burikoBitmapAffineCoordinates(transform, revision);
   const forceAlpha = destination.format === 2 && source.format === 1;
   let rowX = coordinates.startX,
     rowY = coordinates.startY,
@@ -322,7 +326,15 @@ function affineBitmap(
     mode = transparency === 0 ? 'copy' : 'dim';
   } else if (destination.format === 2 && source.format === 1) mode = 'dim';
   else return 0;
-  affinePixels(destination, source, transform, transparency, (sampling | 0) !== 0, mode);
+  affinePixels(
+    destination,
+    source,
+    transform,
+    transparency,
+    (sampling | 0) !== 0,
+    mode,
+    compositor.revision,
+  );
   return 0;
 }
 
@@ -385,7 +397,7 @@ export const transformBurikoBitmap = withBurikoBitmapText(transformBurikoBitmapP
     (args[1].format === args[2].format || (args[1].format === 2 && args[2].format === 1)),
   opacity: (args) => (256 - args[4]) / 256,
   map: (x, y, args) => {
-    const coordinate = burikoBitmapAffineCoordinates(args[3]),
+    const coordinate = burikoBitmapAffineCoordinates(args[3], args[0].revision),
       determinant = coordinate.columnX * coordinate.rowY - coordinate.rowX * coordinate.columnY,
       u = x * 65536 - coordinate.startX,
       v = y * 65536 - coordinate.startY;
@@ -413,7 +425,7 @@ export const blendTransformedBurikoBitmap = withBurikoBitmapText(
       args[4] < 256,
     opacity: (args) => (256 - args[4]) / 256,
     map: (x, y, args) => {
-      const coordinate = burikoBitmapAffineCoordinates(args[3]),
+      const coordinate = burikoBitmapAffineCoordinates(args[3], args[0].revision),
         determinant = coordinate.columnX * coordinate.rowY - coordinate.rowX * coordinate.columnY,
         u = x * 65536 - coordinate.startX,
         v = y * 65536 - coordinate.startY;

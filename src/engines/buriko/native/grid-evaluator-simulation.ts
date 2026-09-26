@@ -69,7 +69,7 @@ export function simulateGridEvaluation(
   const facing = (target: BurikoGridEvaluatorRecord, x: number, y: number): number => {
     if (grid.facingAngle(pointer(8), x, y, target.id) !== 0)
       throw new Error('Buriko grid simulation reads uninitialized facing angle');
-    return gridEvaluatorFacing(values.getInt32(8, true), state.facingMultiplier);
+    return gridEvaluatorFacing(values.getInt32(8, true), state.facingMultiplier, grid.revision);
   };
   const effect = (
     source: BurikoGridEvaluatorRecord,

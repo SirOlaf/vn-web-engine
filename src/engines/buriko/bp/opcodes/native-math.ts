@@ -1,4 +1,12 @@
 import type {BurikoBpOpcodeHandler} from '../../native/types.js';
+import type {BurikoBpAbi} from '../abi.js';
+import {x87Atan2Float} from '../../../../core/x87-integer.js';
+import {
+  native1665DisplayEasing,
+  native1665AffineSineCosine,
+  native1665CursorInterpolation,
+  native1665SineCosineRadians,
+} from './legacy-1665.js';
 import {pop32, push32} from '../state.js';
 import {pointer, pointerBytes} from './operands.js';
 import {fixedResult, roundToInt32} from './fixed.js';
@@ -206,15 +214,24 @@ function cosineBoundedRadians(angle: number): number {
 }
 
 /** Spatial collision calls double sin/cos after adding PI/2 and optionally PI to atan2f. */
-export function nativeSpatialSineCosine(angle: number): {sine: number; cosine: number} {
+export function nativeSpatialSineCosine(
+  angle: number,
+  revision?: BurikoBpAbi['revision'],
+): {sine: number; cosine: number} {
   if (!Number.isFinite(angle) || Math.abs(angle) > 8)
     throw new RangeError('Buriko spatial trigonometry outside its native argument domain');
+  if (revision === '1.665') return native1665SineCosineRadians(angle);
   return {sine: sineBoundedRadians(angle), cosine: cosineBoundedRadians(angle)};
 }
 
 /** 1400a7b80 supplies signed fixed degrees divided before multiplying by PI/2. */
-export function nativeGridEvaluatorFacingCosine(fixedDegrees: number): number {
-  return cosineBoundedRadians(((fixedDegrees | 0) / 11796480) * 1.5707963267948966);
+export function nativeGridEvaluatorFacingCosine(
+  fixedDegrees: number,
+  revision?: BurikoBpAbi['revision'],
+): number {
+  const angle = ((fixedDegrees | 0) / 11796480) * 1.5707963267948966;
+  if (revision === '1.665') return native1665SineCosineRadians(angle).cosine;
+  return cosineBoundedRadians(angle);
 }
 
 /** Rain 0f1a60 uses this literal rounded radians-per-degree constant, followed by division by ten. */
@@ -250,10 +267,18 @@ function displacementRadians(radians: number, cosine: boolean): number {
     throw new RangeError('Buriko displacement trigonometry exceeds its verified DWORD domain');
   return cosine ? cosineBoundedRadians(radians) : sineBoundedRadians(radians);
 }
-export function nativeDisplacementSineRadians(radians: number): number {
+export function nativeDisplacementSineRadians(
+  radians: number,
+  revision?: BurikoBpAbi['revision'],
+): number {
+  if (revision === '1.665') return native1665SineCosineRadians(radians).sine;
   return displacementRadians(radians, false);
 }
-export function nativeDisplacementCosineRadians(radians: number): number {
+export function nativeDisplacementCosineRadians(
+  radians: number,
+  revision?: BurikoBpAbi['revision'],
+): number {
+  if (revision === '1.665') return native1665SineCosineRadians(radians).cosine;
   return displacementRadians(radians, true);
 }
 
@@ -266,7 +291,12 @@ export function nativeParticleSineCosine(fixedDegrees: number): {sine: number; c
  * 140056920's signed-Q24 selector, trigonometric curves and default division.
  * Curves 4-15 use 023710's restricted non-AVX SSE2 power lower.
  */
-export function nativeDisplayEasing(progress: number, easing: number): number {
+export function nativeDisplayEasing(
+  progress: number,
+  easing: number,
+  revision?: BurikoBpAbi['revision'],
+): number {
+  if (revision === '1.665') return native1665DisplayEasing(progress, easing);
   progress |= 0;
   easing |= 0;
   const scaledAngle = (multiplier: number): number =>
@@ -292,12 +322,16 @@ export function nativeDisplayEasing(progress: number, easing: number): number {
 }
 
 /** 052030 negates the rounded Q16-degree angle, then separately adds the rounded PI/2. */
-export function nativeAffineSineCosine(fixedDegrees: number): {
+export function nativeAffineSineCosine(
+  fixedDegrees: number,
+  revision?: BurikoBpAbi['revision'],
+): {
   sine: number;
   cosine: number;
   perpendicularSine: number;
   perpendicularCosine: number;
 } {
+  if (revision === '1.665') return native1665AffineSineCosine(fixedDegrees);
   const angle = -(((fixedDegrees | 0) * 3.141592653589793) / 11796480),
     perpendicular = angle + 1.5707963267948966;
   return {
@@ -312,17 +346,24 @@ export function nativeAffineSineCosine(fixedDegrees: number): {
 export function nativeMeshSineCosine(
   fixedDegrees: number,
   negate: boolean,
+  revision?: BurikoBpAbi['revision'],
 ): {
   cosine: number;
   sine: number;
 } {
   const value = negate ? -fixedDegrees | 0 : fixedDegrees | 0;
   const radians = (value * 3.141592653589793) / 11796480;
+  if (revision === '1.665') return native1665SineCosineRadians(radians);
   return {cosine: cosineBoundedRadians(radians), sine: sineBoundedRadians(radians)};
 }
 
 /** 140143dec atan2f, complete for finite float32 coordinates (double internal operations). */
-export function nativeSpatialAngle(y: number, x: number): number {
+export function nativeSpatialAngle(
+  y: number,
+  x: number,
+  revision?: BurikoBpAbi['revision'],
+): number {
+  if (revision === '1.665') return x87Atan2Float(Math.fround(y), Math.fround(x), 32);
   y = Math.fround(y);
   x = Math.fround(x);
   if (!Number.isFinite(y) || !Number.isFinite(x))
@@ -469,7 +510,9 @@ export function nativeCursorInterpolation(
   easing: number,
   progress: number,
   steps: number,
+  revision?: BurikoBpAbi['revision'],
 ): number {
+  if (revision === '1.665') return native1665CursorInterpolation(delta, easing, progress, steps);
   delta |= 0;
   easing |= 0;
   progress >>>= 0;

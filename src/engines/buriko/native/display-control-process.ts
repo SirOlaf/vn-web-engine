@@ -223,14 +223,27 @@ export class BurikoDisplayControlProcess extends BurikoProcedure {
     }
     const finished = this.current === this.total,
       progress = finished ? 0 : progress24(this.current, this.total),
-      eased = finished ? 0 : nativeDisplayEasing(progress, this.positionEasing),
+      eased = finished
+        ? 0
+        : nativeDisplayEasing(
+            progress,
+            this.positionEasing,
+            this.manager.environment.compositor.revision,
+          ),
       x = (this.startX + (finished ? this.deltaX : multiply16(this.deltaX, eased))) | 0,
       y = (this.startY + (finished ? this.deltaY : multiply16(this.deltaY, eased))) | 0,
       blend =
         (this.startBlend +
           (finished
             ? this.deltaBlend
-            : multiply16(this.deltaBlend, nativeDisplayEasing(progress, this.blendEasing)))) |
+            : multiply16(
+                this.deltaBlend,
+                nativeDisplayEasing(
+                  progress,
+                  this.blendEasing,
+                  this.manager.environment.compositor.revision,
+                ),
+              ))) |
         0,
       depth = finished
         ? (this.startDepth + this.deltaDepth) << 16
@@ -314,7 +327,11 @@ export class BurikoSplineDisplayControlProcess extends BurikoDisplayControlProce
       blend = this.targetBlend;
     if (forceFinish) this.current = this.total;
     if (!finished) {
-      const eased = nativeDisplayEasing(progress24(this.current, this.total), this.positionEasing),
+      const eased = nativeDisplayEasing(
+          progress24(this.current, this.total),
+          this.positionEasing,
+          this.manager.environment.compositor.revision,
+        ),
         index = low32((BigInt(eased | 0) * BigInt(this.total + 1)) >> 16n);
       if (index < 0 || index >= this.path.length / 2)
         throw new Error('Buriko spline display control reads outside its native sampled path');

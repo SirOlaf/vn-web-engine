@@ -1,6 +1,8 @@
 import {pointerView} from '../bp/memory.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {nativeVectorAngle} from '../bp/opcodes/native-math.js';
+import {native1665VectorAngle} from '../bp/opcodes/legacy-1665.js';
+import type {BurikoBpAbi} from '../bp/abi.js';
 import type {BurikoNativeClock} from './clock.js';
 import type {BurikoNativeInput} from './input.js';
 
@@ -47,6 +49,7 @@ export class BurikoNativeTouch {
     readonly input: BurikoNativeInput,
     private readonly clock: BurikoNativeClock,
     readonly window: BurikoNativeTouchWindow,
+    readonly revision: BurikoBpAbi['revision'] = '1.685.3',
   ) {}
 
   /** C0D50 reads the same capability gate used by native touch registration. */
@@ -184,7 +187,10 @@ export class BurikoNativeTouch {
       const angle =
         next === undefined
           ? 0xffffffff
-          : nativeVectorAngle((point.x - next.x) | 0, (point.y - next.y) | 0);
+          : (this.revision === '1.665' ? native1665VectorAngle : nativeVectorAngle)(
+              (point.x - next.x) | 0,
+              (point.y - next.y) | 0,
+            );
       if (angles === null) throw new Error('Buriko native touch-history null angle output');
       pointerView({bytes: angles.bytes, offset: angles.offset + copied * 4}, 4).setUint32(
         0,

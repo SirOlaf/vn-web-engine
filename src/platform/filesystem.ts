@@ -24,7 +24,7 @@ export interface FileSystem {
   stat(path: string): Promise<FileInfo>;
   list(path: string): Promise<FileInfo[]>;
   open(path: string): Promise<ByteSource>;
-  /** All changes commit together, in listed order. Directories are implicit. */
+  /** All changes commit together, in listed order. Writes can supply implicit directories. */
   commit(changes: readonly FileChange[]): Promise<void>;
 }
 export function filePath(path: string): string {
@@ -40,23 +40,37 @@ export function filePath(path: string): string {
     throw new FileError('INVALID_PATH', path);
   return path;
 }
-function info(files: ReadonlyMap<string, {size: number}>, path: string): FileInfo {
+const noDirectories: ReadonlySet<string> = new Set();
+function info(
+  files: ReadonlyMap<string, {size: number}>,
+  path: string,
+  directories: ReadonlySet<string> = noDirectories,
+): FileInfo {
   filePath(path);
   const file = files.get(path);
   if (file) return {path, kind: 'file', size: file.size};
-  if (path === '/' || Array.from(files.keys()).some((p) => p.startsWith(path + '/')))
+  if (
+    path === '/' ||
+    directories.has(path) ||
+    [...files.keys(), ...directories].some((p) => p.startsWith(path + '/'))
+  )
     return {path, kind: 'directory', size: 0};
   throw new FileError('NOT_FOUND', path);
 }
-function listing(files: ReadonlyMap<string, {size: number}>, path: string): FileInfo[] {
-  if (info(files, path).kind !== 'directory') throw new FileError('NOT_DIRECTORY', path);
+function listing(
+  files: ReadonlyMap<string, {size: number}>,
+  path: string,
+  directories: ReadonlySet<string> = noDirectories,
+): FileInfo[] {
+  if (info(files, path, directories).kind !== 'directory')
+    throw new FileError('NOT_DIRECTORY', path);
   const prefix = path === '/' ? '/' : path + '/',
     children = new Set<string>();
-  for (const key of files.keys())
+  for (const key of [...files.keys(), ...directories])
     if (key.startsWith(prefix)) children.add(prefix + key.slice(prefix.length).split('/')[0]!);
   return Array.from(children)
     .sort()
-    .map((p) => info(files, p));
+    .map((p) => info(files, p, directories));
 }
 function noParents(files: ReadonlyMap<string, unknown>, path: string): void {
   for (let i = path.indexOf('/', 1); i !== -1; i = path.indexOf('/', i + 1))
@@ -65,11 +79,16 @@ function noParents(files: ReadonlyMap<string, unknown>, path: string): void {
 /** Range sources stay intact, including their worker-transferable HTTP/Blob identity. */
 export class SourceFileSystem implements FileSystem {
   private files = new Map<string, ByteSource>();
+  private directories = new Set<string>();
   constructor(private readonly canonical: (path: string) => string = filePath) {}
   attach(path: string, source: ByteSource): void {
     path = filePath(this.canonical(filePath(path)));
     noParents(this.files, path);
-    if (path === '/' || Array.from(this.files.keys()).some((p) => p.startsWith(path + '/')))
+    if (
+      path === '/' ||
+      this.directories.has(path) ||
+      [...this.files.keys(), ...this.directories].some((p) => p.startsWith(path + '/'))
+    )
       throw new FileError('IS_DIRECTORY', path);
     this.files.set(path, source);
   }
@@ -77,15 +96,26 @@ export class SourceFileSystem implements FileSystem {
   entries(): ReadonlyMap<string, ByteSource> {
     return new Map(this.files);
   }
+  /** Preserve directory handles with no files, without fabricating a marker file. */
+  attachDirectory(path: string): void {
+    path = filePath(this.canonical(filePath(path)));
+    noParents(this.files, path);
+    if (this.files.has(path)) throw new FileError('NOT_DIRECTORY', path);
+    if (path !== '/') this.directories.add(path);
+  }
+  directoryEntries(): ReadonlySet<string> {
+    return new Set(this.directories);
+  }
   /** Replace an installation without leaving files from the previous selection mounted. */
   clear(): void {
     this.files.clear();
+    this.directories.clear();
   }
   async stat(path: string): Promise<FileInfo> {
-    return info(this.files, this.canonical(filePath(path)));
+    return info(this.files, this.canonical(filePath(path)), this.directories);
   }
   async list(path: string): Promise<FileInfo[]> {
-    return listing(this.files, this.canonical(filePath(path)));
+    return listing(this.files, this.canonical(filePath(path)), this.directories);
   }
   async open(path: string): Promise<ByteSource> {
     path = this.canonical(filePath(path));
@@ -106,6 +136,27 @@ export class OverlayFileSystem implements FileSystem {
   private path(path: string): string {
     return filePath(this.canonical(filePath(path)));
   }
+  private directories(records: ReadonlyMap<string, Uint8Array>): ReadonlySet<string> {
+    const directories = new Set(
+      [...this.installed.directoryEntries()].map((path) => this.path(path)),
+    );
+    for (const key of records.keys())
+      if (key.startsWith('directory:')) directories.add(key.slice('directory:'.length));
+    return directories;
+  }
+  /** Install a verified virtual directory layout in browser storage, without device writes. */
+  async installDirectories(paths: readonly string[]): Promise<void> {
+    const captured = paths.map((path) => this.path(path)).filter((path) => path !== '/');
+    if (captured.length === 0) return;
+    await this.store.update((records) => {
+      const files = this.visible(records);
+      for (const path of captured) {
+        noParents(files, path);
+        if (files.has(path)) throw new FileError('NOT_DIRECTORY', path);
+        records.set('directory:' + path, new Uint8Array());
+      }
+    });
+  }
   private visible(records: ReadonlyMap<string, Uint8Array>): Map<string, {size: number}> {
     const files = new Map<string, {size: number}>();
     for (const [path, source] of this.installed.entries())
@@ -117,15 +168,17 @@ export class OverlayFileSystem implements FileSystem {
     return files;
   }
   async stat(path: string): Promise<FileInfo> {
-    return info(this.visible(await this.store.snapshot()), this.path(path));
+    const records = await this.store.snapshot();
+    return info(this.visible(records), this.path(path), this.directories(records));
   }
   async list(path: string): Promise<FileInfo[]> {
-    return listing(this.visible(await this.store.snapshot()), this.path(path));
+    const records = await this.store.snapshot();
+    return listing(this.visible(records), this.path(path), this.directories(records));
   }
   async open(path: string): Promise<ByteSource> {
     path = this.path(path);
     const records = await this.store.snapshot();
-    if (info(this.visible(records), path).kind === 'directory')
+    if (info(this.visible(records), path, this.directories(records)).kind === 'directory')
       throw new FileError('IS_DIRECTORY', path);
     const data = records.get('file:' + path);
     if (data) return new BlobSource(new Blob([data.slice().buffer]));
@@ -142,10 +195,15 @@ export class OverlayFileSystem implements FileSystem {
     const installed = this.installed.entries();
     await this.store.update((records) => {
       const files = this.visible(records);
+      const directories = this.directories(records);
       for (const change of captured) {
         const path = change.path;
         noParents(files, path);
-        if (path === '/' || Array.from(files.keys()).some((p) => p.startsWith(path + '/')))
+        if (
+          path === '/' ||
+          directories.has(path) ||
+          [...files.keys(), ...directories].some((p) => p.startsWith(path + '/'))
+        )
           throw new FileError('IS_DIRECTORY', path);
         if (change.kind === 'write') {
           records.set('file:' + path, change.data);

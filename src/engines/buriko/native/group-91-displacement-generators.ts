@@ -49,7 +49,15 @@ export function createGroup91DisplacementGenerators(
           h,
           bitmap === null
             ? 0x80000001
-            : fillBurikoRippleDisplacement(bitmap, x, y, period, phase, amplitude),
+            : fillBurikoRippleDisplacement(
+                bitmap,
+                x,
+                y,
+                period,
+                phase,
+                amplitude,
+                h.memory.abi.revision,
+              ),
           surface,
           period,
         );
@@ -71,7 +79,7 @@ export function createGroup91DisplacementGenerators(
           h,
           bitmap === null
             ? 0x80000001
-            : fillBurikoCurvedDisplacement(bitmap, x, y, strength, radius),
+            : fillBurikoCurvedDisplacement(bitmap, x, y, strength, radius, h.memory.abi.revision),
           surface,
           strength,
           radius,
@@ -104,6 +112,7 @@ export function createGroup91DisplacementGenerators(
                 periodY,
                 phaseY,
                 amplitudeY,
+                h.memory.abi.revision,
               ),
           surface,
         );
@@ -126,7 +135,15 @@ export function createGroup91DisplacementGenerators(
           h,
           bitmap === null
             ? 0x80000001
-            : fillBurikoPointDisplacement(bitmap, startX, startY, endX, endY, radius),
+            : fillBurikoPointDisplacement(
+                bitmap,
+                startX,
+                startY,
+                endX,
+                endY,
+                radius,
+                h.memory.abi.revision,
+              ),
           surface,
         );
       },

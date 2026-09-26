@@ -112,7 +112,7 @@
             : undefined;
         const entry = await targetTransfer.import(file.name, bytes, destination);
         await refresh(entry);
-        message = `${entry.name} imported into browser ${entry.area} data.`;
+        message = `${entry.name} imported into browser ${entry.kind === 'user-data' ? 'UserData' : entry.area} data.`;
       } else {
         await writeNoahSave(targetNoahSave, bytes);
         message = `${noahSaveFiles.find((entry) => entry.id === targetNoahSave)?.name} imported.`;
@@ -174,7 +174,11 @@
       {#if entries.length === 0}<option value="">No browser saves yet</option>{/if}
       {#each entries as entry (`${entry.area}:${entry.path}`)}
         <option value={`${entry.area}:${entry.path}`}
-          >{entry.name} · {entry.area === 'game' ? 'Game data' : 'User data'}</option
+          >{entry.name} · {entry.kind === 'user-data'
+            ? 'UserData'
+            : entry.area === 'game'
+              ? 'Game data'
+              : 'User data'}</option
         >
       {/each}
     </select>
@@ -198,7 +202,7 @@
     id="save-import-file"
     bind:this={input}
     type="file"
-    accept={game === 'buriko' ? '.gdb,.cad' : '.dat'}
+    accept={game === 'buriko' ? '.gdb,.cad,.sud' : '.dat'}
     onchange={importFile}
     hidden
   />

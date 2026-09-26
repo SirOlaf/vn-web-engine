@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {inferBurikoBootProductIdentity} from '../dist/engines/buriko/native/boot-metadata.js';
-import {BURIKO_BP_ABI_169, BURIKO_BP_ABI_172} from '../dist/engines/buriko/bp/abi.js';
+import {
+  BURIKO_BP_ABI_169,
+  BURIKO_BP_ABI_1665,
+  BURIKO_BP_ABI_172,
+} from '../dist/engines/buriko/bp/abi.js';
 
 function moduleWithComparison(identity) {
   const bytes = new Uint8Array(128),
@@ -14,7 +18,7 @@ function moduleWithComparison(identity) {
 }
 
 test('optional IPL metadata proves a native identity comparison and rejects data/ambiguous operands', () => {
-  for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_172]) {
+  for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_1665, BURIKO_BP_ABI_172]) {
     const program = moduleWithComparison('Synthetic_BGI_Product');
     assert.equal(
       new TextDecoder().decode(inferBurikoBootProductIdentity(program, abi)),

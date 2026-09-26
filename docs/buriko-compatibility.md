@@ -10,11 +10,16 @@ namespace and product identifier; it does not select engine behavior.
 | Interpreter | Compatibility | Bytecode pointers                          | Boot module / frame capacity |
 | ----------- | ------------- | ------------------------------------------ | ---------------------------- |
 | 1.520.6     | 1.69          | 26-bit offsets, separate 64 MiB pool slots | 512 KiB / 256 KiB            |
+| 1.665       | 1.72          | 26-bit offsets, five grouped pool sizes    | 8 MiB / 4 MiB                |
 | 1.685.3     | 1.72          | Modern address tags and indirect buffers   | 8 MiB / 4 MiB                |
 
 `native/engine-version.ts` selects an exact verified pair. A version string is
 not a claim that every future engine revision shares its implementation.
 Unrecognized pairs require native analysis before admission.
+
+Revision `1.665` has separate primary and native dispatch inventories, grouped
+x86 allocations, and Intel CRT arithmetic. Compatibility `1.72` alone cannot
+select its pointer tags or numeric behavior.
 
 The older revision has its own native slot inventory and overrides for changed
 primary bytecodes, text operations, Flash surfaces, and audio archive storage.
@@ -25,14 +30,14 @@ remain explicit failures rather than guessed values.
 Mask transitions also select the native revision. Compatibility 1.69 uses the
 low three parameter bits for triangle frequency and its older coefficient
 arithmetic in both surface and backdrop paths. Its invalid coefficient-table
-read remains an explicit error. Compatibility 1.72 retains its full-parameter
+read remains an explicit error. Revision 1.685.3 retains its full-parameter
 frequency and separate arithmetic.
 
 Masked sprite reveals keep the configured mask exponent separate from animated
-`D8(0)` progress. Both revisions pass exponent before progress to their bitmap
+`D8(0)` progress. Revisions 1.520.6 and 1.685.3 pass exponent before progress to their bitmap
 kernels. Compatibility 1.69 accepts RGBA sources, uses Q7 direct blending, and
 preserves its unclamped x86 shifts and even-width MMX / odd-width scalar reads.
-Compatibility 1.72 retains its separate Q12 interpolation and source dispatch.
+Revision 1.685.3 retains its separate Q12 interpolation and source dispatch.
 
 A missing global database leaves the native coordinate pair unwritten. The BP
 stack and scalar stores carry those outputs as indeterminate values, allowing
@@ -41,7 +46,7 @@ Shared byte-storage provenance lives in `src/core/indeterminate-memory.ts`;
 native readbacks do not receive invented coordinates.
 
 The 1.69 `80:ec`, `80:ed`, and `80:ee` slots implement registration checking,
-COMAP readback, and the unsalted system identity. The newer revision uses these
+COMAP readback, and the unsalted system identity. Revision 1.685.3 uses these
 slot numbers for DLL operations. The older checker preserves the native
 `reg.exe` launch and retry cadence through the shared process host. COMAP
 readback writes only transferred bytes and returns whether the file opened;
@@ -49,22 +54,26 @@ missing files do not produce a successful registration. Short or invalid
 registration data that would read unwritten native stack bytes raises an
 explicit error. Process launch marshaling lives in `src/platform/windows-process.ts`.
 
-The older audio reader owns a `PackFile` index per stream storage. It preserves
+The 1.520.6 audio reader owns a `PackFile` index per stream storage. It preserves
 first-match lookup, short-read counts, and the native bug that adds read-error
-codes to the cursor. The newer audio reader retains its separate DCArchive
+codes to the cursor. The 1.685.3 audio reader retains its separate DCArchive
 cache and ARC20 admission rules. The general script/resource archive reader
 supports both directory formats.
+
+Revision 1.665 owns a separate load-once `PackFile` / ARC20 index per stream.
+Its lookup, stale-index reads and cursor behavior follow that revision's native
+storage implementation.
 
 Static audio also differs by revision. Compatibility 1.69 has 64 static channels,
 16-bit output, and normal-speed/full-gain defaults for its simple sound-load
 instruction. Its accelerated mode copies alternate 75 ms blocks. Compatibility
-1.72 retains 128 channels and its distinct rate-scaling behavior. These choices
+1.685.3 retains 128 channels and its distinct rate-scaling behavior. These choices
 belong to the engine revision, not a title-specific handler.
 
 Compatibility 1.69 stream prefill performs one decoder read; the producer worker
 handles subsequent loop transitions. Its Vorbis reader rounds and clips to
-signed 16-bit PCM before applying gain, retaining encoded channel order. The
-newer revision keeps its separate floating-point gain conversion and channel
+signed 16-bit PCM before applying gain, retaining encoded channel order. Revision
+1.685.3 keeps its separate floating-point gain conversion and channel
 permutation.
 
 ## Optional executable resources

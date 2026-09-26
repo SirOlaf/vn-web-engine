@@ -17,6 +17,7 @@ import {
   legacy169BaseSystemIdentity,
 } from './legacy-169-handlers.js';
 import {BurikoLegacy169Registration} from './legacy-169-registration.js';
+import {createLegacy1665NativeDefinitions} from './legacy-1665-handlers.js';
 
 /**
  * The complete BP dispatch owner. Bank validation is deliberately first: an
@@ -54,14 +55,15 @@ export class BurikoProductionInterpreter {
       graph.resource.errors,
     );
     this.exitLaunch = new BurikoExitLaunchHandoff(graph.messages);
+    const definitions = [
+      ...new BurikoProductionVmFragments(core).nativeDefinitions(),
+      ...createGroup81SharedInterpreters(this.shared),
+      ...(graph.externalProcesses === null
+        ? []
+        : createGroup80ExitLaunch(this.exitLaunch, graph.resource.errors)),
+    ];
     this.bank = new BurikoNativeBank(
-      [
-        ...new BurikoProductionVmFragments(core).nativeDefinitions(),
-        ...createGroup81SharedInterpreters(this.shared),
-        ...(graph.externalProcesses === null
-          ? []
-          : createGroup80ExitLaunch(this.exitLaunch, graph.resource.errors)),
-      ],
+      definitions,
       abi,
       legacy
         ? createLegacy169NativeDefinitions(
@@ -70,7 +72,9 @@ export class BurikoProductionInterpreter {
             graph.legacy169Flash!,
             legacyRegistration,
           )
-        : [],
+        : abi.revision === '1.665'
+          ? createLegacy1665NativeDefinitions(definitions)
+          : [],
     );
     this.extensions = new BurikoBpModuleExtensions(graph.resource.resources);
     const primary = createPrimaryOpcodes(

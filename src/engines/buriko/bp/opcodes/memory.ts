@@ -98,7 +98,7 @@ export const memoryOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
   },
   0x0f: (h) => {
     const local = localDescriptor(h);
-    writeScalar(h, local.address, local.type, pop32(h.thread));
+    writeDeferredScalar(h, local.address, local.type, popDeferred32(h.thread));
     return 0;
   },
   0x18: (h) => {

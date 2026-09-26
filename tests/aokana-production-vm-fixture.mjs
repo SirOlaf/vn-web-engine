@@ -135,6 +135,7 @@ export async function createMountedVmFixture({
   engineCaption,
   temporaryFileHost,
   mountDriveC = false,
+  driveRootFiles,
   canvas2dContext,
   presentationMode,
   cryptoRandom,
@@ -159,6 +160,7 @@ export async function createMountedVmFixture({
   driveGeometryHost,
   onDialogShown,
   sourceFiles,
+  fileMetadataRecords = [],
   seedBootArchive = true,
   executablePathWide = 'C:\\game\\aokana.exe',
   commandLineTailWide = '. "Execute as a launcher."',
@@ -182,13 +184,13 @@ export async function createMountedVmFixture({
     sourceFiles ?? new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()),
   );
   backing.mount('/restart', new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()));
-  if (mountDriveC)
+  if (mountDriveC || driveRootFiles)
     backing.mount(
       '/drive-c',
-      new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()),
+      driveRootFiles ?? new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase()),
     );
   const mounted = new BurikoMountedFileMetadata(backing, {
-    records: [],
+    records: fileMetadataRecords,
     volumes: [{path: '/', identity: {}, writable: true}],
     canonical: (path) => path.toLowerCase(),
     currentFileTime: () => 123n,
@@ -198,7 +200,7 @@ export async function createMountedVmFixture({
     [
       {native: 'C:\\game', mounted: '/game'},
       {native: 'C:\\restart', mounted: '/restart'},
-      ...(mountDriveC ? [{native: 'C:\\', mounted: '/drive-c'}] : []),
+      ...(mountDriveC || driveRootFiles ? [{native: 'C:\\', mounted: '/drive-c'}] : []),
       {native: 'D:\\Drops', mounted: '/drops'},
     ],
     'C:\\game',
@@ -381,8 +383,8 @@ export async function createMountedVmFixture({
     graph.launchSelection.copyBootNames(selectedArchive, selectedModule);
     const memory = new BurikoBpMemory(new Uint8Array(0x10000), graph.engineVersion.bpAbi);
     const data = new BurikoProductionDataOwners(graph, memory);
-    const diagnostics = new BurikoBpDiagnostics(() =>
-      assert.fail('ordinary boot load must not report a write watch'),
+    const diagnostics = new BurikoBpDiagnostics(
+      () => assert.fail('ordinary boot load must not report a write watch'),
       graph.engineVersion.bpAbi,
     );
     core = new BurikoProductionVmCore(graph, data, diagnostics);

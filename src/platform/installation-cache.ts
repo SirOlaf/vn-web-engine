@@ -1,5 +1,6 @@
 import {BlobSource} from '../core/source.js';
 import type {ByteSource} from '../core/source.js';
+import {filePath} from './filesystem.js';
 
 export interface InstallationFile {
   path: string;
@@ -8,6 +9,8 @@ export interface InstallationFile {
 }
 export interface CachedInstallation {
   files: InstallationFile[];
+  /** Paths of directories below the installation root, including empty directories. */
+  readonly directories?: readonly string[];
   metadata: Record<string, string>;
   attachments: Record<string, Blob>;
 }
@@ -40,6 +43,7 @@ interface Manifest {
   version: 1;
   key: string;
   files: FileEntry[];
+  directories?: string[];
   metadata: Record<string, string>;
   attachments: AttachmentEntry[];
 }
@@ -120,6 +124,7 @@ function manifest(value: unknown, key: string): Manifest {
   )
     throw new Error('Invalid browser installation cache manifest');
   const paths = new Set<string>(),
+    directories = new Set<string>(),
     names = new Set<string>();
   for (const [index, file] of value.files.entries()) {
     if (
@@ -134,6 +139,26 @@ function manifest(value: unknown, key: string): Manifest {
     )
       throw new Error('Invalid browser installation cache file');
     paths.add(file.path);
+  }
+  if (value.directories !== undefined) {
+    if (!Array.isArray(value.directories))
+      throw new Error('Invalid browser installation cache directory list');
+    for (const directory of value.directories) {
+      let path: string;
+      try {
+        if (typeof directory !== 'string' || !directory.startsWith('/'))
+          throw new Error('not absolute');
+        path = filePath(directory);
+      } catch {
+        throw new Error('Invalid browser installation cache directory');
+      }
+      if (path === '/' || directories.has(path))
+        throw new Error('Invalid browser installation cache directory');
+      // A file cannot also be a directory or contain a child directory.
+      if ([...paths].some((file) => file === path || path.startsWith(file + '/')))
+        throw new Error('Conflicting browser installation cache paths');
+      directories.add(path);
+    }
   }
   for (const [index, attachment] of value.attachments.entries()) {
     if (
@@ -237,7 +262,12 @@ export class BrowserInstallationCache {
         const file = await read(attachment);
         attachments[attachment.name] = file.slice(0, file.size, attachment.type);
       }
-      return {files, metadata: info.metadata, attachments};
+      return {
+        files,
+        ...(info.directories === undefined ? {} : {directories: [...info.directories]}),
+        metadata: info.metadata,
+        attachments,
+      };
     });
   }
 
@@ -262,6 +292,9 @@ export class BrowserInstallationCache {
                 size: file.source.size,
                 lastModifiedMs: file.lastModifiedMs,
               })),
+              ...(installation.directories === undefined
+                ? {}
+                : {directories: [...installation.directories]}),
               metadata: installation.metadata,
               attachments: attachments.map(([name, blob], index) => ({
                 name,

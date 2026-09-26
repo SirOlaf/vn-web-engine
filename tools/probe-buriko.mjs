@@ -25,21 +25,25 @@ const roots = process.argv.slice(2).length ? process.argv.slice(2) : defaultRoot
 const maxFrames = Number.parseInt(process.env.BURIKO_PROBE_FRAMES ?? '4', 10);
 const maxOpcodes = Number.parseInt(process.env.BURIKO_PROBE_OPCODES ?? '20000', 10);
 const timeoutMs = Number.parseInt(process.env.BURIKO_PROBE_TIMEOUT_MS ?? '15000', 10);
+const frameMs = Number.parseInt(process.env.BURIKO_PROBE_FRAME_MS ?? '17', 10);
 
 if (
-  ![maxFrames, maxOpcodes, timeoutMs].every(Number.isSafeInteger) ||
+  ![maxFrames, maxOpcodes, timeoutMs, frameMs].every(Number.isSafeInteger) ||
   maxFrames < 1 ||
   maxOpcodes < 1 ||
-  timeoutMs < 1
+  timeoutMs < 1 ||
+  frameMs < 1
 ) {
   throw new RangeError('Probe limits must be positive safe integers');
 }
 
-async function walk(directory, output = []) {
+async function walk(directory, output = [], directories = []) {
   for (const entry of await readdir(directory, {withFileTypes: true})) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) await walk(path, output);
-    else if (entry.isFile()) output.push(path);
+    if (entry.isDirectory()) {
+      directories.push(path);
+      await walk(path, output, directories);
+    } else if (entry.isFile()) output.push(path);
   }
   return output;
 }
@@ -96,17 +100,57 @@ function embeddedProductIdentity(bytes) {
   return identities.size === 1 ? [...identities][0] : null;
 }
 
+async function selectInterpreter(files, root) {
+  const candidates = files.filter(
+    (path) =>
+      dirname(path) === root &&
+      path.toLowerCase().endsWith('.exe') &&
+      !/ForInstalling\.exe$/i.test(basename(path)),
+  );
+  candidates.sort(
+    (left, right) =>
+      Number(basename(right).toLowerCase() === 'bgi.exe') -
+      Number(basename(left).toLowerCase() === 'bgi.exe'),
+  );
+  if (candidates.length === 0)
+    throw new Error('No root executable was found; graph profile needs an executable path');
+  const interpreters = [];
+  for (const path of candidates) {
+    const handle = await open(path, 'r');
+    const {size} = await handle.stat();
+    await handle.close();
+    if (size > 512 * 1024 * 1024) continue;
+    const bytes = await new HandleSource(path, size).read(0, size);
+    let versions = [];
+    try {
+      versions = readPeVersionStrings(bytes);
+    } catch {
+      // Auxiliary executables may be protected or unrelated.
+    }
+    const isInterpreter =
+      versions.some(
+        ({values}) =>
+          /BURIKO General Interpreter/i.test(values.FileDescription ?? '') ||
+          values.InternalName?.toLowerCase() === 'ethornell',
+      ) || embeddedProductIdentity(bytes) !== null;
+    if (!isInterpreter) continue;
+    interpreters.push(path);
+    if (basename(path).toLowerCase() === 'bgi.exe') return path;
+  }
+  if (interpreters.length === 1) return interpreters[0];
+  throw new Error(
+    interpreters.length > 1
+      ? `Multiple BGI interpreters were found: ${interpreters.map((path) => basename(path)).join(', ')}. Select an installation containing only the intended game interpreter.`
+      : 'No identifiable BGI / Ethornell interpreter was found in the installation root.',
+  );
+}
+
 async function probe(inputRoot) {
   const root = resolve(inputRoot);
-  const files = await walk(root);
+  const directories = [];
+  const files = await walk(root, [], directories);
   const selected = files;
-  const executables = selected.filter(
-    (path) => dirname(path) === root && path.toLowerCase().endsWith('.exe'),
-  );
-  const executable =
-    executables.find((path) => basename(path).toLowerCase() === 'bgi.exe') ??
-    executables.find((path) => !/setup|unins|config/i.test(basename(path))) ??
-    executables[0];
+  const executable = await selectInterpreter(selected, root);
   const executableOverride = process.env.BURIKO_PROBE_EXECUTABLE;
   const executableInput =
     executableOverride === undefined ? executable : join(root, executableOverride);
@@ -129,30 +173,41 @@ async function probe(inputRoot) {
   let errorFrames = [];
   const instructionTail = [];
   const sourceEntries = [];
+  const fileMetadataRecords = [];
 
   try {
     for (const path of selected) {
       const inputPath = path === executable ? executableInput : path;
       const handle = await open(inputPath, 'r');
-      const {size} = await handle.stat();
+      const {size, mtimeMs} = await handle.stat();
       await handle.close();
       const source = new HandleSource(inputPath, size);
       sourceEntries.push({path: '/' + relative(root, path).split(sep).join('/'), source});
+      fileMetadataRecords.push({
+        path: '/game/' + relative(root, path).split(sep).join('/'),
+        kind: 'file',
+        attributes: null,
+        creationTime: null,
+        accessTime: null,
+        writeTime: (BigInt(Math.trunc(mtimeMs)) + 11644473600000n) * 10000n,
+      });
       if (path === executable) executableSource = source;
       if (dirname(path) === root && basename(path).toLowerCase() === 'system.arc')
         bootArchiveSource = source;
     }
-    if (executable === undefined)
-      throw new Error('No root executable was found; graph profile needs an executable path');
     const installationView = await burikoInstallationView(
       sourceEntries,
       '/' + relative(root, executable).split(sep).join('/'),
     );
     for (const entry of installationView.files) sources.attach(entry.path, entry.source);
+    for (const path of directories)
+      sources.attachDirectory('/' + relative(root, path).split(sep).join('/'));
+    const mountedPaths = new Set(installationView.files.map((entry) => '/game' + entry.path));
     console.log(
       JSON.stringify({
         game: basename(root),
         phase: 'mounted-view',
+        executable: basename(executable),
         kind: installationView.kind,
         mountedFiles: installationView.files.length,
         excludedFiles: installationView.excludedPaths.length,
@@ -184,6 +239,7 @@ async function probe(inputRoot) {
     fixture = await createMountedVmFixture({
       boot: false,
       sourceFiles: new OverlayFileSystem(sources, new MemoryStore(), (path) => path.toLowerCase()),
+      fileMetadataRecords: fileMetadataRecords.filter((record) => mountedPaths.has(record.path)),
       seedBootArchive: false,
       executablePathWide: `C:\\game\\${basename(executable)}`,
       productIdentity: productIdentity ?? '',
@@ -269,6 +325,8 @@ async function probe(inputRoot) {
         outcome = 'time-budget';
         break;
       }
+      // A headless frame still consumes simulated wall time, including frames with no opcodes.
+      now += frameMs;
       const frame = await timeout(runner.frames.tick(), timeoutMs, `frame ${frameCount + 1}`);
       frameCount++;
       const thread = fixture.core.scheduler.firstThread;

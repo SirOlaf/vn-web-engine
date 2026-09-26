@@ -208,9 +208,21 @@ export class BurikoMultilayerBackdrop extends BurikoBackdrop {
           layer[IMAGE]! >>> 0 === this.surfaces.imageId(layer[SOURCE]!) >>> 0
         ) {
           const progress = this.getValueD8(1),
-            pivotWeight = nativeDisplayEasing(progress, layer[PIVOT_EASING]!),
-            angleWeight = nativeDisplayEasing(progress, layer[ANGLE_EASING]!),
-            scaleWeight = nativeDisplayEasing(progress, layer[SCALE_EASING]!);
+            pivotWeight = nativeDisplayEasing(
+              progress,
+              layer[PIVOT_EASING]!,
+              this.environment.compositor.revision,
+            ),
+            angleWeight = nativeDisplayEasing(
+              progress,
+              layer[ANGLE_EASING]!,
+              this.environment.compositor.revision,
+            ),
+            scaleWeight = nativeDisplayEasing(
+              progress,
+              layer[SCALE_EASING]!,
+              this.environment.compositor.revision,
+            );
           const transform = {
             x: (layer[X]! - (rectangle.left << 16)) | 0,
             y: (layer[Y]! - (rectangle.top << 16)) | 0,

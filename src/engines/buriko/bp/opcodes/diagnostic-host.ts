@@ -34,13 +34,15 @@ export function createDiagnosticHostOpcodes(
       const formatted = diagnostics.formatThreadMessage(thread, message);
       return (await dialogs.show(formatted, title('文字列の表示'), 0x1041)) === 1 ? 0 : 6;
     },
-    0x7a: async ({thread, diagnostics}): Promise<0 | 6> => {
+    0x7a: async ({thread, memory, diagnostics}): Promise<0 | 6> => {
       const value = pop32(thread);
       const message = new TextEncoder().encode(
         `Number : ${value | 0} ( $${value.toString(16).padStart(8, '0')} )`,
       );
       const formatted = diagnostics.formatThreadMessage(thread, message);
-      return (await dialogs.show(formatted, title('数値の表示'), 0x1041)) === 1 ? 0 : 6;
+      const answer = await dialogs.show(formatted, title('数値の表示'), 0x1041);
+      // 1.665's 00483c20 ignores the numeric diagnostic's modal result.
+      return memory.abi.revision === '1.665' || answer === 1 ? 0 : 6;
     },
     0x7b: async (context): Promise<0> => {
       const {thread, memory} = context;

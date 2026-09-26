@@ -1,3 +1,4 @@
+import type {BurikoBpAbi} from '../bp/abi.js';
 import {allocateBurikoBitmap, type BurikoBitmap, BurikoBitmapStorage} from './bitmap.js';
 import {bitmapRead32, bitmapWrite16, bitmapWrite32} from './bitmap-scalar.js';
 import {
@@ -73,6 +74,7 @@ export function fillBurikoRippleDisplacement(
   period: number,
   phase: number,
   amplitude: number,
+  revision?: BurikoBpAbi['revision'],
 ): number {
   if (!valid(bitmap)) return 0x80000003;
   period >>>= 0;
@@ -86,7 +88,7 @@ export function fillBurikoRippleDisplacement(
     for (let x = 0; x < scratch.width >>> 0; x++, dx = (dx - 1) | 0) {
       const radius = Math.sqrt(dx * dx + dy * dy);
       const height = cvtt64(
-        (1 - cosine(((radius - phase) * 6.283185307179586) / period)) * amplitude,
+        (1 - cosine(((radius - phase) * 6.283185307179586) / period, revision)) * amplitude,
       );
       bitmapWrite32(
         scratch,
@@ -107,6 +109,7 @@ export function fillBurikoCurvedDisplacement(
   centerY: number,
   strength: number,
   radius: number,
+  revision?: BurikoBpAbi['revision'],
 ): number {
   if (!valid(bitmap)) return 0x80000003;
   strength >>>= 0;
@@ -121,7 +124,10 @@ export function fillBurikoCurvedDisplacement(
       const height =
         distance >= radius
           ? 0n
-          : cvtt64(4194304 - sine((distance * 3.141592653589793) / ((radius * 2) >>> 0)) * 4194304);
+          : cvtt64(
+              4194304 -
+                sine((distance * 3.141592653589793) / ((radius * 2) >>> 0), revision) * 4194304,
+            );
       bitmapWrite32(
         scratch,
         scratch.offset + y * (scratch.stride | 0) + x * 4,
@@ -143,6 +149,7 @@ export function fillBurikoSineDisplacement(
   periodY: number,
   phaseY: number,
   amplitudeY: number,
+  revision?: BurikoBpAbi['revision'],
 ): number {
   if (!valid(bitmap)) return 0x80000003;
   periodX >>>= 0;
@@ -164,7 +171,7 @@ export function fillBurikoSineDisplacement(
   for (let y = 0; y < (bitmap.height | 0); y++) {
     rows.view.setUint16(
       y * 2,
-      cvtt32(sine(((y + phaseY) * 6.283185307179586) / periodY) * amplitudeY * 16),
+      cvtt32(sine(((y + phaseY) * 6.283185307179586) / periodY, revision) * amplitudeY * 16),
       true,
     );
     rows.written(y * 2, 2);
@@ -172,7 +179,7 @@ export function fillBurikoSineDisplacement(
   for (let x = 0; x < (bitmap.width | 0); x++) {
     columns.view.setUint16(
       x * 2,
-      cvtt32(sine(((x + phaseX) * 6.283185307179586) / periodX) * amplitudeX * 16),
+      cvtt32(sine(((x + phaseX) * 6.283185307179586) / periodX, revision) * amplitudeX * 16),
       true,
     );
     columns.written(x * 2, 2);
@@ -198,6 +205,7 @@ export function fillBurikoPointDisplacement(
   endX: number,
   endY: number,
   extraRadius: number,
+  revision?: BurikoBpAbi['revision'],
 ): number {
   if (!valid(bitmap)) return 0x80000003;
   startX |= 0;
@@ -214,6 +222,7 @@ export function fillBurikoPointDisplacement(
       const factor = sine(
         (Math.sqrt(distanceX * distanceX + distanceY * distanceY) * 1.5707963267948966) /
           denominator,
+        revision,
       );
       const at = bitmap.offset + y * (bitmap.stride | 0) + x * 4;
       bitmapWrite16(bitmap, at, cvtt32(factor * ((x - endX) | 0) + startX - x) << 4);

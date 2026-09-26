@@ -50,16 +50,19 @@ function divide(a: Interval, b: Interval): Interval {
 }
 
 const float = new DataView(new ArrayBuffer(8));
-/** Exact binary64 embedding for the bounded normal domain accepted below. */
+/** Exact normal binary64 embedding, with directed enclosure below the fixed-point grid. */
 function fromDouble(n: number): Interval {
   if (n === 0) return exact(0n);
   float.setFloat64(0, n, true);
   const bits = float.getBigUint64(0, true);
   const shift = Number((bits >> 52n) & 0x7ffn) - 1023 - 52 + Number(FRACTION_BITS);
-  if (shift < 0)
-    throw new RangeError('x87 integer observation input is below its exact embedding domain');
   const significand = (bits & 0xfffffffffffffn) | 0x10000000000000n;
-  return exact((bits >> 63n ? -significand : significand) << BigInt(shift));
+  const signed = bits >> 63n ? -significand : significand;
+  if (shift < 0) {
+    const divisor = 1n << BigInt(-shift);
+    return {lo: floorDivide(signed, divisor), hi: ceilDivide(signed, divisor)};
+  }
+  return exact(signed << BigInt(shift));
 }
 
 /** Alternating atan series; |x|<=1/2, with an explicit next-term remainder. */
@@ -183,4 +186,51 @@ export function x87TrigonometricInteger(
   if (lo !== hi || lo < minimum || hi > maximum)
     throw new X87IntegerUncertainty(operation, input, multiplier);
   return Number(BigInt.asIntN(32, lo));
+}
+
+export class X87FloatingUncertainty extends Error {
+  constructor(
+    readonly y: number,
+    readonly x: number,
+    readonly precision: 32 | 64,
+  ) {
+    super(
+      `x87 atan2 binary${precision} observation requires a CPU-specific result for inputs ${y}, ${x}`,
+    );
+    this.name = 'X87FloatingUncertainty';
+  }
+}
+
+/** FPATAN followed by nearest-even FSTP binary64 and optional binary32 conversion.
+ * Finite integer or binary32 operands embed exactly; interval arithmetic also
+ * encloses ratios below its fixed-point precision. Status flags are not observed. */
+export function x87Atan2Float(y: number, x: number, precision: 32 | 64): number {
+  const supported = (value: number): boolean =>
+    Number.isFinite(value) && (Number.isInteger(value) || Math.fround(value) === value);
+  if (!supported(y) || !supported(x))
+    throw new RangeError('x87 atan2 observation requires finite integer or binary32 operands');
+  const negativeY = y < 0 || Object.is(y, -0),
+    negativeX = x < 0 || Object.is(x, -0);
+  if (y === 0 && !negativeX) return y;
+  let angle: Interval;
+  if (y === 0) angle = PI;
+  else if (x === 0) angle = divideInteger(PI, 2n);
+  else {
+    angle = atan(divide(fromDouble(Math.abs(y)), fromDouble(Math.abs(x))));
+    if (negativeX) angle = subtract(PI, angle);
+  }
+  if (negativeY) angle = neg(angle);
+  // The CRT takes absolute operands, then FLDPI/FSUBRP for negative x.
+  // Two additional ULPs enclose the rounded PI constant and subtraction;
+  // PI can have one higher exponent than the final quadrant-corrected angle.
+  const native = negativeX ? nativeError(nativeError(nativeError(angle))) : nativeError(angle);
+  const rounded = (value: bigint): number => {
+    const double = Number(round53(value)) / Number(UNIT);
+    return precision === 32 ? Math.fround(double) : double;
+  };
+  const low = rounded(native.lo),
+    high = rounded(native.hi);
+  if (low === 0 && high === 0) return negativeY ? -0 : 0;
+  if (!Object.is(low, high)) throw new X87FloatingUncertainty(y, x, precision);
+  return low;
 }

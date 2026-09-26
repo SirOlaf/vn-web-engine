@@ -10,10 +10,12 @@ Zero setup. Visit the page and select your local game files, optionally install 
 
 ## Supported games
 
-| Game                                  | Engine      | Current state                                                                                      |
-| ------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
-| CHAOS;HEAD NOAH (Windows GOG release) | MAGES / SC3 | Complete                                                                                           |
-| Aokana                                | BURIKO      | Complete                                                                                           |
+| Game                                  | Engine      | Current state |
+| ------------------------------------- | ----------- | ------------- |
+| CHAOS;HEAD NOAH (Windows GOG release) | MAGES / SC3 | Complete      |
+| Aokana                                | BURIKO      | Complete      |
+| Eustia of the Tarnished Wings         | BURIKO      | Complete      |
+| Jewelry Hearts Academia               | BURIKO      | Complete      |
 
 The games share browser services for files, storage, audio, video, graphics, and input. Reusable interpreters live under `src/engines/`; installation identity and explicit game compatibility profiles are selected separately.
 See [BGI compatibility](docs/buriko-compatibility.md) for revision selection, optional metadata, native evidence, and current verification limits.
@@ -31,7 +33,7 @@ npm start
 Open the [library](http://127.0.0.1:8000), select a game, and open its player. Choose the installation folder from your device, then use **Play** to start the loaded game. The library also manages browser save files. Direct player links: [BGI / Buriko](http://127.0.0.1:8000/buriko.html) and [CHAOS;HEAD NOAH](http://127.0.0.1:8000/noah.html).
 
 - **CHAOS;HEAD NOAH:** Choose the installation folder containing `Game.exe` and `Data/*.cpk`.
-- **BGI / Buriko:** Choose the game folder containing `system.arc`, the other archives, and the game interpreter executable. Auxiliary executables may remain in the folder. Existing saves, executable cursor resources, and matching process dumps are optional. When executable product metadata is unavailable, the player can recover it from a provable boot-script comparison. Native versions 1.520.6 / compatibility 1.69 and 1.685.3 / compatibility 1.72 select separate bytecode ABIs. Unknown revisions still require verification, and archive files should come from a readable installation or mounted disc.
+- **BGI / Buriko:** Choose the game folder containing `system.arc`, the other archives, and the game interpreter executable. Auxiliary executables may remain in the folder. Existing saves, executable cursor resources, and matching process dumps are optional. When executable product metadata is unavailable, the player can recover it from a provable boot-script comparison. Native revisions 1.520.6 / compatibility 1.69, 1.665 / compatibility 1.72, and 1.685.3 / compatibility 1.72 select separate bytecode ABIs. Unknown revisions still require verification, and archive files should come from a readable installation or mounted disc.
 
 Game files selected through the browser stay on your device. The website serves only the engine; it does not upload or stream your installation.
 Both players remember a successfully selected game folder on supporting browsers and reopen it after refresh. If access expires, use **Reconnect remembered folder**; **Forget remembered folder** removes the reference without deleting files or saves. This stores only a folder handle, with no installation copy. Both players offer **Add files** and **Add one file** when folder selection is unavailable or incomplete, and **Keep game files in browser** to save a complete installation locally before playing. Use **Open saved game files** on later visits. Input-based selections and individually added files cannot retain live folder access; iOS Safari may make a temporary copy. See [mobile files and audio](docs/mobile-compatibility.md) for browser limits, cache controls and audio recovery.
@@ -39,7 +41,7 @@ Ogg Vorbis playback uses a shared WebAssembly decoder to preserve native PCM bou
 During BGI startup, **Skip startup sequence** appears under **Game options → Playback**; select it again to stop skipping.
 Both players support **Game options → Text rendering → DOM text** for selection, copying, and browser dictionaries. See [DOM text coverage and limitations](docs/dom-text.md).
 Its native window size uses device pixels, so it appears smaller on high-DPI displays. Use **Game options → Display** to expand the browser view; see the [startup sizing investigation](docs/aokana-window-sizing.md) for the native configuration trace.
-The BGI library and player controls select a game before importing or exporting `BGI.gdb` and numbered `BGI*.cad` browser saves. Close the player before importing a save.
+The BGI library and player controls select a game before importing or exporting `BGI.gdb`, numbered `BGI*.cad`, and `UserData/JewelryHeartsAcademia*.sud` browser saves. Close the player before importing a save.
 
 ### HTTPS from another device
 

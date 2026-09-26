@@ -1,5 +1,6 @@
 import {BURIKO_BP_ABI_172, type BurikoBpAbi} from '../../bp/abi.js';
 import type {BurikoProgramFiles} from '../program-files.js';
+import {Buriko1665ArchiveFileStorage} from './1665-archive-storage.js';
 import {BurikoAudioArchiveCache} from './archive-cache.js';
 import {BurikoArchiveFileStorage} from './archive-storage.js';
 import type {BurikoAudioChannels} from './channel-registry.js';
@@ -200,14 +201,18 @@ export class BurikoAudioResourceStreams {
       second: BurikoLiveAudioStorage | undefined,
       handedOff = false;
     try {
-      if (this.abi.compatibility === '1.69') {
-        // 46fc80: two embedded PackFile owners; the later audio cache is not consulted.
-        const firstInput = new BurikoLegacy169ArchiveFileStorage(this.files);
+      if (this.abi.revision === '1.520.6' || this.abi.revision === '1.665') {
+        // 46fc80/004c6490: independent embedded owners; the later cache is not consulted.
+        const Storage =
+          this.abi.revision === '1.665'
+            ? Buriko1665ArchiveFileStorage
+            : BurikoLegacy169ArchiveFileStorage;
+        const firstInput = new Storage(this.files);
         first = firstInput;
         if (!(await firstInput.open(path, memberA)))
           throw new BurikoWaveBoxError(12, 'Buriko paired stream could not open first member');
         if (!sameName) {
-          const secondInput = new BurikoLegacy169ArchiveFileStorage(this.files);
+          const secondInput = new Storage(this.files);
           second = secondInput;
           if (!(await secondInput.open(path, memberB)))
             throw new BurikoWaveBoxError(12, 'Buriko paired stream could not open second member');
@@ -299,9 +304,13 @@ export class BurikoAudioResourceStreams {
     const status = this.validate(index, actor);
     if (status !== 0) return status;
     try {
-      if (this.abi.compatibility === '1.69') {
-        // 46fa30: a single legacy stream embeds the same load-once PackFile reader.
-        const input = new BurikoLegacy169ArchiveFileStorage(this.files);
+      if (this.abi.revision === '1.520.6' || this.abi.revision === '1.665') {
+        // 46fa30/004c5f40: a single stream embeds its revision's load-once archive reader.
+        const Storage =
+          this.abi.revision === '1.665'
+            ? Buriko1665ArchiveFileStorage
+            : BurikoLegacy169ArchiveFileStorage;
+        const input = new Storage(this.files);
         if (!(await input.open(path, member))) {
           input.dispose();
           throw new BurikoWaveBoxError(12, 'Buriko stream resource could not open archive member');

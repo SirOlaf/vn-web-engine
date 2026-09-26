@@ -48,6 +48,7 @@ import {BurikoNativeText} from '../../src/engines/buriko/native/text.js';
 interface Installation extends BurikoExecutable {
   /** Keep the raw selection for handle/cache restoration, before runtime projection. */
   selectedFiles: readonly InstallationFile[];
+  selectedDirectories: readonly string[];
   files: SourceFileSystem;
   modifiedFiles: {path: string; lastModifiedMs: number}[];
 }
@@ -137,8 +138,10 @@ async function chosenFiles(selection: InstallationSelection): Promise<Installati
   const executable = await inspectBurikoInstallation(entries, folderTitle);
   const files = source();
   for (const entry of executable.runtimeFiles) files.attach(entry.path, entry.source);
+  for (const path of selection.directories ?? []) files.attachDirectory(path);
   return {
     selectedFiles: entries,
+    selectedDirectories: selection.directories ?? [],
     files,
     modifiedFiles: executable.runtimeFiles.map(({path, lastModifiedMs}) => ({
       path,
@@ -195,12 +198,16 @@ async function launch(
     const temporaryStore = new MemoryStore();
     stores.push(temporaryStore);
     const backing = new MountedFileSystem();
-    backing.mount(
-      '/game',
-      new OverlayFileSystem(installation.files, gameStore, burikoRegistryFold),
-    );
+    const gameFiles = new OverlayFileSystem(installation.files, gameStore, burikoRegistryFold);
+    await gameFiles.installDirectories(installation.installationDirectories);
+    backing.mount('/game', gameFiles);
     backing.mount('/user', new StoredFileSystem(userStore, burikoRegistryFold));
     backing.mount('/temp', new StoredFileSystem(temporaryStore, burikoRegistryFold));
+    // Native directory probes validate C:\ before the separately mounted children.
+    const driveRoot = source();
+    driveRoot.attachDirectory('/game');
+    driveRoot.attachDirectory('/UserData');
+    backing.mount('/drive-c', driveRoot);
     const mounted = new BurikoMountedFileMetadata(backing, {
       records: [
         ...installation.modifiedFiles.map(({path, lastModifiedMs}): BurikoFileMetadataRecord => ({
@@ -233,6 +240,7 @@ async function launch(
       [
         {native: 'C:\\game', mounted: '/game'},
         {native: 'C:\\UserData', mounted: '/user'},
+        {native: 'C:\\', mounted: '/drive-c'},
         {native: 'T:\\', mounted: '/temp'},
         {native: 'D:\\Drops', mounted: '/drops'},
       ],
@@ -403,6 +411,7 @@ async function launch(
 function installationSnapshot(installation: Installation): CachedInstallation {
   return {
     files: [...installation.selectedFiles],
+    directories: [...installation.selectedDirectories],
     metadata: {executableName: installation.executableName, title: installation.title},
     attachments: {},
   };
@@ -436,8 +445,10 @@ const installationControls = mountInstallationControls({
     const executable = await inspectBurikoInstallation(snapshot.files, snapshot.metadata.title);
     const files = source();
     for (const entry of executable.runtimeFiles) files.attach(entry.path, entry.source);
+    for (const path of snapshot.directories ?? []) files.attachDirectory(path);
     await selectedInstallation({
       selectedFiles: snapshot.files,
+      selectedDirectories: snapshot.directories ?? [],
       files,
       modifiedFiles: executable.runtimeFiles.map(({path, lastModifiedMs}) => ({
         path,

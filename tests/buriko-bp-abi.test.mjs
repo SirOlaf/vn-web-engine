@@ -1,21 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BURIKO_BP_ABI_169, BURIKO_BP_ABI_172} from '../dist/engines/buriko/bp/abi.js';
+import {
+  BURIKO_BP_ABI_169,
+  BURIKO_BP_ABI_1665,
+  BURIKO_BP_ABI_172,
+} from '../dist/engines/buriko/bp/abi.js';
 import {BurikoBpMemory, BurikoBpMemoryFault} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpInterpreter} from '../dist/engines/buriko/bp/interpreter.js';
 import {BurikoBpModuleExtensions} from '../dist/engines/buriko/bp/module-extensions.js';
 import {createPrimaryOpcodes} from '../dist/engines/buriko/bp/opcodes/index.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
-import {BurikoNativeBank, burikoNativeSlots} from '../dist/engines/buriko/native/registry.js';
-import {BURIKO_PRIMARY_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
-import {BURIKO_169_PRIMARY_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory-169.js';
+import {
+  BurikoNativeBank,
+  burikoNativeSlots,
+  burikoPrimarySlots,
+} from '../dist/engines/buriko/native/registry.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 
 const u32 = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, n >>> 24];
 
-for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_172]) {
-  test(`BP ${abi.compatibility} executes address, stack, arithmetic and text contracts together`, () => {
+for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_1665, BURIKO_BP_ABI_172]) {
+  test(`BP ${abi.revision} executes address, stack, arithmetic and text contracts together`, () => {
     const thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 32,
@@ -39,10 +45,7 @@ for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_172]) {
       ),
       abi,
     );
-    const inventory =
-      abi.compatibility === '1.69'
-        ? BURIKO_169_PRIMARY_SLOT_ADDRESSES
-        : BURIKO_PRIMARY_SLOT_ADDRESSES;
+    const inventory = burikoPrimarySlots(abi);
     const fillers = Object.fromEntries(
       Object.keys(inventory)
         .map(Number)
@@ -87,21 +90,24 @@ for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_172]) {
       actual,
       abi.compatibility === '1.69'
         ? [0x12345678, 0xffffffff, 0x2c, 0, 1, 32767, 32768, 45 * 65536]
-        : [0x80000000, 1, 0x2c, 0, 1, 32767, 32768, 45 * 65536],
+        : abi.revision === '1.665'
+          ? [0x12345678, 0xffffffff, 1, 0x2c, 0, 1, 32767, 32768, 45 * 65536]
+          : [0x80000000, 1, 0x2c, 0, 1, 32767, 32768, 45 * 65536],
     );
     assert.equal(memory.resolve(thread, abi.moduleTag + 200).bytes, thread.moduleMemory);
     assert.throws(
-      () => memory.resolve(thread, abi.compatibility === '1.69' ? 0x10000000 : 0x40000000),
+      () => memory.resolve(thread, abi.addressBits === 26 ? 0x10000000 : 0x40000000),
       BurikoBpMemoryFault,
     );
     thread.pc = 220;
     thread.moduleMemory[220] = 0x03;
-    assert.equal(vm.dispatchNext(thread).defined, abi.compatibility === '1.72');
+    assert.equal(vm.dispatchNext(thread).defined, abi.revision === '1.685.3');
   });
 }
 
 test('BP pool lifetimes retain each ABI bank layout and do not alias indirect handles', () => {
   const older = new BurikoBpMemory(new Uint8Array(64), BURIKO_BP_ABI_169);
+  const groupedX86 = new BurikoBpMemory(new Uint8Array(64), BURIKO_BP_ABI_1665);
   const newer = new BurikoBpMemory(new Uint8Array(64), BURIKO_BP_ABI_172);
   const oldAddresses = Array.from({length: 48}, () => older.allocatePooled(4));
   assert.equal(oldAddresses[0], 0x40000000);
@@ -112,6 +118,23 @@ test('BP pool lifetimes retain each ABI bank layout and do not alias indirect ha
   assert.equal(older.allocatePooled(4), oldAddresses[7]);
   assert.equal(newer.allocatePooled(4), 0x40000000);
   assert.equal(newer.allocatePooled(4), 0x40001000);
+  assert.equal(groupedX86.allocatePooled(4), 0x40000000);
+  assert.equal(groupedX86.allocatePooled(4), 0x40001000);
+  const larger = groupedX86.allocatePooled(0x1001);
+  assert.equal(larger, 0x50000000);
+  const groupedThread = new BurikoBpThread({
+    id: 3,
+    operandCapacity: 4,
+    moduleCapacity: 4,
+    frameCapacity: 4,
+  });
+  groupedX86.writeU8(groupedThread, larger + 0x1000, 77);
+  assert.equal(groupedX86.resolve(groupedThread, larger + 0x1000).offset, 0x1000);
+  assert.equal(groupedX86.freePooled(larger + 1), false);
+  assert.equal(groupedX86.freePooled(larger), true);
+  assert.equal(groupedX86.allocatePooled(0x1001), larger);
+  assert.throws(() => groupedX86.resolve(groupedThread, 0x10000000), BurikoBpMemoryFault);
+  assert.throws(() => groupedX86.createBuffer(4), /no indirect/);
   assert.throws(() => older.createBuffer(4), /no indirect/);
   const buffer = newer.createBuffer(4);
   assert.equal(buffer.result, 0);

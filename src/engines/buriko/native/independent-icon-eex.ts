@@ -206,6 +206,7 @@ export class BurikoIndependentIconEEx extends BurikoIndependentIconEx {
         easing = nativeDisplayEasing(
           fraction(time, motion.duration),
           entering ? motion.easingIn : motion.easingOut,
+          this.window.environment.compositor.revision,
         ),
         product = Math.imul(motion.duration, easing) >>> 16,
         sampleTime = entering ? (motion.duration - product) >>> 0 : product,

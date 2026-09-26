@@ -50,13 +50,17 @@ import {
   tintBurikoBitmap32,
 } from './bitmap-effects.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
+import type {BurikoBpAbi} from '../bp/abi.js';
 
 export type BurikoBitmapResult = 0 | 1 | 2 | 3;
 export type BurikoBitmapDrawResult = BurikoBitmapResult | 4;
 
 /** Native renderer globals, separate from individual CSurfaceManager instances. */
 export class BurikoBitmapCompositor {
-  constructor(readonly compatibility: '1.69' | '1.72' = '1.72') {}
+  constructor(
+    readonly compatibility: '1.69' | '1.72' = '1.72',
+    readonly revision: BurikoBpAbi['revision'] = compatibility === '1.69' ? '1.520.6' : '1.685.3',
+  ) {}
 
   /** 1401d1cb4; 1400407b0/1400407c0 select the format of temporary glyph bitmaps. */
   defaultFormat = 0;
