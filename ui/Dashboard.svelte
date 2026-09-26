@@ -63,17 +63,16 @@
   });
 </script>
 
-<svelte:head>
-  <meta name="description" content="Open your visual novel library and manage local game files." />
-</svelte:head>
-
 <div class="app-shell">
   <header class="topbar">
     <a class="brand" href="./index.html" aria-label="VN Web Engine library">
       <span class="brand-mark" aria-hidden="true">VN</span>
       <span class="brand-copy">WEB ENGINE <small>LIBRARY</small></span>
     </a>
-    <span class="topbar-note">Native Visual Novels running in your Browser</span>
+    <div class="topbar-actions">
+      <span class="topbar-note">Native Visual Novels running in your Browser</span>
+      <a class="github-link" href="https://github.com/SirOlaf/vn-web-engine">GitHub ↗</a>
+    </div>
   </header>
 
   <main>

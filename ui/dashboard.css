@@ -88,6 +88,23 @@ input:focus-visible {
   font-size: 12px;
   letter-spacing: 0.04em;
 }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.github-link {
+  color: #c5e9da;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.github-link:hover {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 main {
   width: min(1440px, 100%);
   margin: 0 auto;
