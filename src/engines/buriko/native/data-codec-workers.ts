@@ -1,6 +1,7 @@
 import type {BurikoBpPointer} from '../bp/memory.js';
-import {decodeBurikoSdcInto, encodeBurikoSdcInto} from './sdc.js';
-import {encodeBurikoDcfs} from './dcfs.js';
+import {runCooperativeTask, type CooperativeTask} from '../../../core/cooperative-task.js';
+import {decodeBurikoSdcSteps, encodeBurikoSdcSteps} from './sdc.js';
+import {encodeBurikoDcfsSteps} from './dcfs.js';
 import type {BurikoStructCodecScratch} from './struct-codec-scratch.js';
 import type {BurikoEngineErrors} from './engine-errors.js';
 import {codecView, type BurikoCodecPointer} from './codec-storage.js';
@@ -19,7 +20,7 @@ export interface BurikoDataCodecWorker {
   released: boolean;
 }
 
-/** Independent codec tasks, using the same cooperative host profile as native grid workers. */
+/** Independent codec tasks retain borrowed BP storage while yielding between bounded steps. */
 export class BurikoDataCodecWorkers {
   private readonly pending = new Set<BurikoDataCodecWorker>();
   private failure: {error: unknown} | null = null;
@@ -57,12 +58,10 @@ export class BurikoDataCodecWorkers {
     source: BurikoBpPointer | null,
     count: number,
   ): BurikoDataCodecWorker | null {
-    return this.schedule(destination, source, count, (worker) => {
-      worker.result = encodeBurikoSdcInto(
-        worker.destination,
-        worker.source,
-        worker.count,
-        this.readSystemTime,
+    return this.schedule(destination, source, count, async (worker) => {
+      worker.result = await this.run(
+        worker,
+        encodeBurikoSdcSteps(worker.destination, worker.source, worker.count, this.readSystemTime),
       );
       worker.done = true;
     });
@@ -92,13 +91,14 @@ export class BurikoDataCodecWorkers {
           worker.result = 0;
         } else {
           const result = {value: worker.result};
-          encodeBurikoDcfs(storage, result, worker.source, worker.count, count);
+          await this.run(
+            worker,
+            encodeBurikoDcfsSteps(storage, result, worker.source, worker.count, count),
+          );
           worker.result = result.value;
-          worker.result = encodeBurikoSdcInto(
-            worker.destination,
-            storage,
-            worker.result,
-            this.readSystemTime,
+          worker.result = await this.run(
+            worker,
+            encodeBurikoSdcSteps(worker.destination, storage, worker.result, this.readSystemTime),
           );
           scratch.decommit(worker);
         }
@@ -132,7 +132,7 @@ export class BurikoDataCodecWorkers {
           worker.destination = output;
           worker.initialized = output.initialized;
         }
-        worker.result = decodeBurikoSdcInto(output, worker.source);
+        worker.result = await this.run(worker, decodeBurikoSdcSteps(output, worker.source));
       } else {
         const decoded = await decodeBurikoResourcePointer(
           worker.source,
@@ -151,6 +151,12 @@ export class BurikoDataCodecWorkers {
         }
       }
       worker.done = true;
+    });
+  }
+
+  private run<T>(worker: BurikoDataCodecWorker, task: CooperativeTask<T>): Promise<T> {
+    return runCooperativeTask(task, () => {
+      if (worker.released) throw new Error('Buriko codec worker accesses a released native record');
     });
   }
 

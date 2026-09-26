@@ -1,6 +1,9 @@
+import {finishTask, type CooperativeTask} from '../../../core/cooperative-task.js';
 import {
   codecCopy,
   codecMark,
+  codecRead,
+  codecReadableSpan,
   codecView,
   codecWrite,
   type BurikoCodecPointer,
@@ -15,6 +18,13 @@ export function decodeBurikoDcfs(
   destination: BurikoCodecPointer | null,
   source: BurikoCodecPointer | null,
 ): number {
+  return finishTask(decodeBurikoDcfsSteps(destination, source));
+}
+
+function* decodeBurikoDcfsSteps(
+  destination: BurikoCodecPointer | null,
+  source: BurikoCodecPointer | null,
+): CooperativeTask<number> {
   if (
     codecView(source, 0, 8).getBigUint64(0, true) !== firstMagic ||
     codecView(source, 8, 8).getBigUint64(0, true) !== secondMagic
@@ -27,7 +37,8 @@ export function decodeBurikoDcfs(
   codecCopy(destination, 0, source, 24, size);
   let input = 24 + size,
     output = size,
-    previous = 0;
+    previous = 0,
+    work = 0;
   for (let record = 1; record < count; record++) {
     let total = 0,
       literal = false;
@@ -36,7 +47,7 @@ export function decodeBurikoDcfs(
         shift = 0,
         byte: number;
       do {
-        byte = codecView(source, input++, 1).getUint8(0);
+        byte = codecRead(source, input++);
         run = (run | ((byte & 127) << (shift & 31))) >>> 0;
         shift = (shift + 7) & 255;
       } while ((byte & 128) !== 0);
@@ -48,13 +59,18 @@ export function decodeBurikoDcfs(
       output += run;
       previous += run;
       literal = !literal;
+      work += run + 1;
+      if (work >= 4096) {
+        work = 0;
+        yield;
+      }
     } while (total < size);
     if (total !== size) return 0x80000004;
   }
   return 0;
 }
 
-/** 08D890/08DAE0, including native next-byte comparisons at each completed run. */
+/** 08D890/08DAE0; retains native run encoding and byte-for-byte decode verification. */
 export function encodeBurikoDcfs(
   destination: BurikoCodecPointer | null,
   result: {value: number},
@@ -62,6 +78,17 @@ export function encodeBurikoDcfs(
   size: number,
   count: number,
 ): number {
+  return finishTask(encodeBurikoDcfsSteps(destination, result, source, size, count));
+}
+
+/** Native worker entry retains its borrowed source/destination across host slices. */
+export function* encodeBurikoDcfsSteps(
+  destination: BurikoCodecPointer | null,
+  result: {value: number},
+  source: BurikoCodecPointer | null,
+  size: number,
+  count: number,
+): CooperativeTask<number> {
   size >>>= 0;
   count >>>= 0;
   if (count === 0) return 0x80000001;
@@ -77,20 +104,34 @@ export function encodeBurikoDcfs(
   let output = (size + 24) >>> 0,
     length = output,
     previous = 0,
-    current = size;
+    current = size,
+    work = 0;
   for (let record = 1; record < count; record++) {
     let remaining = size,
       literal = false;
     while (remaining !== 0) {
       let run = 0;
+      // Probe without throwing: exceptional storage keeps the native byte-read order.
+      // Both records stay live, including when source and destination overlap.
+      const spanLength = size + remaining + Number(record !== count - 1);
+      let comparison = codecReadableSpan(source, previous, spanLength);
       const equal = (offset: number): boolean => {
-        const value = codecView(source, current + offset, 1).getUint8(0);
-        return codecView(source, previous + offset, 1).getUint8(0) === value;
+        if (comparison !== null) return comparison[size + offset] === comparison[offset];
+        const value = codecRead(source, current + offset);
+        return codecRead(source, previous + offset) === value;
       };
       if (equal(0) !== literal) {
         do {
           if (run >= remaining) break;
           run++;
+          if (++work >= 4096) {
+            work = 0;
+            yield;
+            comparison = codecReadableSpan(source, previous, spanLength);
+          }
+          // 08D976/08D98C read past the final record before checking remaining.
+          // Either comparison result ends this completed run with the same length.
+          if (run === remaining && record === count - 1) break;
         } while (equal(run) !== literal);
       }
       let encoded = run,
@@ -118,11 +159,19 @@ export function encodeBurikoDcfs(
       offset: 0,
       initialized: new Uint8Array(extent),
     };
-  decodeBurikoDcfs(verification, destination);
-  for (let index = 0; index < extent; index++) {
-    const left = codecView(verification, index, 1).getUint8(0),
-      right = codecView(source, index, 1).getUint8(0);
-    if (left !== right) return 0xffffffff;
+  yield* decodeBurikoDcfsSteps(verification, destination);
+  for (let start = 0; start < extent; start += 4096) {
+    const count = Math.min(4096, extent - start),
+      left = codecReadableSpan(verification, start, count),
+      right = codecReadableSpan(source, start, count);
+    if (left !== null && right !== null) {
+      for (let index = 0; index < count; index++)
+        if (left[index] !== right[index]) return 0xffffffff;
+    } else {
+      for (let index = start; index < start + count; index++)
+        if (codecRead(verification, index) !== codecRead(source, index)) return 0xffffffff;
+    }
+    yield;
   }
   result.value = length;
   return 0;

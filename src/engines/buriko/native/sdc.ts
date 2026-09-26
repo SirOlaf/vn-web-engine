@@ -1,20 +1,28 @@
 import {randomByteGenerator} from '../../../formats/buriko/binary.js';
+import {finishTask, type CooperativeTask} from '../../../core/cooperative-task.js';
 import {decodeSdc, SdcIntegrityError} from '../../../formats/buriko/compressed-resource.js';
 import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
-import {codecView, codecWrite, type BurikoCodecPointer} from './codec-storage.js';
+import {codecRead, codecWrite, type BurikoCodecPointer} from './codec-storage.js';
 
 /** F49E0/F42D0/F4440: actual caller output, with private checked token storage. */
 export function decodeBurikoSdcInto(
   destination: BurikoCodecPointer | null,
   source: BurikoBpPointer | null,
 ): number {
+  return finishTask(decodeBurikoSdcSteps(destination, source));
+}
+
+export function* decodeBurikoSdcSteps(
+  destination: BurikoCodecPointer | null,
+  source: BurikoBpPointer | null,
+): CooperativeTask<number> {
   const sourceView = (offset: number, count: number): DataView => {
     if (source === null) throw new Error('Buriko SDC reads a null source');
     return pointerView({bytes: source.bytes, offset: source.offset + offset}, count);
   };
   const magic = 'SDC FORMAT 1.00\0';
   for (let index = 0; index < magic.length; index++)
-    if (sourceView(index, 1).getUint8(0) !== magic.charCodeAt(index)) return 0;
+    if (codecRead(source, index) !== magic.charCodeAt(index)) return 0;
   const random = randomByteGenerator(sourceView(16, 4).getUint32(0, true)),
     stored = sourceView(20, 4).getUint32(0, true),
     tokens = new Uint8Array(stored);
@@ -22,10 +30,11 @@ export function decodeBurikoSdcInto(
     xor = 0;
   for (let index = 0; index < stored; index++) {
     const next = random(),
-      value = sourceView(32 + index, 1).getUint8(0);
+      value = codecRead(source, 32 + index);
     tokens[index] = value - next;
     sum = (sum + value) & 0xffff;
     xor ^= value;
+    if ((index & 4095) === 4095) yield;
   }
   if (sourceView(28, 2).getUint16(0, true) !== sum || sourceView(30, 2).getUint16(0, true) !== xor)
     return 0;
@@ -33,7 +42,8 @@ export function decodeBurikoSdcInto(
   // F49E0 never reads the advertised uncompressed size at +24.
   let input = 0,
     output = 0,
-    remaining = stored;
+    remaining = stored,
+    checkpoint = 4096;
   const token = (): number => {
     const value = tokens[input++];
     if (value === undefined) throw new RangeError('Buriko SDC reads beyond private token storage');
@@ -46,7 +56,7 @@ export function decodeBurikoSdcInto(
         distance = ((control & 7) << 8) + token() + 2;
       remaining = (remaining - 2) >>> 0;
       for (let index = 0; index < count; index++) {
-        const value = codecView(destination, output - distance, 1).getUint8(0);
+        const value = codecRead(destination, output - distance);
         codecWrite(destination, output, value);
         output++;
       }
@@ -58,6 +68,10 @@ export function decodeBurikoSdcInto(
         codecWrite(destination, output, value);
         output++;
       }
+    }
+    if (output >= checkpoint) {
+      checkpoint = output + 4096;
+      yield;
     }
   }
   return output >>> 0;
@@ -80,7 +94,10 @@ export function decodeBurikoSdc(bytes: Uint8Array): Uint8Array | null {
 }
 
 /** F44F0: newest-first byte buckets, exact2049-position window, longest2..17 match. */
-function compressInto(input: Uint8Array, write: (offset: number, value: number) => void): number {
+function* compressSteps(
+  input: Uint8Array,
+  write: (offset: number, value: number) => void,
+): CooperativeTask<number> {
   const head = new Int32Array(256).fill(-1),
     tail = new Int32Array(256).fill(-1),
     older = new Int32Array(2049).fill(-1),
@@ -89,7 +106,8 @@ function compressInto(input: Uint8Array, write: (offset: number, value: number) 
   let position = 0,
     literalStart = 0,
     literals = 0,
-    output = 0;
+    output = 0,
+    work = 0;
   const insert = (): void => {
     const slot = position % 2049;
     if (position > 2048) {
@@ -121,6 +139,10 @@ function compressInto(input: Uint8Array, write: (offset: number, value: number) 
       distance = 0;
     const maximum = Math.min(17, input.length - position);
     for (let slot = head[input[position]!]!; slot >= 0; slot = older[slot]!) {
+      if (++work >= 4096) {
+        work = 0;
+        yield;
+      }
       const offset = position - positions[slot]!;
       if (offset === 1) continue;
       let length = 1;
@@ -145,6 +167,10 @@ function compressInto(input: Uint8Array, write: (offset: number, value: number) 
       insert();
       if (++literals >= 128) flush();
     }
+    if (++work >= 4096) {
+      work = 0;
+      yield;
+    }
   }
   flush();
   return output;
@@ -157,6 +183,15 @@ export function encodeBurikoSdcInto(
   count: number,
   readSystemTime: () => Date,
 ): number {
+  return finishTask(encodeBurikoSdcSteps(destination, source, count, readSystemTime));
+}
+
+export function* encodeBurikoSdcSteps(
+  destination: BurikoBpPointer | null,
+  source: BurikoBpPointer | null,
+  count: number,
+  readSystemTime: () => Date,
+): CooperativeTask<number> {
   count >>>= 0;
   const plain = new Uint8Array(count);
   if (count !== 0) {
@@ -168,30 +203,35 @@ export function encodeBurikoSdcInto(
     if (destination === null) throw new Error('Buriko SDC encoding accesses a null destination');
     return pointerView({bytes: destination.bytes, offset: destination.offset + offset}, length);
   };
-  const packed = compressInto(plain, (offset, value) => view(32 + offset, 1).setUint8(0, value));
+  const packed = yield* compressSteps(plain, (offset, value) =>
+    codecWrite(destination, 32 + offset, value),
+  );
   view(20, 4).setUint32(0, packed, true);
   view(24, 4).setUint32(0, count, true);
   const magic = 'SDC FORMAT 1.00\0';
   for (let index = 0; index < magic.length; index++)
-    view(index, 1).setUint8(0, magic.charCodeAt(index));
+    codecWrite(destination, index, magic.charCodeAt(index));
   const seed = readSystemTime().getUTCMilliseconds(),
     next = randomByteGenerator(seed);
   let sum = 0,
     xor = 0;
   for (let index = 0; index < packed; index++) {
-    const cell = view(32 + index, 1),
-      value = (cell.getUint8(0) + next()) & 255;
-    cell.setUint8(0, value);
+    const value = (codecRead(destination, 32 + index) + next()) & 255;
+    codecWrite(destination, 32 + index, value);
     sum = (sum + value) & 0xffff;
     xor ^= value;
+    if ((index & 4095) === 4095) yield;
   }
   view(16, 4).setUint32(0, seed, true);
   view(28, 2).setUint16(0, sum, true);
   view(30, 2).setUint16(0, xor, true);
   const verification = new Uint8Array((count * 2) >>> 0),
-    produced = decodeBurikoSdcInto({bytes: verification, offset: 0}, destination);
+    produced = yield* decodeBurikoSdcSteps({bytes: verification, offset: 0}, destination);
   if (produced !== count) return 0;
-  for (let index = 0; index < count; index++) if (verification[index] !== plain[index]) return 0;
+  for (let index = 0; index < count; index++) {
+    if (verification[index] !== plain[index]) return 0;
+    if ((index & 4095) === 4095) yield;
+  }
   return (packed + 32) >>> 0;
 }
 
@@ -199,9 +239,11 @@ export function encodeBurikoSdcInto(
 export function encodeBurikoSdc(input: Uint8Array, seed: number): Uint8Array | null {
   const plain = input.slice(),
     bytes: number[] = [];
-  compressInto(plain, (offset, value) => {
-    bytes[offset] = value;
-  });
+  finishTask(
+    compressSteps(plain, (offset, value) => {
+      bytes[offset] = value;
+    }),
+  );
   const packed = Uint8Array.from(bytes);
   if (packed.length + 32 > (plain.length * 2) >>> 0)
     throw new RangeError('Buriko SDC encoder exceeds its native double-input allocation');

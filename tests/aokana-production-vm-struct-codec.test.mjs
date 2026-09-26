@@ -4,7 +4,7 @@ import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {decodeBurikoSdcInto} from '../dist/engines/buriko/native/sdc.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
-test('mounted VM encodes and restores a three-record table through one core scratch owner', async () => {
+test('mounted VM encodes and restores an exact-sized pooled record table through one core scratch owner', async () => {
   const fixture = await createMountedVmFixture();
   const {core, graph, memory, child, definitions, fragments, invoke} = fixture;
   try {
@@ -26,11 +26,14 @@ test('mounted VM encodes and restores a three-record table through one core scra
     dcfsHeader.setUint32(20, 3, true);
     expectedDcfs.set(new TextEncoder().encode('ABCDEFGH'), 24);
     expectedDcfs.set([2, 2, 120, 121, 4, 7, 1, 90], 32);
-    memory.globalMemory.fill(0xa5, 0x100, 0x180);
-    memory.globalMemory.set(plain, 0x110);
+    assert.equal(await invoke(0x80, 0x20, [plain.length], 0), 1);
+    const address = pop32(child.state);
+    const source = memory.pointer(child.state, address, plain.length);
+    assert.equal(source.bytes.length - source.offset, plain.length);
+    source.bytes.set(plain, source.offset);
     memory.globalMemory.fill(0x5a, 0x200, 0x300);
 
-    assert.equal(await invoke(0x80, 0xc4, [0x200, 0x110, 8, 3], 2), 0);
+    assert.equal(await invoke(0x80, 0xc4, [0x200, address, 8, 3], 2), 0);
     assert.equal(graph.resource.loading.activeProcedures, 1);
     assert.equal(await child.pollProcess(false), 0);
     assert.equal(child.state.stackIndex, 0);
@@ -78,7 +81,9 @@ test('mounted VM encodes and restores a three-record table through one core scra
     assert.equal(child.state.stackIndex, 0);
     assert.deepEqual(memory.globalMemory.subarray(0x300, 0x300 + plain.length), plain);
     assert.equal(memory.globalMemory[0x300 + plain.length], 0x7b);
-    assert.deepEqual(memory.globalMemory.subarray(0x110, 0x110 + plain.length), plain);
+    assert.deepEqual(source.bytes.subarray(source.offset), plain);
+    assert.equal(await invoke(0x80, 0x21, [address], 0), 1);
+    assert.equal(pop32(child.state), 1);
     assert.equal(core.structCodecScratch.section.owner, null);
     assert.equal(graph.resource.loading.activeProcedures, 0);
   } finally {

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BurikoDataCodecWorkers} from '../dist/engines/buriko/native/data-codec-workers.js';
 import {decodeBurikoSdcInto} from '../dist/engines/buriko/native/sdc.js';
+import {BurikoStructCodecScratch} from '../dist/engines/buriko/native/struct-codec-scratch.js';
 
 test('codec worker joins completed valid encodes before their source storage retires', async () => {
   const workers = new BurikoDataCodecWorkers(() => new Date(Date.UTC(2026, 8, 19, 12, 34, 56)));
@@ -41,4 +42,63 @@ test('codec worker joins completed valid encodes before their source storage ret
     source.length,
   );
   assert.deepEqual(secondDecoded, source);
+});
+
+test('large record-table encoding services host tasks before publishing completion and closing', async () => {
+  const workers = new BurikoDataCodecWorkers(() => new Date(0));
+  const scratch = new BurikoStructCodecScratch();
+  const size = 4096,
+    count = 1024;
+  const source = new Uint8Array(size * count).fill(0x41);
+  const output = new Uint8Array(16384);
+  const worker = workers.startStructEncode(
+    {bytes: output, offset: 0},
+    {bytes: source, offset: 0},
+    size,
+    count,
+    scratch,
+    {
+      show() {
+        assert.fail('valid record-table encoding must fit its scratch allocation');
+      },
+    },
+  );
+  assert.ok(worker);
+  // Enqueued after worker startup: this can run before completion only if work yields.
+  const serviced = new Promise((resolve) =>
+    setTimeout(
+      () =>
+        resolve({
+          done: worker.done,
+          owner: scratch.section.owner,
+        }),
+      0,
+    ),
+  );
+  const closing = workers.closeAndJoin();
+  try {
+    const during = await serviced;
+    assert.equal(during.done, false);
+    assert.equal(during.owner, worker);
+    await closing;
+    assert.equal(worker.done, true);
+    assert.equal(workers.hasPendingWork(), false);
+    assert.equal(scratch.section.owner, null);
+    const expected = new Uint8Array(24 + size + 2 * (count - 1));
+    expected.set(new TextEncoder().encode('DCFS FORMAT 1.00'));
+    const header = new DataView(expected.buffer);
+    header.setUint32(16, size, true);
+    header.setUint32(20, count, true);
+    expected.fill(0x41, 24, 24 + size);
+    for (let i = 24 + size; i < expected.length; i += 2) expected.set([0x80, 0x20], i);
+    const decoded = new Uint8Array(expected.length);
+    assert.equal(
+      decodeBurikoSdcInto({bytes: decoded, offset: 0}, {bytes: output, offset: 0}),
+      expected.length,
+    );
+    assert.deepEqual(decoded, expected);
+  } finally {
+    await closing;
+    await scratch.dispose();
+  }
 });

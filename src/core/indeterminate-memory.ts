@@ -21,6 +21,15 @@ export function clearIndeterminateMemory(bytes: Uint8Array, offset: number, leng
   if (!cells.size) unwritten.delete(bytes.buffer);
 }
 
+/** Inspect provenance without observing or clearing the covered bytes. */
+export function hasIndeterminateMemory(bytes: Uint8Array, offset: number, length: number): boolean {
+  const cells = unwritten.get(bytes.buffer);
+  if (!cells) return false;
+  const start = bytes.byteOffset + offset;
+  for (const at of cells.keys()) if (at >= start && at < start + length) return true;
+  return false;
+}
+
 export function requireDeterminateMemory(bytes: Uint8Array, offset: number, length: number): void {
   const cells = unwritten.get(bytes.buffer);
   if (!cells) return;
