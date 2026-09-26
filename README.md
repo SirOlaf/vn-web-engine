@@ -2,16 +2,22 @@
 
 A browser runtime for Windows visual novel engines. The source tree contains no game assets; use files from your own installation. Native game executables are read only for resources, never run in the browser.
 
+## Quick setup
+Use the [hosted page](https://webvn.sillydrain.com/).
+
+Zero setup. Visit the page and select your local game files, optionally install as PWA. That's it.
+
+
 ## Supported games
 
 | Game                                  | Engine      | Current state                                                                                  |
 | ------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------- |
-| CHAOS;HEAD NOAH (Windows GOG release) | MAGES / SC3 | Game runtime, menus, saves, audio, movies, and input implemented.                              |
-| Aokana                                | BURIKO      | Loads and runs in the browser; native behavior and presentation are still being reconstructed. |
+| CHAOS;HEAD NOAH (Windows GOG release) | MAGES / SC3 | Complete                                                                                       |
+| Aokana                                | BURIKO      | Complete                                                                                       |
 
 The games share browser services for files, storage, audio, video, graphics, and input. Game-specific behavior lives under `src/engines/`.
 
-## Quick start
+## Dev setup
 
 Install Node.js 24 or newer with npm, then run:
 
