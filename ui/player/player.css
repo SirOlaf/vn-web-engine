@@ -30,7 +30,8 @@ button:hover:not(:disabled) {
 }
 button:focus-visible,
 select:focus-visible,
-a:focus-visible {
+a:focus-visible,
+#installation-options > summary:focus-visible {
   outline: 2px solid #a6d7d1;
   outline-offset: 4px;
 }
@@ -147,7 +148,8 @@ h2 {
   margin: 0 0 12px;
 }
 section > button,
-section > select {
+section > select,
+#installation-options > button {
   display: block;
   width: 100%;
   margin-top: 8px;
@@ -312,6 +314,12 @@ a {
 }
 #installation-status {
   overflow-wrap: anywhere;
+}
+#installation-options > summary {
+  cursor: pointer;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 10px 0;
 }
 #installation-selection-names {
   white-space: pre-wrap;

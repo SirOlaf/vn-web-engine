@@ -159,10 +159,5 @@
     onchange={importFile}
     hidden
   />
-  <p id="save-help">
-    {game === 'aokana'
-      ? 'Import before playing. A matching selected save is replaced; new saves use game data.'
-      : 'Import replaces the selected file. Import before playing.'}
-  </p>
   <p id="save-status" role="status">{message}</p>
 </section>
