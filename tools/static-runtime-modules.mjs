@@ -1,6 +1,7 @@
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {readFile} from 'node:fs/promises';
+import MagicString from 'magic-string';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const sourceRoot = path.join(root, 'src') + path.sep;
@@ -10,7 +11,7 @@ const uiRoot = path.join(root, 'ui') + path.sep;
  * Vite's ordinary asset URLs copy worklets without bundling their imports. Emitting
  * these as module entries instead keeps every relative dependency in the build.
  */
-export function runtimeModules() {
+export function runtimeModules({allowSourceMaps = false} = {}) {
   let building = false;
   let base = '/';
   return {
@@ -18,6 +19,8 @@ export function runtimeModules() {
     enforce: 'pre',
     configResolved(config) {
       building = config.command === 'build';
+      if (building && config.build.sourcemap && !allowSourceMaps)
+        throw new Error('Source maps are restricted to the local profiling build');
       base =
         config.base === './' || config.base === ''
           ? '/'
@@ -32,6 +35,7 @@ export function runtimeModules() {
         ),
       ];
       if (!references.length) return;
+      const transformed = new MagicString(code);
       for (const reference of references.reverse()) {
         const specifier = reference[2];
         // The decoder is built separately from its pinned npm dependency.
@@ -58,33 +62,35 @@ export function runtimeModules() {
             : relative.split(path.sep).join('/');
           expression = `new URL(/* @vite-ignore */ ${JSON.stringify(base + pathname)}, import.meta.url)`;
         }
-        code =
-          code.slice(0, reference.index) +
-          expression +
-          code.slice(reference.index + reference[0].length);
+        transformed.overwrite(reference.index, reference.index + reference[0].length, expression);
+        // Hide native URL imports from Vite's document-based preload/error helper:
+        // these modules also run inside workers. Restore the import at render time,
+        // after Vite's import analysis; emitFile already owns the dependency graph.
+        const importPrefix = /import\(\s*$/.exec(code.slice(0, reference.index));
+        if (importPrefix)
+          transformed.overwrite(
+            importPrefix.index,
+            reference.index,
+            building ? '__vnStaticModuleImport(' : 'import(/* @vite-ignore */ ',
+          );
       }
-      // Hide native URL imports from Vite's document-based preload/error helper:
-      // these modules also run inside workers. Restore the import at render time,
-      // after Vite's import analysis; emitFile already owns the dependency graph.
-      if (building)
-        code = code.replace(
-          /import\(\s*(?=new URL\(import\.meta\.ROLLUP_FILE_URL_)/g,
-          '__vnStaticModuleImport(',
-        );
-      else
-        code = code.replace(
-          /import\(\s*(?=new URL\(\/\* @vite-ignore \*\/)/g,
-          'import(/* @vite-ignore */ ',
-        );
-      return {code, map: null};
+      return {
+        code: transformed.toString(),
+        map: transformed.generateMap({source: id, includeContent: true, hires: true}),
+      };
     },
-    renderChunk(code) {
+    renderChunk(code, chunk) {
       if (!code.includes('__vnStaticModuleImport(')) return;
-      return {code: code.replaceAll('__vnStaticModuleImport(', 'import('), map: null};
+      const transformed = new MagicString(code).replaceAll('__vnStaticModuleImport(', 'import(');
+      return {
+        code: transformed.toString(),
+        map: transformed.generateMap({source: chunk.fileName, includeContent: true, hires: true}),
+      };
     },
     async generateBundle(_options, bundle) {
       for (const [name, output] of Object.entries(bundle)) {
-        if (name.endsWith('.map')) this.error(`Source map must not be published: ${name}`);
+        if (!allowSourceMaps && name.endsWith('.map'))
+          this.error(`Source map must not be published: ${name}`);
         if (output.type !== 'chunk') continue;
         for (const dependency of [...output.imports, ...output.dynamicImports]) {
           if (!(dependency in bundle))

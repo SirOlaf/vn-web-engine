@@ -1,4 +1,6 @@
 import {readBurikoFontData, type BurikoFontData} from './font-data.js';
+import type {SfntFontMetadata} from '../../../formats/sfnt.js';
+import {readBrowserLocalFontMetadata} from '../../../text/browser-local-fonts.js';
 import {burikoCrtWideLower} from './crt-case.js';
 
 export interface BurikoBrowserFontParameters {
@@ -63,16 +65,10 @@ interface LoadedFace {
   readonly fullName: string;
 }
 interface InstalledFace {
-  readonly data: BurikoFontData;
+  readonly data: SfntFontMetadata;
   readonly names: readonly string[];
   readonly family: string;
   readonly fullName: string;
-}
-interface LocalFontData {
-  readonly family: string;
-  readonly fullName: string;
-  readonly postscriptName: string;
-  blob(): Promise<Blob>;
 }
 const charsetBits = new Map([
   [0, 0],
@@ -94,7 +90,7 @@ const charsetBits = new Map([
   [238, 1],
   [255, 30],
 ]);
-function supportsCharset(data: BurikoFontData, charset: number): boolean {
+function supportsCharset(data: SfntFontMetadata, charset: number): boolean {
   if (charset === 1) return true;
   const bit = charsetBits.get(charset);
   return (
@@ -119,7 +115,7 @@ function context(width: number, height: number): OffscreenCanvasRenderingContext
   return result;
 }
 
-function selectName(data: BurikoFontData, id: number): string | null {
+function selectName(data: SfntFontMetadata, id: number): string | null {
   const records = data.names.filter((name) => name.id === id && name.unicode !== null);
   const english = records.find((name) => name.platform === 3 && name.language === 0x409);
   return (
@@ -143,7 +139,7 @@ export class BurikoBrowserFontFace implements BurikoFontFace {
     readonly cssFamily: string,
     readonly faceName: string,
     readonly familyName: string,
-    readonly data: BurikoFontData | null,
+    readonly data: SfntFontMetadata | null,
   ) {
     const probe = context(1, 1);
     const height = Math.abs(parameters.height);
@@ -263,41 +259,21 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
   private nextFamily = 1;
   private installed: Promise<readonly InstalledFace[]> | null = null;
   private installedFonts(): Promise<readonly InstalledFace[]> {
-    return (this.installed ??= (async () => {
-      const host = globalThis as typeof globalThis & {
-        queryLocalFonts?: () => Promise<readonly LocalFontData[]>;
-      };
-      if (!host.queryLocalFonts) return [];
-      let records: readonly LocalFontData[];
-      try {
-        records = await host.queryLocalFonts();
-      } catch {
-        return [];
-      }
-      const faces: InstalledFace[] = [];
-      for (const record of records) {
-        try {
-          const blob = await record.blob();
-          for (const data of readBurikoFontData(new Uint8Array(await blob.arrayBuffer())))
-            faces.push({
-              data,
-              family: record.family,
-              fullName: record.fullName,
-              names: [
-                record.family,
-                record.fullName,
-                record.postscriptName,
-                ...data.names
-                  .filter((name) => [1, 4, 6, 16, 21].includes(name.id) && name.unicode !== null)
-                  .map((name) => name.unicode!),
-              ],
-            });
-        } catch {
-          /* The browser cannot expose usable metadata for this installed face. */
-        }
-      }
-      return faces;
-    })());
+    return (this.installed ??= readBrowserLocalFontMetadata().then((faces) =>
+      faces.map(({data, family, fullName, postscriptName}) => ({
+        data,
+        family,
+        fullName,
+        names: [
+          family,
+          fullName,
+          postscriptName,
+          ...data.names
+            .filter((name) => [1, 4, 6, 16, 21].includes(name.id) && name.unicode !== null)
+            .map((name) => name.unicode!),
+        ],
+      })),
+    ));
   }
   async inspect(name: string, enumerableOnly = false): Promise<InstalledFace | LoadedFace | null> {
     const resource = this.candidates(name).find((face) => !enumerableOnly || face.enumerable);
@@ -468,5 +444,6 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
     for (const token of this.resources.keys()) this.unloadResource(token);
     for (const face of this.localFaces.values()) if (face) fontSet().delete(face);
     this.localFaces.clear();
+    this.installed = null;
   }
 }

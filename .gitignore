@@ -2,6 +2,7 @@
 node_modules/
 dist/
 site/
+site-profile/
 *.tsbuildinfo
 /wasm/**/target/
 npm-debug.log*

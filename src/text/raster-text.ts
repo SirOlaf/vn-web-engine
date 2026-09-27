@@ -82,28 +82,33 @@ function shifted(rect: Rect, x: number, y: number): Rect {
   return {...rect, x: rect.x + x, y: rect.y + y};
 }
 function removeRegion(plane: Plane, region: Rect): void {
-  const kept: RasterTextGlyph[] = [];
-  for (const glyph of plane.glyphs) {
-    const hit = intersection(glyph.clip, region);
-    if (!hit) {
-      kept.push(glyph);
+  let kept: RasterTextGlyph[] | undefined;
+  for (let i = 0; i < plane.glyphs.length; i++) {
+    const glyph = plane.glyphs[i]!,
+      c = glyph.clip;
+    const x = Math.max(c.x, region.x),
+      y = Math.max(c.y, region.y),
+      width = Math.min(c.x + c.width, region.x + region.width) - x,
+      height = Math.min(c.y + c.height, region.y + region.height) - y;
+    if (!(width > 0 && height > 0)) {
+      kept?.push(glyph);
       continue;
     }
-    const c = glyph.clip;
-    for (const clip of [
-      {x: c.x, y: c.y, width: c.width, height: hit.y - c.y},
-      {x: c.x, y: hit.y + hit.height, width: c.width, height: c.y + c.height - hit.y - hit.height},
-      {x: c.x, y: hit.y, width: hit.x - c.x, height: hit.height},
-      {
-        x: hit.x + hit.width,
-        y: hit.y,
-        width: c.x + c.width - hit.x - hit.width,
-        height: hit.height,
-      },
-    ])
-      if (clip.width > 0 && clip.height > 0) kept.push({...glyph, clip});
+    // Damage usually misses most glyphs or covers them completely. Allocate
+    // only surviving fragments, retaining their top/bottom/left/right order.
+    kept ??= plane.glyphs.slice(0, i);
+    const top = y - c.y,
+      bottom = c.y + c.height - y - height,
+      left = x - c.x,
+      right = c.x + c.width - x - width;
+    if (c.width > 0 && top > 0)
+      kept.push({...glyph, clip: {x: c.x, y: c.y, width: c.width, height: top}});
+    if (c.width > 0 && bottom > 0)
+      kept.push({...glyph, clip: {x: c.x, y: y + height, width: c.width, height: bottom}});
+    if (left > 0) kept.push({...glyph, clip: {x: c.x, y, width: left, height}});
+    if (right > 0) kept.push({...glyph, clip: {x: x + width, y, width: right, height}});
   }
-  plane.glyphs = kept;
+  if (kept) plane.glyphs = kept;
 }
 function ensure(bitmap: RasterTextBitmap): Plane | undefined {
   if (!bitmap.storage || !bitmap.stride || !bitmap.bytesPerPixel) return;
@@ -131,14 +136,19 @@ export function readRasterText(bitmap: RasterTextBitmap): RasterTextGlyph[] {
   const [x, y] = origin(bitmap, plane);
   const output: RasterTextGlyph[] = [];
   for (const glyph of plane.glyphs) {
-    const clip = intersection(shifted(glyph.clip, -x, -y), bounds(bitmap));
-    if (clip)
+    const left = glyph.clip.x - x,
+      top = glyph.clip.y - y,
+      cx = Math.max(left, 0),
+      cy = Math.max(top, 0),
+      width = Math.min(left + glyph.clip.width, bitmap.width) - cx,
+      height = Math.min(top + glyph.clip.height, bitmap.height) - cy;
+    if (width > 0 && height > 0)
       output.push({
         ...glyph,
         flow: bitmap.rasterTextFlow ?? glyph.flow,
         x: glyph.x - x,
         y: glyph.y - y,
-        clip,
+        clip: {x: cx, y: cy, width, height},
       });
   }
   return output;
@@ -334,6 +344,31 @@ function isBitmap(value: unknown): value is RasterTextBitmap {
     'bytesPerPixel' in value
   );
 }
+function transformBounds<T extends Kernel>(
+  r: Rect,
+  map: RasterTextOperationOptions<T>['map'],
+  args: Parameters<T>,
+): Rect {
+  if (!map) {
+    const right = r.x + r.width,
+      bottom = r.y + r.height,
+      x = Math.min(r.x, right),
+      y = Math.min(r.y, bottom);
+    return {x, y, width: Math.max(r.x, right) - x, height: Math.max(r.y, bottom) - y};
+  }
+  const a = map(r.x, r.y, args),
+    b = map(r.x + r.width, r.y, args),
+    c = map(r.x, r.y + r.height, args),
+    d = map(r.x + r.width, r.y + r.height, args),
+    x = Math.min(a[0], b[0], c[0], d[0]),
+    y = Math.min(a[1], b[1], c[1], d[1]);
+  return {
+    x,
+    y,
+    width: Math.max(a[0], b[0], c[0], d[0]) - x,
+    height: Math.max(a[1], b[1], c[1], d[1]) - y,
+  };
+}
 export function withRasterText<T extends Kernel>(
   kernel: T,
   options: RasterTextOperationOptions<T> = {},
@@ -386,25 +421,9 @@ export function withRasterText<T extends Kernel>(
     if (alpha > 0)
       for (const glyph of captured) {
         if (!(glyph.alpha * alpha > 0)) continue;
-        const map = options.map ?? ((x: number, y: number): [number, number] => [x, y]);
-        const transform = (r: Rect): Rect => {
-          const points = [
-            [r.x, r.y],
-            [r.x + r.width, r.y],
-            [r.x, r.y + r.height],
-            [r.x + r.width, r.y + r.height],
-          ].map(([x, y]) => map(x!, y!, args));
-          const x = Math.min(...points.map((p) => p[0])),
-            y = Math.min(...points.map((p) => p[1]));
-          return {
-            x,
-            y,
-            width: Math.max(...points.map((p) => p[0])) - x,
-            height: Math.max(...points.map((p) => p[1])) - y,
-          };
-        };
-        const rect = transform(glyph),
-          clip = intersection(transform(glyph.clip), bounds(destination));
+        const map = options.map,
+          rect = transformBounds(glyph, map, args),
+          clip = intersection(transformBounds(glyph.clip, map, args), bounds(destination));
         if (!clip || !Number.isFinite(rect.x + rect.y + rect.width + rect.height)) continue;
         const item = {
           ...glyph,
@@ -415,20 +434,21 @@ export function withRasterText<T extends Kernel>(
           color: options.color?.(glyph.color, args) ?? glyph.color,
         };
         // Damage strips and repeated overlay draws may carry the same glyph.
-        plane.glyphs = plane.glyphs.filter(
-          (g) =>
-            !(
-              g.id === item.id &&
-              g.flow === item.flow &&
-              g.x === item.x &&
-              g.y === item.y &&
-              g.clip.x === item.clip.x &&
-              g.clip.y === item.clip.y &&
-              g.clip.width === item.clip.width &&
-              g.clip.height === item.clip.height
-            ),
-        );
-        plane.glyphs.push(item);
+        let count = 0;
+        for (const g of plane.glyphs)
+          if (
+            g.id !== item.id ||
+            g.flow !== item.flow ||
+            g.x !== item.x ||
+            g.y !== item.y ||
+            g.clip.x !== item.clip.x ||
+            g.clip.y !== item.clip.y ||
+            g.clip.width !== item.clip.width ||
+            g.clip.height !== item.clip.height
+          )
+            plane.glyphs[count++] = g;
+        plane.glyphs[count++] = item;
+        plane.glyphs.length = count;
       }
     if (
       options.clear &&

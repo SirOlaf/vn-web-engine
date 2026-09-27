@@ -2,8 +2,24 @@ import {instantiateEmbeddedWasm} from '../../../core/wasm.js';
 import {WasmPixelWorkspace, type WasmPixelExports} from '../../../graphics/wasm-pixel-workspace.js';
 import {BURIKO_BITMAP_WASM_BINARY} from './bitmap-alpha-wasm-binary.js';
 import type {BurikoBitmap} from './bitmap.js';
+import type {BurikoBitmapAffineCoordinates} from './bitmap-affine.js';
 
 interface BurikoBitmapExports extends WasmPixelExports {
+  affine_copy: (
+    source: number,
+    destination: number,
+    sourceWidth: number,
+    sourceHeight: number,
+    width: number,
+    height: number,
+    startX: number,
+    startY: number,
+    columnX: number,
+    columnY: number,
+    rowX: number,
+    rowY: number,
+    bilinear: number,
+  ) => void;
   alpha_rgb: (
     source: number,
     destination: number,
@@ -35,6 +51,61 @@ function getKernel(): BurikoBitmapExports | null {
     if (kernel !== null) workspace = new WasmPixelWorkspace(kernel);
   }
   return kernel;
+}
+
+/** The caller has proven native signed-WORD source addressing and writable output bounds. */
+export function tryBurikoBitmapAffineWasm(
+  destination: BurikoBitmap,
+  source: BurikoBitmap,
+  output: DataView,
+  input: DataView,
+  coordinates: BurikoBitmapAffineCoordinates,
+  bilinear: boolean,
+): boolean {
+  const width = destination.width >>> 0,
+    height = destination.height >>> 0,
+    pixels = width * height;
+  if (
+    pixels < BURIKO_BITMAP_WASM_MIN_PIXELS ||
+    input.buffer === output.buffer ||
+    // Small damage rectangles should not stage a disproportionately larger source plane.
+    (source.width >>> 0) * (source.height >>> 0) > pixels * 16
+  )
+    return false;
+  const exports = getKernel();
+  if (exports === null) return false;
+  return workspace!.transform(
+    {
+      view: input,
+      offset: source.offset,
+      pitch: source.stride,
+      rowBytes: (source.width >>> 0) * 4,
+      rows: source.height >>> 0,
+    },
+    {
+      view: output,
+      offset: destination.offset,
+      pitch: destination.stride,
+      rowBytes: width * 4,
+      rows: height,
+    },
+    (sourcePointer, destinationPointer) =>
+      exports.affine_copy(
+        sourcePointer,
+        destinationPointer,
+        source.width >>> 0,
+        source.height >>> 0,
+        width,
+        height,
+        coordinates.startX,
+        coordinates.startY,
+        coordinates.columnX,
+        coordinates.columnY,
+        coordinates.rowX,
+        coordinates.rowY,
+        Number(bilinear),
+      ),
+  );
 }
 
 /** Native coefficients and pair/tail rules stay here; memory staging is shared graphics code. */

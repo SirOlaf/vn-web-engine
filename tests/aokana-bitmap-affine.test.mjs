@@ -131,6 +131,96 @@ test('affine blending retains Q7 RGB and alpha-table coefficients in pair and ta
   }
 });
 
+test('affine temporary output initializes pixels while preserving unwritten row padding', () => {
+  const source = bitmap(3, 2, [1, 2, 3, 4, 5, 6].map(gray));
+  const destination = bitmap(3, 2, Array(6).fill(0), 2, 4);
+  destination.storage = new BurikoBitmapStorage(destination.storage.bytes, false);
+  transformBurikoBitmap(
+    new BurikoBitmapCompositor(),
+    destination,
+    source,
+    {...identity, x: -1},
+    0,
+    0,
+  );
+  assert.deepEqual(pixels(destination), [1, 2, 3, 4, 5, 6].map(gray));
+  for (const offset of [0, 16]) {
+    assert.doesNotThrow(() => destination.storage.range(offset, 12, true));
+    assert.throws(() => destination.storage.range(offset + 12, 4, true), /unwritten/);
+    assert.deepEqual(
+      [...destination.storage.bytes.slice(offset + 12, offset + 16)],
+      [165, 165, 165, 165],
+    );
+  }
+});
+
+test('large affine copies agree across independent and shared backing with cropped and padded rows', () => {
+  const compositor = new BurikoBitmapCompositor();
+  const source = bitmap(
+    73,
+    39,
+    Array.from({length: 73 * 39}, (_, i) => Math.imul(i + 1, 0x7193abcf) >>> 0),
+    2,
+    12,
+  );
+  source.offset = source.stride + 4;
+  source.width -= 2;
+  source.height -= 2;
+  for (const sampling of [0, 1])
+    for (const transform of [
+      {...identity, x: 0x9000, y: -0x3000},
+      {...identity, angle: 7 * 65536, scaleX: 70000, scaleY: 55000},
+      {...identity, x: -0x7fff8000, y: 0x7fff8000},
+      {...identity, scaleX: 1, scaleY: 1},
+    ]) {
+      const destination = bitmap(65, 19, [], 2, 8);
+      destination.storage = new BurikoBitmapStorage(destination.storage.bytes, false);
+      const inputLength = source.storage.bytes.length,
+        outputStart = inputLength + 8,
+        shared = new Uint8Array(outputStart + destination.storage.bytes.length);
+      shared.set(source.storage.bytes);
+      shared.set(destination.storage.bytes, outputStart);
+      const sharedSource = {
+        ...source,
+        storage: new BurikoBitmapStorage(shared.subarray(0, inputLength), true),
+      };
+      const sharedDestination = {
+        ...destination,
+        storage: new BurikoBitmapStorage(shared.subarray(outputStart), false),
+      };
+      // Separate views of one buffer retain the checked JavaScript traversal.
+      transformBurikoBitmap(compositor, sharedDestination, sharedSource, transform, 0, sampling);
+      transformBurikoBitmap(compositor, destination, source, transform, 0, sampling);
+      assert.deepEqual(destination.storage.bytes, sharedDestination.storage.bytes);
+      assert.deepEqual(
+        destination.storage.initializedRange(0, destination.storage.bytes.length),
+        sharedDestination.storage.initializedRange(0, sharedDestination.storage.bytes.length),
+      );
+      assert.deepEqual(shared.subarray(0, inputLength), source.storage.bytes);
+    }
+});
+
+test('affine pairs retain alias order and completed stores before a later source fault', () => {
+  const compositor = new BurikoBitmapCompositor();
+  const transform = {...identity, x: -1};
+  const shared = bitmap(4, 1, [1, 2, 3, 4].map(gray));
+  transformBurikoBitmap(compositor, {...shared, offset: 4, width: 3}, shared, transform, 0, 0);
+  assert.deepEqual(pixels(shared), [1, 1, 2, 2].map(gray));
+
+  const source = bitmap(4, 1, [1, 2, 3, 4].map(gray));
+  source.storage = new BurikoBitmapStorage(source.storage.bytes, false);
+  source.storage.written(0, 8);
+  const destination = bitmap(4, 1, [0, 0, 0, 0]);
+  destination.storage = new BurikoBitmapStorage(destination.storage.bytes, false);
+  assert.throws(
+    () => transformBurikoBitmap(compositor, destination, source, transform, 0, 0),
+    /unwritten/,
+  );
+  assert.deepEqual(pixels(destination), [gray(1), gray(2), 0, 0]);
+  assert.doesNotThrow(() => destination.storage.range(0, 8, true));
+  assert.throws(() => destination.storage.range(8, 8, true), /unwritten/);
+});
+
 test('affine distributed jobs retain the real shared pool and subtract completed Q16 rows', () => {
   const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(3), 3);
   const compositor = new BurikoBitmapCompositor();

@@ -15,7 +15,7 @@ export class BurikoBitmapStorage {
   }
   /** Import validity metadata without reading retained pixel storage. */
   static tracked(bytes: Uint8Array, initialized?: Uint8Array): BurikoBitmapStorage {
-    const storage = new BurikoBitmapStorage(bytes, initialized === undefined);
+    const storage = new BurikoBitmapStorage(bytes, true);
     if (initialized !== undefined) {
       if (initialized.length !== bytes.length)
         throw new RangeError('Buriko bitmap validity does not cover its backing storage');
@@ -80,11 +80,11 @@ export class BurikoBitmapStorage {
   /** Native temporary pixel snapshots preserve unwritten bytes and their state. */
   cloneRange(offset: number, length: number): BurikoBitmapStorage {
     this.range(offset, length, false);
-    const clone = new BurikoBitmapStorage(
-      this.bytes.slice(offset, offset + length),
-      this.defined === null,
-    );
-    if (this.defined !== null) clone.defined = this.defined.slice(offset, offset + length);
+    const clone = new BurikoBitmapStorage(this.bytes.slice(offset, offset + length), true);
+    if (this.defined !== null) {
+      clone.defined = this.defined.slice(offset, offset + length);
+      clone.initializedPrefix = Math.max(0, Math.min(length, this.initializedPrefix - offset));
+    }
     clone.nativeHeapReads = this.nativeHeapReads;
     cloneRasterText(this, clone, offset, length);
     return clone;

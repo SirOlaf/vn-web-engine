@@ -1,5 +1,4 @@
 interface CachedByteView {
-  buffer: ArrayBufferLike;
   offset: number;
   length: number;
   view: DataView;
@@ -9,14 +8,15 @@ const byteViews = new WeakMap<Uint8Array, CachedByteView>();
 
 /** Reuse the wrapper, never the contents; resized and replaced byte views remain live. */
 export function byteDataView(bytes: Uint8Array): DataView {
-  const buffer = bytes.buffer,
-    offset = bytes.byteOffset,
-    length = bytes.byteLength,
+  const length = bytes.byteLength,
     cached = byteViews.get(bytes);
-  if (cached && cached.buffer === buffer && cached.offset === offset && cached.length === length)
+  // A nonempty typed view keeps its buffer and offset through resizes. Empty
+  // views also need the offset check because shrinking out of bounds resets it.
+  if (cached && cached.length === length && (length !== 0 || cached.offset === bytes.byteOffset))
     return cached.view;
-  const view = new DataView(buffer, offset, length);
-  byteViews.set(bytes, {buffer, offset, length, view});
+  const offset = bytes.byteOffset,
+    view = new DataView(bytes.buffer, offset, length);
+  byteViews.set(bytes, {offset, length, view});
   return view;
 }
 

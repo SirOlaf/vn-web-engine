@@ -12,6 +12,11 @@ export interface WasmPixelRows {
   pitch: number;
 }
 
+export interface WasmPixelPlane extends WasmPixelRows {
+  rowBytes: number;
+  rows: number;
+}
+
 export class WasmPixelWorkspace {
   private bytes: Uint8Array | null = null;
   private readonly input: number;
@@ -110,6 +115,63 @@ export class WasmPixelWorkspace {
       for (let row = 0; row < rows; row++) {
         const start = output + row * rowBytes;
         target.set(bytes.subarray(start, start + rowBytes), row * destinationPitch);
+      }
+    return true;
+  }
+  /** Stages independent plane sizes; the kernel must overwrite every packed destination byte. */
+  transform(
+    source: WasmPixelPlane,
+    destination: WasmPixelPlane,
+    operation: (source: number, destination: number) => void,
+  ): boolean {
+    if (source.view.buffer === destination.view.buffer) return false;
+    for (const {view, offset, pitch, rowBytes, rows} of [source, destination])
+      if (
+        !(view.buffer instanceof ArrayBuffer) ||
+        view.buffer === this.kernel.memory.buffer ||
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(rowBytes) ||
+        rowBytes <= 0 ||
+        !Number.isSafeInteger(rows) ||
+        rows <= 0 ||
+        !Number.isSafeInteger(pitch) ||
+        pitch < rowBytes ||
+        offset + (rows - 1) * pitch + rowBytes > view.byteLength
+      )
+        return false;
+    const sourceLength = source.rowBytes * source.rows,
+      destinationLength = destination.rowBytes * destination.rows,
+      output = this.input + Math.ceil(sourceLength / 16) * 16,
+      end = output + Math.ceil(destinationLength / 16) * 16;
+    if (!Number.isSafeInteger(end) || end > 128 * 1024 * 1024) {
+      reportWasmGraphicsFallback();
+      return false;
+    }
+    const memory = this.kernel.memory;
+    if (end > memory.buffer.byteLength) {
+      try {
+        memory.grow(Math.ceil((end - memory.buffer.byteLength) / 65536));
+      } catch {
+        reportWasmGraphicsFallback();
+        return false;
+      }
+    }
+    if (this.bytes?.buffer !== memory.buffer) this.bytes = new Uint8Array(memory.buffer);
+    const bytes = this.bytes;
+    this.copyIn(source.view, source.offset, source.pitch, this.input, source.rowBytes, source.rows);
+    operation(this.input, output);
+    const target = new Uint8Array(
+      destination.view.buffer,
+      destination.view.byteOffset + destination.offset,
+      (destination.rows - 1) * destination.pitch + destination.rowBytes,
+    );
+    if (destination.pitch === destination.rowBytes)
+      target.set(bytes.subarray(output, output + destinationLength));
+    else
+      for (let row = 0; row < destination.rows; row++) {
+        const start = output + row * destination.rowBytes;
+        target.set(bytes.subarray(start, start + destination.rowBytes), row * destination.pitch);
       }
     return true;
   }

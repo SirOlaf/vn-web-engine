@@ -4,6 +4,7 @@ import {nativeAffineSineCosine} from '../bp/opcodes/native-math.js';
 import {
   burikoBitmapRectangle,
   cropBurikoBitmap,
+  initializedBurikoBitmapView,
   intersectBurikoBitmapRectangle,
   translateBurikoBitmapRectangle,
   type BurikoBitmap,
@@ -12,6 +13,7 @@ import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import {clearBurikoBitmap} from './bitmap-copy.js';
 import {runBurikoBitmapOperation} from './bitmap-operation-jobs.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
+import {tryBurikoBitmapAffineWasm} from './bitmap-alpha-wasm.js';
 
 export interface BurikoBitmapAffineTransform {
   x: number;
@@ -104,14 +106,61 @@ interface Sample {
   inside: boolean;
 }
 
+/** Signed WORD source addressing and DWORD destination strides must fit the checked envelope. */
+function affineView(bitmap: BurikoBitmap, source: boolean, writeOnly = false): DataView | null {
+  const width = bitmap.width >>> 0,
+    height = bitmap.height >>> 0;
+  if (
+    !Number.isSafeInteger(bitmap.stride) ||
+    (bitmap.stride & 3) !== 0 ||
+    bitmap.stride < width * 4 ||
+    bitmap.stride > (source ? 0x7fff * 4 : 0x7fffffff) ||
+    (source && (width > 0x7fff || height > 0x7fff))
+  )
+    return null;
+  let view: DataView | null;
+  if (writeOnly) {
+    const storage = bitmap.storage,
+      end = bitmap.offset + (height - 1) * bitmap.stride + width * 4;
+    if (
+      storage === null ||
+      width === 0 ||
+      height === 0 ||
+      !Number.isSafeInteger(bitmap.offset) ||
+      bitmap.offset < 0 ||
+      !Number.isSafeInteger(end) ||
+      end > storage.bytes.length ||
+      storage.initializedView(0, 0) === null
+    )
+      return null;
+    view = storage.view;
+  } else view = initializedBurikoBitmapView(bitmap, width, height);
+  return view !== null && view.buffer instanceof ArrayBuffer ? view : null;
+}
+
+function readAffinePixel(
+  source: BurikoBitmap,
+  view: DataView | null,
+  pixelIndex: number,
+  forceAlpha: boolean,
+): number {
+  const offset = source.offset + (pixelIndex | 0) * 4;
+  const value = view === null ? bitmapRead32(source, offset) : view.getUint32(offset, true);
+  return forceAlpha ? (value | 0xff000000) >>> 0 : value;
+}
+
 /** The shared SSE2 kernels use signed WORD bounds and PMADDWD pixel addressing. */
 function sampleAffine(
   source: BurikoBitmap,
+  view: DataView | null,
   fixedX: number,
   fixedY: number,
   bilinear: boolean,
   forceAlpha: boolean,
-): Sample {
+  sample: Sample,
+): void {
+  sample.pixel = 0;
+  sample.inside = false;
   if (!bilinear) {
     fixedX = (fixedX + 0x8000) | 0;
     fixedY = (fixedY + 0x8000) | 0;
@@ -121,21 +170,27 @@ function sampleAffine(
   const width = signed16(source.width),
     height = signed16(source.height);
   if (x <= -2 || y <= -2 || x > signed16(source.width - 1) || y > signed16(source.height - 1))
-    return {pixel: 0, inside: false};
+    return;
   const pitch = source.stride >> 2;
   const index = (x + Math.imul(y, signed16(pitch))) | 0;
-  const read = (column: number, row: number, pixelIndex: number): number => {
-    if (column < 0 || row < 0 || column >= width || row >= height) return 0;
-    const value = bitmapRead32(source, source.offset + (pixelIndex | 0) * 4);
-    return forceAlpha ? (value | 0xff000000) >>> 0 : value;
-  };
-  const first = read(x, y, index);
-  if (!bilinear) return {pixel: first, inside: x >= 0 && y >= 0 && x < width && y < height};
+  const insideX = x >= 0 && x < width,
+    insideY = y >= 0 && y < height;
+  const first = insideX && insideY ? readAffinePixel(source, view, index, forceAlpha) : 0;
+  if (!bilinear) {
+    sample.pixel = first;
+    sample.inside = insideX && insideY;
+    return;
+  }
   const rightX = signed16(x + 1),
     bottomY = signed16(y + 1);
-  const right = read(rightX, y, (index + 1) | 0),
-    bottom = read(x, bottomY, (index + pitch) | 0),
-    diagonal = read(rightX, bottomY, (index + pitch + 1) | 0);
+  const insideRight = rightX >= 0 && rightX < width,
+    insideBottom = bottomY >= 0 && bottomY < height;
+  const right = insideRight && insideY ? readAffinePixel(source, view, index + 1, forceAlpha) : 0,
+    bottom = insideX && insideBottom ? readAffinePixel(source, view, index + pitch, forceAlpha) : 0,
+    diagonal =
+      insideRight && insideBottom
+        ? readAffinePixel(source, view, index + pitch + 1, forceAlpha)
+        : 0;
   const fractionX = (fixedX >>> 12) & 15,
     fractionY = (fixedY >>> 12) & 15;
   let pixel = 0;
@@ -146,7 +201,8 @@ function sampleAffine(
       lower = b + (((((diagonal >>> shift) & 255) - b) * fractionX) >> 4);
     pixel |= (upper + (((lower - upper) * fractionY) >> 4)) << shift;
   }
-  return {pixel: pixel >>> 0, inside: true};
+  sample.pixel = pixel >>> 0;
+  sample.inside = true;
 }
 
 /** 04ec00/0500e0/050410 retain alpha while attenuating each RGB byte with PMULLW/PSRLW. */
@@ -215,6 +271,26 @@ function affinePixels(
 ): void {
   const coordinates = burikoBitmapAffineCoordinates(transform, revision);
   const forceAlpha = destination.format === 2 && source.format === 1;
+  // Prove full storage envelopes once. Fallback accesses retain partial writes,
+  // unwritten-memory faults and unusual native signed-pitch behavior.
+  const input = affineView(source, true),
+    writeOnly = input !== null && (mode === 'copy' || mode === 'dim'),
+    output = affineView(destination, false, writeOnly);
+  if (
+    mode === 'copy' &&
+    input !== null &&
+    output !== null &&
+    tryBurikoBitmapAffineWasm(destination, source, output, input, coordinates, bilinear)
+  ) {
+    for (let row = 0; row < destination.height >>> 0; row++)
+      destination.storage!.written(
+        destination.offset + row * destination.stride,
+        (destination.width >>> 0) * 4,
+      );
+    return;
+  }
+  const first: Sample = {pixel: 0, inside: false},
+    second: Sample = {pixel: 0, inside: false};
   let rowX = coordinates.startX,
     rowY = coordinates.startY,
     outputRow = destination.offset;
@@ -223,27 +299,32 @@ function affinePixels(
       y = rowY;
     for (let column = 0; column < destination.width >>> 0; column += 2) {
       const count = column + 1 < destination.width >>> 0 ? 2 : 1;
-      const first = sampleAffine(source, x, y, bilinear, forceAlpha);
+      sampleAffine(source, input, x, y, bilinear, forceAlpha, first);
       x = (x + coordinates.columnX) | 0;
       y = (y + coordinates.columnY) | 0;
-      const second = count === 2 ? sampleAffine(source, x, y, bilinear, forceAlpha) : null;
       if (count === 2) {
+        sampleAffine(source, input, x, y, bilinear, forceAlpha, second);
         x = (x + coordinates.columnX) | 0;
         y = (y + coordinates.columnY) | 0;
-      }
+      } else second.pixel = 0;
       const offset = outputRow + column * 4;
-      if (mode === 'alpha' && first.pixel >>> 24 === 0 && (second?.pixel ?? 0) >>> 24 === 0)
-        continue;
+      if (mode === 'alpha' && first.pixel >>> 24 === 0 && second.pixel >>> 24 === 0) continue;
       let firstPixel = first.pixel,
-        secondPixel = second?.pixel ?? 0;
+        secondPixel = second.pixel;
       if (mode === 'dim') {
         firstPixel = dimPixel(firstPixel, transparency);
         secondPixel = dimPixel(secondPixel, transparency);
       } else if (mode === 'mix' || mode === 'alpha') {
         // 051640's single nearest tail writes zero if its source coordinate misses.
         if (!(mode === 'mix' && !bilinear && count === 1 && !first.inside)) {
-          const oldFirst = bitmapRead32(destination, offset);
-          const oldSecond = count === 2 ? bitmapRead32(destination, offset + 4) : 0;
+          const oldFirst =
+            output === null ? bitmapRead32(destination, offset) : output.getUint32(offset, true);
+          const oldSecond =
+            count !== 2
+              ? 0
+              : output === null
+                ? bitmapRead32(destination, offset + 4)
+                : output.getUint32(offset + 4, true);
           firstPixel = interpolatePixel(
             firstPixel,
             oldFirst,
@@ -259,9 +340,18 @@ function affinePixels(
             );
         }
       }
-      bitmapWrite32(destination, offset, firstPixel);
-      if (count === 2) bitmapWrite32(destination, offset + 4, secondPixel);
+      if (output === null) {
+        bitmapWrite32(destination, offset, firstPixel);
+        if (count === 2) bitmapWrite32(destination, offset + 4, secondPixel);
+      } else {
+        output.setUint32(offset, firstPixel, true);
+        if (count === 2) output.setUint32(offset + 4, secondPixel, true);
+      }
     }
+    // A validated source cannot fault mid-row. Copy/dim never read old output,
+    // so newly allocated temporary bitmaps can publish validity a row at a time.
+    if (output !== null && writeOnly)
+      destination.storage!.written(outputRow, (destination.width >>> 0) * 4);
     rowX = (rowX + coordinates.rowX) | 0;
     rowY = (rowY + coordinates.rowY) | 0;
     outputRow += (destination.stride >> 2) * 4;

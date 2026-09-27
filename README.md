@@ -80,6 +80,8 @@ npm test
 
 `npm run check:ui` checks the Svelte interfaces and their TypeScript controllers. The runtime compiler remains TypeScript 7; Svelte's checker uses the compatible TypeScript 6 compiler API. `npm run build:runtime` emits the separate `dist/` modules used by tests and debugging tools. To run the local archive-streaming endpoints for diagnostics, use `npm run start:debug`; configure `NOAH_DATA_ROOT` or `AOKANA_DATA_ROOT` as needed. The normal website has no server-installation controls.
 
+`npm run build:profile` and `npm run start:profile` provide a separate local build with readable function names and source maps. See [performance profiling](docs/performance-profiling.md) for Chrome trace capture instructions.
+
 ## Legal
 
 This is an unofficial compatibility and preservation project, unaffiliated with the games' developers or publishers. Game files are not included and should not be redistributed with this source tree.
