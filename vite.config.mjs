@@ -23,6 +23,7 @@ export default defineConfig(({mode}) => {
           'index.html',
           'buriko.html',
           'noah.html',
+          'rscript.html',
           'assets.html',
           'buriko-assets.html',
         ],

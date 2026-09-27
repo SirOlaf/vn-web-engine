@@ -296,7 +296,8 @@ a {
   box-shadow: inset 0 0 0 2px #a6e0ff;
 }
 
-#noah-surface {
+#noah-surface,
+#rscript-surface {
   position: absolute;
   inset: 0;
   min-width: 0;

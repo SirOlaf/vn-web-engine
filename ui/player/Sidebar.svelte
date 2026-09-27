@@ -30,7 +30,8 @@
       <a class="sidebar-library-link" href="./">← Library</a>
       <label for="viewer-game">Select player</label>
       <select id="viewer-game" value={game}>
-        <option value="noah">CHAOS;HEAD NOAH</option><option value="buriko">BGI / Ethornell</option>
+        <option value="noah">CHAOS;HEAD NOAH</option><option value="buriko">BGI / Ethornell</option
+        ><option value="rscript">codeX RScript</option>
       </select>
     </section>
     <section>
@@ -51,18 +52,20 @@
       <p id="fullscreen-help" role="status" hidden></p>
     </section>
     <InstallationFiles />
-    <section>
-      <h2>Text rendering</h2>
-      <label class="sr-only" for="text-mode">Text rendering mode</label>
-      <select id="text-mode" aria-describedby="text-help">
-        <option value="native">Native</option><option value="dom">DOM text</option>
-      </select>
-      <p id="text-help">
-        DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and
-        visual effects are approximate.
-      </p>
-      <DomTextStyle />
-    </section>
+    {#if game !== 'rscript'}
+      <section>
+        <h2>Text rendering</h2>
+        <label class="sr-only" for="text-mode">Text rendering mode</label>
+        <select id="text-mode" aria-describedby="text-help">
+          <option value="native">Native</option><option value="dom">DOM text</option>
+        </select>
+        <p id="text-help">
+          DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and
+          visual effects are approximate.
+        </p>
+        <DomTextStyle />
+      </section>
+    {/if}
     <SaveFiles {game} runtime />
     {#if game === 'buriko'}
       <RuntimeProfile />

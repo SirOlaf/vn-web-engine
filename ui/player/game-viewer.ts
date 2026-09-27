@@ -1,4 +1,4 @@
-export type ViewerGame = 'noah' | 'buriko';
+export type ViewerGame = 'noah' | 'buriko' | 'rscript';
 
 /** Behavior bridge for controls rendered by the shared Svelte player shell. */
 export function mountGameViewer(game: ViewerGame): {collapseOptions(collapsed: boolean): void} {
@@ -15,7 +15,12 @@ export function mountGameViewer(game: ViewerGame): {collapseOptions(collapsed: b
 
   gameSelect.value = game;
   gameSelect.addEventListener('change', () => {
-    const destination = gameSelect.value === 'buriko' ? './buriko.html' : './noah.html';
+    const destination =
+      gameSelect.value === 'buriko'
+        ? './buriko.html'
+        : gameSelect.value === 'rscript'
+          ? './rscript.html'
+          : './noah.html';
     window.location.assign(new URL(destination, window.location.href));
   });
   toggle.addEventListener('click', () =>

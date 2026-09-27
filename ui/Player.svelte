@@ -7,7 +7,8 @@
   import {burikoTitle} from './player/buriko-library.js';
   import {playerRuntimeState} from './player/runtime-state.js';
   export let game: GameId;
-  $: title = game === 'buriko' ? $burikoTitle : 'CHAOS;HEAD NOAH';
+  $: title =
+    game === 'buriko' ? $burikoTitle : game === 'rscript' ? 'codeX RScript' : 'CHAOS;HEAD NOAH';
 
   onMount(() => {
     const warnBeforeClosing = (event: BeforeUnloadEvent): void => {
@@ -18,7 +19,12 @@
       if (running || saveBusy) window.addEventListener('beforeunload', warnBeforeClosing);
       else window.removeEventListener('beforeunload', warnBeforeClosing);
     });
-    const boot = game === 'buriko' ? import('./runtimes/buriko.js') : import('./runtimes/noah.js');
+    const boot =
+      game === 'buriko'
+        ? import('./runtimes/buriko.js')
+        : game === 'rscript'
+          ? import('./runtimes/rscript.js')
+          : import('./runtimes/noah.js');
     void boot.catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       const fatal = document.getElementById('fatal-error')!;
@@ -41,6 +47,8 @@
         <div id="surface"><canvas id="game-canvas" tabindex="0"></canvas></div>
         <div id="window-layer"></div>
       </div>
+    {:else if game === 'rscript'}
+      <div id="rscript-surface"></div>
     {:else}
       <div id="noah-surface"></div>
     {/if}

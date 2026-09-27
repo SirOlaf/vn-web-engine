@@ -13,6 +13,12 @@
     type GameId,
   } from '../library.js';
   import {playerRuntimeState, setSaveBusy} from './runtime-state.js';
+  import {
+    activeRScriptGame,
+    listRScriptSaves,
+    readRScriptSave,
+    writeRScriptSave,
+  } from './rscript-library.js';
   import {IndexedDbStore} from '../../src/platform/store.js';
   import {
     activeBurikoGame,
@@ -57,8 +63,21 @@
     }
     wasRunning = $playerRuntimeState.running;
   }
+  let rscriptEntries: string[] = [];
+  let rscriptSelection = '';
+  $: rscriptGame = $activeRScriptGame;
+  $: if (game === 'rscript') void refreshRScript(rscriptGame);
+  async function refreshRScript(target = rscriptGame, prefer?: string): Promise<void> {
+    rscriptEntries = target ? await listRScriptSaves(target) : [];
+    if (prefer) rscriptSelection = prefer;
+    if (!rscriptEntries.includes(rscriptSelection)) rscriptSelection = rscriptEntries[0] ?? '';
+  }
   $: selected = entries.find((entry) => `${entry.area}:${entry.path}` === selection);
-  $: locked = busy || (runtime && $playerRuntimeState.busy) || (game === 'buriko' && !savedGame);
+  $: locked =
+    busy ||
+    (runtime && $playerRuntimeState.busy) ||
+    (game === 'buriko' && !savedGame) ||
+    (game === 'rscript' && !rscriptGame);
   $: importLocked = locked || (runtime && $playerRuntimeState.running);
 
   async function refresh(prefer?: BurikoSaveEntry): Promise<void> {
@@ -101,10 +120,16 @@
     const targetTransfer = transfer;
     const targetSave = selected;
     const targetNoahSave = noahSelection;
+    const targetRScript = rscriptGame;
     void action(async () => {
       if (file.size > 64 * 1024 * 1024) throw new Error('Import exceeds 64 MiB.');
       const bytes = new Uint8Array(await file.arrayBuffer());
-      if (targetGame === 'buriko') {
+      if (targetGame === 'rscript') {
+        if (!targetRScript) throw new Error('Choose the game folder first.');
+        await writeRScriptSave(targetRScript, file.name, bytes);
+        await refreshRScript(targetRScript, file.name.toUpperCase());
+        message = `${file.name} imported.`;
+      } else if (targetGame === 'buriko') {
         if (!targetTransfer) throw new Error('Choose a BGI installation first.');
         const destination =
           targetSave && burikoRegistryFold(targetSave.name) === burikoRegistryFold(file.name)
@@ -125,8 +150,15 @@
     const targetTransfer = transfer;
     const targetSave = selected;
     const targetNoahSave = noahSelection;
+    const targetRScript = rscriptGame;
+    const targetRScriptSave = rscriptSelection;
     void action(async () => {
-      if (targetGame === 'buriko') {
+      if (targetGame === 'rscript') {
+        if (!targetRScript) throw new Error('Choose the game folder first.');
+        if (!targetRScriptSave) throw new Error('Select a save file.');
+        downloadBytes(targetRScriptSave, await readRScriptSave(targetRScript, targetRScriptSave));
+        message = `${targetRScriptSave} exported.`;
+      } else if (targetGame === 'buriko') {
         if (!targetTransfer) throw new Error('Choose a BGI installation first.');
         if (!targetSave) throw new Error('Select a save file.');
         downloadBytes(targetSave.name, await targetTransfer.read(targetSave));
@@ -169,7 +201,17 @@
     {/if}
   {/if}
   <label for="save-file">Saved in this browser</label>
-  {#if game === 'buriko'}
+  {#if game === 'rscript'}
+    {#if !rscriptGame}<p>Open the game folder in the player to manage its saves.</p>{/if}
+    <select
+      id="save-file"
+      bind:value={rscriptSelection}
+      disabled={locked || rscriptEntries.length === 0}
+    >
+      {#if rscriptEntries.length === 0}<option value="">No browser saves yet</option>{/if}
+      {#each rscriptEntries as name (name)}<option value={name}>{name}</option>{/each}
+    </select>
+  {:else if game === 'buriko'}
     <select id="save-file" bind:value={selection} disabled={locked || entries.length === 0}>
       {#if entries.length === 0}<option value="">No browser saves yet</option>{/if}
       {#each entries as entry (`${entry.area}:${entry.path}`)}
@@ -195,7 +237,9 @@
       id="save-export"
       type="button"
       onclick={exportFile}
-      disabled={locked || (game === 'buriko' && !selected)}>Export</button
+      disabled={locked ||
+        (game === 'buriko' && !selected) ||
+        (game === 'rscript' && !rscriptSelection)}>Export</button
     >
   </div>
   <input

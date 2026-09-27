@@ -18,10 +18,21 @@
       explorerRoute: './assets.html',
       initials: 'CH',
     },
+    rscript: {
+      title: 'codeX RScript',
+      engine: 'RSCRIPT',
+      route: './rscript.html',
+      explorerRoute: null,
+      initials: 'RS',
+    },
   } as const;
   let selected: GameId = 'buriko';
   let tab: 'overview' | 'files' = 'overview';
-  let installations: Record<GameId, InstallationStatus | null> = {buriko: null, noah: null};
+  let installations: Record<GameId, InstallationStatus | null> = {
+    buriko: null,
+    noah: null,
+    rscript: null,
+  };
   let checking = false;
   let overviewTab: HTMLButtonElement;
   let filesTab: HTMLButtonElement;
@@ -31,11 +42,12 @@
 
   async function refreshInstallations(): Promise<void> {
     checking = true;
-    const [buriko, noah] = await Promise.all([
+    const [buriko, noah, rscript] = await Promise.all([
       installationStatus('buriko'),
       installationStatus('noah'),
+      installationStatus('rscript'),
     ]);
-    installations = {buriko, noah};
+    installations = {buriko, noah, rscript};
     checking = false;
   }
 
@@ -80,13 +92,13 @@
       <section class="shelf" aria-label="Games">
         <div class="section-heading">
           <h2>Library</h2>
-          <span>2 players</span>
+          <span>3 players</span>
           <button class="refresh" type="button" onclick={refreshInstallations} disabled={checking}>
             <span aria-hidden="true">↻</span>
             {checking ? 'Checking…' : 'Refresh browser files'}
           </button>
         </div>
-        {#each ['buriko', 'noah'] as GameId[] as id}
+        {#each ['buriko', 'noah', 'rscript'] as GameId[] as id}
           <button
             type="button"
             class:selected={selected === id}
@@ -172,7 +184,9 @@
                 Open game
                 <span aria-hidden="true">↗</span>
               </a>
-              <a class="button secondary" href={game.explorerRoute}>Open asset laboratory</a>
+              {#if game.explorerRoute}
+                <a class="button secondary" href={game.explorerRoute}>Open asset laboratory</a>
+              {/if}
             </div>
             <div class="info-row"><span>Engine</span><strong>{game.engine}</strong></div>
             <div class="info-row"><span>Game files</span><strong>Read locally</strong></div>
