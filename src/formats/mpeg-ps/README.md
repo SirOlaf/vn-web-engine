@@ -8,7 +8,9 @@ in `src/video/movie.ts` selects this container or the existing CRI container.
 The index follows I/P/B presentation order, unwraps the 33-bit clock, fills omitted
 PTS values using the elementary stream cadence, and normalizes both tracks to a
 common origin. Sequence/GOP headers belong to the following video access unit,
-including when a PES boundary splits those headers from its picture start.
+including when a PES boundary splits those headers from its picture start. When the
+packet holding such a picture start carries a timestamp that would otherwise make the
+next picture ambiguous, that timestamp belongs to the split picture.
 Explicit frame/PCM times survive the worker boundary and Web Audio scheduling.
 
 The supported program has one MPEG-1 video track and at most one MPEG-1 Layer II

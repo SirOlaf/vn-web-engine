@@ -267,9 +267,10 @@ export class Mpeg1Decoder {
     this.lastType = 0;
     let first = true;
     while (bits.bitLength - bits.position >= 1) {
-      // A slice may end with byte-alignment zero bits only.
+      // Macroblocks continue until 23 zero bits (ISO/IEC 11172-2 2.4.2.6): the slice ends
+      // with alignment bits and optional zero stuffing before the next start code.
       const left = bits.bitLength - bits.position;
-      if (left <= 7 && bits.peek(left) === 0) {
+      if (bits.peek(Math.min(23, left)) === 0) {
         bits.skip(left);
         break;
       }

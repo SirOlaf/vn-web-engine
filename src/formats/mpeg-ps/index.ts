@@ -16,16 +16,24 @@ class Anchors {
     if (pts !== null) this.pending.push({offset, pts});
     if (this.pending.length > 1024) throw new Error('MPEG timestamp queue exceeds limit');
   }
-  take(offset: number): number | null {
-    let result: number | null = null;
-    while (this.pending.length && this.pending[0]!.offset <= offset) {
-      const next = this.pending.shift()!.pts;
-      if (result !== null && result !== next)
-        throw new Error('Ambiguous MPEG access-unit timestamp');
-      result = next;
-    }
-    return result;
+  /** Removes and returns every timestamp whose packet starts at or before `offset`. */
+  takeAll(offset: number): {offset: number; pts: number}[] {
+    const taken: {offset: number; pts: number}[] = [];
+    while (this.pending.length && this.pending[0]!.offset <= offset)
+      taken.push(this.pending.shift()!);
+    return taken;
   }
+  take(offset: number): number | null {
+    return single(this.takeAll(offset));
+  }
+}
+function single(anchors: readonly {pts: number}[]): number | null {
+  let result: number | null = null;
+  for (const {pts} of anchors) {
+    if (result !== null && result !== pts) throw new Error('Ambiguous MPEG access-unit timestamp');
+    result = pts;
+  }
+  return result;
 }
 
 /** Scans only start-code headers, retaining at most seven carry bytes. Its
@@ -40,6 +48,8 @@ class VideoIndex {
   private unitStart: number | null = null;
   private current: Picture | null = null;
   private future: Picture | null = null;
+  /** The last picture and the stream range from its headers to its picture start code. */
+  private previous: {picture: Picture; start: number; end: number} | null = null;
   push(payload: Uint8Array, pts: number | null): void {
     this.anchors.add(this.offset, pts);
     const bytes = new Uint8Array(this.carry.length + payload.length);
@@ -76,7 +86,23 @@ class VideoIndex {
         // An access unit includes its preceding sequence/GOP headers. A PES
         // timestamp arriving after those headers belongs to the next unit,
         // even if this picture_start_code is in the new packet.
-        this.current = {type, pts: this.anchors.take(this.unitStart ?? base + at)};
+        const start = this.unitStart ?? base + at;
+        const anchors = this.anchors.takeAll(start);
+        // Some muxers split the sequence/GOP headers from the picture and stamp the packet
+        // holding the picture start code. That timestamp belongs to the previous picture
+        // when leaving it there would give this picture two different timestamps.
+        const previous = this.previous;
+        if (
+          previous &&
+          previous.picture.pts === null &&
+          anchors.length > 1 &&
+          new Set(anchors.map((anchor) => anchor.pts)).size > 1 &&
+          anchors[0]!.offset > previous.start &&
+          anchors[0]!.offset <= previous.end
+        )
+          previous.picture.pts = anchors.shift()!.pts;
+        this.current = {type, pts: single(anchors)};
+        this.previous = {picture: this.current, start, end: base + at};
         this.unitStart = null;
       } else if (code === 0xb8) {
         this.finishPicture();
