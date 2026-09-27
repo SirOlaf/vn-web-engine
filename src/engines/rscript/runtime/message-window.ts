@@ -364,6 +364,7 @@ export class RScriptMessageWindow extends RScriptContainer {
 
   /** sub_416C30: rebuilds boxes and their current page text from the state. */
   async restore(): Promise<void> {
+    this.setWaiting(false);
     this.browsing = false;
     this.pageRecord = this.at(MessageState.page);
     this.boxes[0]!.record = this.at(MessageState.boxes);

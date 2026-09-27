@@ -5,7 +5,13 @@ import {RSCRIPT_1_11_LAYOUTS} from '../dist/engines/rscript/vm/layouts.js';
 import {MsvcRandom, RScriptInterpreter} from '../dist/engines/rscript/vm/interpreter.js';
 import {RScriptMemory, Scene} from '../dist/engines/rscript/memory.js';
 import {RScriptBitsetStore} from '../dist/engines/rscript/bitset-store.js';
-import {decodeSystemSave, encodeSystemSave} from '../dist/engines/rscript/saves.js';
+import {
+  decodeSlotHeader,
+  decodeSlotSave,
+  decodeSystemSave,
+  encodeSlotSave,
+  encodeSystemSave,
+} from '../dist/engines/rscript/saves.js';
 import {gsc} from './rscript-fixtures.mjs';
 
 /** A tiny assembler for GSC code: expressions carry operand modes in the opcode. */
@@ -159,4 +165,38 @@ test('RScript flag stores and the system save keep the native layout', () => {
   );
   assert.ok(restored.readText.has(1001, 3) && restored.seenImages.has(0, 42));
   assert.throws(() => decodeSystemSave(restored, bytes.subarray(0, 100)), /Truncated/);
+});
+
+test('RScript slot saves keep the message snapshot, its header and the previous choice', () => {
+  const memory = new RScriptMemory();
+  memory.messageVariables[1] = 11;
+  memory.messageVariables[3] = -3;
+  memory.messageVariables[6999] = 5;
+  memory.messageScene[0x8e] = 0x34;
+  memory.messageScene[0x8f] = 0x12;
+  memory.messageScene[0x1000] = 7;
+  memory.previousScene[0x2000] = 9;
+  memory.previousVariables[42] = 4;
+  memory.scene[0x1000] = 1; // the live scene is not what a slot stores
+  // At most 80 bytes of text; a double-byte character may end at the limit.
+  const text = new Uint8Array([...Array(78).fill(0x41), 0x82, 0xa0, 0x42]);
+  const bytes = encodeSlotSave(memory, text, new Date(2016, 11, 21, 9, 5));
+  assert.equal(bytes.length, 0x68 + 2 * (0x996c + 14000));
+  const header = decodeSlotHeader(bytes);
+  assert.deepEqual(
+    [header.year, header.month, header.day, header.hour, header.minute, header.background],
+    [2016, 12, 21, 9, 5, 0x1234],
+  );
+  assert.deepEqual(header.variables, [11, 0, -3]);
+  assert.equal(header.text.length, 80);
+  // Shifted by one byte, the text ends with a single-byte character at the limit.
+  const shifted = decodeSlotHeader(encodeSlotSave(memory, text.subarray(1), new Date())).text;
+  assert.deepEqual([...shifted.subarray(76)], [0x41, 0x82, 0xa0, 0x42]);
+  const loaded = new RScriptMemory();
+  decodeSlotSave(loaded, bytes);
+  assert.equal(loaded.scene[0x1000], 7);
+  assert.deepEqual([loaded.variables[1], loaded.variables[6999]], [11, 5]);
+  assert.equal(loaded.previousScene[0x2000], 9);
+  assert.equal(loaded.previousVariables[42], 4);
+  assert.throws(() => decodeSlotSave(loaded, bytes.subarray(0, 1000)), /Truncated/);
 });

@@ -524,10 +524,16 @@ export class RScriptContainer extends RScriptNode {
     for (const {node} of this.children) node.draw(target, area, x, y);
   }
 
-  /** vtable +88 on containers: its own step, then every child (0x4060A0). */
+  /**
+   * vtable +88 on containers (0x4060A0): nothing while hidden; otherwise every child from
+   * the top priority down, then the container's own step.
+   */
   override animate(): boolean {
-    let running = super.animate();
-    for (const {node} of [...this.children]) if (node.animate()) running = true;
+    if (!this.visible) return false;
+    let running = false;
+    const children = [...this.children];
+    for (let i = children.length - 1; i >= 0; i--) if (children[i]!.node.animate()) running = true;
+    if (super.animate()) running = true;
     return running;
   }
 

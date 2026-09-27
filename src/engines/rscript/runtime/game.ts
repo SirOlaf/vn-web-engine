@@ -6,7 +6,7 @@ import {createSurface, type RScriptSurface} from '../graphics/pixels.js';
 import {RScriptContainer, RScriptSprite, type RScriptNode} from '../graphics/sprite.js';
 import {RScriptImages} from '../images.js';
 import {Config, GAME_VARIABLE_COUNT, Scene, RScriptMemory} from '../memory.js';
-import {decodeSystemSave} from '../saves.js';
+import {decodeSlotSave, decodeSystemSave, encodeSlotSave, encodeSystemSave} from '../saves.js';
 import {RSCRIPT_1_11_LAYOUTS} from '../vm/layouts.js';
 import {
   RScriptInterpreter,
@@ -39,6 +39,13 @@ export interface RScriptGameHost {
   readonly saves: RScriptSaveStorage;
   /** Plays an installation-relative movie; resolves when it ends or is skipped. */
   playMovie(path: string): Promise<void>;
+  /** Ends a movie started by `playMovie` early, when the scene restarts. */
+  stopMovie(): void;
+  /**
+   * Asks the player to confirm (the MessageBox with OK and Cancel that titles without a
+   * custom dialog image use); resolves true for OK.
+   */
+  confirm(caption: string, text: string): Promise<boolean>;
   diagnostic(message: string): void;
   /** The script thread ended (the native game closes its window) or failed. */
   exit(error?: unknown): void;
@@ -106,6 +113,17 @@ class ScriptEvent {
 
 const pad = (value: number, digits: number): string => String(value).padStart(digits, '0');
 
+/** Confirmation messages of the RScript 1.11 executable (0x481550..0x4821DC). */
+export const RScriptMessages = {
+  confirm: '確認',
+  returnToTitle: 'タイトル画面に戻ります。\r\nよろしいですか？',
+  overwrite: 'セーブデータを上書きします。\r\nよろしいですか？',
+  load: 'セーブデータをロードします。\r\nよろしいですか？',
+  quickLoad: 'クイックロードしますか？',
+  quitCaption: '終了確認',
+  quit: '本当にゲームを終了しますか？',
+} as const;
+
 /**
  * The RScript game scene (0x41E760 tick, 0x422FD0 script thread, 0x4292C0 rebuild): layers,
  * message window and effect sprites over the scene state in `memory`, driven by one script
@@ -137,6 +155,10 @@ export class RScriptGame {
   private pressed: RScriptNode | null = null;
   private ticker: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
+  /** Incremented when the scene thread restarts (a load or a return to the title). */
+  private sceneGeneration = 0;
+  /** The running scene thread. */
+  private running: Promise<void> = Promise.resolve();
 
   constructor(readonly host: RScriptGameHost) {
     const {apini} = host;
@@ -275,8 +297,9 @@ export class RScriptGame {
 
   /** sub_42AC50: waits for the scene event. */
   async suspend(): Promise<void> {
+    const generation = this.sceneGeneration;
     await this.event.wait();
-    if (this.disposed) throw new RScriptScriptEnd('stopped');
+    if (this.disposed || generation !== this.sceneGeneration) throw new RScriptScriptEnd('stopped');
   }
   /** Resumes the script thread (SetEvent(hEvent)). */
   resume(): void {
@@ -375,6 +398,7 @@ export class RScriptGame {
     const backlogStart = Scene.message + MessageState.backlog;
     const backlog = memory.scene.slice(backlogStart, backlogStart + 0x3840);
     const outer = {program: this.vm.program, script: this.vm.script, pc: this.vm.pc};
+    const generation = this.sceneGeneration;
     this.nesting++;
     try {
       for (const layer of this.layers.slice(1)) layer.stopButton(true, false);
@@ -389,11 +413,15 @@ export class RScriptGame {
       this.flags.fastSkip = false;
       this.stopAuto();
     } finally {
-      memory.scene.set(scene);
-      memory.scene.set(backlog, backlogStart);
-      Object.assign(this.vm, outer);
       this.nesting--;
+      // A load inside the call replaced the scene; it must not be restored over.
+      if (generation === this.sceneGeneration) {
+        memory.scene.set(scene);
+        memory.scene.set(backlog, backlogStart);
+        Object.assign(this.vm, outer);
+      }
     }
+    if (generation !== this.sceneGeneration) throw new RScriptScriptEnd('stopped');
     await this.rebuild();
     return this.memory.variables[0]!;
   }
@@ -622,6 +650,13 @@ export class RScriptGame {
     else this.wheel(key === 'up');
   }
 
+  /** sub_41F200: loads slot 0 after a confirmation. */
+  private async quickLoad(): Promise<void> {
+    if (!(await this.readSlot(0))) return;
+    if (!(await this.host.confirm(RScriptMessages.confirm, RScriptMessages.quickLoad))) return;
+    await this.loadSlot(0);
+  }
+
   /** sub_41F020 / sub_41F060: hides the message window until the next click. */
   private hideWindow(): void {
     this.message.show(false);
@@ -680,6 +715,16 @@ export class RScriptGame {
         return;
       case 'extd':
         // The extra screen comes from an optional FlowDll.dll beside the executable.
+        return;
+      case 'rev':
+        void this.returnToPreviousChoice();
+        return;
+      case 'qsave':
+        this.playSystemSound(1);
+        void this.saveSlot(0).catch((error: unknown) => this.fail(error));
+        return;
+      case 'qload':
+        void this.quickLoad();
         return;
       default:
         this.diagnostic(`The ${command} screen is not implemented yet`);
@@ -763,7 +808,76 @@ export class RScriptGame {
     }
   }
 
+  // Saves (sub_421210, sub_4213D0, sub_421570).
+
+  private slotName(slot: number): string {
+    return `${this.apini.savePrefix}${pad(slot, 2)}.dat`;
+  }
+  /** Writes the configuration, persistent variables and read flags. */
+  saveSystem(): Promise<void> {
+    return this.host.saves.write(`${this.apini.savePrefix}.dat`, encodeSystemSave(this.memory));
+  }
+  /** Saves the last message snapshot to a slot. */
+  async saveSlot(slot: number): Promise<void> {
+    const bytes = encodeSlotSave(this.memory, this.message.pageText, new Date());
+    await this.host.saves.write(this.slotName(slot), bytes);
+    await this.saveSystem();
+  }
+  readSlot(slot: number): Promise<Uint8Array | null> {
+    return this.host.saves.read(this.slotName(slot));
+  }
+  /** Loads a slot and restarts the scene thread at the saved message. */
+  async loadSlot(slot: number): Promise<boolean> {
+    const bytes = await this.readSlot(slot);
+    if (!bytes) return false;
+    await this.restartScene(() => decodeSlotSave(this.memory, bytes));
+    return true;
+  }
+  /** sub_421740 + sub_4535F0: returns to the snapshot before the previous choice. */
+  returnToPreviousChoice(): Promise<void> {
+    return this.restartScene(() => this.memory.restorePreviousSnapshot());
+  }
+  /** Returns to the title: the opening scene runs again. */
+  returnToTitle(): Promise<void> {
+    return this.restartScene(null);
+  }
+
   // Lifecycle.
+
+  /**
+   * Stops the scene thread and starts it again: from the loaded state after `prepare`, or
+   * from the opening when `prepare` is null (sub_4535F0, sub_41DF70).
+   */
+  private async restartScene(prepare: (() => void) | null): Promise<void> {
+    this.sceneGeneration++;
+    this.vm.stop();
+    this.host.stopMovie();
+    this.flags.sleeping = false;
+    this.audio.stopAll();
+    this.event.set();
+    await this.running;
+    Object.assign(this.flags, new RScriptFlags());
+    this.nesting = 0;
+    if (prepare) {
+      prepare();
+      this.startScene(() => this.resumeScene());
+    } else this.startScene(() => this.opening());
+  }
+
+  /** Runs a scene thread; when its script ends the opening scene takes over again. */
+  private startScene(body: () => Promise<void>): void {
+    const generation = this.sceneGeneration;
+    this.running = body().then(
+      () => {
+        if (this.disposed || generation !== this.sceneGeneration) return;
+        // The native thread posts 0x40F and the top-menu scene starts over.
+        this.startScene(() => this.opening());
+      },
+      (error: unknown) => {
+        if (!(error instanceof RScriptScriptEnd)) this.fail(error);
+      },
+    );
+  }
 
   /** Loads the system save or defaults, then runs the opening and the start script. */
   async start(): Promise<void> {
@@ -783,35 +897,47 @@ export class RScriptGame {
     this.applyVolumes();
     this.display.refresh();
     this.ticker = setInterval(() => this.tick(), Math.max(1, apini.tickMilliseconds));
-    void this.run().catch((error: unknown) => this.fail(error));
+    await this.message.loadPanel();
+    this.startScene(() => this.opening());
   }
 
-  private async run(): Promise<void> {
+  /** The legacy top-menu scene opens with two movies before the configured start script. */
+  private async opening(): Promise<void> {
     const {apini} = this.host;
-    // The legacy top-menu scene opens with two movies before the configured start script.
+    const generation = this.sceneGeneration;
     for (const movie of [2, 1]) {
-      if (this.disposed) return;
+      if (this.disposed || generation !== this.sceneGeneration) return;
       await this.host.playMovie(`${apini.directories.movies}\\${pad(movie, 4)}.mpg`);
     }
+    if (generation !== this.sceneGeneration) return;
     if (!apini.skipTopMenu)
       this.diagnostic('The legacy top menu is not implemented; starting the script');
     await this.newGame(apini.startScript);
   }
 
   /** New game: default scene state, then the script at depth 0 (0x41DF70). */
-  async newGame(script: number): Promise<void> {
+  private async newGame(script: number): Promise<void> {
     initializeScene(this.memory, this.apini, true, this.vm.random.next());
     this.memory.variables.fill(0, 0, GAME_VARIABLE_COUNT);
-    await this.message.loadPanel();
-    await this.rebuildObjects();
-    this.message.setSpeed(this.config(Config.messageSpeed));
-    this.message.panel.setAutoSpeed(this.config(Config.autoSpeed));
-    this.display.refresh();
     this.memory.setSceneWord(Scene.callDepth, 0);
+    await this.prepareScene();
     await this.vm.load(script);
     this.vm.jump(0);
     await this.vm.run();
-    if (!this.disposed) this.host.exit();
+  }
+  /** sub_41DF70: continues the loaded scene at its recorded instruction. */
+  private async resumeScene(): Promise<void> {
+    await this.prepareScene();
+    await this.vm.resume();
+    await this.rebuild();
+    this.display.refresh();
+    await this.vm.run();
+  }
+  private async prepareScene(): Promise<void> {
+    this.message.setSpeed(this.config(Config.messageSpeed));
+    this.message.panel.setAutoSpeed(this.config(Config.autoSpeed));
+    await this.rebuildObjects();
+    this.display.refresh();
   }
 
   private fail(error: unknown): void {
