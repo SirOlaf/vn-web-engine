@@ -1,5 +1,6 @@
 import {Scene, type RScriptMemory} from '../memory.js';
 import {RScriptContainer} from '../graphics/sprite.js';
+import {RScriptMessagePanel, type PanelCommand} from './message-panel.js';
 import {BoxRecord, RScriptTextBox, type TextBoxEnvironment} from './text-box.js';
 
 /** Offsets inside the message state (0x48AE70, scene +0x523C). */
@@ -48,6 +49,11 @@ export interface MessageSource {
 export interface MessageEnvironment extends TextBoxEnvironment {
   /** Returns the expanded bytes of `script`'s string `index`. */
   scriptString(script: number, index: number): Promise<Uint8Array>;
+  /** Text colour of backlog pages (APINI +502/+504), or null to keep the box colour. */
+  readonly backlogColor: number | null;
+  /** Companion panel commands and auto-speed slider (the callbacks at +228..+276). */
+  command(command: PanelCommand): void;
+  autoSpeed(value: number): void;
 }
 
 /**
@@ -56,8 +62,18 @@ export interface MessageEnvironment extends TextBoxEnvironment {
  */
 export class RScriptMessageWindow extends RScriptContainer {
   readonly boxes: readonly RScriptTextBox[];
+  readonly panel: RScriptMessagePanel;
   /** Page text shown by save screens (the global String1). */
   pageText: Uint8Array = new Uint8Array();
+  /** The script waits for input; panel buttons and the backlog respond (+212). */
+  inputActive = false;
+  /** Auto mode hid the panel (+220). */
+  autoHidden = false;
+  /** A backlog page is shown instead of the current page (+208), from entry +204. */
+  browsing = false;
+  private browseIndex: number = MessageState.backlogCount;
+  /** Scene offset of the page record in view, for voice replay (+200). */
+  private pageRecord: number = Scene.message + MessageState.page;
 
   constructor(private readonly env: MessageEnvironment) {
     super();
@@ -67,6 +83,40 @@ export class RScriptMessageWindow extends RScriptContainer {
         new RScriptTextBox(env, Scene.message + MessageState.boxes + i * MessageState.boxStride),
     );
     for (const box of this.boxes) this.add(box, 1);
+    this.panel = new RScriptMessagePanel(
+      (command) => env.command(command),
+      (value) => env.autoSpeed(value),
+    );
+    this.add(this.panel, 2);
+  }
+
+  loadPanel(): Promise<void> {
+    return this.panel.load(this.env.images, this.env.systemDirectory);
+  }
+
+  /** sub_418220: the panel shows with box 0 while enabled and not hidden by auto mode. */
+  updatePanel(): void {
+    this.panel.setPosition(this.dword(MessageState.panelX), this.dword(MessageState.panelY));
+    this.panel.show(
+      !!this.dword(MessageState.panelEnabled) && this.boxes[0]!.recordVisible && !this.autoHidden,
+    );
+  }
+  /** sub_418280: input while the script waits for a click, a button or a choice. */
+  setInput(active: boolean): void {
+    this.inputActive = active;
+    this.panel.setInput(active);
+  }
+  /** sub_417820: auto mode ended; the panel returns. */
+  restorePanel(): void {
+    this.autoHidden = false;
+    this.updatePanel();
+  }
+  /** Voice and pan of the page in view (page record +24, +28). */
+  currentVoice(): {voice: number; pan: number} {
+    return {
+      voice: this.memory.sceneDword(this.pageRecord + 24) >>> 0,
+      pan: this.memory.sceneWord(this.pageRecord + 28),
+    };
   }
 
   private get memory(): RScriptMemory {
@@ -130,6 +180,7 @@ export class RScriptMessageWindow extends RScriptContainer {
     target.setVisible(visible, skipping);
     if (!visible) this.clear(box, skipping);
     if (!skipping && visible) await target.apply();
+    if (!skipping && box === 0) this.updatePanel();
   }
 
   /** sub_417C80: displays script text in a box, starting a page when `newPage`. */
@@ -200,6 +251,7 @@ export class RScriptMessageWindow extends RScriptContainer {
   setVoice(voice: number, pan: number): void {
     this.setDword(MessageState.voice, voice);
     this.setWord(MessageState.voiceVolume, pan);
+    this.panel.setVoice(voice !== 0);
   }
   /** sub_416B70: forgets the backlog. */
   clearBacklog(): void {
@@ -222,8 +274,99 @@ export class RScriptMessageWindow extends RScriptContainer {
     for (const index of all && box !== 0 ? [1, 2, 3] : [box]) await this.boxes[index]!.apply();
   }
 
+  // Backlog browsing inside box 0 (0x4175A0, 0x417550, 0x4172F0, 0x416FE0).
+
+  private previousPageStart(): boolean {
+    for (let i = this.browseIndex - 1; i >= 0; i--)
+      if (this.isPageStart(i)) {
+        this.browseIndex = i;
+        return true;
+      }
+    return false;
+  }
+  private nextPageStart(): boolean {
+    for (let i = this.browseIndex + 1; i < MessageState.backlogCount; i++)
+      if (this.isPageStart(i)) {
+        this.browseIndex = i;
+        return true;
+      }
+    this.browseIndex = MessageState.backlogCount;
+    return false;
+  }
+  private atLastPage(): boolean {
+    for (let i = this.browseIndex + 1; i < MessageState.backlogCount; i++)
+      if (this.isPageStart(i)) return false;
+    return true;
+  }
+
+  /** sub_4175A0: the previous backlog page (wheel up, the bak button). */
+  async backlogBack(): Promise<boolean> {
+    if (!this.inputActive) return false;
+    if (this.browsing) {
+      if (this.previousPageStart()) await this.showBacklogPage(this.browseIndex);
+      return true;
+    }
+    if (!this.dword(MessageState.backlogEnabled)) return false;
+    this.browseIndex = this.lastPage();
+    if (this.previousPageStart()) {
+      this.browsing = true;
+      this.setWaiting(false);
+      await this.showBacklogPage(this.browseIndex);
+    }
+    return true;
+  }
+  /** sub_417550: the next backlog page, leaving the backlog after the last one. */
+  async backlogForward(): Promise<boolean> {
+    if (!this.browsing) return false;
+    if (!this.nextPageStart()) await this.exitBacklog();
+    else {
+      await this.showBacklogPage(this.browseIndex);
+      if (this.atLastPage()) await this.exitBacklog();
+    }
+    return true;
+  }
+  /** sub_4172F0: returns box 0 to the current page; true when the backlog was open. */
+  async exitBacklog(): Promise<boolean> {
+    if (!this.browsing) return false;
+    this.browsing = false;
+    this.pageRecord = this.at(MessageState.page);
+    const box = this.boxes[0]!;
+    box.record = this.at(MessageState.boxes);
+    box.clearText();
+    await box.apply();
+    const start = this.lastPage();
+    box.appendText(await this.backlogPage(start));
+    box.text.finishReveal();
+    await this.showEntryName(start);
+    this.panel.setVoice(this.currentVoice().voice !== 0);
+    return true;
+  }
+  private async showEntryName(index: number): Promise<void> {
+    const entry = this.entryOffset(index);
+    const name = this.memory.sceneDword(entry + Entry.name);
+    const script = this.memory.sceneUword(entry + Entry.script);
+    this.boxes[0]!.setName(name ? await this.env.scriptString(script, name) : null);
+  }
+  /** sub_416FE0: shows the page starting at backlog entry `index` with its saved box. */
+  private async showBacklogPage(index: number): Promise<void> {
+    const box = this.boxes[0]!;
+    const entry = this.entryOffset(index);
+    box.clearText();
+    box.record = entry + Entry.box;
+    if (this.env.backlogColor !== null) box.setDword(BoxRecord.color, this.env.backlogColor);
+    await box.apply();
+    box.appendText(await this.backlogPage(index));
+    box.text.finishReveal();
+    await this.showEntryName(index);
+    this.pageRecord = entry + Entry.page;
+    this.panel.setVoice(this.currentVoice().voice !== 0);
+  }
+
   /** sub_416C30: rebuilds boxes and their current page text from the state. */
   async restore(): Promise<void> {
+    this.browsing = false;
+    this.pageRecord = this.at(MessageState.page);
+    this.boxes[0]!.record = this.at(MessageState.boxes);
     for (let i = 0; i < 4; i++) {
       const box = this.boxes[i]!;
       box.clearText();
@@ -241,6 +384,8 @@ export class RScriptMessageWindow extends RScriptContainer {
       box.text.finishReveal();
       box.setName(source.name ? await this.env.scriptString(source.script, source.name) : null);
     }
+    this.updatePanel();
+    this.panel.setVoice(this.currentVoice().voice !== 0);
   }
 
   private entryOffset(index: number): number {

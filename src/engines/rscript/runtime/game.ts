@@ -19,6 +19,7 @@ import {RScriptChoiceWindow} from './choice.js';
 import {RScriptDisplay, type RScriptPresenter, type RScriptTimer} from './display.js';
 import {RScriptLayer} from './layer.js';
 import {MessageState, RScriptMessageWindow} from './message-window.js';
+import type {PanelCommand} from './message-panel.js';
 import {createOpcodeHandlers} from './opcodes.js';
 import type {GlyphRasterizer} from './text-block.js';
 
@@ -71,10 +72,16 @@ export class RScriptFlags {
   skip = false;
   /** State-only fast skip to the next choice; the display is rebuilt afterwards (48536C). */
   fastSkip = false;
+  /** Fast skip requested by the panel, latched before the next instruction (485364). */
+  fastSkipRequest = false;
   /** Auto mode (485370). */
   auto = false;
   /** Kind of the active button wait: 1 buttons, 3 pointer (word_485384). */
   buttonWait = 0;
+  /** The right button cancels the button wait (485388). */
+  buttonCancel = false;
+  /** The player hid the message window (485394). */
+  windowHidden = false;
 }
 
 /** The native script thread waits on an auto-reset event (hEvent) signalled by input and ticks. */
@@ -170,6 +177,9 @@ export class RScriptGame {
       palette,
       shadow: apini.u16(500) !== 0,
       scriptString: (script, index) => this.scriptString(script, index),
+      backlogColor: apini.u16(502) ? apini.u32(504) : null,
+      command: (command) => this.panelCommand(command),
+      autoSpeed: (value) => this.memory.setConfigWord(Config.autoSpeed, value),
     });
     this.root.add(this.overlay, 1);
     this.root.add(this.effectScreen, 1);
@@ -224,6 +234,14 @@ export class RScriptGame {
     return new RScriptInterpreter(this.memory, RSCRIPT_1_11_LAYOUTS, this.handlers, {
       program: (script) => this.program(script),
       yieldFrame: () => this.suspend(),
+      beforeStep: () => {
+        const {flags} = this;
+        if (!flags.batch) flags.skip = flags.skipHeld;
+        if (flags.fastSkipRequest) {
+          flags.fastSkip = true;
+          flags.fastSkipRequest = false;
+        }
+      },
       diagnostic: (m) => this.diagnostic(m),
     });
   }
@@ -328,11 +346,13 @@ export class RScriptGame {
       flags.interrupt = false;
       this.message.setWaiting(true);
       flags.waitInput = true;
+      this.message.setInput(true);
       this.setButtonInput(true, true);
       flags.waitClick = true;
       await this.suspend();
       flags.waitClick = false;
       this.setButtonInput(false, true);
+      this.message.setInput(false);
       this.message.setWaiting(false);
       flags.waitInput = false;
       if (!flags.interrupt) break;
@@ -377,9 +397,11 @@ export class RScriptGame {
     await this.rebuild();
     return this.memory.variables[0]!;
   }
-  private stopAuto(): void {
+  /** Leaving auto mode brings the panel back (sub_417820). */
+  stopAuto(): void {
     if (!this.flags.auto) return;
     this.flags.auto = false;
+    this.message.restorePanel();
     this.display.update();
   }
 
@@ -525,47 +547,143 @@ export class RScriptGame {
   pointerDown(x: number, y: number): void {
     this.pressed = this.hit(x, y);
   }
-  /** Left click (0x41DEB0) or a press on an interactive sprite. */
+  /**
+   * Left button up (WM_LBUTTONUP): a press on an interactive sprite, otherwise auto mode or
+   * skipping stops, or the scene handles the click.
+   */
   pointerUp(x: number, y: number): void {
     const node = this.hit(x, y);
     const pressed = this.pressed;
     this.pressed = null;
     if (node && node === pressed && node instanceof RScriptSprite && node.onPress) {
-      node.onPress(node);
+      const origin = node.screenPosition();
+      node.onPress(node, {x: x - origin.x, y: y - origin.y});
       this.display.update();
       return;
     }
-    this.click();
+    if (this.flags.auto) this.stopAuto();
+    else if (this.flags.skip) this.flags.skipHeld = false;
+    else this.click();
   }
+  /** sub_41DEB0: a click restores the window, stops waits, leaves the backlog or resumes. */
   private click(): void {
     const {flags} = this;
     if (flags.sleeping) flags.sleeping = false;
+    else if (flags.windowHidden) this.showWindow();
     else if (flags.waitSound) {
       this.audio.stop(AudioChannel.effect, false);
       flags.waitSound = false;
     } else if (flags.waitVoice) {
       this.audio.stop(AudioChannel.voice, false);
       flags.waitVoice = false;
+    } else if (this.message.browsing) {
+      void this.message.exitBacklog().then(() => this.display.update());
     } else if (flags.waitClick) {
       flags.waitClick = false;
       this.resume();
     } else if (flags.waitAnimation) flags.completeAnimations = true;
   }
-  /** Control key or the panel skip button (485360); skipping stops at unread text. */
-  setSkip(skip: boolean): void {
-    this.flags.skipHeld = skip;
-    this.flags.skip = skip;
-    if (skip) {
-      if (this.flags.waitAnimation) this.flags.completeAnimations = true;
-      if (this.flags.waitClick) {
-        this.flags.waitClick = false;
-        this.resume();
-      }
-    }
+  /** Right button (WM_RBUTTONDOWN) and Escape during a wait. */
+  cancel(): void {
+    const {flags} = this;
+    if (flags.windowHidden) this.showWindow();
+    else if (flags.buttonWait && flags.buttonCancel) this.buttonPressed(0, 0);
+    else this.panelCommand('menu');
   }
-  /** Enter and space act like a left click. */
-  keyClick(): void {
+  /** Mouse wheel (WM_MOUSEWHEEL): up browses the backlog, down pages forward or clicks. */
+  wheel(up: boolean): void {
+    if (up) void this.message.backlogBack().then(() => this.display.update());
+    else
+      void this.message.backlogForward().then((handled) => {
+        if (handled) this.display.update();
+        else this.click();
+      });
+  }
+  /** Control key held (485360): skipping starts at the next instruction. */
+  setSkip(held: boolean): void {
+    if (!held) {
+      this.flags.skipHeld = false;
+      return;
+    }
+    if (this.flags.skip) return;
+    this.flags.skipHeld = true;
     this.click();
+  }
+  /** Enter and space act like a left click; a skip in progress stops instead. */
+  keyClick(): void {
+    if (this.flags.auto) this.stopAuto();
+    else if (this.flags.skip) this.flags.skipHeld = false;
+    else this.click();
+  }
+  /** Keyboard shortcuts of the game window (WM_KEYDOWN). */
+  key(key: 'tab' | 'shift' | 'up' | 'down'): void {
+    if (key === 'tab') this.panelCommand('skip');
+    else if (key === 'shift') this.panelCommand('hide');
+    else this.wheel(key === 'up');
+  }
+
+  /** sub_41F020 / sub_41F060: hides the message window until the next click. */
+  private hideWindow(): void {
+    this.message.show(false);
+    this.flags.windowHidden = true;
+    this.display.update();
+  }
+  private showWindow(): void {
+    this.message.show(true);
+    this.flags.windowHidden = false;
+    this.display.update();
+  }
+
+  /** Companion panel commands (0x4176B0..0x4178C0 and the callbacks at +228..+276). */
+  private panelCommand(command: PanelCommand): void {
+    const {flags, message} = this;
+    if (!message.inputActive) return;
+    const state = (offset: number): boolean => message.dword(offset) !== 0;
+    switch (command) {
+      case 'skip':
+        if (!state(MessageState.tabEnabled) || flags.skip) return;
+        flags.skipHeld = true;
+        this.click();
+        return;
+      case 'next':
+        if (!state(MessageState.tabEnabled) || flags.buttonWait || flags.choice) return;
+        this.audio.stopAll();
+        flags.fastSkipRequest = true;
+        this.click();
+        return;
+      case 'bak':
+        this.wheel(true);
+        return;
+      case 'fow':
+        this.wheel(false);
+        return;
+      case 'hide':
+        this.hideWindow();
+        return;
+      case 'voc': {
+        const {voice, pan} = message.currentVoice();
+        if (voice) this.playVoice(voice, 0, false, pan);
+        return;
+      }
+      case 'auto':
+        message.autoHidden = true;
+        message.updatePanel();
+        if (flags.choice || flags.buttonWait) {
+          message.restorePanel();
+          return;
+        }
+        void message.exitBacklog().then(() => {
+          this.display.update();
+          flags.auto = true;
+          this.click();
+        });
+        return;
+      case 'extd':
+        // The extra screen comes from an optional FlowDll.dll beside the executable.
+        return;
+      default:
+        this.diagnostic(`The ${command} screen is not implemented yet`);
+    }
   }
 
   /** sub_41EDF0: an answer resumes the waiting choice with the system decision sound. */
@@ -684,8 +802,10 @@ export class RScriptGame {
   async newGame(script: number): Promise<void> {
     initializeScene(this.memory, this.apini, true, this.vm.random.next());
     this.memory.variables.fill(0, 0, GAME_VARIABLE_COUNT);
+    await this.message.loadPanel();
     await this.rebuildObjects();
     this.message.setSpeed(this.config(Config.messageSpeed));
+    this.message.panel.setAutoSpeed(this.config(Config.autoSpeed));
     this.display.refresh();
     this.memory.setSceneWord(Scene.callDepth, 0);
     await this.vm.load(script);

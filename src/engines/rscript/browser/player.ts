@@ -130,15 +130,44 @@ export class RScriptBrowserPlayer {
       },
       {signal},
     );
-    canvas.addEventListener('contextmenu', (event) => event.preventDefault(), {signal});
+    canvas.addEventListener(
+      'contextmenu',
+      (event) => {
+        event.preventDefault();
+        if (!this.skipMovie) this.game.cancel();
+      },
+      {signal},
+    );
+    canvas.addEventListener(
+      'wheel',
+      (event) => {
+        event.preventDefault();
+        if (event.deltaY) this.game.wheel(event.deltaY < 0);
+      },
+      {signal, passive: false},
+    );
+    const keys: Partial<Record<string, 'tab' | 'shift' | 'up' | 'down'>> = {
+      Tab: 'tab',
+      Shift: 'shift',
+      ArrowUp: 'up',
+      ArrowDown: 'down',
+    };
     canvas.addEventListener(
       'keydown',
       (event) => {
+        const key = keys[event.key];
         if (event.key === 'Control') this.game.setSkip(true);
         else if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           if (this.skipMovie) this.skipMovie();
           else if (!event.repeat) this.game.keyClick();
+        } else if (event.key === 'Escape') {
+          if (this.skipMovie) this.skipMovie();
+          else if (!event.repeat) this.game.cancel();
+        } else if (key) {
+          event.preventDefault();
+          // Tab and Shift act once per press, like the native key-repeat check.
+          if (!event.repeat || key === 'up' || key === 'down') this.game.key(key);
         }
       },
       {signal},

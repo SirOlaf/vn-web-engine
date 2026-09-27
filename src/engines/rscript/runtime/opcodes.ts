@@ -217,7 +217,9 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
   on(0x48, ([id]) => {
     if (u16(id!)) game.layers[u16(id!)]?.stopButton(true, skipping());
   });
-  on(0x49, ([variable, hideTimer]) => buttonWait(game, u16(variable!), hideTimer!));
+  on(0x49, ([variable, hideTimer, cancel]) =>
+    buttonWait(game, u16(variable!), hideTimer!, !!cancel),
+  );
   on(0x4a, ([value]) => memory.setSceneDword(Scene.layerAnimationReset, u16(value!)));
   on(0x4b, ([id, image, x, y, slot]) => {
     if (u16(id!))
@@ -520,7 +522,7 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
       await game.rebuild();
       game.display.refresh();
     }
-    flags.auto = false;
+    game.stopAuto();
     snapshot();
     game.message.pageText = question;
     const window = game.choice;
@@ -536,7 +538,9 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
     window.setInput(true);
     flags.choice = true;
     flags.waitInput = true;
+    game.message.setInput(true);
     await game.suspend();
+    game.message.setInput(false);
     flags.waitInput = false;
     if (memory.sceneDword(Scene.autoRebuild) && !game.nesting) memory.promoteMessageSnapshot();
     window.setInput(false);
@@ -575,8 +579,10 @@ async function buttonWait(
   game: RScriptGame,
   timerVariable: number,
   hideTimer: number,
+  cancel: boolean,
 ): Promise<void> {
   const {flags, memory} = game;
+  flags.buttonCancel = cancel;
   for (;;) {
     flags.interrupt = false;
     await game.flushBatch();
@@ -585,17 +591,18 @@ async function buttonWait(
       await game.rebuild();
       game.display.refresh();
     }
-    flags.auto = false;
+    game.stopAuto();
     if (memory.sceneDword(Scene.messageSnapshots) && !game.nesting) memory.captureMessageSnapshot();
     flags.buttonWait = 1;
     game.setButtonInput(true, false);
     if (timerVariable) {
       if (!hideTimer) game.diagnostic('Timed button waits do not show their gauge yet');
       game.startButtonTimer(memory.variables[timerVariable]!);
-    }
+    } else game.message.setInput(true);
     flags.waitInput = true;
     await game.suspend();
     flags.waitInput = false;
+    game.message.setInput(false);
     const remaining = game.stopButtonTimer();
     if (timerVariable) memory.variables[timerVariable] = remaining;
     game.setButtonInput(false, false);

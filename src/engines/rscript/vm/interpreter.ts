@@ -19,6 +19,8 @@ export interface RScriptInterpreterHost {
   program(script: number): Promise<GscProgram>;
   /** Unknown opcodes run the native default case: yield one frame without operands. */
   yieldFrame(): Promise<void>;
+  /** Runs before every instruction, where the native loop latches skip requests. */
+  beforeStep?(): void;
   diagnostic?(message: string): void;
 }
 
@@ -174,6 +176,7 @@ export class RScriptInterpreter {
 
   async step(): Promise<void> {
     if (this.stopped) throw new RScriptScriptEnd('stopped');
+    this.host.beforeStep?.();
     const program = this.program;
     if (!program) throw new Error('No GSC program is loaded');
     // Every iteration records the current instruction as the depth's resume point.

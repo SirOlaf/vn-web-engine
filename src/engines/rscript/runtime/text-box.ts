@@ -67,7 +67,8 @@ export class RScriptTextBox extends RScriptContainer {
 
   constructor(
     private readonly env: TextBoxEnvironment,
-    readonly record: number,
+    /** Scene offset of the record in use; backlog pages point at their saved copy. */
+    public record: number,
   ) {
     super();
     this.text = new RScriptTextBlock(env.rasterizer, 200, this.style(false));
