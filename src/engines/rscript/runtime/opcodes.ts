@@ -71,7 +71,20 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
     await game.sleep(100 * u16(tenths!));
     flags.waitInput = false;
   });
-  unsupported(0x0e, 'choice');
+  handlers.set(0x0e, async (vm, raw) => {
+    const header = raw[0]!,
+      targets = raw.slice(2, 7),
+      [effectMode, , arrangement] = raw.slice(12, 15).map((value) => vm.value(value));
+    const answers = raw.slice(7, 12).slice(0, Math.min(5, header & 0xff));
+    await choose(
+      vm.expandString(raw[1]!),
+      answers.map((index) => vm.expandString(index)),
+      effectMode!,
+      arrangement!,
+    );
+    const target = targets[game.choice.selected - 1];
+    if (target !== undefined) vm.jump(target);
+  });
   on(0x12, ([variable], vm, raw) => {
     const array = vm.program?.arrays[raw[1]!];
     if (!array) return;
@@ -493,6 +506,45 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
     if (from <= to) memory.variables.fill(value!, from, to + 1);
   });
   unsupported(0xe1, 'pointer position wait');
+
+  /** sub_427FE0: shows the choice window and waits for an answer. */
+  async function choose(
+    question: Uint8Array,
+    answers: readonly Uint8Array[],
+    effectMode: number,
+    arrangement: number,
+  ): Promise<void> {
+    await game.flushBatch();
+    if (flags.fastSkip) {
+      flags.fastSkip = false;
+      await game.rebuild();
+      game.display.refresh();
+    }
+    flags.auto = false;
+    snapshot();
+    game.message.pageText = question;
+    const window = game.choice;
+    await window.open(question, answers, arrangement);
+    const present = async (): Promise<void> => {
+      if (effectMode === 2) await transition(1, 15, 20);
+      else if (effectMode === 3) await transition(2, 15, 20);
+      else await game.refresh();
+    };
+    const instant = (): boolean => !game.effectsEnabled || flags.skip || effectMode !== 0;
+    window.appear(instant());
+    await present();
+    window.setInput(true);
+    flags.choice = true;
+    flags.waitInput = true;
+    await game.suspend();
+    flags.waitInput = false;
+    if (memory.sceneDword(Scene.autoRebuild) && !game.nesting) memory.promoteMessageSnapshot();
+    window.setInput(false);
+    window.disappear(instant());
+    await present();
+    window.close();
+    game.display.update();
+  }
 
   /** sub_4254B0 / sub_425550: effects of seven and above are dropped when skipping. */
   function moveLayer(

@@ -15,6 +15,7 @@ import {
 } from '../vm/interpreter.js';
 import {loadFrameAnimation} from './animation.js';
 import {AudioChannel, RScriptAudio} from './audio.js';
+import {RScriptChoiceWindow} from './choice.js';
 import {RScriptDisplay, type RScriptPresenter, type RScriptTimer} from './display.js';
 import {RScriptLayer} from './layer.js';
 import {MessageState, RScriptMessageWindow} from './message-window.js';
@@ -113,6 +114,8 @@ export class RScriptGame {
   readonly root: RScriptContainer;
   readonly layers: readonly RScriptLayer[];
   readonly message: RScriptMessageWindow;
+  /** Choice window (dword_48509C). */
+  readonly choice: RScriptChoiceWindow;
   /** Effect screen image (dword_485080) and full-screen tone overlay (dword_485244). */
   readonly effectScreen = new RScriptSprite();
   readonly overlay = new RScriptSprite();
@@ -171,6 +174,19 @@ export class RScriptGame {
     this.root.add(this.overlay, 1);
     this.root.add(this.effectScreen, 1);
     this.root.add(this.message, 50);
+    this.choice = new RScriptChoiceWindow({
+      images: this.images,
+      rasterizer: host.rasterizer,
+      systemDirectory: apini.directories.system,
+      width: apini.width,
+      height: apini.height,
+      palette,
+      textSize: apini.u16(494),
+      textColor: apini.u32(484),
+      shadow: apini.u16(500) !== 0,
+      answered: () => this.choiceAnswered(),
+    });
+    this.root.add(this.choice, 100);
     this.overlay.setSurface(createSurface(apini.width, apini.height, 0xffffff));
     this.overlay.setBlendMode(0x6c);
     this.effectScreen.setBlendMode(0x68);
@@ -550,6 +566,14 @@ export class RScriptGame {
   /** Enter and space act like a left click. */
   keyClick(): void {
     this.click();
+  }
+
+  /** sub_41EDF0: an answer resumes the waiting choice with the system decision sound. */
+  private choiceAnswered(): void {
+    if (!this.flags.choice) return;
+    this.playSystemSound(1);
+    this.flags.choice = false;
+    this.resume();
   }
 
   /** Button callbacks by mode (0x41EE50, 0x41EEC0, 0x41EFD0). */
