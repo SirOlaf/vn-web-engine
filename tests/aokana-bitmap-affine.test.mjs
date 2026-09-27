@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {WasmPixelWorkspace} from '../dist/graphics/wasm-pixel-workspace.js';
 import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {
@@ -221,6 +222,181 @@ test('affine pairs retain alias order and completed stores before a later source
   assert.throws(() => destination.storage.range(8, 8, true), /unwritten/);
 });
 
+test('initialized affine alpha agrees with shared-buffer traversal across transforms and borders', () => {
+  const compositor = new BurikoBitmapCompositor();
+  let seed = 0x58a771;
+  const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+  function compare(source, destination, transform, transparency, sampling) {
+    const inputLength = source.storage.bytes.length,
+      outputStart = inputLength + 7,
+      shared = new Uint8Array(outputStart + destination.storage.bytes.length);
+    shared.set(source.storage.bytes);
+    shared.set(destination.storage.bytes, outputStart);
+    const sharedSource = {
+      ...source,
+      storage: new BurikoBitmapStorage(shared.subarray(0, inputLength), true),
+    };
+    const sharedDestination = {
+      ...destination,
+      storage: new BurikoBitmapStorage(shared.subarray(outputStart), true),
+    };
+    // Even disjoint views of the same backing buffer retain the scalar pair traversal.
+    blendTransformedBurikoBitmap(
+      compositor,
+      sharedDestination,
+      sharedSource,
+      transform,
+      transparency,
+      sampling,
+    );
+    blendTransformedBurikoBitmap(
+      compositor,
+      destination,
+      source,
+      transform,
+      transparency,
+      sampling,
+    );
+    assert.deepEqual(destination.storage.bytes, sharedDestination.storage.bytes);
+    assert.deepEqual(shared.subarray(0, inputLength), source.storage.bytes);
+  }
+  for (let iteration = 0; iteration < 120; iteration++) {
+    const large = iteration % 4 < 2,
+      width = large ? 97 + (random() % 32) : 5 + (random() % 17),
+      height = large ? 80 + (random() % 23) : 5 + (random() % 13);
+    const source = bitmap(
+      width,
+      height,
+      Array.from(
+        {length: width * height},
+        (_, i) => (([0, 1, 2, 127, 128, 253, 254, 255][i % 8] << 24) | (random() & 0xffffff)) >>> 0,
+      ),
+      2,
+      12,
+    );
+    source.offset = source.stride + 4;
+    source.width -= 2;
+    source.height -= 2;
+    const outputWidth = large ? 33 + (iteration % 31) : 1 + (iteration % 19),
+      outputHeight = large ? 37 : 7,
+      destination = bitmap(
+        outputWidth,
+        outputHeight,
+        Array.from({length: outputWidth * outputHeight}, random),
+        1,
+        8,
+      );
+    // Also exercise byte-unaligned source offsets and DataView byte offsets.
+    if (iteration % 3 === 0) source.offset++;
+    const transform =
+      iteration % 3 === 0
+        ? {...identity, x: (random() % 0x60000) - 0x30000, y: (random() % 0x60000) - 0x30000}
+        : {
+            ...identity,
+            x: (random() % 0x100000) - 0x80000,
+            y: (random() % 0x100000) - 0x80000,
+            pivotX: (random() % 0x80000) - 0x40000,
+            pivotY: (random() % 0x80000) - 0x40000,
+            angle: (random() % (360 * 65536)) - 180 * 65536,
+            scaleX: 1 + (random() % 150000),
+            scaleY: 1 + (random() % 150000),
+          };
+    compare(
+      source,
+      destination,
+      transform,
+      [0, 1, 3, 64, 128, 254, 255][iteration % 7],
+      iteration % 2,
+    );
+  }
+  for (const sampling of [0, 1]) {
+    const source = bitmap(5, 3, Array.from({length: 15}, random));
+    for (const transform of [
+      {...identity, x: 0x1ffff, y: 0x1ffff},
+      {...identity, x: -0x7fff8000, y: 0x7fff8000},
+      {...identity, x: -1, scaleX: 1, scaleY: 2},
+      {...identity, x: -1, scaleX: 2, scaleY: 1},
+      {...identity, x: -1, scaleX: 0xffffffff, scaleY: 0xffffffff},
+    ])
+      compare(source, bitmap(9, 5, Array.from({length: 45}, random), 1), transform, 0, sampling);
+    // Signed source bounds and Q16 additions meet their positive WORD limit here.
+    for (const [width, height, pivotX, pivotY] of [
+      [32767, 2, 0x7ffe7000, 0],
+      [2, 32767, 0, 0x7ffe7000],
+    ])
+      compare(
+        bitmap(width, height, Array.from({length: width * height}, random)),
+        bitmap(5, 5, Array.from({length: 25}, random), 1),
+        {...identity, pivotX, pivotY},
+        3,
+        sampling,
+      );
+    // Large initialized inputs must remain useful for narrow output strips.
+    compare(
+      bitmap(1920, 1080, Array.from({length: 1920 * 1080}, random)),
+      bitmap(1920, 3, Array.from({length: 1920 * 3}, random), 1, 8),
+      {...identity, x: 0x9000, y: -0x3000},
+      64,
+      sampling,
+    );
+  }
+});
+
+test('affine alpha retains skipped pairs, read-before-store faults, and alias order', () => {
+  const compositor = new BurikoBitmapCompositor();
+  const transform = {...identity, x: -1};
+  for (const sampling of [0, 1]) {
+    const source = bitmap(3, 1, [0x00ffffff, 0x00010203, 0x00000000]);
+    const skipped = bitmap(3, 1, [0x71557799, 0x82446688, 0x93335577], 1);
+    skipped.storage = new BurikoBitmapStorage(skipped.storage.bytes, false);
+    blendTransformedBurikoBitmap(compositor, skipped, source, transform, 0, sampling);
+    assert.deepEqual(pixels(skipped), [0x71557799, 0x82446688, 0x93335577]);
+    assert.deepEqual([...skipped.storage.initializedRange(0, 12)], Array(12).fill(0));
+
+    const mixedPair = bitmap(2, 1, [0x07282828, 0x08383838], 1);
+    mixedPair.storage = new BurikoBitmapStorage(mixedPair.storage.bytes, false);
+    mixedPair.storage.written(0, 4);
+    assert.throws(
+      () =>
+        blendTransformedBurikoBitmap(
+          compositor,
+          mixedPair,
+          bitmap(2, 1, [0xffabcdef, 0x00000000]),
+          transform,
+          0,
+          sampling,
+        ),
+      /unwritten/,
+    );
+    assert.deepEqual(pixels(mixedPair), [0x07282828, 0x08383838]);
+
+    const alias = bitmap(4, 1, [0xff010101, 0xff020202, 0xff030303, 0xff040404]);
+    blendTransformedBurikoBitmap(
+      compositor,
+      {...alias, offset: 4, width: 3, format: 1},
+      alias,
+      transform,
+      0,
+      sampling,
+    );
+    assert.deepEqual(pixels(alias), [0xff010101, 0xff010101, 0xff020202, 0xff020202]);
+  }
+  const source = bitmap(4, 1, [0xff010101, 0xff020202, 0xff030303, 0xff040404]);
+  source.storage = new BurikoBitmapStorage(source.storage.bytes, false);
+  source.storage.written(0, 8);
+  const destination = bitmap(4, 1, Array(4).fill(0x77000000), 1);
+  assert.throws(
+    () => blendTransformedBurikoBitmap(compositor, destination, source, transform, 0, 0),
+    /unwritten/,
+  );
+  assert.deepEqual(pixels(destination), [0x77010101, 0x77020202, 0x77000000, 0x77000000]);
+  source.storage.release();
+  assert.throws(
+    () => blendTransformedBurikoBitmap(compositor, destination, source, transform, 0, 0),
+    /released/,
+  );
+});
+
 test('affine distributed jobs retain the real shared pool and subtract completed Q16 rows', () => {
   const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(3), 3);
   const compositor = new BurikoBitmapCompositor();
@@ -247,3 +423,84 @@ test('affine distributed jobs retain the real shared pool and subtract completed
     ),
   );
 });
+
+test(
+  'independent WASM planes optionally preserve destination pixels and leave rejected output untouched',
+  {skip: typeof WebAssembly === 'undefined'},
+  () => {
+    const memory = new WebAssembly.Memory({initial: 1, maximum: 1}),
+      workspace = new WasmPixelWorkspace({
+        memory,
+        __heap_base: new WebAssembly.Global({value: 'i32', mutable: false}, 17),
+      }),
+      sourceBytes = new Uint8Array(24).fill(0xe1),
+      destinationBytes = new Uint8Array(32).fill(0xd2),
+      source = {
+        view: new DataView(sourceBytes.buffer, 3, 16),
+        offset: 1,
+        pitch: 5,
+        rowBytes: 3,
+        rows: 2,
+      },
+      destination = {
+        view: new DataView(destinationBytes.buffer, 2, 24),
+        offset: 2,
+        pitch: 6,
+        rowBytes: 4,
+        rows: 3,
+      };
+    sourceBytes.set([1, 2, 3], 4);
+    sourceBytes.set([4, 5, 6], 9);
+    destinationBytes.set([10, 20, 30, 40], 4);
+    destinationBytes.set([50, 60, 70, 80], 10);
+    destinationBytes.set([90, 100, 110, 120], 16);
+    const expected = destinationBytes.slice(),
+      originalSource = sourceBytes.slice();
+    expected[4] = 16;
+    expected[19] = 121;
+    assert.equal(
+      workspace.transform(
+        source,
+        destination,
+        (input, output) => {
+          const staged = new Uint8Array(memory.buffer);
+          assert.deepEqual([...staged.subarray(input, input + 6)], [1, 2, 3, 4, 5, 6]);
+          assert.deepEqual(
+            [...staged.subarray(output, output + 12)],
+            [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120],
+          );
+          staged[output] += staged[input + 5];
+          staged[output + 11] += staged[input];
+        },
+        true,
+      ),
+      true,
+    );
+    assert.deepEqual(
+      destinationBytes,
+      expected,
+      'retained pixels and external row padding survive',
+    );
+    assert.deepEqual(sourceBytes, originalSource);
+
+    new Uint8Array(memory.buffer).fill(0x8a);
+    assert.equal(
+      workspace.transform(source, destination, (_input, output) => {
+        const staged = new Uint8Array(memory.buffer);
+        assert.deepEqual(staged.subarray(output, output + 12), new Uint8Array(12).fill(0x8a));
+        staged.fill(0x3c, output, output + 12);
+      }),
+      true,
+    );
+    for (const offset of [4, 10, 16]) expected.fill(0x3c, offset, offset + 4);
+    assert.deepEqual(destinationBytes, expected, 'default mode does not stage the old destination');
+    const rejected = () => assert.fail('Rejected staging must not invoke its kernel');
+    assert.equal(
+      workspace.transform({...source, view: destination.view}, destination, rejected, true),
+      false,
+    );
+    assert.equal(workspace.transform(source, {...destination, pitch: 3}, rejected, true), false);
+    assert.equal(workspace.transform(source, {...destination, offset: 23}, rejected, true), false);
+    assert.deepEqual(destinationBytes, expected);
+  },
+);

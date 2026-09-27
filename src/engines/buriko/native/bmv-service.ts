@@ -1,8 +1,8 @@
 import {pointerView} from '../bp/memory.js';
 import type {BurikoBitmap} from './bitmap.js';
 import {
-  decodeBurikoBmvFrameData,
-  decodeBurikoBmvIndexedFrame,
+  decodeBurikoBmvFrameDataAsync,
+  decodeBurikoBmvIndexedFrameAsync,
   validateBurikoBmvHeader,
 } from './bmv-frame.js';
 import {decodeBurikoLegacyBfFrame} from './bf-legacy-frame.js';
@@ -10,6 +10,7 @@ import type {BurikoBmvEntry, BurikoBmvRegistry} from './bmv-registry.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
 import type {BurikoResourceRanges} from './resource-ranges.js';
 import type {BurikoSurfaces} from './surfaces.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 export interface BurikoBmvWorker {
   readonly actor: object;
@@ -149,32 +150,43 @@ export class BurikoBmvService {
     actor: object,
   ): Promise<number> {
     const bytes = entry.resource.bytes;
-    if (validateBurikoBmvHeader(bytes) !== 0) {
-      if (word(bytes, 0x10) !== 0) return 0x8000000a;
-      this.asActor(actor, () => decodeBurikoLegacyBfFrame(bytes, frame, destination));
-      return 0;
+    const detail: Record<string, number> = {frame};
+    if (bytes.length >= 0x1c) {
+      detail.width = word(bytes, 0x14);
+      detail.height = word(bytes, 0x18);
     }
-    const provenance = entry.resource.provenance;
-    if (provenance === null) {
-      this.asActor(actor, () => decodeBurikoBmvIndexedFrame(bytes, frame, destination, processing));
+    const finishTiming = beginRuntimeSpan('buriko.bmv.decode', detail);
+    try {
+      if (validateBurikoBmvHeader(bytes) !== 0) {
+        if (word(bytes, 0x10) !== 0) return 0x8000000a;
+        this.asActor(actor, () => decodeBurikoLegacyBfFrame(bytes, frame, destination));
+        return 0;
+      }
+      const provenance = entry.resource.provenance;
+      if (provenance === null) {
+        await decodeBurikoBmvIndexedFrameAsync(bytes, frame, destination, processing, actor);
+        return 0;
+      }
+      if (frame >>> 0 >= word(bytes, 0x28)) return 0x8000000b;
+      const offset = word(bytes, 0xc0 + frame * 4),
+        end =
+          frame + 1 < word(bytes, 0x28) ? word(bytes, 0xc0 + (frame + 1) * 4) : provenance.length,
+        length = (end - offset) >>> 0,
+        encoded = new Uint8Array(length);
+      // Raw range I/O does not access allocator actors. Restore caller identity while awaiting it.
+      const read = await this.ranges.read(
+        {bytes: encoded, offset: 0},
+        provenance.archive,
+        provenance.name,
+        offset,
+        length,
+      );
+      if (read.result === 0)
+        await decodeBurikoBmvFrameDataAsync(bytes, encoded, destination, processing, actor);
       return 0;
+    } finally {
+      finishTiming?.();
     }
-    if (frame >>> 0 >= word(bytes, 0x28)) return 0x8000000b;
-    const offset = word(bytes, 0xc0 + frame * 4),
-      end = frame + 1 < word(bytes, 0x28) ? word(bytes, 0xc0 + (frame + 1) * 4) : provenance.length,
-      length = (end - offset) >>> 0,
-      encoded = new Uint8Array(length);
-    // Raw range I/O does not access allocator actors. Restore caller identity while awaiting it.
-    const read = await this.ranges.read(
-      {bytes: encoded, offset: 0},
-      provenance.archive,
-      provenance.name,
-      offset,
-      length,
-    );
-    if (read.result === 0)
-      this.asActor(actor, () => decodeBurikoBmvFrameData(bytes, encoded, destination, processing));
-    return 0;
   }
   async decodeSynchronously(
     surface: number,

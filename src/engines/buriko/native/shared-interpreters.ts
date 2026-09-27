@@ -1,5 +1,7 @@
 import {BurikoBpInterpreter} from '../bp/interpreter.js';
 import {BurikoBpSharedThread, validCodeAddress, type BurikoBpThread} from '../bp/state.js';
+import {HostTaskBudget} from '../../../core/host-task-budget.js';
+import {beginRuntimeSpan, type RuntimeSpanEnd} from '../../../platform/runtime-performance.js';
 import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import type {BurikoBpDiagnostics} from './diagnostics.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
@@ -45,6 +47,7 @@ export class BurikoSharedInterpreters {
     records: SharedInterpreterRecord[],
     worker: number,
     actor: object,
+    budget: HostTaskBudget,
   ): Promise<0> {
     const interpreter = this.interpreter;
     if (interpreter === null)
@@ -59,8 +62,23 @@ export class BurikoSharedInterpreters {
       opcode = 0,
       result = 0,
       released = 0;
+    const finishWorker = beginRuntimeSpan('buriko.vm.shared-worker', {worker});
+    let finishSlice: RuntimeSpanEnd | undefined,
+      sliceDispatches = 0;
+    const endSlice = (): void => {
+      finishSlice?.({dispatches: sliceDispatches});
+      finishSlice = undefined;
+    };
+    const startSlice = (): void => {
+      sliceDispatches = 0;
+      finishSlice = beginRuntimeSpan('buriko.vm.shared-slice', {worker, firstInstruction: count});
+    };
     try {
+      const pending = budget.checkpoint();
+      if (pending !== undefined) await pending;
+      startSlice();
       while (count < 0x10000000) {
+        sliceDispatches++;
         const dispatched = this.processing.allocator.withActor(actor, () =>
           interpreter.dispatchNext(child, actor),
         );
@@ -69,11 +87,23 @@ export class BurikoSharedInterpreters {
           result = 7;
           break;
         }
+        const asynchronous = typeof dispatched.result !== 'number';
+        // Shared slices include numeric-await microtasks, but exclude explicit Promise waits.
+        if (asynchronous) endSlice();
+        // Numeric results still yield a microtask, preserving existing worker/Promise ordering.
         result = await dispatched.result;
         count++;
         if ((result | 0) !== 0) break;
+        const pending = budget.checkpoint();
+        if (pending !== undefined) {
+          endSlice();
+          await pending;
+        }
+        if (asynchronous || pending !== undefined) startSlice();
       }
     } finally {
+      endSlice();
+      finishWorker?.({instructions: count});
       released = this.locks.releaseScriptCurrentActor(actor);
     }
 
@@ -147,8 +177,10 @@ export class BurikoSharedInterpreters {
       }
 
       if (successful === 0) return constructionResult;
+      // Short children share a host slice instead of each restarting its wall-time allowance.
+      const budget = new HostTaskBudget();
       await this.processing.runWorkerCallbackAsync(
-        (context, worker, workerActor) => this.runWorker(context, worker, workerActor),
+        (context, worker, workerActor) => this.runWorker(context, worker, workerActor, budget),
         records,
         1,
         actor,

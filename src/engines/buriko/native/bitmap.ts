@@ -224,6 +224,36 @@ export function initializedBurikoBitmapView(
   return bitmap.storage?.initializedView(first, end - first) ?? null;
 }
 
+/** Checked write-only envelope; callers mark only completed rows as written. */
+export function writableBurikoBitmapView(
+  bitmap: BurikoBitmap,
+  width: number,
+  height: number,
+): DataView | null {
+  if (
+    !Number.isSafeInteger(width) ||
+    width <= 0 ||
+    !Number.isSafeInteger(height) ||
+    height <= 0 ||
+    !Number.isSafeInteger(bitmap.stride)
+  )
+    return null;
+  const lastRow = bitmap.offset + (height - 1) * bitmap.stride,
+    first = Math.min(bitmap.offset, lastRow),
+    end = Math.max(bitmap.offset, lastRow) + width * 4,
+    storage = bitmap.storage;
+  if (
+    storage === null ||
+    !Number.isSafeInteger(first) ||
+    first < 0 ||
+    !Number.isSafeInteger(end) ||
+    end > storage.bytes.length
+  )
+    return null;
+  // The empty initialized envelope checks lifetime without requiring initialized output.
+  return storage.initializedView(0, 0);
+}
+
 /** 14003e530 converts RGB888 to native 5:5:5 then fills exactly width pixels per row. */
 function fillBurikoBitmap16Pixels(bitmap: BurikoBitmap, color: number): void {
   const pixel = ((color >>> 9) & 0x7c00) + ((color >>> 6) & 0x3e0) + ((color >>> 3) & 0x1f);

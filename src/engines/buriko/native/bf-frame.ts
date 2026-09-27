@@ -9,9 +9,16 @@ import {
   type BurikoBfTree,
 } from './bf-entropy.js';
 import {movieZigzag} from '../../../formats/buriko/bf-movie.js';
-import {movieIdct} from '../../../formats/buriko/movie-idct.js';
+import {MovieIdctWorkspace} from '../../../formats/buriko/movie-idct.js';
 import {BurikoUndefinedResourceRead, BurikoResourceCodecException} from './resource-memory.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
+import {
+  finishTask,
+  runCooperativeTask,
+  type CooperativeTask,
+} from '../../../core/cooperative-task.js';
+import {HostTaskBudget} from '../../../core/host-task-budget.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 export interface BurikoBfSurface {
   readonly bytes: Uint8Array;
@@ -50,6 +57,32 @@ export function decodeBurikoBfCoefficients(
   base = 0,
   inputInitialized?: Uint8Array,
 ): Int16Array {
+  return finishTask(
+    decodeBurikoBfCoefficientSteps(
+      bytes,
+      count,
+      limit,
+      dcTree,
+      acTree,
+      coefficients,
+      defined,
+      base,
+      inputInitialized,
+    ),
+  );
+}
+
+function* decodeBurikoBfCoefficientSteps(
+  bytes: Uint8Array,
+  count: number,
+  limit: number,
+  dcTree: BurikoBfTree,
+  acTree: BurikoBfTree,
+  coefficients: Int16Array,
+  defined: Uint8Array,
+  base: number,
+  inputInitialized?: Uint8Array,
+): CooperativeTask<Int16Array> {
   const cleared = Math.ceil(count / 8) * 8;
   checkRange(coefficients.length, base, cleared);
   coefficients.fill(0, base, base + cleared);
@@ -59,6 +92,7 @@ export function decodeBurikoBfCoefficients(
   for (let index = 0; index < count && Math.floor(dcBits.position / 8) < limit; index += 64) {
     dc = ((dc + movieSignedBits(dcBits, burikoBfSymbol(dcBits, dcTree))) << 16) >> 16;
     coefficients[base + index] = dc;
+    if ((index & 4095) === 4032) yield;
   }
   const acBits = new Bits(
     bytes.subarray(Math.ceil(dcBits.position / 8)),
@@ -82,6 +116,7 @@ export function decodeBurikoBfCoefficients(
       defined[at] = 1;
       order = targetOrder + 1;
     }
+    if ((index & 511) === 448) yield;
   }
   return coefficients;
 }
@@ -98,6 +133,71 @@ export function decodeBurikoBfFrame(
   version = 0x10001,
   actor = processing.allocator.currentActor,
 ): BurikoBfSurface {
+  const prepared = prepareBurikoBfFrame(
+    frame,
+    width,
+    height,
+    depth,
+    quantization,
+    processing,
+    destination,
+    version,
+  );
+  processing.setCallback(() => finishTask(prepared.next()), null);
+  processing.run(1, actor);
+  processing.setCallback(null, null);
+  return prepared.surface;
+}
+
+/** The same native worker computation, retaining private state across host scheduling points. */
+export async function decodeBurikoBfFrameAsync(
+  frame: Uint8Array,
+  width: number,
+  height: number,
+  depth: number,
+  quantization: Uint8Array,
+  processing: BurikoDistributedProcessing,
+  destination?: BurikoBfSurface,
+  version = 0x10001,
+  actor = processing.allocator.currentActor,
+  beforeResume?: () => void,
+): Promise<BurikoBfSurface> {
+  const finishTiming = beginRuntimeSpan('buriko.bf.decode', {width, height, depth});
+  try {
+    beforeResume?.();
+    const budget = new HostTaskBudget();
+    const prepared = prepareBurikoBfFrame(
+      frame,
+      width,
+      height,
+      depth,
+      quantization,
+      processing,
+      destination,
+      version,
+    );
+    await processing.runWorkerCallbackAsync(
+      () => runCooperativeTask(prepared.next(), beforeResume, budget),
+      null,
+      1,
+      actor,
+    );
+    return prepared.surface;
+  } finally {
+    finishTiming?.();
+  }
+}
+
+function prepareBurikoBfFrame(
+  frame: Uint8Array,
+  width: number,
+  height: number,
+  depth: number,
+  quantization: Uint8Array,
+  processing: BurikoDistributedProcessing,
+  destination: BurikoBfSurface | undefined,
+  version: number,
+): {surface: BurikoBfSurface; next(): CooperativeTask<number>} {
   checkRange(quantization.length, 0, 128);
   const alignedWidth = (width + 7) & ~7,
     alignedHeight = (height + 7) & ~7;
@@ -121,6 +221,9 @@ export function decodeBurikoBfFrame(
   );
   const coefficients = new Int16Array(alignedWidth * alignedHeight * 3);
   const defined = new Uint8Array(coefficients.length);
+  const idct = new MovieIdctWorkspace();
+  const lumaQuantization = quantization.subarray(0, 64);
+  const chromaQuantization = quantization.subarray(64, 128);
   const requireCoefficients = (start: number, length: number): void => {
     checkRange(coefficients.length, start, length);
     for (let index = start; index < start + length; index++) {
@@ -160,7 +263,7 @@ export function decodeBurikoBfFrame(
         `Buriko native BF alpha codec exception: ${alphaMode}`,
       );
   }
-  const decodeRow = (row: number): void => {
+  const decodeRow = function* (row: number): CooperativeTask<void> {
     const {start, count, dataStart, limit} = descriptors[row]!;
     const rowCursor = {position: dataStart};
     // 105cf0 skips the entire color worker when count==0, irrespective of mask bits.
@@ -168,7 +271,7 @@ export function decodeBurikoBfFrame(
     checkRange(frame.length, start, maskSize);
     const mask = frame.subarray(start, start + maskSize);
     const base = row * alignedWidth * 24;
-    decodeBurikoBfCoefficients(
+    yield* decodeBurikoBfCoefficientSteps(
       frame.subarray(rowCursor.position),
       count,
       limit,
@@ -189,9 +292,9 @@ export function decodeBurikoBfFrame(
       for (let component = 0; component < components; component++) {
         const at = base + component * stride + block * 64;
         requireCoefficients(at, 64);
-        const transformed = movieIdct(
+        const transformed = idct.transform(
           coefficients.subarray(at, at + 64),
-          quantization.subarray(component === 0 ? 0 : 64, component === 0 ? 64 : 128),
+          component === 0 ? lumaQuantization : chromaQuantization,
         );
         // Native PACKUSWB saturates every IDCT value before writing it back as a word.
         for (let index = 0; index < 64; index++)
@@ -227,10 +330,11 @@ export function decodeBurikoBfFrame(
         }
       }
       block++;
+      if ((block & 3) === 0) yield;
     }
   };
   let nextDescriptor = 0;
-  processing.setCallback(() => {
+  const next = function* (): CooperativeTask<number> {
     const shared = processing.enterShared();
     const descriptor = nextDescriptor <= rows ? nextDescriptor++ : -1;
     processing.leaveShared(shared);
@@ -240,16 +344,21 @@ export function decodeBurikoBfFrame(
         for (let at = 3; at < frameExtent; at += 4) {
           surface.bytes[at] = 0;
           surface.initialized[at] = 1;
+          if ((at & 16383) === 16383) yield;
         }
       } else if (alphaMode === 1)
-        decodeBurikoBfAlphaLz(frame.subarray(alphaStart), surface, width * 4, frameExtent);
-      else decodeAlphaBlocks(frame.subarray(alphaStart), surface, width, height, columns, rows);
-    } else decodeRow(descriptor - 1);
+        yield* decodeBurikoBfAlphaLzSteps(
+          frame.subarray(alphaStart),
+          surface,
+          width * 4,
+          frameExtent,
+        );
+      else
+        yield* decodeAlphaBlocks(frame.subarray(alphaStart), surface, width, height, columns, rows);
+    } else yield* decodeRow(descriptor - 1);
     return 1;
-  }, null);
-  processing.run(1, actor);
-  processing.setCallback(null, null);
-  return surface;
+  };
+  return {surface, next};
 }
 
 export function decodeBurikoBfAlphaLz(
@@ -258,9 +367,19 @@ export function decodeBurikoBfAlphaLz(
   stride: number,
   frameExtent: number,
 ): void {
+  finishTask(decodeBurikoBfAlphaLzSteps(bytes, surface, stride, frameExtent));
+}
+
+function* decodeBurikoBfAlphaLzSteps(
+  bytes: Uint8Array,
+  surface: BurikoBfSurface,
+  stride: number,
+  frameExtent: number,
+): CooperativeTask<void> {
   const data = view(bytes);
   let cursor = 0,
     output = 3;
+  let controls = 0;
   while (output < frameExtent) {
     checkRange(bytes.length, cursor, 1);
     const control = bytes[cursor++]!;
@@ -293,17 +412,18 @@ export function decodeBurikoBfAlphaLz(
         output += 4;
       }
     }
+    if ((++controls & 127) === 0) yield;
   }
 }
 
-function decodeAlphaBlocks(
+function* decodeAlphaBlocks(
   bytes: Uint8Array,
   surface: BurikoBfSurface,
   width: number,
   height: number,
   columns: number,
   rows: number,
-): void {
+): CooperativeTask<void> {
   checkRange(bytes.length, 0, 4);
   const size = view(bytes).getUint32(0, true),
     cursor = {position: 4};
@@ -311,13 +431,17 @@ function decodeAlphaBlocks(
   const bits = new Bits(bytes.subarray(cursor.position));
   const decoded = new Uint8Array(((width + 7) & ~7) * ((height + 7) & ~7) * 2);
   checkRange(decoded.length, 0, size);
-  for (let index = 0; index < size; index++) decoded[index] = burikoBfSymbol(bits, tree);
+  for (let index = 0; index < size; index++) {
+    decoded[index] = burikoBfSymbol(bits, tree);
+    if ((index & 4095) === 4095) yield;
+  }
   const maskSize = (columns * rows + 7) >>> 3;
   checkRange(size, 0, maskSize);
   let read = maskSize;
   for (let row = 0; row < rows; row++)
     for (let column = 0; column < columns; column++) {
       const block = row * columns + column;
+      if ((block & 63) === 63) yield;
       if ((decoded[block >>> 3]! & (1 << (block & 7))) === 0) continue;
       for (let yy = row * 8; yy < Math.min(row * 8 + 8, height); yy++)
         for (let xx = column * 8; xx < Math.min(column * 8 + 8, width); xx++) {

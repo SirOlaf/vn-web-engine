@@ -1,6 +1,14 @@
 import {withBurikoBitmapText} from './bitmap-dom-text.js';
-import {initializedBurikoBitmapView, type BurikoBitmap} from './bitmap.js';
-import {BURIKO_BITMAP_WASM_MIN_PIXELS, tryBurikoBitmapFusedWasm} from './bitmap-alpha-wasm.js';
+import {
+  initializedBurikoBitmapView,
+  writableBurikoBitmapView,
+  type BurikoBitmap,
+} from './bitmap.js';
+import {
+  BURIKO_BITMAP_WASM_MIN_PIXELS,
+  tryBurikoBitmapFusedWasm,
+  tryBurikoBitmapMixWasm,
+} from './bitmap-alpha-wasm.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
 import {
@@ -44,6 +52,57 @@ function mixAlpha(first: number, second: number, factor: number): number {
     result |= saturateBurikoByte(signed16((product >> 7) + base)) << shift;
   }
   return result >>> 0;
+}
+
+// Only the most recent bounded factor is retained. Populate alpha pairs on demand
+// instead of computing the same native reciprocal for every pixel in each strip.
+let cachedAlphaFactor = -1;
+let cachedAlphaCoefficients = new Uint8Array(0);
+
+function alphaCoefficients(factor: number): Uint8Array {
+  if (cachedAlphaFactor !== factor) {
+    cachedAlphaFactor = factor;
+    cachedAlphaCoefficients = new Uint8Array(256 * 256);
+  }
+  return cachedAlphaCoefficients;
+}
+
+function mixAlphaBounded(
+  first: number,
+  second: number,
+  factor: number,
+  coefficients: Uint8Array,
+): number {
+  const firstAlpha = (first >>> 24) * (256 - factor),
+    alpha = firstAlpha + (second >>> 24) * factor,
+    key = ((first >>> 24) << 8) | (second >>> 24);
+  let coefficient = coefficients[key]! - 1;
+  if (coefficient < 0) {
+    const reciprocal = burikoRosettaSseReciprocal(Math.fround(alpha === 0 ? 1 : alpha));
+    coefficient = Math.trunc(Math.fround(reciprocal * Math.fround(firstAlpha << 7)));
+    coefficients[key] = coefficient + 1;
+  }
+  // Bounded factors keep the signed-word product within [-32640,32640].
+  // The original arithmetic shift is this positive weighted sum's floor.
+  const retained = 128 - coefficient,
+    redBlue =
+      ((Math.imul(first & 0xff00ff, coefficient) + Math.imul(second & 0xff00ff, retained)) >>> 7) &
+      0xff00ff,
+    green = ((((first >>> 8) & 255) * coefficient + ((second >>> 8) & 255) * retained) >>> 7) << 8;
+  return (redBlue | green | ((alpha >>> 8) << 24)) >>> 0;
+}
+
+function mixRgbBounded(first: number, second: number, factor: number): number {
+  const inverse = 256 - factor,
+    redBlue =
+      ((Math.imul(first & 0xff00ff, inverse) + Math.imul(second & 0xff00ff, factor)) >>> 8) &
+      0xff00ff,
+    greenAlpha =
+      ((Math.imul((first >>> 8) & 0xff00ff, inverse) +
+        Math.imul((second >>> 8) & 0xff00ff, factor)) >>>
+        8) &
+      0xff00ff;
+  return (redBlue | (greenAlpha << 8)) >>> 0;
 }
 
 const signedHighWord = (first: number, second: number): number =>
@@ -322,6 +381,70 @@ function blendMixedBurikoBitmapsIntoRgbPixels(
 }
 
 /** 03c370 / 03bef0, with MOVQ pairs then one MOVD and native pointer-equality traversal. */
+function mixInitializedRows(
+  destination: BurikoBitmap,
+  first: BurikoBitmap,
+  second: BurikoBitmap,
+  width: number,
+  height: number,
+  firstStride: number,
+  factor: number,
+): boolean {
+  if (
+    !Number.isInteger(factor) ||
+    factor < 0 ||
+    factor > 256 ||
+    destination.stride !== (destination.stride | 0) ||
+    firstStride !== (firstStride | 0) ||
+    second.stride !== (second.stride | 0)
+  )
+    return false;
+  const a = initializedBurikoBitmapView({...first, stride: firstStride}, width, height),
+    b = initializedBurikoBitmapView(second, width, height),
+    output = writableBurikoBitmapView(destination, width, height);
+  if (a === null || b === null || output === null) return false;
+  if (
+    destination.format === 2 &&
+    tryBurikoBitmapMixWasm(destination, first, second, output, a, b, width, height, factor)
+  ) {
+    for (let row = 0; row < height; row++)
+      destination.storage!.written(destination.offset + row * destination.stride, width * 4);
+    return true;
+  }
+  const rgb = destination.format === 1,
+    coefficients = rgb ? null : alphaCoefficients(factor);
+  for (let row = 0; row < height; row++) {
+    const target = destination.offset + row * destination.stride,
+      left = first.offset + row * firstStride,
+      right = second.offset + row * second.stride;
+    let column = 0;
+    for (; column + 1 < width; column += 2) {
+      // Load both MOVQ source pairs, compute both outputs, then store the pair.
+      const offset = column * 4,
+        a0 = a.getUint32(left + offset, true),
+        a1 = a.getUint32(left + offset + 4, true),
+        b0 = b.getUint32(right + offset, true),
+        b1 = b.getUint32(right + offset + 4, true),
+        out0 = rgb ? mixRgbBounded(a0, b0, factor) : mixAlphaBounded(a0, b0, factor, coefficients!),
+        out1 = rgb ? mixRgbBounded(a1, b1, factor) : mixAlphaBounded(a1, b1, factor, coefficients!);
+      output.setUint32(target + offset, out0, true);
+      output.setUint32(target + offset + 4, out1, true);
+    }
+    if (column < width) {
+      const offset = column * 4,
+        a0 = a.getUint32(left + offset, true),
+        b0 = b.getUint32(right + offset, true);
+      output.setUint32(
+        target + offset,
+        rgb ? mixRgbBounded(a0, b0, factor) : mixAlphaBounded(a0, b0, factor, coefficients!),
+        true,
+      );
+    }
+    destination.storage!.written(target, width * 4);
+  }
+  return true;
+}
+
 function mixRows(
   destination: BurikoBitmap,
   first: BurikoBitmap,
@@ -332,6 +455,7 @@ function mixRows(
   const height = Math.min(first.height >>> 0, second.height >>> 0);
   const same = destination.storage === first.storage && destination.offset === first.offset;
   const firstStride = same ? destination.stride : first.stride;
+  if (mixInitializedRows(destination, first, second, width, height, firstStride, factor)) return;
   const mix = destination.format === 1 ? mixRgb : mixAlpha;
   for (let row = 0; row < height; row++) {
     const target = destination.offset + row * (destination.stride | 0);

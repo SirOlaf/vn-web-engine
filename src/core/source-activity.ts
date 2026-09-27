@@ -29,6 +29,7 @@ function snapshot(): SourceActivity {
   };
 }
 function publish(): void {
+  if (listeners.size === 0) return;
   const current = snapshot();
   for (const listener of listeners) {
     try {

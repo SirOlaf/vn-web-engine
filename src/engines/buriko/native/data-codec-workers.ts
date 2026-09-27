@@ -139,6 +139,11 @@ export class BurikoDataCodecWorkers {
           worker.count,
           processing,
           worker.destination,
+          processing.allocator.currentActor,
+          () => {
+            if (worker.released)
+              throw new Error('Buriko codec worker accesses a released native record');
+          },
         );
         if (decoded.status === 0) {
           if (decoded.bytes === null)

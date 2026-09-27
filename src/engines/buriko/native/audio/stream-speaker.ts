@@ -1,5 +1,6 @@
 import {BurikoStaticSpeaker, type BurikoSpeakerDescriptor} from './speaker.js';
 import type {BurikoSpeakerModel} from './speaker-model.js';
+import {beginRuntimeSpan} from '../../../../platform/runtime-performance.js';
 
 /** CDSStreamSpeaker116650: actual independent event/refill worker over five blocks. */
 export class BurikoStreamSpeaker extends BurikoStaticSpeaker {
@@ -99,35 +100,40 @@ export class BurikoStreamSpeaker extends BurikoStaticSpeaker {
       // WaitForMultipleObjects already consumed this lowest auto-reset event.
       if (previous !== 0xffffffff && event !== (previous + 1) % this.blockCount) continue;
       previous = event;
-      const block = event >= 1 && event <= this.blockCount ? event - 1 : this.blockCount - 1;
-      const offset = Math.imul(block, this.blockBytes) >>> 0;
-      const storage = this.storage;
-      if (storage === null) throw new Error('Buriko stream refill has no actual ring');
-      let frames = this.blockFrames;
-      if (this.fillState === 1) frames = await this.readSpans(offset, this.blockBytes);
-      else {
-        storage.bytes.fill(0, offset, offset + this.blockBytes);
-        storage.initialized.fill(1, offset, offset + this.blockBytes);
-        if (this.terminalBlock === block) {
-          // Write transport preserves the actual pre-stop memset; it is NOT native Unlock.
-          await this.publish(offset, this.blockBytes);
-          await this.stop(this.workerActor);
-          throw new Error(
-            'Buriko stream terminal stop leaves a native buffer lock outstanding; unsupported host lifetime',
-          );
+      const finishTiming = beginRuntimeSpan('buriko.audio.refill');
+      try {
+        const block = event >= 1 && event <= this.blockCount ? event - 1 : this.blockCount - 1;
+        const offset = Math.imul(block, this.blockBytes) >>> 0;
+        const storage = this.storage;
+        if (storage === null) throw new Error('Buriko stream refill has no actual ring');
+        let frames = this.blockFrames;
+        if (this.fillState === 1) frames = await this.readSpans(offset, this.blockBytes);
+        else {
+          storage.bytes.fill(0, offset, offset + this.blockBytes);
+          storage.initialized.fill(1, offset, offset + this.blockBytes);
+          if (this.terminalBlock === block) {
+            // Write transport preserves the actual pre-stop memset; it is NOT native Unlock.
+            await this.publish(offset, this.blockBytes);
+            await this.stop(this.workerActor);
+            throw new Error(
+              'Buriko stream terminal stop leaves a native buffer lock outstanding; unsupported host lifetime',
+            );
+          }
         }
-      }
-      if (frames < this.blockFrames) {
-        const written = Math.imul(frames, this.actualModel().frameBytes) >>> 0;
-        storage.bytes.fill(0, offset + written, offset + this.blockBytes);
-        storage.initialized.fill(1, offset + written, offset + this.blockBytes);
-        this.fillState = 2;
-        this.terminalBlock = block;
-      }
-      await this.publish(offset, this.blockBytes);
-      if (this.paused !== 0) {
-        await this.actualBuffer().command({kind: 'stop'});
-        this.savedCursor = (await this.actualBuffer().command({kind: 'status'})).byteCursor;
+        if (frames < this.blockFrames) {
+          const written = Math.imul(frames, this.actualModel().frameBytes) >>> 0;
+          storage.bytes.fill(0, offset + written, offset + this.blockBytes);
+          storage.initialized.fill(1, offset + written, offset + this.blockBytes);
+          this.fillState = 2;
+          this.terminalBlock = block;
+        }
+        await this.publish(offset, this.blockBytes);
+        if (this.paused !== 0) {
+          await this.actualBuffer().command({kind: 'stop'});
+          this.savedCursor = (await this.actualBuffer().command({kind: 'status'})).byteCursor;
+        }
+      } finally {
+        finishTiming?.();
       }
     }
   }

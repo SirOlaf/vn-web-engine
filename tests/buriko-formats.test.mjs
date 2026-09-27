@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {Arc20Archive} from '../dist/formats/buriko/arc20.js';
 import {decodeDsc} from '../dist/formats/buriko/dsc.js';
 import {decodeSdc} from '../dist/formats/buriko/compressed-resource.js';
 import {decodeBse} from '../dist/formats/buriko/bse.js';
 import {decodeCompressedBgV1, frequencyTree} from '../dist/formats/buriko/compressed-bg.js';
 import {BfMovie} from '../dist/formats/buriko/bf-movie.js';
-import {movieIdct} from '../dist/formats/buriko/movie-idct.js';
+import {MovieIdctWorkspace, movieIdct} from '../dist/formats/buriko/movie-idct.js';
 import {readTimeEvents} from '../dist/formats/buriko/time-event.js';
 const put = (b, p, n) => new DataView(b.buffer).setUint32(p, n, true);
 const text = (b, s, p = 0) => b.set(new TextEncoder().encode(s), p);
@@ -250,6 +251,52 @@ test('IDCT DC normalization, negative rounding and saturation', () => {
     c[0] = dc;
     assert.deepEqual(movieIdct(c, q), new Uint8Array(64).fill(value));
   }
+});
+test('IDCT workspace preserves float32 results and isolates borrowed output', () => {
+  const workspace = new MovieIdctWorkspace(),
+    other = new MovieIdctWorkspace(),
+    c = new Int16Array(64),
+    q = new Uint8Array(64).fill(1);
+  c[0] = 8;
+  const borrowed = workspace.transform(c, q),
+    owned = movieIdct(c, q);
+  c[0] = -1;
+  const otherPixels = other.transform(c, q);
+  assert.deepEqual(borrowed, new Uint8Array(64).fill(129));
+  assert.deepEqual(otherPixels, new Uint8Array(64).fill(127));
+  assert.equal(workspace.transform(c, q), borrowed);
+  assert.deepEqual(borrowed, otherPixels);
+  assert.deepEqual(owned, new Uint8Array(64).fill(129));
+  assert.notEqual(owned, movieIdct(c, q));
+
+  // Fingerprint from the previous allocating implementation: full-range, small and sparse blocks.
+  let seed = 0x81dc7;
+  const next = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+  const digest = createHash('sha256');
+  for (let block = 0; block < 1024; block++) {
+    for (let i = 0; i < 64; i++) {
+      const value = next();
+      c[i] =
+        block % 3 === 0
+          ? value & 65535
+          : block % 3 === 1
+            ? ((value >>> 16) & 511) - 256
+            : i % 7 === block % 7
+              ? ((value >>> 16) & 63) - 32
+              : 0;
+      q[i] =
+        block % 3 === 0
+          ? next() >>> 24
+          : block % 3 === 1
+            ? (next() >>> 24) % 4
+            : [0, 1, 2, 255][next() >>> 30];
+    }
+    digest.update(workspace.transform(c, q));
+  }
+  assert.equal(
+    digest.digest('hex'),
+    'e2ddafb76520aa1b137c799077ba02325825e7b5b7f0ab222b7efce102f38589',
+  );
 });
 test('time-event fixed and string records are bounded and preserve values', () => {
   const b = new Uint8Array(71);

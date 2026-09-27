@@ -29,6 +29,54 @@ unsafe fn affine_lerp(first: v128, second: v128, fraction: v128) -> v128 {
     )
 }
 
+#[inline]
+unsafe fn affine_sample(
+    source: *const u32,
+    source_width: i32,
+    source_height: i32,
+    fixed_x: i32,
+    fixed_y: i32,
+    bilinear: u32,
+) -> u32 {
+    if bilinear == 0 {
+        affine_pixel(
+            source,
+            source_width,
+            source_height,
+            fixed_x.wrapping_add(0x8000) >> 16,
+            fixed_y.wrapping_add(0x8000) >> 16,
+        )
+    } else {
+        let x = fixed_x >> 16;
+        let y = fixed_y >> 16;
+        if x < -1 || y < -1 || x >= source_width || y >= source_height {
+            0
+        } else {
+            let first = affine_channels(affine_pixel(source, source_width, source_height, x, y));
+            let right =
+                affine_channels(affine_pixel(source, source_width, source_height, x + 1, y));
+            let bottom =
+                affine_channels(affine_pixel(source, source_width, source_height, x, y + 1));
+            let diagonal = affine_channels(affine_pixel(
+                source,
+                source_width,
+                source_height,
+                x + 1,
+                y + 1,
+            ));
+            let fx = i16x8_splat(((fixed_x as u32 >> 12) & 15) as i16);
+            let fy = i16x8_splat(((fixed_y as u32 >> 12) & 15) as i16);
+            // Horizontal floors precede the vertical floor, exactly as in the SSE2 path.
+            let result = affine_lerp(
+                affine_lerp(first, right, fx),
+                affine_lerp(bottom, diagonal, fx),
+                fy,
+            );
+            u32x4_extract_lane::<0>(u8x16_narrow_i16x8(result, i16x8_splat(0)))
+        }
+    }
+}
+
 /// Validated, nonaliased copy branch of 052480. All source taps fit signed WORD
 /// coordinates; the host packs rows without changing their logical pixel addresses.
 #[no_mangle]
@@ -51,55 +99,70 @@ pub unsafe extern "C" fn affine_copy(
         let mut fixed_x = start_x;
         let mut fixed_y = start_y;
         for column in 0..width {
-            let pixel = if bilinear == 0 {
-                affine_pixel(
-                    source,
-                    source_width,
-                    source_height,
-                    fixed_x.wrapping_add(0x8000) >> 16,
-                    fixed_y.wrapping_add(0x8000) >> 16,
-                )
-            } else {
-                let x = fixed_x >> 16;
-                let y = fixed_y >> 16;
-                if x < -1 || y < -1 || x >= source_width || y >= source_height {
-                    0
-                } else {
-                    let first =
-                        affine_channels(affine_pixel(source, source_width, source_height, x, y));
-                    let right = affine_channels(affine_pixel(
-                        source,
-                        source_width,
-                        source_height,
-                        x + 1,
-                        y,
-                    ));
-                    let bottom = affine_channels(affine_pixel(
-                        source,
-                        source_width,
-                        source_height,
-                        x,
-                        y + 1,
-                    ));
-                    let diagonal = affine_channels(affine_pixel(
-                        source,
-                        source_width,
-                        source_height,
-                        x + 1,
-                        y + 1,
-                    ));
-                    let fx = i16x8_splat(((fixed_x as u32 >> 12) & 15) as i16);
-                    let fy = i16x8_splat(((fixed_y as u32 >> 12) & 15) as i16);
-                    // Horizontal floors precede the vertical floor, exactly as in the SSE2 path.
-                    let result = affine_lerp(
-                        affine_lerp(first, right, fx),
-                        affine_lerp(bottom, diagonal, fx),
-                        fy,
-                    );
-                    u32x4_extract_lane::<0>(u8x16_narrow_i16x8(result, i16x8_splat(0)))
-                }
-            };
+            let pixel = affine_sample(
+                source,
+                source_width,
+                source_height,
+                fixed_x,
+                fixed_y,
+                bilinear,
+            );
             *destination.add(row * width + column) = pixel;
+            fixed_x = fixed_x.wrapping_add(column_x);
+            fixed_y = fixed_y.wrapping_add(column_y);
+        }
+        start_x = start_x.wrapping_add(row_x);
+        start_y = start_y.wrapping_add(row_y);
+    }
+}
+
+/// Initialized RGBA-over-RGB 052710 sampling. The host supplies a complete source
+/// footprint and retains native Q16 coordinates relative to that footprint.
+#[no_mangle]
+pub unsafe extern "C" fn affine_alpha_rgb(
+    source: *const u32,
+    destination: *mut u32,
+    source_width: i32,
+    source_height: i32,
+    width: usize,
+    height: usize,
+    mut start_x: i32,
+    mut start_y: i32,
+    column_x: i32,
+    column_y: i32,
+    row_x: i32,
+    row_y: i32,
+    bilinear: u32,
+    opacity: u32,
+) {
+    for row in 0..height {
+        let mut fixed_x = start_x;
+        let mut fixed_y = start_y;
+        for column in 0..width {
+            let pixel = affine_sample(
+                source,
+                source_width,
+                source_height,
+                fixed_x,
+                fixed_y,
+                bilinear,
+            );
+            let alpha = pixel >> 25;
+            let coefficient = (if alpha == 127 { 128 } else { alpha }) * opacity >> 8;
+            if coefficient != 0 {
+                let target = destination.add(row * width + column);
+                let old = *target;
+                let retained = 128 - coefficient;
+                let red_blue = (((pixel & 0xff00ff) * coefficient + (old & 0xff00ff) * retained)
+                    >> 7)
+                    & 0xff00ff;
+                let green = ((((pixel >> 8) & 255) * coefficient + ((old >> 8) & 255) * retained)
+                    >> 7)
+                    << 8;
+                *target = (old & 0xff000000) | red_blue | green;
+            }
+            // Zero-coefficient stores would reproduce old bytes. With initialized,
+            // nonaliased buffers, leaving them in place also preserves zero pairs/tails.
             fixed_x = fixed_x.wrapping_add(column_x);
             fixed_y = fixed_y.wrapping_add(column_y);
         }
@@ -275,6 +338,63 @@ pub unsafe extern "C" fn mix_all(
         *destination.add(column) =
             weighted_pixel(*source.add(column), *destination.add(column), weight, false);
         column += 1;
+    }
+}
+
+// One bounded factor's alpha-pair coefficients, populated only when encountered.
+// Synchronous host calls cannot interleave while this kernel owns the workspace.
+static mut MIX_ALPHA_FACTOR: u32 = u32::MAX;
+static mut MIX_ALPHA_COEFFICIENTS: [u8; 256 * 256] = [0; 256 * 256];
+
+#[inline]
+fn mix_alpha_coefficient(first_alpha: u32, alpha: u32) -> u32 {
+    // The measured Rosetta RCPPS seed, not exact division or fused premultiplication.
+    // For factors 0..256, the input is a positive normal integer in 1..65280.
+    let bits = (if alpha == 0 { 1.0 } else { alpha as f32 }).to_bits();
+    let exponent = (bits >> 23) & 255;
+    let index = (bits >> 12) & 2047;
+    let rounded = (8192.0_f64 / (1.0 + (index as f64 + 0.5) / 2048.0) + 0.5) as u32;
+    let reciprocal = (rounded as f32 / 8192.0) * f32::from_bits((254 - exponent) << 23);
+    (reciprocal * ((first_alpha << 7) as f32)) as u32
+}
+
+/// Bounded, nonaliased native 03BEF0: coefficient truncation precedes RGB weighting.
+/// Unlike fused_rgb, every output pixel is replaced, including zero-alpha pairs.
+#[no_mangle]
+pub unsafe extern "C" fn mix_rgba(
+    first: *const u32,
+    second: *const u32,
+    destination: *mut u32,
+    pixels: usize,
+    factor: u32,
+) {
+    let coefficients = core::ptr::addr_of_mut!(MIX_ALPHA_COEFFICIENTS).cast::<u8>();
+    if MIX_ALPHA_FACTOR != factor {
+        core::ptr::write_bytes(coefficients, 0, 256 * 256);
+        MIX_ALPHA_FACTOR = factor;
+    }
+    let inverse = 256 - factor;
+    for index in 0..pixels {
+        let first = *first.add(index);
+        let second = *second.add(index);
+        let first_alpha = (first >> 24) * inverse;
+        let alpha = first_alpha + (second >> 24) * factor;
+        let key = (((first >> 24) << 8) | (second >> 24)) as usize;
+        let entry = coefficients.add(key);
+        let coefficient = if *entry == 0 {
+            let value = mix_alpha_coefficient(first_alpha, alpha);
+            *entry = (value + 1) as u8;
+            value
+        } else {
+            (*entry - 1) as u32
+        };
+        let retained = 128 - coefficient;
+        // The weights sum to 128, so each packed pair remains below 0x80008000.
+        let red_blue =
+            (((first & 0xff00ff) * coefficient + (second & 0xff00ff) * retained) >> 7) & 0xff00ff;
+        let green =
+            ((((first >> 8) & 255) * coefficient + ((second >> 8) & 255) * retained) >> 7) << 8;
+        *destination.add(index) = red_blue | green | ((alpha >> 8) << 24);
     }
 }
 

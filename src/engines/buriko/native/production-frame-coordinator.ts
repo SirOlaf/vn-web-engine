@@ -1,4 +1,5 @@
 import {BurikoProductionVmCore} from './production-vm-core.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 export interface BurikoProductionFrameResult {
   readonly schedulerResult: 0 | 1 | 2;
@@ -62,6 +63,7 @@ export class BurikoProductionFrameCoordinator {
   async tick(): Promise<BurikoProductionFrameResult> {
     if (this.active) throw new Error('Buriko ECB90 frame tick is already active');
     this.active = true;
+    const finishTiming = beginRuntimeSpan('buriko.frame', undefined, 16);
     try {
       const {core} = this;
       const {graph, gate, control} = core;
@@ -98,6 +100,7 @@ export class BurikoProductionFrameCoordinator {
       graph.resource.worker.checkWorker();
       return {schedulerResult, pumpResult, retireChildren: gate.canRetireChildren};
     } finally {
+      finishTiming?.();
       this.active = false;
     }
   }

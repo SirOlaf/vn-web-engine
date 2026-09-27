@@ -3,6 +3,7 @@
   import InstallationFiles from './InstallationFiles.svelte';
   import SaveFiles from './SaveFiles.svelte';
   import AudioDiagnostics from './AudioDiagnostics.svelte';
+  import PerformanceDiagnostics from './PerformanceDiagnostics.svelte';
   import {legacyAokanaProfile} from '../game-profiles/aokana.js';
   export let game: GameId;
 </script>
@@ -72,5 +73,6 @@
     {/if}
     <p id="status" role="status">No game loaded.</p>
     <AudioDiagnostics />
+    <PerformanceDiagnostics />
   </div>
 </aside>

@@ -23,6 +23,11 @@ const modules = await Promise.all(
         'surfaces',
         'bitmap-compositor',
         'distributed-processing',
+        'display-damage',
+        'display-object',
+        'display-manager',
+        'display-state',
+        'display-renderer',
       ].map((name) => import(new URL(`${name}.js`, native))),
     );
     return Object.assign(
@@ -216,12 +221,82 @@ function importRgb(lib) {
   };
 }
 
+/** Full native traversal of two fractional affine layers in three-row render jobs. */
+function affineScene(lib) {
+  const bounds = {left: 0, top: 0, right: 1919, bottom: 1079},
+    compositor = new lib.BurikoBitmapCompositor(),
+    allocator = new lib.BurikoDistributedAllocator(3),
+    environment = new lib.BurikoDisplayObjectEnvironment(
+      compositor,
+      new lib.BurikoDisplayDamage(32, bounds),
+    ),
+    surfaces = new lib.BurikoSurfaces(null, compositor, allocator),
+    manager = new lib.BurikoDisplayManager(
+      environment,
+      surfaces,
+      new lib.BurikoNativeDisplayState(1920, 1080),
+    ),
+    output = {
+      storage: new lib.BurikoBitmapStorage(new Uint8Array(1920 * 1080 * 4), true),
+      offset: 0,
+      stride: 1920 * 4,
+      width: 1920,
+      height: 1080,
+      format: 1,
+      bytesPerPixel: 4,
+    };
+  compositor.defaultFormat = 1;
+  manager.bindDisplayContext({bitmap: output, bounds});
+  manager.backdrop.resizeToDisplay();
+  const processing = new lib.BurikoDistributedProcessing(allocator, 3),
+    renderer = new lib.BurikoDisplayRenderer(manager, 6406, processing);
+  for (const [slot, width, sampling] of [
+    [1, 1920, 1],
+    [2, 1005, 0],
+  ]) {
+    surfaces.allocate(slot, width, 1080, 2);
+    const source = surfaces.descriptor(slot);
+    populate(source.storage.bytes, slot);
+    source.storage.written(0, source.storage.bytes.length);
+    const sprite = manager.find('sprite', manager.createSprite());
+    sprite.setCoordinates((-960 << 16) + 0x8000, (-540 << 16) + 0x8000, 0);
+    assert.equal(
+      sprite.configureAffineBlend({
+        sourceSurface: slot,
+        pivotX: 0,
+        pivotY: 0,
+        angle: 0,
+        perspective: 0,
+        pivotPolicy: 0,
+        sampling,
+      }),
+      0,
+    );
+    sprite.blendMode = 0x20;
+    sprite.setActivation(1);
+  }
+  return {
+    run() {
+      renderer.drawFull();
+      return output.storage.bytes;
+    },
+    dispose() {
+      manager.dispose();
+      processing.dispose();
+      surfaces.release(1);
+      surfaces.release(2);
+      output.storage.release();
+    },
+  };
+}
+
 const median = (values) => values.sort((a, b) => a - b)[values.length >> 1];
 const results = [];
 for (const [name, create] of [
   ['Alpha into RGB, 720p', (lib) => blend(lib, 'alpha')],
   ['All-channel crossfade, 720p', (lib) => blend(lib, 'crossfade')],
   ['Fused transition, 720p', (lib) => blend(lib, 'fused')],
+  ['Affine scene, 1080p with 720 strip draws', affineScene],
   ['Ogg checksums, 128 maximum-size pages', oggChecksum],
   ['Import packed BGR24, 720p', importRgb],
   ['RGB to alpha, fresh 720p destination', copyRgbToAlpha],
@@ -259,5 +334,6 @@ for (const [name, create] of [
         }
       : {name, ms: +ms[0].toFixed(2)},
   );
+  for (const fixture of fixtures) fixture.dispose?.();
 }
 console.log(JSON.stringify({node: process.version, synthetic: true, results}, null, 2));

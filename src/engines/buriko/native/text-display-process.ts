@@ -6,6 +6,7 @@ import type {BurikoNativeClock} from './clock.js';
 import type {BurikoWindowDisplayObject} from './display-window.js';
 import {rasterBurikoGlyph} from './font-bitmap.js';
 import {recordBurikoBitmapText} from './bitmap-dom-text.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 import type {BurikoNativeInput} from './input.js';
 import {BurikoProcedure, type BurikoProcedureState} from './procedure.js';
 import {
@@ -153,30 +154,35 @@ export class BurikoTextDisplayProcess extends BurikoProcedure {
   }
   /** 071e60's initial gate and repeat gate deliberately differ. */
   protected advance(): boolean {
-    if (
-      !this.deadlineReached() &&
-      this.skip === 0 &&
-      !this.finishRequested &&
-      this.autoDeadline === 0
-    )
+    const finishTiming = beginRuntimeSpan('buriko.text.advance');
+    try {
+      if (
+        !this.deadlineReached() &&
+        this.skip === 0 &&
+        !this.finishRequested &&
+        this.autoDeadline === 0
+      )
+        return false;
+      do {
+        if (this.scrolling) this.scroll();
+        else {
+          if (this.source === null)
+            throw new Error('Buriko animated text reads a null borrowed source');
+          const byte = textByte(this.source.bytes, this.sourceOffset);
+          if (byte === 0) return this.endWait();
+          if (byte === 1) this.sourceOffset += this.page();
+          else if (byte === 10) {
+            if (this.window.newTextLine() === 0) this.scrolling = true;
+            this.extendedRight = false;
+            this.sourceOffset++;
+          } else if (byte === 12) this.sourceOffset += Number(this.formFeed());
+          else this.sourceOffset += this.glyph();
+        }
+      } while (this.deadlineReached() || this.skip !== 0 || this.immediate !== 0);
       return false;
-    do {
-      if (this.scrolling) this.scroll();
-      else {
-        if (this.source === null)
-          throw new Error('Buriko animated text reads a null borrowed source');
-        const byte = textByte(this.source.bytes, this.sourceOffset);
-        if (byte === 0) return this.endWait();
-        if (byte === 1) this.sourceOffset += this.page();
-        else if (byte === 10) {
-          if (this.window.newTextLine() === 0) this.scrolling = true;
-          this.extendedRight = false;
-          this.sourceOffset++;
-        } else if (byte === 12) this.sourceOffset += Number(this.formFeed());
-        else this.sourceOffset += this.glyph();
-      }
-    } while (this.deadlineReached() || this.skip !== 0 || this.immediate !== 0);
-    return false;
+    } finally {
+      finishTiming?.();
+    }
   }
   /** 071640, two phases over the same borrowed CP932 character. */
   private glyph(): number {

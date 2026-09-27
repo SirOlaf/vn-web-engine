@@ -1,4 +1,5 @@
 import {createBrowserPcmNode, type BrowserPcmNode} from '../../../../audio/browser-pcm-node.js';
+import {beginRuntimeSpan} from '../../../../platform/runtime-performance.js';
 import {BurikoBufferProcessor} from './buffer-processor.js';
 import type {
   BurikoAudioBufferCommand,
@@ -78,13 +79,24 @@ export class BurikoBrowserSpeakerBuffer {
     if (this.disposed)
       return Promise.reject(new Error('Buriko browser speaker buffer is disposed'));
     const id = this.nextId++;
+    const finishTiming = beginRuntimeSpan('buriko.audio.command.' + command.kind);
     return new Promise((resolve, reject) => {
-      this.pending.set(id, {resolve, reject});
+      this.pending.set(id, {
+        resolve: (status) => {
+          finishTiming?.();
+          resolve(status);
+        },
+        reject: (reason: unknown) => {
+          finishTiming?.();
+          reject(reason);
+        },
+      });
       const request: BurikoAudioBufferRequest = {id, command};
       try {
         this.node.port.postMessage(request);
       } catch (error) {
         this.pending.delete(id);
+        finishTiming?.();
         reject(error);
       }
     });

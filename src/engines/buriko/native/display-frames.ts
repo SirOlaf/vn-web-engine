@@ -8,6 +8,7 @@ import {BurikoFullscreenMovieState} from './movie-fullscreen-state.js';
 import {BurikoInlineTextControl} from './inline-text-control.js';
 import {BurikoChildWindows} from './child-windows.js';
 import type {BurikoBitmapRectangle} from './bitmap.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 /** Concrete frame preparation/presentation policy around the actual shared runtime owners. */
 export class BurikoDisplayFrames {
@@ -72,12 +73,17 @@ export class BurikoDisplayFrames {
     x: number,
     y: number,
   ): Promise<number> {
-    this.device.prepare(count, rectangles, x, y);
-    const result = {waitCount: 0};
-    await this.device.present(result);
-    await this.paintInline();
-    this.children.invalidateVisible();
-    return result.waitCount;
+    const finishTiming = beginRuntimeSpan('buriko.display.present');
+    try {
+      this.device.prepare(count, rectangles, x, y);
+      const result = {waitCount: 0};
+      await this.device.present(result);
+      await this.paintInline();
+      this.children.invalidateVisible();
+      return result.waitCount;
+    } finally {
+      finishTiming?.();
+    }
   }
   presentTransient(x: number, y: number): Promise<number> {
     return this.present(1, null, x, y);
@@ -86,7 +92,13 @@ export class BurikoDisplayFrames {
   async drawDamage(): Promise<number> {
     this.metrics.begin();
     const result = {count: 0, rectangles: [] as BurikoBitmapRectangle[]};
-    const drawn = this.manager.drawDamage(result);
+    const finishTiming = beginRuntimeSpan('buriko.display.draw-damage');
+    let drawn: number;
+    try {
+      drawn = this.manager.drawDamage(result);
+    } finally {
+      finishTiming?.();
+    }
     this.metrics.end(1);
     if (drawn === 0) return 0;
     this.movies.removeFinished(this.manager.surfaces);
@@ -98,7 +110,13 @@ export class BurikoDisplayFrames {
   /** b65e0 has the same measurement/sweep ordering but always presents a successful full draw. */
   async drawFull(): Promise<number> {
     this.metrics.begin();
-    const drawn = this.manager.drawFull();
+    const finishTiming = beginRuntimeSpan('buriko.display.draw-full');
+    let drawn: number;
+    try {
+      drawn = this.manager.drawFull();
+    } finally {
+      finishTiming?.();
+    }
     this.metrics.end(1);
     if (drawn === 0) return 0;
     this.movies.removeFinished(this.manager.surfaces);

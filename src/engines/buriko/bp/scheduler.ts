@@ -7,6 +7,8 @@ import type {BurikoBpThread} from './state.js';
 import type {BurikoGridEvaluationWorkers} from '../native/grid-evaluation-workers.js';
 import type {BurikoDataCodecWorkers} from '../native/data-codec-workers.js';
 import type {BurikoSharedLoaderWorker} from '../native/shared-loader-worker.js';
+import {HostTaskBudget, yieldToHost} from '../../../core/host-task-budget.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 export const BURIKO_BP_BURST_INSTRUCTIONS = 0x400000;
 export type BurikoBpSchedulerResult = 0 | 1 | 2;
@@ -63,13 +65,35 @@ export class BurikoBpScheduledThread {
       this.process.enqueueMessage({code: 0, value1: 0, value2: 0});
       this.processStopMessagePending = false;
     }
-    const result = this.process.poll();
+    const finish = beginRuntimeSpan('buriko.process.poll-sync');
+    let result: number | Promise<number>;
+    try {
+      result = this.process.poll();
+    } finally {
+      finish?.();
+    }
+    if (typeof result !== 'number') {
+      const finishAsync = beginRuntimeSpan('buriko.process.poll-async-elapsed');
+      if (finishAsync) {
+        const settled = () => finishAsync();
+        void result.then(settled, settled);
+      }
+    }
     return typeof result === 'number'
       ? this.finishPoll(result)
       : result.then((value) => this.finishPoll(value));
   }
 
   private finishPoll(value: number): number {
+    const finish = beginRuntimeSpan('buriko.process.finish');
+    try {
+      return this.finishPollUnchecked(value);
+    } finally {
+      finish?.();
+    }
+  }
+
+  private finishPollUnchecked(value: number): number {
     const result = value | 0;
     if (result === -1 || result === 1) {
       if (this.process?.hasOutstandingExternalBorrow?.())
@@ -95,6 +119,7 @@ export class BurikoBpScheduler {
   exclusiveThread: BurikoBpScheduledThread | null = null;
   exclusiveMode = false;
   private running = false;
+  private readonly hostBudget = new HostTaskBudget();
   private invocationToken: object | null = null;
   private dispatchingInstruction: BurikoBpThread | null = null;
   private processPollToken: object | null = null;
@@ -257,8 +282,8 @@ export class BurikoBpScheduler {
       codecPending = this.dataCodecWorkers?.hasPendingWork() ?? false,
       loaderPending = this.sharedLoaderWorker?.hasPendingWork() ?? false;
     if (gridPending || codecPending || loaderPending)
-      return new Promise<void>((resolve) => setTimeout(resolve, 0));
-    return undefined;
+      return yieldToHost().then(() => this.hostBudget.reset());
+    return this.hostBudget.checkpoint();
   }
 
   attachDataCodecWorkers(workers: BurikoDataCodecWorkers): void {
@@ -355,9 +380,11 @@ export class BurikoBpScheduler {
       throw new Error('Buriko scheduler instruction executor is not bound');
     const token = this.beginInvocation();
     this.running = true;
+    const finishTiming = beginRuntimeSpan('buriko.vm.scheduler', undefined, 16);
     try {
       return await this.runInvocation(executeInstruction, token);
     } finally {
+      finishTiming?.();
       this.running = false;
       this.endInvocation(token);
     }
@@ -371,6 +398,8 @@ export class BurikoBpScheduler {
     let condition = false;
     let node = this.root.next;
     while (node !== null) {
+      const pending = this.hostBudget.checkpoint();
+      if (pending !== undefined) await pending;
       if (this.exclusiveMode && node !== this.exclusiveThread) {
         node = node.next;
         continue;
@@ -388,6 +417,10 @@ export class BurikoBpScheduler {
       if ((node.flags & 1) !== 0) {
         const pollResult = node.pollProcess(stop, invocationToken);
         const processResult = typeof pollResult === 'number' ? pollResult : await pollResult;
+        // A completed process can do substantial work before releasing this child.
+        // Service the host before starting an instruction on the same child.
+        const pending = this.hostBudget.checkpoint();
+        if (pending !== undefined) await pending;
         if (processResult === 0 || processResult === -1) {
           if (processResult === -1) stop = true;
           node = node.next;
@@ -400,17 +433,42 @@ export class BurikoBpScheduler {
         continue;
       }
       let result: BurikoBpHandlerResult = 0;
-      for (let count = 0; count < BURIKO_BP_BURST_INSTRUCTIONS; count++) {
-        let instruction: BurikoBpInstructionResult;
-        this.dispatchingInstruction = node.state;
-        try {
-          instruction = executeInstruction(node.state);
-        } finally {
-          // A returned Promise keeps its callback lease, but cannot admit a new callback.
-          this.dispatchingInstruction = null;
+      let finishSlice = beginRuntimeSpan('buriko.vm.sync-slice');
+      let sliceInstructions = 0;
+      try {
+        for (let count = 0; count < BURIKO_BP_BURST_INSTRUCTIONS; count++) {
+          let instruction: BurikoBpInstructionResult;
+          this.dispatchingInstruction = node.state;
+          try {
+            sliceInstructions++;
+            instruction = executeInstruction(node.state);
+          } finally {
+            // A returned Promise keeps its callback lease, but cannot admit a new callback.
+            this.dispatchingInstruction = null;
+          }
+          if (typeof instruction === 'number') result = instruction;
+          else {
+            finishSlice?.({instructions: sliceInstructions});
+            finishSlice = undefined;
+            result = await instruction;
+            sliceInstructions = 0;
+            finishSlice = beginRuntimeSpan('buriko.vm.sync-slice');
+          }
+          if (result !== 0) break;
+          // Host time slicing retains the native burst count and selected BP child.
+          // Even a short sequence of native calls can exhaust a slice. Promise
+          // settlement alone does not reset the budget or service host tasks.
+          const pending = this.hostBudget.checkpoint();
+          if (pending !== undefined) {
+            finishSlice?.({instructions: sliceInstructions});
+            finishSlice = undefined;
+            await pending;
+            sliceInstructions = 0;
+            finishSlice = beginRuntimeSpan('buriko.vm.sync-slice');
+          }
         }
-        result = typeof instruction === 'number' ? instruction : await instruction;
-        if (result !== 0) break;
+      } finally {
+        finishSlice?.({instructions: sliceInstructions});
       }
       switch (result) {
         case 0:

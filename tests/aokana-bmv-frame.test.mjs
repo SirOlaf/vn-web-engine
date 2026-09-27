@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {decodeBurikoBmvIndexedFrame} from '../dist/engines/buriko/native/bmv-frame.js';
-import {decodeBurikoBfFrame} from '../dist/engines/buriko/native/bf-frame.js';
+import {
+  decodeBurikoBfFrame,
+  decodeBurikoBfFrameAsync,
+} from '../dist/engines/buriko/native/bf-frame.js';
 import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
 import {BurikoBmvRegistry} from '../dist/engines/buriko/native/bmv-registry.js';
+import {
+  getRuntimePerformanceSnapshot,
+  startRuntimePerformanceRecording,
+  stopRuntimePerformanceRecording,
+} from '../dist/platform/runtime-performance.js';
 import {
   BurikoDistributedAllocator,
   BurikoDistributedProcessing,
@@ -93,4 +101,80 @@ test('registered modern BMV versions decode into actual retained bitmap storage'
       assert.deepEqual(Array.from(backing.subarray(pixel * 4, pixel * 4 + 4)), [128, 128, 128, 85]);
     assert.equal(registry.remove(id), 0);
   }
+});
+
+test('cooperative BF decode matches native output and yields to host tasks', async (t) => {
+  const width = 1280,
+    height = 720,
+    columns = width >>> 3,
+    rows = height >>> 3,
+    maskSize = (columns + 7) >>> 3,
+    tableOffset = 192,
+    recordsOffset = tableOffset + (rows + 1) * 4,
+    countBytes = 3,
+    dataBytes = 256,
+    recordSize = maskSize + countBytes + dataBytes,
+    encoded = new Uint8Array(recordsOffset + rows * recordSize),
+    view = new DataView(encoded.buffer);
+  // Dense zero-coefficient rows exercise coefficient decode, IDCT, and color output.
+  encoded[0] = encoded[16] = 1;
+  for (let row = 0; row < rows; row++) {
+    const record = recordsOffset + row * recordSize;
+    encoded.fill(0xff, record, record + maskSize);
+    // 160 blocks x three 8x8 planes; zero bits select the zero coefficient symbols.
+    encoded.set([0x80, 0xf0, 0x01], record + maskSize);
+  }
+  for (let row = 0; row <= rows; row++)
+    view.setUint32(tableOffset + row * 4, recordsOffset + row * recordSize, true);
+  const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 2),
+    quantization = new Uint8Array(128).fill(1),
+    extent = width * height * 4,
+    syncSurface = {bytes: new Uint8Array(extent), initialized: new Uint8Array(extent)},
+    asyncSurface = {bytes: new Uint8Array(extent), initialized: new Uint8Array(extent)};
+  const syncStarted = performance.now();
+  decodeBurikoBfFrame(encoded, width, height, 24, quantization, processing, syncSurface);
+  const syncDuration = performance.now() - syncStarted;
+
+  let hostTaskRan = false;
+  startRuntimePerformanceRecording();
+  setTimeout(() => {
+    hostTaskRan = true;
+  }, 0);
+  const asyncStarted = performance.now();
+  await decodeBurikoBfFrameAsync(
+    encoded,
+    width,
+    height,
+    24,
+    quantization,
+    processing,
+    asyncSurface,
+  );
+  const asyncDuration = performance.now() - asyncStarted;
+  stopRuntimePerformanceRecording();
+  const sliceMax = getRuntimePerformanceSnapshot().aggregates.find(
+    ({name}) => name === 'host.cooperative.slice',
+  )?.max;
+  assert.equal(hostTaskRan, true);
+  assert.deepEqual(asyncSurface.bytes, syncSurface.bytes);
+  assert.deepEqual(asyncSurface.initialized, syncSurface.initialized);
+  t.diagnostic(
+    `synthetic ${width}x${height} dense decode: sync=${syncDuration.toFixed(1)}ms async=${asyncDuration.toFixed(1)}ms max cooperative slice=${sliceMax?.toFixed(1) ?? 'not recorded'}ms; heartbeat=${hostTaskRan}`,
+  );
+});
+
+test('cooperative BF decode preserves native alpha codec faults', async () => {
+  const encoded = frame(0x10001, true, 170);
+  new DataView(encoded.buffer).setUint32(206, 3, true);
+  const processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 2),
+    quantization = new Uint8Array(128).fill(1),
+    createSurface = () => ({bytes: new Uint8Array(256), initialized: new Uint8Array(256)});
+  assert.throws(
+    () => decodeBurikoBfFrame(encoded, 8, 8, 32, quantization, processing, createSurface()),
+    /alpha codec exception: 3/,
+  );
+  await assert.rejects(
+    decodeBurikoBfFrameAsync(encoded, 8, 8, 32, quantization, processing, createSurface()),
+    /alpha codec exception: 3/,
+  );
 });

@@ -32,7 +32,9 @@ export async function decodeBurikoResourcePointer(
   mainProcessing: BurikoDistributedProcessing,
   destination: BurikoBpPointer | null,
   actor = mainProcessing.allocator.currentActor,
+  beforeResume?: () => void,
 ): Promise<BurikoResourceDecodeResult> {
+  beforeResume?.();
   const read = (offset: number): number => {
     if (source === null)
       throw new BurikoUndefinedResourceRead('Buriko resource reads a null source');
@@ -56,6 +58,7 @@ export async function decodeBurikoResourcePointer(
     destination === null ? null : {bytes: destination.bytes.subarray(destination.offset)},
     {format, rawLength: inputLength >>> 0},
     actor,
+    beforeResume,
   );
 }
 
@@ -70,7 +73,9 @@ export async function decodeBurikoResource(
   destination?: BurikoResourceDestination | null,
   nativeInput?: BurikoNativeResourceInput,
   actor = mainProcessing.allocator.currentActor,
+  beforeResume?: () => void,
 ): Promise<BurikoResourceDecodeResult> {
+  beforeResume?.();
   offset >>>= 0;
   length >>>= 0;
   const directImage =
@@ -146,7 +151,13 @@ export async function decodeBurikoResource(
         );
         let faulted = true;
         try {
-          const resource = await decodeBurikoCompressedBgV2(stored, processing, caller, actor);
+          const resource = await decodeBurikoCompressedBgV2(
+            stored,
+            processing,
+            caller,
+            actor,
+            beforeResume,
+          );
           decoded = resource.bytes;
           initializedLength = resource.initializedLength;
           initialized = resource.initialized;

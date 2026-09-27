@@ -1,8 +1,9 @@
 import {requireBurikoResourceRange as checkRange} from './bf-entropy.js';
 import {BurikoUndefinedResourceRead, BurikoResourceCodecException} from './resource-memory.js';
 import {randomByteGenerator, signature} from '../../../formats/buriko/binary.js';
-import {type BurikoBfSurface, decodeBurikoBfFrame} from './bf-frame.js';
+import {type BurikoBfSurface, decodeBurikoBfFrameAsync} from './bf-frame.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
+import {HostTaskBudget} from '../../../core/host-task-budget.js';
 
 export interface BurikoDecodedImageResource {
   readonly bytes: Uint8Array;
@@ -17,7 +18,9 @@ export async function decodeBurikoCompressedBgV2(
   processing: BurikoDistributedProcessing,
   destination?: BurikoBfSurface,
   actor = processing.allocator.currentActor,
+  beforeResume?: () => void,
 ): Promise<BurikoDecodedImageResource> {
+  beforeResume?.();
   checkRange(input.length, 0, 48);
   const data = new DataView(input.buffer, input.byteOffset, input.byteLength);
   if (!signature(input, 'CompressedBG___\0') || data.getUint16(46, true) !== 2) {
@@ -63,7 +66,7 @@ export async function decodeBurikoCompressedBgV2(
   checkRange(table.length, 0, 128);
   const frame = input.subarray(48 + tableLength);
   if (width === paddedWidth && height === paddedHeight && depth === 32) {
-    decodeBurikoBfFrame(
+    await decodeBurikoBfFrameAsync(
       frame,
       width,
       height,
@@ -76,10 +79,12 @@ export async function decodeBurikoCompressedBgV2(
       },
       undefined,
       actor,
+      beforeResume,
     );
+    beforeResume?.();
     return {bytes: result, initializedLength: extent, initialized};
   }
-  const pixels = decodeBurikoBfFrame(
+  const decodedPixels = await decodeBurikoBfFrameAsync(
     frame,
     paddedWidth,
     paddedHeight,
@@ -89,14 +94,40 @@ export async function decodeBurikoCompressedBgV2(
     undefined,
     undefined,
     actor,
+    beforeResume,
   );
-  let written = 16;
+  beforeResume?.();
+  let written = 16,
+    copiedPixelCount = 0;
+  const budget = new HostTaskBudget();
   for (let y = 0; y < height; y++) {
+    if (copiedChannels === 4) {
+      const start = y * paddedWidth * 4;
+      const end = start + width * 4;
+      result.set(decodedPixels.bytes.subarray(start, end), written);
+      initialized.set(decodedPixels.initialized.subarray(start, end), written);
+      written += width * 4;
+      const pending = budget.checkpoint();
+      if (pending !== undefined) {
+        await pending;
+        beforeResume?.();
+      }
+      continue;
+    }
     for (let x = 0; x < width; x++) {
       const pixel = (y * paddedWidth + x) * 4;
-      result.set(pixels.bytes.subarray(pixel, pixel + copiedChannels), written);
-      initialized.set(pixels.initialized.subarray(pixel, pixel + copiedChannels), written);
-      written += copiedChannels;
+      // Crop into packed native channels without allocating two views per pixel.
+      for (let channel = 0; channel < copiedChannels; channel++, written++) {
+        result[written] = decodedPixels.bytes[pixel + channel]!;
+        initialized[written] = decodedPixels.initialized[pixel + channel]!;
+      }
+      if ((++copiedPixelCount & 255) === 0) {
+        const pending = budget.checkpoint();
+        if (pending !== undefined) {
+          await pending;
+          beforeResume?.();
+        }
+      }
     }
   }
   return {bytes: result, initializedLength: written, initialized};

@@ -1,6 +1,7 @@
 import type {BurikoResourceLoadingState} from './resource-loading.js';
 import type {BurikoAudioLoaderQueues} from './audio/loader-queues.js';
 import type {BurikoScriptFiles} from './script-files.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 export type BurikoSharedLoaderJob = 'resource' | 'music' | 'static' | 'script' | null;
 
@@ -106,11 +107,16 @@ export class BurikoSharedLoaderWorker {
     if (!this.running) throw new Error('Buriko shared loader is not running');
     if (this.iteration !== null) return this.iteration;
     const iteration = Promise.resolve().then(async (): Promise<BurikoSharedLoaderJob> => {
-      if (await this.loading.processNext(this.actor)) return 'resource';
-      if (await this.audio.processMusic(this.actor)) return 'music';
-      if (await this.audio.processStatic(this.actor)) return 'static';
-      if (this.scriptAdmissionClosed) return null;
-      return (await this.scripts.processFirst(this.actor)) === 0 ? 'script' : null;
+      const finishTiming = beginRuntimeSpan('buriko.loader.job');
+      try {
+        if (await this.loading.processNext(this.actor)) return 'resource';
+        if (await this.audio.processMusic(this.actor)) return 'music';
+        if (await this.audio.processStatic(this.actor)) return 'static';
+        if (this.scriptAdmissionClosed) return null;
+        return (await this.scripts.processFirst(this.actor)) === 0 ? 'script' : null;
+      } finally {
+        finishTiming?.();
+      }
     });
     this.iteration = iteration;
     void iteration.then(

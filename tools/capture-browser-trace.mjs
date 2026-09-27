@@ -10,6 +10,7 @@ import {pathToFileURL} from 'node:url';
 const delay = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds));
 const baseCategories = [
   'devtools.timeline',
+  'blink.user_timing',
   'v8',
   'v8.execute',
   'disabled-by-default-v8.inspector',
@@ -146,9 +147,17 @@ export async function captureBrowserTrace({
     samples,
     headless,
     traceConfig: {
-      recordMode: 'recordUntilFull',
+      // Keep the events nearest a late failure instead of silently filling at startup.
+      recordMode: 'recordContinuously',
+      traceBufferSizeInKb: 32768,
+      enableSampling: samples === 'on',
       includedCategories: categories,
-      excludedCategories: [screenshotCategory],
+      excludedCategories: [
+        screenshotCategory,
+        ...(samples === 'off'
+          ? ['disabled-by-default-v8.cpu_profiler', 'disabled-by-default-v8.cpu_profiler.hires']
+          : []),
+      ],
     },
     trace: {status: 'not-started'},
     events: [],
@@ -209,6 +218,10 @@ export async function captureBrowserTrace({
   process.on('SIGTERM', interrupt);
   const stderrPath = join(profile, 'browser-stderr.log');
   const stderr = createWriteStream(stderrPath);
+  stderr.on('error', (error) => {
+    event('browser-log-error', {message: error.message});
+    stop('browser-log-error');
+  });
   metadata.browserLog = stderrPath;
   const browser = spawn(
     browserExecutable,
@@ -222,18 +235,19 @@ export async function captureBrowserTrace({
     ],
     {stdio: ['ignore', 'ignore', 'pipe']},
   );
+  metadata.browserPid = browser.pid;
   browser.stderr.pipe(stderr);
-  const browserExited = new Promise((done) => {
+  const browserClosed = new Promise((done) => {
     browser.once('exit', (code, signal) => {
       event('browser-exit', {code, signal});
       stop('browser-exit');
-      done();
     });
     browser.once('error', (error) => {
       event('browser-error', {message: error.message});
       stop('browser-error');
-      done();
     });
+    // `exit` can precede the final stderr data; keep the crash log open until stdio closes.
+    browser.once('close', done);
   });
   let cdp;
   let recording = false;
@@ -262,7 +276,29 @@ export async function captureBrowserTrace({
       stop('devtools-disconnected');
     });
     cdp.on('event', (message) => {
-      if (message.method === 'Tracing.tracingComplete') tracingComplete = message.params;
+      if (message.method === 'Tracing.tracingComplete') {
+        tracingComplete = message.params;
+        metadata.trace.completedAt = new Date().toISOString();
+        metadata.trace.dataLossOccurred = message.params.dataLossOccurred ?? false;
+        event('trace-complete', {dataLossOccurred: metadata.trace.dataLossOccurred});
+        stop('trace-complete');
+      }
+      if (message.method === 'Tracing.bufferUsage') {
+        const usage = message.params.percentFull ?? message.params.value;
+        metadata.trace.buffer = {
+          ...message.params,
+          at: new Date().toISOString(),
+          peakFraction: Math.max(metadata.trace.buffer?.peakFraction ?? 0, usage ?? 0),
+        };
+        saveMetadata();
+      }
+      if (
+        message.method === 'Target.targetDestroyed' &&
+        message.params.targetId === metadata.targetId
+      ) {
+        event('target-closed', {targetId: message.params.targetId});
+        stop('target-closed');
+      }
       if (
         message.method === 'Target.targetCrashed' ||
         message.method === 'Inspector.targetCrashed'
@@ -288,6 +324,7 @@ export async function captureBrowserTrace({
       'Browser: ' + metadata.browserVersion.product + '; V8 ' + metadata.browserVersion.jsVersion,
     );
     console.log('CPU samples: ' + samples + '. Screenshots are excluded.');
+    console.log('Trace buffer: 32 MiB, retaining recent events when full. Keep captures short.');
     const firstInput = await Promise.race([
       enter('Prepare the game in the isolated browser, then press Enter to start recording.'),
       stopSignal,
@@ -296,6 +333,7 @@ export async function captureBrowserTrace({
       await cdp.command('Tracing.start', {
         transferMode: 'ReturnAsStream',
         streamFormat: 'json',
+        bufferUsageReportingInterval: 1000,
         traceConfig: metadata.traceConfig,
       });
       recording = true;
@@ -320,7 +358,7 @@ export async function captureBrowserTrace({
       let file;
       let handle;
       try {
-        await cdp.command('Tracing.end');
+        if (!tracingComplete) await cdp.command('Tracing.end');
         const deadline = Date.now() + 30000;
         while (!tracingComplete && Date.now() < deadline) {
           if (cdp.socket.readyState !== WebSocket.OPEN)
@@ -344,27 +382,34 @@ export async function captureBrowserTrace({
         metadata.trace.status = 'saved';
         metadata.trace.savedAt = new Date().toISOString();
         console.log('Trace saved: ' + output);
+        if (metadata.trace.dataLossOccurred)
+          console.warn('The browser reports lost trace data; earlier events may have rolled out.');
       } catch (error) {
         metadata.trace.status = file ? 'incomplete' : 'unavailable';
         metadata.trace.error = error.message;
         failure ??= error;
         console.error('Trace capture: ' + error.message);
       } finally {
-        await file?.close();
+        await file?.close().catch((error) => {
+          metadata.trace.status = 'incomplete';
+          metadata.trace.error = error.message;
+          failure ??= error;
+        });
         if (handle) await cdp.command('IO.close', {handle}, undefined, 3000).catch(() => {});
         saveMetadata();
       }
     }
     // This process owns the temporary browser; close it after preserving the trace and events.
-    if (cdp?.socket.readyState === WebSocket.OPEN)
+    if (cdp?.socket.readyState === WebSocket.OPEN) {
+      event('browser-close-requested');
       await cdp.command('Browser.close', {}, undefined, 3000).catch(() => {});
+    }
     cdp?.socket.close();
     if (browser.exitCode === null && browser.signalCode === null) {
-      await Promise.race([browserExited, delay(1000)]);
+      await Promise.race([browserClosed, delay(1000)]);
       if (browser.exitCode === null && browser.signalCode === null) browser.kill('SIGTERM');
     }
-    await Promise.race([browserExited, delay(3000)]);
-    stderr.end();
+    await Promise.race([browserClosed, delay(3000)]);
     metadata.finishedAt = new Date().toISOString();
     saveMetadata();
     process.removeListener('SIGINT', interrupt);

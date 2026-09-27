@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BinaryReader, checkRange, safeNumber} from '../dist/core/binary.js';
 import {BlobSource, HttpSource} from '../dist/core/source.js';
+import {subscribeSourceActivity} from '../dist/core/source-activity.js';
+import {
+  getRuntimePerformanceSnapshot,
+  startRuntimePerformanceRecording,
+  stopRuntimePerformanceRecording,
+} from '../dist/platform/runtime-performance.js';
 import {parseUtf} from '../dist/formats/cri/utf.js';
 import {CpkArchive} from '../dist/formats/cri/cpk.js';
 import {decodeCrilayla} from '../dist/formats/cri/crilayla.js';
@@ -147,4 +153,86 @@ test('Blob reads only requested ranges; HTTP refuses full-file fallback', async 
   await assert.rejects(() => blob.read(4, 1));
   t.mock.method(globalThis, 'fetch', async () => new Response('abcd', {status: 200}));
   await assert.rejects(() => new HttpSource('http://test/', 4).read(0, 2), /honor byte ranges/);
+});
+
+test('read timings separate local and remote throughput without changing read failure or activity', async (t) => {
+  let now = 0,
+    localDelay = 1,
+    abortLocal = false,
+    truncateRemote = false;
+  t.mock.method(performance, 'now', () => now);
+  const controller = new AbortController(),
+    abortReason = new Error('Synthetic read cancellation'),
+    data = Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8),
+    local = new BlobSource({
+      size: data.length,
+      slice: (start, end) => ({
+        arrayBuffer: async () => {
+          now += localDelay;
+          if (abortLocal) controller.abort(abortReason);
+          return data.slice(start, end).buffer;
+        },
+      }),
+    });
+  let before;
+  subscribeSourceActivity((value) => (before = value))();
+  await local.read(0, 1);
+  const activity = [],
+    unsubscribe = subscribeSourceActivity((value) => activity.push(value));
+  assert.equal(activity[0].readBytes - before.readBytes, 1, 'unobserved reads remain cumulative');
+  t.after(() => {
+    unsubscribe();
+    stopRuntimePerformanceRecording();
+  });
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    assert.equal(options.headers.Range, 'bytes=2-4');
+    now += 6;
+    return new Response(truncateRemote ? data.slice(2, 4) : data.slice(2, 5), {
+      status: 206,
+      headers: {'Content-Range': 'bytes 2-4/8'},
+    });
+  });
+  const remote = new HttpSource('https://synthetic.invalid/private-archive-name', 8);
+  startRuntimePerformanceRecording();
+  assert.deepEqual(await local.read(1, 2), data.slice(1, 3));
+  localDelay = 5;
+  assert.deepEqual(await local.read(0, 4), data.slice(0, 4));
+  assert.deepEqual(await remote.read(2, 3), data.slice(2, 5));
+  truncateRemote = true;
+  await assert.rejects(remote.read(2, 3), /Truncated HTTP range/);
+  abortLocal = true;
+  await assert.rejects(local.read(0, 2, controller.signal), (error) => error === abortReason);
+  await assert.rejects(local.read(0, 1, controller.signal), (error) => error === abortReason);
+  await assert.rejects(local.read(9, 1));
+  assert.equal((await local.read(8, 0)).length, 0);
+  stopRuntimePerformanceRecording();
+
+  const snapshot = getRuntimePerformanceSnapshot(),
+    aggregate = (name) => snapshot.aggregates.find((entry) => entry.name === name);
+  assert.equal(aggregate('source.local-read').count, 3);
+  assert.equal(aggregate('source.remote-read').count, 2);
+  assert.equal(aggregate('source.local-read.completed-bytes').total, 6);
+  assert.equal(aggregate('source.local-read.completed-bytes').count, 2);
+  assert.equal(aggregate('source.remote-read.completed-bytes').total, 3);
+  assert.equal(aggregate('source.remote-read.completed-bytes').count, 1);
+  assert.deepEqual(
+    snapshot.events.filter((event) => event.name === 'source.local-read').map(({detail}) => detail),
+    [
+      {requestedBytes: 4, completedBytes: 4, success: true},
+      {requestedBytes: 2, completedBytes: 0, success: false},
+    ],
+  );
+  assert.deepEqual(
+    snapshot.events
+      .filter((event) => event.name === 'source.remote-read')
+      .map(({detail}) => detail),
+    [
+      {requestedBytes: 3, completedBytes: 3, success: true},
+      {requestedBytes: 3, completedBytes: 0, success: false},
+    ],
+  );
+  assert.equal(JSON.stringify(snapshot).includes('private-archive-name'), false);
+  assert.equal(activity.at(-1).pending, 0);
+  assert.equal(activity.at(-1).readBytes - before.readBytes, 7);
+  assert.equal(activity.at(-1).receivedBytes - before.receivedBytes, 3);
 });

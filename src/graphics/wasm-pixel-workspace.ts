@@ -118,11 +118,12 @@ export class WasmPixelWorkspace {
       }
     return true;
   }
-  /** Stages independent plane sizes; the kernel must overwrite every packed destination byte. */
+  /** Stages independent plane sizes. Unless preserved, every destination byte must be overwritten. */
   transform(
     source: WasmPixelPlane,
     destination: WasmPixelPlane,
     operation: (source: number, destination: number) => void,
+    preserveDestination = false,
   ): boolean {
     if (source.view.buffer === destination.view.buffer) return false;
     for (const {view, offset, pitch, rowBytes, rows} of [source, destination])
@@ -160,6 +161,15 @@ export class WasmPixelWorkspace {
     if (this.bytes?.buffer !== memory.buffer) this.bytes = new Uint8Array(memory.buffer);
     const bytes = this.bytes;
     this.copyIn(source.view, source.offset, source.pitch, this.input, source.rowBytes, source.rows);
+    if (preserveDestination)
+      this.copyIn(
+        destination.view,
+        destination.offset,
+        destination.pitch,
+        output,
+        destination.rowBytes,
+        destination.rows,
+      );
     operation(this.input, output);
     const target = new Uint8Array(
       destination.view.buffer,

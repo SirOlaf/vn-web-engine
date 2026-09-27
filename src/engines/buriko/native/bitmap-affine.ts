@@ -13,7 +13,15 @@ import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import {clearBurikoBitmap} from './bitmap-copy.js';
 import {runBurikoBitmapOperation} from './bitmap-operation-jobs.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
-import {tryBurikoBitmapAffineWasm} from './bitmap-alpha-wasm.js';
+import {tryBurikoBitmapAffineAlphaWasm, tryBurikoBitmapAffineWasm} from './bitmap-alpha-wasm.js';
+import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
+
+const AFFINE_PIXEL_METRICS = {
+  copy: 'buriko.affine.copy.pixels',
+  dim: 'buriko.affine.dim.pixels',
+  mix: 'buriko.affine.mix.pixels',
+  alpha: 'buriko.affine.alpha.checked-pixels',
+};
 
 export interface BurikoBitmapAffineTransform {
   x: number;
@@ -238,6 +246,152 @@ function alphaCoefficient(pixel: number, transparency: number): number {
   return ((index === 127 ? 128 : index) * (256 - transparency)) >>> 8;
 }
 
+/** Q4 weighted bytes fit independent 16-bit lanes, including each horizontal floor. */
+function interpolateAffineRgba(first: number, second: number, fraction: number): number {
+  const inverse = 16 - fraction;
+  const redBlue =
+    ((((first & 0x00ff00ff) * inverse + (second & 0x00ff00ff) * fraction) >>> 4) & 0x00ff00ff) >>>
+    0;
+  const alphaGreen =
+    (((((first >>> 8) & 0x00ff00ff) * inverse + ((second >>> 8) & 0x00ff00ff) * fraction) >>> 4) &
+      0x00ff00ff) <<
+    8;
+  return (redBlue | alphaGreen) >>> 0;
+}
+
+/** The validated signed-WORD source envelope permits direct, zero-bordered reads. */
+function sampleInitializedAffineAlpha(
+  input: DataView,
+  offset: number,
+  stride: number,
+  width: number,
+  height: number,
+  fixedX: number,
+  fixedY: number,
+  bilinear: boolean,
+): number {
+  if (!bilinear) {
+    const x = ((fixedX + 0x8000) | 0) >> 16,
+      y = ((fixedY + 0x8000) | 0) >> 16;
+    return x >= 0 && y >= 0 && x < width && y < height
+      ? input.getUint32(offset + y * stride + x * 4, true)
+      : 0;
+  }
+  const x = fixedX >> 16,
+    y = fixedY >> 16;
+  if (x < -1 || y < -1 || x >= width || y >= height) return 0;
+  const pixelOffset = offset + y * stride + x * 4;
+  let first: number, right: number, bottom: number, diagonal: number;
+  if (x >= 0 && y >= 0 && x + 1 < width && y + 1 < height) {
+    first = input.getUint32(pixelOffset, true);
+    right = input.getUint32(pixelOffset + 4, true);
+    bottom = input.getUint32(pixelOffset + stride, true);
+    diagonal = input.getUint32(pixelOffset + stride + 4, true);
+  } else {
+    const insideX = x >= 0,
+      insideY = y >= 0,
+      insideRight = x + 1 < width,
+      insideBottom = y + 1 < height;
+    first = insideX && insideY ? input.getUint32(pixelOffset, true) : 0;
+    right = insideRight && insideY ? input.getUint32(pixelOffset + 4, true) : 0;
+    bottom = insideX && insideBottom ? input.getUint32(pixelOffset + stride, true) : 0;
+    diagonal = insideRight && insideBottom ? input.getUint32(pixelOffset + stride + 4, true) : 0;
+  }
+  const fractionX = (fixedX >>> 12) & 15;
+  return interpolateAffineRgba(
+    interpolateAffineRgba(first, right, fractionX),
+    interpolateAffineRgba(bottom, diagonal, fractionX),
+    (fixedY >>> 12) & 15,
+  );
+}
+
+/** Alpha's Q7 coefficient is 0..128: products cannot overflow a signed WORD. */
+function blendInitializedAffinePixel(
+  source: number,
+  destination: number,
+  transparency: number,
+): number {
+  const coefficient = alphaCoefficient(source, transparency),
+    inverse = 128 - coefficient;
+  const redBlue =
+    (((source & 0x00ff00ff) * coefficient + (destination & 0x00ff00ff) * inverse) >>> 7) &
+    0x00ff00ff;
+  const green =
+    (((((source >>> 8) & 255) * coefficient + ((destination >>> 8) & 255) * inverse) >>> 7) &
+      255) <<
+    8;
+  return ((destination & 0xff000000) | redBlue | green) >>> 0;
+}
+
+function blendInitializedAffine(
+  destination: BurikoBitmap,
+  source: BurikoBitmap,
+  output: DataView,
+  input: DataView,
+  coordinates: BurikoBitmapAffineCoordinates,
+  transparency: number,
+  bilinear: boolean,
+): void {
+  const width = destination.width >>> 0,
+    height = destination.height >>> 0,
+    sourceWidth = source.width >>> 0,
+    sourceHeight = source.height >>> 0,
+    sourceOffset = source.offset,
+    sourceStride = source.stride;
+  let rowX = coordinates.startX,
+    rowY = coordinates.startY,
+    outputRow = destination.offset;
+  for (let row = 0; row < height; row++) {
+    let x = rowX,
+      y = rowY;
+    for (let column = 0; column < width; column += 2) {
+      const pair = column + 1 < width;
+      const first = sampleInitializedAffineAlpha(
+        input,
+        sourceOffset,
+        sourceStride,
+        sourceWidth,
+        sourceHeight,
+        x,
+        y,
+        bilinear,
+      );
+      x = (x + coordinates.columnX) | 0;
+      y = (y + coordinates.columnY) | 0;
+      let second = 0;
+      if (pair) {
+        second = sampleInitializedAffineAlpha(
+          input,
+          sourceOffset,
+          sourceStride,
+          sourceWidth,
+          sourceHeight,
+          x,
+          y,
+          bilinear,
+        );
+        x = (x + coordinates.columnX) | 0;
+        y = (y + coordinates.columnY) | 0;
+      }
+      if (first >>> 24 === 0 && second >>> 24 === 0) continue;
+      const offset = outputRow + column * 4;
+      // Keep the native pair's reads ahead of either store, including zero-alpha mates.
+      const oldFirst = output.getUint32(offset, true),
+        oldSecond = pair ? output.getUint32(offset + 4, true) : 0;
+      output.setUint32(offset, blendInitializedAffinePixel(first, oldFirst, transparency), true);
+      if (pair)
+        output.setUint32(
+          offset + 4,
+          blendInitializedAffinePixel(second, oldSecond, transparency),
+          true,
+        );
+    }
+    rowX = (rowX + coordinates.rowX) | 0;
+    rowY = (rowY + coordinates.rowY) | 0;
+    outputRow += destination.stride;
+  }
+}
+
 function copyDimmed(destination: BurikoBitmap, source: BurikoBitmap, transparency: number): void {
   let outputRow = destination.offset,
     inputRow = source.offset;
@@ -276,6 +430,36 @@ function affinePixels(
   const input = affineView(source, true),
     writeOnly = input !== null && (mode === 'copy' || mode === 'dim'),
     output = affineView(destination, false, writeOnly);
+  if (mode === 'alpha' && input !== null && output !== null && input.buffer !== output.buffer) {
+    const wasm = tryBurikoBitmapAffineAlphaWasm(
+      destination,
+      source,
+      output,
+      input,
+      coordinates,
+      bilinear,
+      transparency,
+    );
+    if (!wasm)
+      blendInitializedAffine(
+        destination,
+        source,
+        output,
+        input,
+        coordinates,
+        transparency,
+        bilinear,
+      );
+    recordRuntimeMetric(
+      wasm ? 'buriko.affine.alpha.bounded-pixels' : 'buriko.affine.alpha.js-pixels',
+      (destination.width >>> 0) * (destination.height >>> 0),
+    );
+    return;
+  }
+  recordRuntimeMetric(
+    AFFINE_PIXEL_METRICS[mode],
+    (destination.width >>> 0) * (destination.height >>> 0),
+  );
   if (
     mode === 'copy' &&
     input !== null &&

@@ -1,5 +1,6 @@
 import {checkRange} from './binary.js';
 import {beginLocalRead, beginRemoteRead} from './source-activity.js';
+import {beginRuntimeSpan, recordRuntimeMetric} from '../platform/runtime-performance.js';
 export interface ByteSource {
   readonly size: number;
   read(offset: number, length: number, signal?: AbortSignal): Promise<Uint8Array>;
@@ -14,13 +15,18 @@ export class BlobSource implements ByteSource {
     signal?.throwIfAborted();
     if (!length) return new Uint8Array();
     const finished = beginLocalRead();
-    let received = 0;
+    const finishTiming = beginRuntimeSpan('source.local-read');
+    let received = 0,
+      success = false;
     try {
       const bytes = new Uint8Array(await this.blob.slice(offset, offset + length).arrayBuffer());
       signal?.throwIfAborted();
       received = bytes.length;
+      success = true;
       return bytes;
     } finally {
+      finishTiming?.({requestedBytes: length, completedBytes: received, success});
+      if (success) recordRuntimeMetric('source.local-read.completed-bytes', received);
       finished(received);
     }
   }
@@ -35,7 +41,9 @@ export class HttpSource implements ByteSource {
     signal?.throwIfAborted();
     if (!length) return new Uint8Array();
     const finished = beginRemoteRead();
-    let received = 0;
+    const finishTiming = beginRuntimeSpan('source.remote-read');
+    let received = 0,
+      success = false;
     try {
       const response = await fetch(this.url, {
         headers: {Range: `bytes=${offset}-${offset + length - 1}`},
@@ -52,8 +60,11 @@ export class HttpSource implements ByteSource {
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (bytes.length !== length) throw new Error('Truncated HTTP range');
       received = bytes.length;
+      success = true;
       return bytes;
     } finally {
+      finishTiming?.({requestedBytes: length, completedBytes: received, success});
+      if (success) recordRuntimeMetric('source.remote-read.completed-bytes', received);
       finished(received);
     }
   }
