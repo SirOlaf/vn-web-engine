@@ -13,6 +13,10 @@ import {
   type BurikoDisplayRenderJob,
 } from './display-render-jobs.js';
 import {BurikoDistributedProcessing} from './distributed-processing.js';
+import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
+import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
+
+const BROWSER_RENDER_PIXEL_BUDGET = 65536;
 
 export interface BurikoDisplayDamageResult {
   /** An all-ones DWORD means full redraw; otherwise this is the output rectangle count. */
@@ -40,6 +44,19 @@ export class BurikoDisplayRenderer {
   }
   private context(): BurikoDisplayContext {
     return this.manager.context;
+  }
+  /** Browser jobs amortize traversal/staging; native-visible configuration stays intact. */
+  private jobBudget(rectangle: BurikoBitmapRectangle, optimized: boolean): number {
+    const budget = this.manager.renderPixelBudget;
+    if (!optimized || budget === 0) return budget;
+    const width = rectangle.right - rectangle.left + 1,
+      height = rectangle.bottom - rectangle.top + 1;
+    if (
+      !(width > 0 && width <= 0x7fffffff && height > 0 && height <= 0x7fffffff) ||
+      !Object.values(rectangle).every((value) => value === (value | 0))
+    )
+      return budget;
+    return Math.max(budget, BROWSER_RENDER_PIXEL_BUDGET);
   }
   private jobs(context = this.context()): BurikoDisplayRenderJobs {
     return new BurikoDisplayRenderJobs(
@@ -73,15 +90,18 @@ export class BurikoDisplayRenderer {
   }
   private drawFullLocked(): void {
     const context = this.context(),
-      flag = this.canUseStrips();
-    const count =
-      flag === 0 ? 1 : burikoDisplayStripCount(this.manager.renderPixelBudget, context.bounds);
+      flag = this.canUseStrips(),
+      budget =
+        flag === 0
+          ? 0
+          : this.jobBudget(context.bounds, getRuntimeProfile() === 'browser-optimized');
+    const count = flag === 0 ? 1 : burikoDisplayStripCount(budget, context.bounds);
     // Static native review: a zero job allocation cannot hold the subsequent native first write.
     if (count === 0) throw new RangeError('Buriko full redraw has no native job storage');
     const rectangles =
-      count < 2
-        ? [{...context.bounds}]
-        : burikoDisplayStrips(this.manager.renderPixelBudget, context.bounds);
+      count < 2 ? [{...context.bounds}] : burikoDisplayStrips(budget, context.bounds);
+    recordRuntimeMetric('buriko.display.render-jobs', count);
+    if (flag !== 0) recordRuntimeMetric('buriko.display.render-job-budget', budget);
     this.jobs(context).run(
       rectangles.map((rectangle) => ({rectangle, key: 0})),
       flag,
@@ -102,10 +122,12 @@ export class BurikoDisplayRenderer {
       this.drawFull();
       return {count: 0xffffffff, rectangles: []};
     }
-    const damage = this.manager.damage.snapshot();
+    const damage = this.manager.damage.snapshot(),
+      optimized = getRuntimeProfile() === 'browser-optimized',
+      budgets = damage.map((entry) => this.jobBudget(entry.rectangle, optimized));
     let jobCount = 0;
-    const counts = damage.map((entry) => {
-      const count = burikoDisplayStripCount(this.manager.renderPixelBudget, entry.rectangle);
+    const counts = damage.map((entry, index) => {
+      const count = burikoDisplayStripCount(budgets[index]!, entry.rectangle);
       jobCount = (jobCount + count) >>> 0;
       return count;
     });
@@ -115,15 +137,15 @@ export class BurikoDisplayRenderer {
       const entry = damage[index]!,
         count = counts[index]!;
       const rectangles =
-        count < 2
-          ? [{...entry.rectangle}]
-          : burikoDisplayStrips(this.manager.renderPixelBudget, entry.rectangle);
+        count < 2 ? [{...entry.rectangle}] : burikoDisplayStrips(budgets[index]!, entry.rectangle);
       for (const rectangle of rectangles) {
         if (cursor >= jobCount)
           throw new RangeError('Buriko damage redraw exceeds its native job storage');
         jobs[cursor++] = {rectangle, key: entry.key};
       }
     }
+    recordRuntimeMetric('buriko.display.render-jobs', jobCount);
+    for (const budget of budgets) recordRuntimeMetric('buriko.display.render-job-budget', budget);
     this.jobs().run(jobs, 1);
     this.finishDraw();
     return {count: damage.length >>> 0, rectangles: damage.map((entry) => entry.rectangle)};

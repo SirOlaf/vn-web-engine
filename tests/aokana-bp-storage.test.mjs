@@ -89,10 +89,95 @@ test('Buriko signed and typed varints retain x64 shift behavior, including overl
     assert.deepEqual(decode.readTypedVarInt(t), expected);
     assert.equal(t.pc, bytes.length);
   }
+  // Seven-bit groups visit every native 64-bit sign-shift residue. The native
+  // low DWORD loses the sign mask at shifts 32..63 instead of wrapping at 32.
+  for (let length = 1; length <= 64; length++) {
+    for (const typed of [false, true]) {
+      const bytes = Array(length).fill(0x80);
+      bytes[length - 1] = 0x40;
+      if (typed) bytes[0] |= 3;
+      const terminalShift = length * 7 - (typed ? 2 : 0),
+        payload = typed && length === 1 ? 16 : 0x40 << (((length - 1) * 7 - (typed ? 2 : 0)) & 31),
+        expected = payload | Number(BigInt.asIntN(32, -1n << BigInt(terminalShift & 63)));
+      t.pc = 0;
+      t.moduleMemory.set(bytes);
+      if (typed) assert.deepEqual(decode.readTypedVarInt(t), {type: 3, value: expected});
+      else assert.equal(decode.readVarInt(t), expected);
+      assert.equal(t.pc, length);
+    }
+  }
   t.moduleMemory = Uint8Array.of(0x80);
   t.pc = 0;
   assert.throws(() => decode.readVarInt(t));
   assert.equal(t.pc, 0);
+  assert.throws(() => decode.readTypedVarInt(t));
+  assert.equal(t.pc, 0);
+});
+
+test('Buriko byte readers retain offset conversion and faults across resized or detached storage', () => {
+  for (const [reader, expected] of [
+    [decode.fetchOpcode, 0x43],
+    [decode.readU8, 0x43],
+    [decode.readVarInt, -61],
+    [decode.readTypedVarInt, {type: 3, value: -16}],
+  ]) {
+    const t = thread();
+    t.moduleMemory = Uint8Array.of(0x43, 1);
+    for (const [pc, next] of [
+      [0, 1],
+      [0.75, 1],
+      [-0.75, 0],
+      [NaN, 0],
+    ]) {
+      t.pc = pc;
+      assert.deepEqual(reader(t), expected);
+      assert.equal(t.pc, next);
+      if (reader === decode.fetchOpcode) assert.equal(t.instructionStart, pc);
+    }
+    for (const pc of [-1, 2, Infinity]) {
+      t.pc = pc;
+      assert.throws(() => reader(t), RangeError);
+      assert.equal(t.pc, reader === decode.fetchOpcode ? (pc + 1) >>> 0 : pc);
+    }
+    const buffer = new ArrayBuffer(4, {maxByteLength: 8});
+    t.moduleMemory = new Uint8Array(buffer, 1, 2);
+    t.moduleMemory[0] = 0x43;
+    t.pc = 0;
+    assert.deepEqual(reader(t), expected);
+    buffer.resize(1);
+    t.pc = 0;
+    assert.throws(() => reader(t), RangeError);
+    assert.equal(t.pc, reader === decode.fetchOpcode ? 1 : 0);
+    buffer.resize(4);
+    t.moduleMemory[0] = 0x43;
+    t.pc = 0;
+    assert.deepEqual(reader(t), expected);
+    structuredClone(buffer, {transfer: [buffer]});
+    t.pc = 0;
+    assert.throws(() => reader(t), TypeError);
+    assert.equal(t.pc, reader === decode.fetchOpcode ? 1 : 0);
+  }
+  for (const reader of [decode.readVarInt, decode.readTypedVarInt]) {
+    for (const buffer of [
+      new ArrayBuffer(1, {maxByteLength: 2}),
+      new SharedArrayBuffer(1, {maxByteLength: 2}),
+    ]) {
+      const t = thread();
+      t.moduleMemory = new Uint8Array(buffer);
+      t.moduleMemory[0] = 0x80;
+      const pc = {
+        valueOf() {
+          if (buffer instanceof ArrayBuffer) buffer.resize(2);
+          else buffer.grow(2);
+          return 0;
+        },
+      };
+      t.pc = pc;
+      // Conversion grows the bytes after the operand's fixed view was selected.
+      assert.throws(() => reader(t), RangeError);
+      assert.equal(t.pc, pc);
+    }
+  }
 });
 
 test('Buriko module attachment retains raw names, ordered bases, and detached payload bytes', () => {

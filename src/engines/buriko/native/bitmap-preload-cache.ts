@@ -51,6 +51,15 @@ export class BurikoBitmapPreloadCache {
     return bytes;
   }
 
+  /** Consume a private payload for ownership transfer to another cache. */
+  take(archive: Uint8Array | null, name: Uint8Array): Uint8Array | null {
+    const index = this.find(archive, name);
+    if (index < 0) return null;
+    const bytes = this.entries[index]!.bytes;
+    this.remove(archive, name);
+    return bytes;
+  }
+
   /** 09AF20 retains the old payload on duplicate names and prepends only new records. */
   insert(archive: Uint8Array | null, name: Uint8Array, bytes: Uint8Array): 0 | 1 {
     return this.insertPointer(archive, name, {bytes, offset: 0}, bytes.length);

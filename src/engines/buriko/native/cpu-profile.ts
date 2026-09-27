@@ -1,5 +1,6 @@
 import type {BurikoNativeClock} from './clock.js';
 import {normalizeBurikoAsciiSpaces} from './byte-string-spaces.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 /** CPUID register order is EAX, EBX, ECX, EDX, as stored by 0c65c0. */
 export type BurikoCpuRegisters = readonly [number, number, number, number];
@@ -151,19 +152,24 @@ export class BurikoCpuProfile {
 
   /** 0c6310 retains the original affinity truncation, clock reads, and signed TSC division. */
   measureClockMegahertz(): number {
-    const previousAffinity = this.host.setCurrentThreadAffinity(1n);
-    const initial = Number(BigInt.asUintN(32, this.clock.read()));
-    while (Number(BigInt.asUintN(32, this.clock.read())) === initial) {
-      /* native millisecond transition */
+    const finish = beginRuntimeSpan('buriko.cpu.measure-clock');
+    try {
+      const previousAffinity = this.host.setCurrentThreadAffinity(1n);
+      const initial = Number(BigInt.asUintN(32, this.clock.read()));
+      while (Number(BigInt.asUintN(32, this.clock.read())) === initial) {
+        /* native millisecond transition */
+      }
+      const first = this.readTimestampCounter();
+      const deadline = (Number(BigInt.asUintN(32, this.clock.read())) + 1000) >>> 0;
+      while (Number(BigInt.asUintN(32, this.clock.read())) < deadline) {
+        /* native one-second measurement */
+      }
+      const last = this.readTimestampCounter();
+      this.host.setCurrentThreadAffinity(BigInt.asUintN(32, previousAffinity));
+      return Number(BigInt.asUintN(32, BigInt.asIntN(64, last - first) / 1000000n));
+    } finally {
+      finish?.();
     }
-    const first = this.readTimestampCounter();
-    const deadline = (Number(BigInt.asUintN(32, this.clock.read())) + 1000) >>> 0;
-    while (Number(BigInt.asUintN(32, this.clock.read())) < deadline) {
-      /* native one-second measurement */
-    }
-    const last = this.readTimestampCounter();
-    this.host.setCurrentThreadAffinity(BigInt.asUintN(32, previousAffinity));
-    return Number(BigInt.asUintN(32, BigInt.asIntN(64, last - first) / 1000000n));
   }
 
   /** 0c6580, with the SSE2/SSE wrappers selecting bits 26/25. */

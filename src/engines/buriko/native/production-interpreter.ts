@@ -111,6 +111,9 @@ export class BurikoProductionInterpreter {
       abi,
     );
     this.shared.bindInterpreter(this.interpreter);
-    scheduler.bindInstructionExecutor((thread) => this.interpreter.step(thread));
+    scheduler.bindInstructionExecutor(
+      (thread) => this.interpreter.step(thread),
+      this.interpreter.batchableOpcodes,
+    );
   }
 }

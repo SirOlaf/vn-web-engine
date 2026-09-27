@@ -2,6 +2,7 @@ import {BurikoSurfaces} from './surfaces.js';
 import {BurikoResourceLoadingState} from './resource-loading.js';
 import {BurikoBitmapLoadState} from './bitmap-load-state.js';
 import {importBurikoPackedBitmap, importBurikoWindowsBitmap} from './bitmap-image.js';
+import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
 
 /** Shared cached/synchronous bitmap paths beneath 90 10, using the same table and two native caches. */
 export class BurikoBitmapLoading {
@@ -13,16 +14,24 @@ export class BurikoBitmapLoading {
 
   /** 0375F0 consumes the preload entry before decoding and promotes it only on success. */
   fromCache(index: number, archive: Uint8Array | null, name: Uint8Array, consume = 1): number {
-    let bytes = this.resources.preloaded.read(archive, name, consume);
+    let bytes =
+      consume !== 0
+        ? this.resources.preloaded.take(archive, name)
+        : this.resources.preloaded.read(archive, name, 0);
+    const transferred = bytes !== null && consume !== 0;
     if (bytes === null) {
       bytes = this.resources.cache.read(archive, name);
-      consume = 0;
     }
     if (bytes === null) return 0xffffffff;
+    if (transferred) recordRuntimeMetric('buriko.bitmap.preload-transferred-bytes', bytes.length);
     const result = importBurikoPackedBitmap(this.surfaces, index, bytes);
     if (result === 1) return 0x80000004;
     if (result === 2) return 0x80000008;
-    if (consume !== 0) this.resources.cache.insert(archive, name, bytes);
+    if (transferred) {
+      const length = bytes.length;
+      if (this.resources.cache.insertOwned(archive, name, bytes))
+        recordRuntimeMetric('buriko.bitmap.cache-adopted-bytes', length);
+    }
     return 0;
   }
 

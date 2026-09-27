@@ -10,6 +10,23 @@ import {writeWatchOpcodes} from '../native/write-watch-opcodes.js';
 import {fetchOpcode, readU8} from './decode.js';
 import type {BurikoBpModuleExtensions} from './module-extensions.js';
 import type {BurikoBpThread} from './state.js';
+import {controlOpcodes} from './opcodes/control.js';
+import {integerOpcodes} from './opcodes/integer.js';
+import {memoryOpcodes} from './opcodes/memory.js';
+
+// Single scalar/stack operations and fixed-width control flow. Variable-length
+// operands, watched writes, bulk memory, native calls and extensions check time
+// after every instruction. Identity checks below exclude replacement handlers.
+const batchableHandlers: Readonly<Record<number, BurikoBpOpcodeHandler>> = Object.fromEntries(
+  [
+    0x00, 0x01, 0x02, 0x04, 0x05, 0x06, 0x08, 0x0f, 0x10, 0x11, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+    0x19, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x30, 0x31, 0x32,
+    0x33, 0x34, 0x35, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3e, 0x40, 0x42, 0x56, 0x73, 0xee, 0xef,
+  ].map((opcode) => [
+    opcode,
+    (controlOpcodes[opcode] ?? integerOpcodes[opcode] ?? memoryOpcodes[opcode])!,
+  ]),
+);
 
 export type BurikoBpDispatchResult =
   | {readonly defined: false; readonly opcode: number}
@@ -22,6 +39,8 @@ export type BurikoBpDispatchResult =
 /** Instruction dispatch only. Construction requires a complete fixed native bank and primary set. */
 export class BurikoBpInterpreter {
   private readonly primary: readonly (BurikoBpOpcodeHandler | undefined)[];
+  /** Scheduling hint only; the selected handlers and instruction results stay native. */
+  readonly batchableOpcodes: readonly boolean[];
 
   constructor(
     directPrimaryHandlers: Readonly<Record<number, BurikoBpOpcodeHandler>>,
@@ -60,6 +79,13 @@ export class BurikoBpInterpreter {
       }
     }
     this.primary = handlers;
+    this.batchableOpcodes = Object.freeze(
+      Array.from(
+        {length: 256},
+        (_, opcode) =>
+          handlers[opcode] !== undefined && handlers[opcode] === batchableHandlers[opcode],
+      ),
+    );
   }
 
   /** The distributed interpreter lower distinguishes a genuinely empty primary slot from a handler fault. */

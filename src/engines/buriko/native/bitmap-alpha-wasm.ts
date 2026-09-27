@@ -1,8 +1,13 @@
 import {instantiateEmbeddedWasm} from '../../../core/wasm.js';
-import {WasmPixelWorkspace, type WasmPixelExports} from '../../../graphics/wasm-pixel-workspace.js';
+import {
+  WasmPixelWorkspace,
+  type WasmPixelExports,
+  type WasmPixelWorkspaceSpanNames,
+} from '../../../graphics/wasm-pixel-workspace.js';
 import {BURIKO_BITMAP_WASM_BINARY} from './bitmap-alpha-wasm-binary.js';
 import type {BurikoBitmap} from './bitmap.js';
 import type {BurikoBitmapAffineCoordinates} from './bitmap-affine.js';
+import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
 
 interface BurikoBitmapExports extends WasmPixelExports {
   reduce_half: (
@@ -74,6 +79,13 @@ let kernel: BurikoBitmapExports | null | undefined;
 let workspace: WasmPixelWorkspace | null = null;
 
 export const BURIKO_BITMAP_WASM_MIN_PIXELS = 1024;
+
+const BURIKO_MIX_WORKSPACE_SPANS: WasmPixelWorkspaceSpanNames = {
+  stagingIn: 'buriko.sprite.mix.wasm-stage-in',
+  kernel: 'buriko.sprite.mix.wasm-kernel',
+  stagingOut: 'buriko.sprite.mix.wasm-stage-out',
+  memoryGrowth: 'buriko.sprite.mix.wasm-memory-growth',
+};
 
 function getKernel(): BurikoBitmapExports | null {
   if (kernel === undefined) {
@@ -399,43 +411,52 @@ export function tryBurikoBitmapMixWasm(
   height: number,
   factor: number,
 ): boolean {
-  const rowBytes = width * 4;
-  if (
-    destination.format !== 2 ||
-    first.format !== 2 ||
-    second.format !== 2 ||
-    !Number.isSafeInteger(width) ||
-    width <= 0 ||
-    !Number.isSafeInteger(height) ||
-    height <= 0 ||
-    width * height < BURIKO_BITMAP_WASM_MIN_PIXELS ||
-    !Number.isInteger(factor) ||
-    factor < 0 ||
-    factor > 256 ||
-    firstInput.buffer === output.buffer ||
-    secondInput.buffer === output.buffer ||
-    firstInput.buffer === secondInput.buffer ||
-    first.stride < rowBytes ||
-    second.stride < rowBytes ||
-    destination.stride < rowBytes ||
-    (width < 128 &&
-      (first.stride !== rowBytes || second.stride !== rowBytes || destination.stride !== rowBytes))
-  )
-    return false;
-  const exports = getKernel();
-  if (exports === null) return false;
-  return workspace!.run(
-    firstInput,
-    first.offset,
-    first.stride,
-    output,
-    destination.offset,
-    destination.stride,
-    rowBytes,
-    height,
-    (firstPointer, destinationPointer, secondPointer) =>
-      exports.mix_rgba(firstPointer, secondPointer, destinationPointer, width * height, factor),
-    {view: secondInput, offset: second.offset, pitch: second.stride},
-    false,
-  );
+  let wasmApplied = false;
+  try {
+    const rowBytes = width * 4;
+    if (
+      destination.format !== 2 ||
+      first.format !== 2 ||
+      second.format !== 2 ||
+      !Number.isSafeInteger(width) ||
+      width <= 0 ||
+      !Number.isSafeInteger(height) ||
+      height <= 0 ||
+      width * height < BURIKO_BITMAP_WASM_MIN_PIXELS ||
+      !Number.isInteger(factor) ||
+      factor < 0 ||
+      factor > 256 ||
+      firstInput.buffer === output.buffer ||
+      secondInput.buffer === output.buffer ||
+      firstInput.buffer === secondInput.buffer ||
+      first.stride < rowBytes ||
+      second.stride < rowBytes ||
+      destination.stride < rowBytes ||
+      (width < 128 &&
+        (first.stride !== rowBytes ||
+          second.stride !== rowBytes ||
+          destination.stride !== rowBytes))
+    )
+      return false;
+    const exports = getKernel();
+    if (exports === null) return false;
+    wasmApplied = workspace!.run(
+      firstInput,
+      first.offset,
+      first.stride,
+      output,
+      destination.offset,
+      destination.stride,
+      rowBytes,
+      height,
+      (firstPointer, destinationPointer, secondPointer) =>
+        exports.mix_rgba(firstPointer, secondPointer, destinationPointer, width * height, factor),
+      {view: secondInput, offset: second.offset, pitch: second.stride},
+      false,
+      BURIKO_MIX_WORKSPACE_SPANS,
+    );
+    return wasmApplied;
+  } finally {
+    recordRuntimeMetric('buriko.sprite.mix.wasm-applied', Number(wasmApplied));
+  }
 }

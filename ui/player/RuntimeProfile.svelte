@@ -46,7 +46,8 @@
     <option value="browser-optimized">Browser optimized</option>
   </select>
   <p id="runtime-profile-help">
-    Browser optimized favors smoother frame updates and may change background completion timing.
-    Changes apply on the next game update without restarting.
+    Browser optimized favors smoother frame updates and may change background completion timing and
+    image rounding. Native preserves the original behavior. Changes apply on the next game update
+    without restarting.
   </p>
 </section>

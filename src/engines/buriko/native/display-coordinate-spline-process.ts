@@ -2,6 +2,7 @@ import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {nativeDisplayEasing} from '../bp/opcodes/native-math.js';
 import {BurikoDisplayControlProcess} from './display-control-process.js';
 import {BurikoNativeSpline} from './spline.js';
+import {withBurikoDisplayUpdateBatch} from './display-update-batch.js';
 
 const low32 = (value: bigint): number => Number(BigInt.asIntN(32, value));
 
@@ -114,9 +115,11 @@ export class BurikoCoordinateSplineControlProcess extends BurikoDisplayControlPr
       this.lastDepth = depth;
       this.object.invalidate();
       const key = this.object.sortKey();
-      this.object.setCoordinates(coordinates[0]!, coordinates[1]!, coordinates[2]!);
-      this.object.setBlendValue(blend);
-      this.object.setValueD8(1, depth);
+      withBurikoDisplayUpdateBatch(this.manager.environment, () => {
+        this.object.setCoordinates(coordinates[0]!, coordinates[1]!, coordinates[2]!);
+        this.object.setBlendValue(blend);
+        this.object.setValueD8(1, depth);
+      });
       if (key !== this.object.sortKey()) this.manager.lists.resort(this.object);
       this.object.invalidate();
       this.dirty = true;

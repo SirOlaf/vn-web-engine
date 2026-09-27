@@ -8,11 +8,31 @@ import type {BurikoGridEvaluationWorkers} from '../native/grid-evaluation-worker
 import type {BurikoDataCodecWorkers} from '../native/data-codec-workers.js';
 import type {BurikoSharedLoaderWorker} from '../native/shared-loader-worker.js';
 import {HostTaskBudget, yieldToHost} from '../../../core/host-task-budget.js';
-import {beginRuntimeSpan, recordRuntimeMetric} from '../../../platform/runtime-performance.js';
+import {
+  beginRuntimeSpan,
+  recordRuntimeMetric,
+  type RuntimeSpanEnd,
+} from '../../../platform/runtime-performance.js';
 import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
 
 export const BURIKO_BP_BURST_INSTRUCTIONS = 0x400000;
 export type BurikoBpSchedulerResult = 0 | 1 | 2;
+
+/** Boundary samples locate instruction-heavy loops without per-instruction tracing. */
+function finishInstructionSlice(
+  finish: RuntimeSpanEnd | undefined,
+  instructions: number,
+  startPc: number,
+  thread: BurikoBpThread,
+): void {
+  finish?.({
+    instructions,
+    thread: thread.id,
+    startPc,
+    nextPc: thread.pc,
+    nextOpcode: thread.moduleMemory[thread.pc] ?? -1,
+  });
+}
 
 /** Scheduler-owned portions of native CThread; root is a non-executable list sentinel. */
 export class BurikoBpScheduledThread {
@@ -135,6 +155,7 @@ export class BurikoBpScheduler {
   private dataCodecWorkers: BurikoDataCodecWorkers | null = null;
   private sharedLoaderWorker: BurikoSharedLoaderWorker | null = null;
   private executeInstruction: ((thread: BurikoBpThread) => BurikoBpInstructionResult) | null;
+  private batchableOpcodes: readonly boolean[] | null = null;
 
   constructor(
     root: BurikoBpThread,
@@ -262,12 +283,14 @@ export class BurikoBpScheduler {
   /** The aggregate installs its complete interpreter after slot factories receive this scheduler. */
   bindInstructionExecutor(
     executeInstruction: (thread: BurikoBpThread) => BurikoBpInstructionResult,
+    batchableOpcodes?: readonly boolean[],
   ): void {
     if (this.executeInstruction !== null)
       throw new Error('Buriko scheduler instruction executor is already bound');
     if (typeof executeInstruction !== 'function')
       throw new TypeError('Buriko scheduler instruction executor must be a function');
     this.executeInstruction = executeInstruction;
+    this.batchableOpcodes = batchableOpcodes ?? null;
   }
 
   get firstThread(): BurikoBpScheduledThread | null {
@@ -281,8 +304,8 @@ export class BurikoBpScheduler {
     this.gridEvaluationWorkers = workers;
   }
 
-  private checkpointHostBudget(): Promise<void> | undefined {
-    const pending = this.hostBudget.checkpoint();
+  private checkpointHostBudget(batchable = false): Promise<void> | undefined {
+    const pending = batchable ? this.hostBudget.checkpointBatched() : this.hostBudget.checkpoint();
     if (pending !== undefined) this.budgetYields++;
     return pending;
   }
@@ -422,6 +445,7 @@ export class BurikoBpScheduler {
     executeInstruction: (thread: BurikoBpThread) => BurikoBpInstructionResult,
     invocationToken: object,
   ): Promise<BurikoBpSchedulerResult> {
+    const batchableOpcodes = this.browserOptimized ? this.batchableOpcodes : null;
     let stop = this.stopRequested;
     let condition = false;
     let node = this.root.next;
@@ -463,9 +487,13 @@ export class BurikoBpScheduler {
       let result: BurikoBpHandlerResult = 0;
       let finishSlice = beginRuntimeSpan('buriko.vm.sync-slice');
       let sliceInstructions = 0;
+      let sliceStartPc = node.state.pc;
       try {
         for (let count = 0; count < BURIKO_BP_BURST_INSTRUCTIONS; count++) {
           let instruction: BurikoBpInstructionResult;
+          let batchable =
+            batchableOpcodes !== null &&
+            batchableOpcodes[node.state.moduleMemory[node.state.pc]!] === true;
           this.dispatchingInstruction = node.state;
           try {
             sliceInstructions++;
@@ -476,27 +504,31 @@ export class BurikoBpScheduler {
           }
           if (typeof instruction === 'number') result = instruction;
           else {
-            finishSlice?.({instructions: sliceInstructions});
+            batchable = false;
+            finishInstructionSlice(finishSlice, sliceInstructions, sliceStartPc, node.state);
             finishSlice = undefined;
             result = await instruction;
             sliceInstructions = 0;
+            sliceStartPc = node.state.pc;
             finishSlice = beginRuntimeSpan('buriko.vm.sync-slice');
           }
           if (result !== 0) break;
           // Host time slicing retains the native burst count and selected BP child.
-          // Even a short sequence of native calls can exhaust a slice. Promise
-          // settlement alone does not reset the budget or service host tasks.
-          const pending = this.checkpointHostBudget();
+          // Only proven small synchronous instructions may amortize clock reads.
+          // Native work and Promise settlement still check the deadline at once;
+          // settlement does not reset it or service host tasks.
+          const pending = this.checkpointHostBudget(batchable);
           if (pending !== undefined) {
-            finishSlice?.({instructions: sliceInstructions});
+            finishInstructionSlice(finishSlice, sliceInstructions, sliceStartPc, node.state);
             finishSlice = undefined;
             await pending;
             sliceInstructions = 0;
+            sliceStartPc = node.state.pc;
             finishSlice = beginRuntimeSpan('buriko.vm.sync-slice');
           }
         }
       } finally {
-        finishSlice?.({instructions: sliceInstructions});
+        finishInstructionSlice(finishSlice, sliceInstructions, sliceStartPc, node.state);
       }
       switch (result) {
         case 0:

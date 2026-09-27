@@ -19,7 +19,18 @@ const options = parseSyntheticBrowserOptions(args);
 
 async function pageMain(_fixture, options) {
   const load = (name) => import('/runtime/engines/buriko/native/' + name + '.js');
-  const [bitmap, alpha, image, surface, compositor, distributed, text, preload] = await Promise.all(
+  const [
+    bitmap,
+    alpha,
+    image,
+    surface,
+    compositor,
+    distributed,
+    text,
+    preload,
+    loading,
+    resourceCache,
+  ] = await Promise.all(
     [
       'bitmap',
       'bitmap-alpha',
@@ -29,6 +40,8 @@ async function pageMain(_fixture, options) {
       'distributed-processing',
       'text',
       'bitmap-preload-cache',
+      'bitmap-loading',
+      'resource-cache',
     ].map(load),
   );
   const width = options.smoke ? 257 : 2790,
@@ -98,6 +111,18 @@ async function pageMain(_fixture, options) {
     };
   };
   const results = [];
+  results.push(
+    await measure(
+      'Allocate and clear RGBA surface',
+      () => {},
+      () => {
+        surfaces.allocate(0, width, height, 2);
+        surfaces.fill(0, 0);
+      },
+      () => surfaces.snapshot(0).storage.bytes,
+      () => surfaces.release(0),
+    ),
+  );
   for (const weight of [null, 78])
     results.push(
       await measure(
@@ -122,6 +147,52 @@ async function pageMain(_fixture, options) {
       () => {
         surfaces.release(0);
         cache.clear();
+      },
+    ),
+  );
+  cache.insert(null, name, packed);
+  const bitmapLoading = new loading.BurikoBitmapLoading(
+    surfaces,
+    {
+      preloaded: cache,
+      cache: new resourceCache.BurikoResourceCache(nativeText),
+    },
+    null,
+  );
+  results.push(
+    await measure(
+      'Cached bitmap import',
+      () => {},
+      () => bitmapLoading.fromCache(0, null, name, 0),
+      () => surfaces.snapshot(0).storage.bytes,
+      () => surfaces.release(0),
+    ),
+  );
+  cache.clear();
+  results.push(
+    await measure(
+      'Consumed preload import and cache promotion',
+      () => {
+        cache.insert(null, name, packed);
+        bitmapLoading.resources.cache.configure(packed.length * 4);
+      },
+      () => {
+        if (bitmapLoading.fromCache(0, null, name, 1) !== 0)
+          throw new Error('Synthetic preload import failed');
+      },
+      () => {
+        if (
+          cache.size(null, name) !== null ||
+          bitmapLoading.resources.cache.size(null, name) !== packed.length
+        )
+          throw new Error('Synthetic cache promotion failed');
+        if (hash(bitmapLoading.resources.cache.read(null, name)) !== hash(packed))
+          throw new Error('Synthetic cache payload changed');
+        return surfaces.snapshot(0).storage.bytes;
+      },
+      () => {
+        surfaces.release(0);
+        bitmapLoading.resources.cache.configure(0);
       },
     ),
   );

@@ -2,6 +2,7 @@ import {readBurikoFontData, type BurikoFontData} from './font-data.js';
 import type {SfntFontMetadata} from '../../../formats/sfnt.js';
 import {readBrowserLocalFontMetadata} from '../../../text/browser-local-fonts.js';
 import {burikoCrtWideLower} from './crt-case.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 export interface BurikoBrowserFontParameters {
   readonly face: string;
@@ -397,48 +398,63 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
       .filter((face) => face.names.some((candidate) => candidate.toLowerCase() === folded));
   }
   async create(parameters: BurikoBrowserFontParameters): Promise<BurikoBrowserFontFace> {
-    const candidates = this.candidates(parameters.face);
-    candidates.sort(
-      (a, b) =>
-        Number(a.data.italic !== parameters.italic) * 1000 +
-        Math.abs(a.data.weight - parameters.weight) -
-        (Number(b.data.italic !== parameters.italic) * 1000 +
-          Math.abs(b.data.weight - parameters.weight)),
-    );
-    const selected = candidates[0];
-    if (selected)
-      return new BurikoBrowserFontFace(
-        parameters,
-        selected.cssFamily,
-        selected.fullName,
-        selected.family,
-        selected.data,
+    const finishCreate = beginRuntimeSpan('buriko.font.create');
+    let source = 0;
+    try {
+      const candidates = this.candidates(parameters.face);
+      candidates.sort(
+        (a, b) =>
+          Number(a.data.italic !== parameters.italic) * 1000 +
+          Math.abs(a.data.weight - parameters.weight) -
+          (Number(b.data.italic !== parameters.italic) * 1000 +
+            Math.abs(b.data.weight - parameters.weight)),
       );
-    const key = parameters.face.toLowerCase();
-    if (!this.localFaces.has(key)) {
-      const cssFamily = `BurikoLocalFont${this.nextFamily++}`;
-      const face = new FontFace(cssFamily, `local(${JSON.stringify(parameters.face)})`);
-      try {
-        await face.load();
-        fontSet().add(face);
-        this.localFaces.set(key, face);
-      } catch {
-        this.localFaces.set(key, null);
+      const selected = candidates[0];
+      if (selected) {
+        source = 1;
+        return new BurikoBrowserFontFace(
+          parameters,
+          selected.cssFamily,
+          selected.fullName,
+          selected.family,
+          selected.data,
+        );
       }
+      const key = parameters.face.toLowerCase();
+      if (!this.localFaces.has(key)) {
+        const cssFamily = `BurikoLocalFont${this.nextFamily++}`;
+        const face = new FontFace(cssFamily, `local(${JSON.stringify(parameters.face)})`);
+        try {
+          const finishLocalLoad = beginRuntimeSpan('buriko.font.local-face-load');
+          try {
+            await face.load();
+          } finally {
+            finishLocalLoad?.();
+          }
+          fontSet().add(face);
+          this.localFaces.set(key, face);
+        } catch {
+          this.localFaces.set(key, null);
+        }
+      }
+      const local = this.localFaces.get(key);
+      if (local) {
+        source = 2;
+        const metadata = await this.inspect(parameters.face);
+        return new BurikoBrowserFontFace(
+          parameters,
+          local.family,
+          metadata?.fullName ?? parameters.face,
+          metadata?.family ?? parameters.face,
+          metadata?.data ?? null,
+        );
+      }
+      // GDI can select a fallback face. The platform equivalent is the browser's sans-serif family.
+      source = 3;
+      return new BurikoBrowserFontFace(parameters, 'sans-serif', 'sans-serif', 'sans-serif', null);
+    } finally {
+      finishCreate?.({source});
     }
-    const local = this.localFaces.get(key);
-    if (local) {
-      const metadata = await this.inspect(parameters.face);
-      return new BurikoBrowserFontFace(
-        parameters,
-        local.family,
-        metadata?.fullName ?? parameters.face,
-        metadata?.family ?? parameters.face,
-        metadata?.data ?? null,
-      );
-    }
-    // GDI can select a fallback face. The platform equivalent is the browser's sans-serif family.
-    return new BurikoBrowserFontFace(parameters, 'sans-serif', 'sans-serif', 'sans-serif', null);
   }
   dispose(): void {
     for (const token of this.resources.keys()) this.unloadResource(token);

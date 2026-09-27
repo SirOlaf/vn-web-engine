@@ -21,6 +21,8 @@ import {
 import {BurikoBpModuleExtensions} from '../dist/engines/buriko/bp/module-extensions.js';
 import {BurikoBpInterpreter} from '../dist/engines/buriko/bp/interpreter.js';
 import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {controlOpcodes} from '../dist/engines/buriko/bp/opcodes/control.js';
+import {integerOpcodes} from '../dist/engines/buriko/bp/opcodes/integer.js';
 import {attachModule} from '../dist/engines/buriko/bp/modules.js';
 import {
   BurikoDistributedAllocator,
@@ -433,6 +435,123 @@ test('blocking asynchronous host work preserves the burst and forbids concurrent
 });
 
 for (const profile of ['native', 'browser-optimized']) {
+  test(`${profile}: real bytecode amortizes small work without delaying native or replacement handlers`, async (t) => {
+    setRuntimeProfile(profile);
+    t.after(() => setRuntimeProfile('native'));
+    let now = 0,
+      clockReads = 0,
+      executed = 0;
+    t.mock.method(performance, 'now', () => {
+      clockReads++;
+      return now;
+    });
+    const child = thread(1, 512),
+      order = [],
+      timers = [],
+      memory = new BurikoBpMemory(new Uint8Array()),
+      diagnostics = new BurikoBpDiagnostics(noNotice);
+    const expensive = (name) => {
+      order.push(name);
+      now += 20;
+      timers.push(
+        setTimeout(() => {
+          assert.equal(scheduler.hasActiveInvocation, true);
+          assert.equal(scheduler.isDispatchingInstructionFor(child), false);
+          order.push(`host:${name}`);
+        }, 0),
+      );
+    };
+    t.after(() => {
+      for (const timer of timers) clearTimeout(timer);
+    });
+    const interpreter = new BurikoBpInterpreter(
+      {
+        ...directHandlers(),
+        ...controlOpcodes,
+        ...integerOpcodes,
+        0x06: () => {
+          expensive('replacement');
+          return 0;
+        },
+      },
+      new BurikoNativeBank(
+        definitions().map((definition) => {
+          if (definition.primary !== 0x80 || definition.secondary > 2) return definition;
+          return {
+            ...definition,
+            execute: () => {
+              if (definition.secondary === 2) {
+                order.push('end');
+                return 1;
+              }
+              expensive(definition.secondary === 0 ? 'sync' : 'async');
+              return definition.secondary === 0 ? 0 : Promise.resolve(0);
+            },
+          };
+        }),
+      ),
+      new BurikoBpModuleExtensions({readModule: noNotice}),
+      (thread) => ({thread, memory, diagnostics}),
+    );
+    const scheduler = new BurikoBpScheduler(root());
+    scheduler.bindInstructionExecutor((state) => {
+      executed++;
+      now += 0.04;
+      return interpreter.step(state);
+    }, interpreter.batchableOpcodes);
+    attachModule(
+      child,
+      'synthetic',
+      module([
+        ...Array.from({length: 128}, () => [0x00, 7, 0x73]).flat(),
+        0x80,
+        0,
+        0x00,
+        1,
+        0x73,
+        0x80,
+        1,
+        0x00,
+        2,
+        0x73,
+        0x06,
+        0x00,
+        3,
+        0x73,
+        0x80,
+        2,
+      ]),
+    );
+    scheduler.append(child);
+    let firstHostAt;
+    timers.push(
+      setTimeout(() => {
+        firstHostAt = executed;
+      }, 0),
+    );
+    assert.equal(await scheduler.run(), 0);
+    assert.equal(executed, 266);
+    assert.equal(child.stackIndex, 0);
+    assert.ok(
+      firstHostAt >= 100 && firstHostAt <= 164,
+      `host serviced at instruction ${firstHostAt}`,
+    );
+    assert.deepEqual(order, [
+      'sync',
+      'host:sync',
+      'async',
+      'host:async',
+      'replacement',
+      'host:replacement',
+      'end',
+    ]);
+    assert.ok(
+      profile === 'native' ? clockReads > 250 : clockReads < 40,
+      `${clockReads} clock reads`,
+    );
+    assert.equal(scheduler.hasActiveInvocation, false);
+  });
+
   test(`${profile}: expensive polls and short instruction sequences service host tasks without changing traversal`, async (t) => {
     setRuntimeProfile(profile);
     t.after(() => setRuntimeProfile('native'));

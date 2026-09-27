@@ -18,6 +18,7 @@ import {
 import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {setRuntimeProfile} from '../dist/platform/runtime-profile.js';
 
 const rect = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, initial = 0) => ({
@@ -144,6 +145,50 @@ test('conditional invalidation precedes draw choice and damage created by notifi
   renderer.drawDamage();
   assert.deepEqual(calls, ['invalidate', ['draw', rect(0, 0, 0, 0), 5], 'notify']);
   assert.deepEqual(environment.damage.snapshot(), [{rectangle: rect(3, 3, 3, 3), key: 7}]);
+});
+
+test('browser draw jobs retain damage keys, completion notifications and the native-visible budget', () => {
+  const {manager, renderer, environment} = setup(),
+    calls = [];
+  class Observed extends BurikoDisplayObject {
+    draw(_destination, rectangle, key) {
+      calls.push(['draw', {...rectangle}, key]);
+    }
+    notify(...args) {
+      calls.push(['notify', ...args, environment.damage.count]);
+    }
+  }
+  const handle = manager.createSimple('sprite', (order) => new Observed(environment, 1, order, 1)),
+    object = manager.resolve(handle);
+  object.configureGeometry(4, 4);
+  object.setActivation(1);
+  try {
+    setRuntimeProfile('browser-optimized');
+    renderer.drawFull();
+    assert.equal(manager.renderPixelBudget, 8);
+    assert.deepEqual(calls, [
+      ['draw', rect(0, 0, 3, 3), 0],
+      ['notify', 0xf0000000, 0, 0, 0],
+    ]);
+    calls.length = 0;
+    environment.damage.record(17, rect(0, 0, 3, 3));
+    assert.deepEqual(renderer.drawDamage(), {count: 1, rectangles: [rect(0, 0, 3, 3)]});
+    assert.deepEqual(calls, [
+      ['draw', rect(0, 0, 3, 3), 17],
+      ['notify', 0xf0000000, 0, 0, 0],
+    ]);
+    calls.length = 0;
+    setRuntimeProfile('native');
+    renderer.drawFull();
+    assert.deepEqual(calls, [
+      ['draw', rect(0, 0, 3, 1), 0],
+      ['draw', rect(0, 2, 3, 3), 0],
+      ['notify', 0xf0000000, 0, 0, 0],
+    ]);
+  } finally {
+    setRuntimeProfile('native');
+    manager.dispose();
+  }
 });
 
 test('effector roots retain constructor order and the separate strip and partial-draw predicates', () => {

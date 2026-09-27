@@ -1,4 +1,12 @@
 import {reportWasmGraphicsFallback} from '../platform/runtime-advisories.js';
+import {beginRuntimeSpan} from '../platform/runtime-performance.js';
+
+export interface WasmPixelWorkspaceSpanNames {
+  readonly stagingIn: string;
+  readonly kernel: string;
+  readonly stagingOut: string;
+  readonly memoryGrowth?: string;
+}
 
 /** Linear-memory staging for synchronous pixel kernels with separate input/output rows. */
 export interface WasmPixelExports extends WebAssembly.Exports {
@@ -41,6 +49,7 @@ export class WasmPixelWorkspace {
     operation: (source: number, destination: number, additionalSource: number) => void,
     additionalSource?: WasmPixelRows,
     preserveDestination = true,
+    spans?: WasmPixelWorkspaceSpanNames,
   ): boolean {
     if (
       !(source.buffer instanceof ArrayBuffer) ||
@@ -88,41 +97,60 @@ export class WasmPixelWorkspace {
     }
     const memory = this.kernel.memory;
     if (end > memory.buffer.byteLength) {
+      const finishMemoryGrowth =
+        spans?.memoryGrowth === undefined ? undefined : beginRuntimeSpan(spans.memoryGrowth);
       try {
         memory.grow(Math.ceil((end - memory.buffer.byteLength) / 65536));
       } catch {
         reportWasmGraphicsFallback();
         return false;
+      } finally {
+        finishMemoryGrowth?.();
       }
     }
     if (this.bytes?.buffer !== memory.buffer) this.bytes = new Uint8Array(memory.buffer);
     const bytes = this.bytes;
-    this.copyIn(source, sourceOffset, sourcePitch, this.input, rowBytes, rows);
-    // Replacement kernels write every destination byte; staging its old contents
-    // is only required by kernels that blend into or selectively retain them.
-    if (preserveDestination)
-      this.copyIn(destination, destinationOffset, destinationPitch, output, rowBytes, rows);
-    if (additionalSource !== undefined)
-      this.copyIn(
-        additionalSource.view,
-        additionalSource.offset,
-        additionalSource.pitch,
-        additionalInput,
-        rowBytes,
-        rows,
+    const finishStagingIn = spans === undefined ? undefined : beginRuntimeSpan(spans.stagingIn);
+    try {
+      this.copyIn(source, sourceOffset, sourcePitch, this.input, rowBytes, rows);
+      // Replacement kernels write every destination byte; staging its old contents
+      // is only required by kernels that blend into or selectively retain them.
+      if (preserveDestination)
+        this.copyIn(destination, destinationOffset, destinationPitch, output, rowBytes, rows);
+      if (additionalSource !== undefined)
+        this.copyIn(
+          additionalSource.view,
+          additionalSource.offset,
+          additionalSource.pitch,
+          additionalInput,
+          rowBytes,
+          rows,
+        );
+    } finally {
+      finishStagingIn?.();
+    }
+    const finishKernel = spans === undefined ? undefined : beginRuntimeSpan(spans.kernel);
+    try {
+      operation(this.input, output, additionalInput);
+    } finally {
+      finishKernel?.();
+    }
+    const finishStagingOut = spans === undefined ? undefined : beginRuntimeSpan(spans.stagingOut);
+    try {
+      const target = new Uint8Array(
+        destination.buffer,
+        destination.byteOffset + destinationOffset,
+        (rows - 1) * destinationPitch + rowBytes,
       );
-    operation(this.input, output, additionalInput);
-    const target = new Uint8Array(
-      destination.buffer,
-      destination.byteOffset + destinationOffset,
-      (rows - 1) * destinationPitch + rowBytes,
-    );
-    if (destinationPitch === rowBytes) target.set(bytes.subarray(output, output + length));
-    else
-      for (let row = 0; row < rows; row++) {
-        const start = output + row * rowBytes;
-        target.set(bytes.subarray(start, start + rowBytes), row * destinationPitch);
-      }
+      if (destinationPitch === rowBytes) target.set(bytes.subarray(output, output + length));
+      else
+        for (let row = 0; row < rows; row++) {
+          const start = output + row * rowBytes;
+          target.set(bytes.subarray(start, start + rowBytes), row * destinationPitch);
+        }
+    } finally {
+      finishStagingOut?.();
+    }
     return true;
   }
   /** Stages independent plane sizes. Unless preserved, every destination byte must be overwritten. */

@@ -7,6 +7,7 @@ import type {BurikoDisplayObject} from './display-object.js';
 import type {BurikoNativeInput} from './input.js';
 import {BurikoProcedure, type BurikoProcedureState} from './procedure.js';
 import type {BurikoBpProcessMessage} from './types.js';
+import {withBurikoDisplayUpdateBatch} from './display-update-batch.js';
 
 function divide32(numerator: number, denominator: number): number {
   numerator |= 0;
@@ -261,9 +262,11 @@ export class BurikoDisplayControlProcess extends BurikoProcedure {
       this.lastBlend = blend;
       this.lastDepth = depth;
       this.object.invalidate();
-      this.object.move(x, y);
-      this.object.setBlendValue(blend);
-      this.object.setValueD8(1, depth);
+      withBurikoDisplayUpdateBatch(this.manager.environment, () => {
+        this.object.move(x, y);
+        this.object.setBlendValue(blend);
+        this.object.setValueD8(1, depth);
+      });
       this.object.invalidate();
       this.dirty = true;
     }
@@ -345,8 +348,10 @@ export class BurikoSplineDisplayControlProcess extends BurikoDisplayControlProce
       this.lastY = y;
       this.lastBlend = blend;
       this.object.invalidate();
-      this.object.move(x, y);
-      this.object.setBlendValue(blend);
+      withBurikoDisplayUpdateBatch(this.manager.environment, () => {
+        this.object.move(x, y);
+        this.object.setBlendValue(blend);
+      });
       this.object.invalidate();
       this.dirty = true;
     }

@@ -94,6 +94,24 @@ export class BurikoResourceCache {
       name: nameKey,
       bytes: source!.bytes.slice(source!.offset, source!.offset + size),
     };
+    this.publish(entry, size);
+    return 1;
+  }
+
+  /** Adopt a private payload. After success, the caller must stop accessing its bytes. */
+  insertOwned(archive: Uint8Array | null, name: Uint8Array | null, bytes: Uint8Array): 0 | 1 {
+    const size = bytes.length >>> 0;
+    if (!this.enabled || size === 0 || size > this.limit >>> 1) return 0;
+    const entry = {
+      archive: this.key(archive),
+      name: this.key(name),
+      bytes,
+    };
+    this.publish(entry, size);
+    return 1;
+  }
+
+  private publish(entry: CachedResource, size: number): void {
     while (this.limit < (this.total + size) >>> 0) {
       const removed = this.entries.pop();
       if (removed === undefined)
@@ -102,6 +120,5 @@ export class BurikoResourceCache {
     }
     this.entries.unshift(entry);
     this.total = (this.total + size) >>> 0;
-    return 1;
   }
 }

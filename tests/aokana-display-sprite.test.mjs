@@ -20,6 +20,14 @@ import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
+import {setRuntimeProfile} from '../dist/platform/runtime-profile.js';
+import {withBurikoDisplayUpdateBatch} from '../dist/engines/buriko/native/display-update-batch.js';
+import {
+  getRuntimePerformanceSnapshot,
+  startRuntimePerformanceRecording,
+  stopRuntimePerformanceRecording,
+} from '../dist/platform/runtime-performance.js';
+import {recordRasterText, readRasterText} from '../dist/text/raster-text.js';
 
 const rectangle = (width, height) => ({left: 0, top: 0, right: width - 1, bottom: height - 1});
 const rgba = (value, alpha = 255) => (Math.imul(value, 0x010101) | (alpha << 24)) >>> 0;
@@ -289,6 +297,156 @@ test('modes five and six consume mip/mix/wave and the shared mesh worker', () =>
   sprite.draw(mesh, rectangle(64, 64), 0);
   assert.deepEqual(dispatches, [1, 1]);
   assert.deepEqual(pixels(mesh), Array(64 * 64).fill(rgba(33)));
+});
+
+test('browser control batches preserve sprite pixels, mip levels, wave consumers and source updates', () => {
+  const run = (profile, variant) => {
+    setRuntimeProfile(profile);
+    const {environment, surfaces} = fixture(32, 32, 1);
+    const values = Array.from({length: 64}, (_, index) =>
+      rgba((index * 17) & 255, (index * 31) & 255),
+    );
+    install(surfaces, 1, bitmap(8, 8, 2, values));
+    install(
+      surfaces,
+      2,
+      bitmap(
+        8,
+        8,
+        2,
+        values.map((value) => (value ^ 0x7fffffff) >>> 0),
+      ),
+    );
+    if (variant === 'text') recordRasterText(surfaces.descriptor(1), 'A', {size: 4});
+    const sprite = new BurikoDisplaySprite(environment, surfaces, 0);
+    assert.equal(
+      sprite.configureAffineBlend({
+        sourceSurface: 1,
+        secondarySurface: 2,
+        mixValue: 256,
+        blendSelector: 1,
+        pivotX: 0,
+        pivotY: 0,
+        angle: 0,
+        perspective: 1,
+        pivotPolicy: 0,
+        sampling: 1,
+      }),
+      0,
+    );
+    if (variant === 'mesh')
+      assert.equal(
+        sprite.configureMesh({
+          sourceSurface: 1,
+          secondarySurface: 2,
+          mixValue: 256,
+          blendSelector: 1,
+          sourcePivotX: 16,
+          sourcePivotY: 16,
+          pitch: 0,
+          heading: 0,
+          bank: 0,
+          rotationOrder: 0,
+          perspective: 0,
+          pivotPolicy: 0,
+          sampling: 1,
+        }),
+        0,
+      );
+    if (variant === 'wave') sprite.setWave(0x10000, 0, 0x8000);
+    const snapshots = [];
+    startRuntimePerformanceRecording();
+    try {
+      for (const [index, factor] of [213, 128, 0].entries()) {
+        // An in-place source change between control steps must be observed.
+        surfaces.replaceColor(2, (values[0] ^ 0x7fffffff) >>> 0, rgba(123, 91));
+        withBurikoDisplayUpdateBatch(environment, () => {
+          sprite.setCoordinates(0, 0, variant === 'mipmap' && index !== 1 ? 0x20000 : 0);
+          sprite.setBlendValue(factor);
+          sprite.setValueD8(1, index << 16);
+        });
+        const output = bitmap(32, 32, 2, Array(1024).fill(0));
+        sprite.draw(output, rectangle(32, 32), 0);
+        snapshots.push({
+          pixels: pixels(output),
+          blend: sprite.getBlendValue(),
+          depth: sprite.getValueD8(1),
+          position: sprite.position(),
+          glyphs: readRasterText(output).map(({id, ...glyph}) => glyph),
+        });
+      }
+      stopRuntimePerformanceRecording();
+      const metrics = new Map(getRuntimePerformanceSnapshot().aggregates.map((x) => [x.name, x]));
+      return {snapshots, mixes: metrics.get('buriko.sprite.mix').count};
+    } finally {
+      stopRuntimePerformanceRecording();
+      sprite.dispose();
+      setRuntimeProfile('native');
+    }
+  };
+  for (const variant of ['plain', 'mipmap', 'wave', 'mesh', 'text']) {
+    const native = run('native', variant),
+      optimized = run('browser-optimized', variant);
+    assert.deepEqual(optimized.snapshots, native.snapshots, variant);
+    assert.equal(
+      optimized.mixes,
+      variant === 'wave' ? native.mixes : (native.mixes * (variant === 'mesh' ? 2 : 1)) / 3,
+      variant,
+    );
+  }
+});
+
+test('failed browser control batches leave no deferred mixes and preserve immediate source faults', () => {
+  setRuntimeProfile('browser-optimized');
+  const {environment, surfaces} = fixture(4, 4, 1);
+  install(surfaces, 1, bitmap(4, 4, 2, Array(16).fill(rgba(32))));
+  install(surfaces, 2, bitmap(4, 4, 2, Array(16).fill(rgba(128))));
+  const sprite = new BurikoDisplaySprite(environment, surfaces, 0);
+  try {
+    assert.equal(
+      sprite.configureAffineBlend({
+        sourceSurface: 1,
+        secondarySurface: 2,
+        mixValue: 128,
+        blendSelector: 1,
+        pivotX: 0,
+        pivotY: 0,
+        angle: 0,
+        perspective: 0,
+        pivotPolicy: 0,
+        sampling: 0,
+      }),
+      0,
+    );
+    const failure = new Error('control update failed');
+    assert.throws(
+      () =>
+        withBurikoDisplayUpdateBatch(environment, () => {
+          sprite.setBlendValue(64);
+          throw failure;
+        }),
+      (error) => error === failure,
+    );
+    sprite.setBlendValue(256);
+    const output = bitmap(4, 4, 2, Array(16).fill(0));
+    sprite.draw(output, rectangle(4, 4), 0);
+    assert.deepEqual(pixels(output), Array(16).fill(rgba(128)));
+
+    surfaces.descriptor(2).storage = new BurikoBitmapStorage(new Uint8Array(64), false);
+    let reachedNextSetter = false;
+    assert.throws(
+      () =>
+        withBurikoDisplayUpdateBatch(environment, () => {
+          sprite.setBlendValue(128);
+          reachedNextSetter = true;
+        }),
+      /unwritten/,
+    );
+    assert.equal(reachedNextSetter, false);
+  } finally {
+    sprite.dispose();
+    setRuntimeProfile('native');
+  }
 });
 
 test('mode-five fractional origin reaches affine sampling while mode two ignores its stale phase', () => {

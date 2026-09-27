@@ -115,6 +115,7 @@ test('90:C0/C1/C6/C7 allocate headers and consume shared resource/preload caches
   memory.globalMemory.set(encode('legacy.bg'), 64);
   memory.globalMemory.set(encode(' raw.bg ,0,0 / legacy.bg '), 96);
   memory.globalMemory.set(encode('cached-pixels'), 160);
+  memory.globalMemory.set(encode('truncated-pixels'), 224);
   memory.globalMemory.set(encode('retained output'), 192);
   memory.globalMemory.set(packed, 256);
   loading.cache.configure(1024);
@@ -154,13 +155,25 @@ test('90:C0/C1/C6/C7 allocate headers and consume shared resource/preload caches
     assert.equal(text.decodeAuto(pointer(192)), 'retained output');
     await call(0xc6, [0, 160, 256, packed.length], 1);
     assert.equal(loading.preloaded.size(null, encode('cached-pixels')), packed.length);
+    await call(0xc7, [2, 0, 160, 0], 1);
+    assert.equal(loading.preloaded.size(null, encode('cached-pixels')), packed.length);
+    assert.equal(loading.cache.size(null, encode('cached-pixels')), null);
     await call(0xc7, [2, 0, 160, 1], 1);
     assert.deepEqual(pixels(2), [0xff112233, 0xff445566]);
     assert.deepEqual([surfaces.record(2).metadataX, surfaces.record(2).metadataY], [7, 9]);
     assert.equal(loading.preloaded.size(null, encode('cached-pixels')), null);
     assert.deepEqual(loading.cache.read(null, encode('cached-pixels')), packed);
+    surfaces.snapshot(2).storage.bytes[0] ^= 0xff;
+    assert.deepEqual(loading.cache.read(null, encode('cached-pixels')), packed);
     await call(0xc7, [3, 0, 160, 1], 1);
     assert.deepEqual(pixels(3), [0xff112233, 0xff445566]);
+
+    memory.globalMemory.set(packed.subarray(0, 17), 640);
+    await call(0xc6, [0, 224, 640, 17], 1);
+    assert.equal(loading.preloaded.size(null, encode('truncated-pixels')), 17);
+    await assert.rejects(call(0xc7, [4, 0, 224, 1]), /outside native allocation/);
+    assert.equal(loading.preloaded.size(null, encode('truncated-pixels')), null);
+    assert.equal(loading.cache.size(null, encode('truncated-pixels')), null);
     assert.equal(new BurikoRawSurfaceExport(surfaces).export(pointer(512), pointer(480), 64, 3), 0);
     assert.deepEqual(
       Array.from(memory.globalMemory.subarray(512, 520)),

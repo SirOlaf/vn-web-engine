@@ -27,6 +27,34 @@ function words(bitmap) {
   return Array.from(new Uint32Array(bitmap.storage.bytes.buffer));
 }
 
+test('bitmap storage preserves write coverage through gaps, cropped clones, and native heap reads', () => {
+  const storage = new BurikoBitmapStorage(new Uint8Array(24), false);
+  storage.written(0, 4);
+  storage.written(12, 4);
+  storage.written(4, 4);
+  assert.deepEqual(
+    [...storage.initializedRange(0, 24)],
+    [...Array(8).fill(1), ...Array(4).fill(0), ...Array(4).fill(1), ...Array(8).fill(0)],
+  );
+  assert.doesNotThrow(() => storage.range(12, 4, true));
+  assert.throws(() => storage.range(0, 16, true), /unwritten/);
+  const clone = storage.cloneRange(4, 16);
+  storage.written(8, 16);
+  assert.doesNotThrow(() => storage.range(0, 24, true));
+  assert.throws(() => clone.range(0, 16, true), /unwritten/);
+  assert.deepEqual(
+    [...clone.initializedRange(0, 16)],
+    [...Array(4).fill(1), ...Array(4).fill(0), ...Array(4).fill(1), ...Array(4).fill(0)],
+  );
+  clone.allowNativeHeapReads();
+  assert.doesNotThrow(() => clone.range(0, 16, true));
+  assert.equal(clone.initializedView(0, 16), null);
+  assert.doesNotThrow(() => clone.range(16, 0, true));
+  assert.throws(() => clone.range(16, 1, true), /outside/);
+  clone.release();
+  assert.throws(() => clone.initializedRange(0, 0), /released/);
+});
+
 // Synthetic input/output captured from the isolated native 14003d690 instruction span.
 // The paired pixel and odd tail intentionally receive different rounding and shortcut paths.
 const normalVectors = [
