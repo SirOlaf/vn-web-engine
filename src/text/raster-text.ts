@@ -1,4 +1,5 @@
 import type {Rect} from '../graphics/surface.js';
+import {recordRuntimeMetric} from '../platform/runtime-performance.js';
 
 /** Optional presentation provenance. These objects never replace engine-owned pixels. */
 export interface RasterTextStorage {
@@ -44,6 +45,9 @@ interface Plane {
   bitmap: RasterTextBitmap;
   blank: RasterTextStorage;
   glyphs: RasterTextGlyph[];
+  clearedBytes: number;
+  receivedText: boolean;
+  differenceByte: number;
 }
 const planes = new WeakMap<RasterTextStorage, Plane>();
 let nextGlyph = 0;
@@ -121,6 +125,9 @@ function ensure(bitmap: RasterTextBitmap): Plane | undefined {
         bitmap: {...bitmap, offset: 0},
         blank: bitmap.storage.cloneRange(0, bitmap.storage.bytes.length),
         glyphs: [],
+        clearedBytes: 0,
+        receivedText: false,
+        differenceByte: -1,
       };
       planes.set(bitmap.storage, plane);
     } finally {
@@ -128,6 +135,57 @@ function ensure(bitmap: RasterTextBitmap): Plane | undefined {
     }
   }
   return plane;
+}
+
+/** Cropped clears can erase the last text without ever clearing a whole allocation at once. */
+function retireClearedPlane(bitmap: RasterTextBitmap, plane: Plane): void {
+  const storage = bitmap.storage;
+  if (!storage) return;
+  const length = storage.bytes.length;
+  plane.clearedBytes += Math.min(length, bitmap.width * bitmap.height * bitmap.bytesPerPixel);
+  if (!(plane.clearedBytes >= length)) return;
+  plane.clearedBytes = 0;
+  const receivedText = plane.receivedText;
+  plane.receivedText = false;
+  // An entire redraw can clear old text and immediately draw it again. Avoid
+  // repeated full scans or retiring/recloning that still-active presentation.
+  if (receivedText || plane.glyphs.length !== 0) return;
+  const original = storage.bytes,
+    blank = plane.blank.bytes;
+  if (
+    original.length !== blank.length ||
+    !(original.buffer instanceof ArrayBuffer) ||
+    !(blank.buffer instanceof ArrayBuffer)
+  )
+    return;
+  // Unchanged decorative ink can have no glyphs or incoming text. Remember a
+  // failed comparison so later clears elsewhere do not rescan the allocation.
+  if (plane.differenceByte >= 0 && original[plane.differenceByte] !== blank[plane.differenceByte])
+    return;
+  recordRuntimeMetric('text.raster.retirement-checks', 1);
+  let byte = 0;
+  if (((original.byteOffset | blank.byteOffset) & 3) === 0) {
+    const words = Math.floor(length / 4),
+      first = new Uint32Array(original.buffer, original.byteOffset, words),
+      second = new Uint32Array(blank.buffer, blank.byteOffset, words);
+    for (let index = 0; index < words; index++)
+      if (first[index] !== second[index]) {
+        byte = index * 4;
+        while (original[byte] === blank[byte]) byte++;
+        plane.differenceByte = byte;
+        return;
+      }
+    byte = words * 4;
+  }
+  for (; byte < length; byte++)
+    if (original[byte] !== blank[byte]) {
+      plane.differenceByte = byte;
+      return;
+    }
+  // Empty glyph metadata alone is insufficient: decorative ink has no glyphs.
+  // Only byte equality proves this alternate plane no longer contributes.
+  planes.delete(storage);
+  recordRuntimeMetric('text.raster.retired-stale-planes', 1);
 }
 
 export function readRasterText(bitmap: RasterTextBitmap): RasterTextGlyph[] {
@@ -227,6 +285,7 @@ export function clearRasterTextPresentation(bitmap: RasterTextBitmap): void {
     bitmap.height * bitmap.stride === storage.bytes.length
   )
     planes.delete(storage);
+  else retireClearedPlane(bitmap, plane);
 }
 /** Texture uploads may compare/skip native bytes, but still need the latest text
  * provenance (two different strings can have identical native raster pixels). */
@@ -254,6 +313,7 @@ export function copyRasterTextPresentation(
   plane.glyphs.push(
     ...glyphs.map((g) => ({...g, x: g.x + x, y: g.y + y, clip: shifted(g.clip, x, y)})),
   );
+  plane.receivedText ||= hasRasterText(source);
 }
 /** Called by native storage cloning, not by the presentation clone above. */
 export function cloneRasterText(
@@ -271,6 +331,9 @@ export function cloneRasterText(
       bitmap: {...plane.bitmap, storage: target, offset: plane.bitmap.offset - offset},
       blank: plane.blank.cloneRange(offset, length),
       glyphs: plane.glyphs.map((g) => ({...g, clip: {...g.clip}})),
+      clearedBytes: 0,
+      receivedText: true,
+      differenceByte: -1,
     });
   } finally {
     depth--;
@@ -286,6 +349,7 @@ export function recordRasterText(
   if (depth) return;
   const plane = ensure(bitmap);
   if (!plane) return;
+  plane.receivedText = true;
   const [ox, oy] = origin(bitmap, plane);
   removeRegion(plane, shifted(bounds(bitmap), ox, oy));
   // Glyph buffers are transparent/black before composition. Preserve the native
@@ -397,6 +461,8 @@ export function withRasterText<T extends Kernel>(
       result = kernel.apply(this, args);
       if (options.applied && !options.applied(result, args)) return result;
       presentationReplay = true;
+      recordRuntimeMetric('text.raster.replay.destination-glyphs', plane.glyphs.length);
+      recordRuntimeMetric('text.raster.replay.source-glyphs', captured.length);
       kernel.apply(
         this,
         options.alternateArgs ? options.alternateArgs(alternate as Parameters<T>) : alternate,
@@ -406,6 +472,10 @@ export function withRasterText<T extends Kernel>(
       depth--;
     }
     const [ox, oy] = origin(destination, plane);
+    if (!options.clear)
+      plane.receivedText ||=
+        sources.some(hasRasterText) ||
+        args.some((a, i) => i !== (options.destination ?? 0) && isBitmap(a) && hasRasterText(a));
     if (
       (typeof options.replace === 'function' ? options.replace(args) : options.replace) ||
       options.clear
@@ -458,6 +528,7 @@ export function withRasterText<T extends Kernel>(
       destination.height * destination.stride === destination.storage.bytes.length
     )
       planes.delete(destination.storage);
+    else if (options.clear) retireClearedPlane(destination, plane);
     return result;
   } as T;
 }

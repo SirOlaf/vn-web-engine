@@ -34,6 +34,8 @@ import {
   stopRuntimePerformanceRecording,
 } from '../dist/platform/runtime-performance.js';
 
+import {setRuntimeProfile} from '../dist/platform/runtime-profile.js';
+
 const thread = (id = 1, moduleCapacity = 256, frameCapacity = 256) =>
   new BurikoBpThread({id, operandCapacity: 16, moduleCapacity, frameCapacity, heapEnabled: false});
 const root = () => thread(0, 0, 0);
@@ -430,98 +432,143 @@ test('blocking asynchronous host work preserves the burst and forbids concurrent
   assert.deepEqual(order, [1, 1, 2]);
 });
 
-test('expensive process polls and short instruction sequences service host tasks without changing native traversal', async (t) => {
-  let now = 0;
-  t.mock.method(performance, 'now', () => now);
-  const order = [],
-    hostLeases = [],
-    timers = [],
-    child = thread(1),
-    calls = new Map();
-  const pulse = (name) => {
-    timers.push(
-      setTimeout(() => {
-        order.push(`host:${name}`);
-        hostLeases.push([
-          scheduler.hasActiveInvocation,
-          scheduler.hasActiveProcessPoll,
-          scheduler.isDispatchingInstructionFor(child),
-        ]);
-      }, 0),
+for (const profile of ['native', 'browser-optimized']) {
+  test(`${profile}: expensive polls and short instruction sequences service host tasks without changing traversal`, async (t) => {
+    setRuntimeProfile(profile);
+    t.after(() => setRuntimeProfile('native'));
+    let now = 0;
+    t.mock.method(performance, 'now', () => now);
+    const order = [],
+      hostLeases = [],
+      timers = [],
+      child = thread(1),
+      calls = new Map();
+    const pulse = (name) => {
+      timers.push(
+        setTimeout(() => {
+          order.push(`host:${name}`);
+          hostLeases.push([
+            scheduler.hasActiveInvocation,
+            scheduler.hasActiveProcessPoll,
+            scheduler.isDispatchingInstructionFor(child),
+          ]);
+        }, 0),
+      );
+    };
+    t.after(() => {
+      for (const timer of timers) clearTimeout(timer);
+    });
+    const scheduler = new BurikoBpScheduler(
+      root(),
+      (state) => {
+        const count = calls.get(state.id) ?? 0;
+        calls.set(state.id, count + 1);
+        order.push(`instruction:${state.id}:${count}`);
+        if (state.id === 2) return 4;
+        if (count === 0) {
+          now += 50;
+          pulse('sync');
+          return 0;
+        }
+        if (count === 1) {
+          now += 50;
+          pulse('async');
+          return Promise.resolve(0);
+        }
+        if (count < 4) {
+          now += 3;
+          if (count === 2) pulse('microtasks');
+          return Promise.resolve(0);
+        }
+        return 5;
+      },
+      (node) => order.push(`removed:${node.state.id}`),
     );
-  };
-  t.after(() => {
-    for (const timer of timers) clearTimeout(timer);
-  });
-  const scheduler = new BurikoBpScheduler(
-    root(),
-    (state) => {
-      const count = calls.get(state.id) ?? 0;
-      calls.set(state.id, count + 1);
-      order.push(`instruction:${state.id}:${count}`);
-      if (state.id === 2) return 4;
-      if (count === 0) {
+    const node = scheduler.append(child);
+    scheduler.append(thread(2));
+    node.installProcess({
+      enqueueMessage() {},
+      poll() {
+        order.push('poll');
         now += 50;
-        pulse('sync');
-        return 0;
-      }
-      if (count === 1) {
-        now += 50;
-        pulse('async');
-        return Promise.resolve(0);
-      }
-      if (count < 4) {
-        now += 3;
-        if (count === 2) pulse('microtasks');
-        return Promise.resolve(0);
-      }
-      return 5;
-    },
-    (node) => order.push(`removed:${node.state.id}`),
-  );
-  const node = scheduler.append(child);
-  scheduler.append(thread(2));
-  node.installProcess({
-    enqueueMessage() {},
-    poll() {
-      order.push('poll');
-      now += 50;
-      pulse('poll');
-      return Promise.resolve(1);
-    },
-    dispose() {
-      order.push('dispose');
-    },
-  });
+        pulse('poll');
+        return Promise.resolve(1);
+      },
+      dispose() {
+        order.push('dispose');
+      },
+    });
 
-  assert.equal(await scheduler.run(), 2);
-  assert.deepEqual(order, [
-    'poll',
-    'dispose',
-    'host:poll',
-    'instruction:1:0',
-    'host:sync',
-    'instruction:1:1',
-    'host:async',
-    'instruction:1:2',
-    'instruction:1:3',
-    'host:microtasks',
-    'instruction:1:4',
-    'instruction:2:0',
-    'removed:2',
-  ]);
-  assert.deepEqual(
-    hostLeases,
-    Array.from({length: 4}, () => [true, false, false]),
-  );
-  assert.equal(node.process, null);
-  assert.equal(node.flags & 1, 0);
-  assert.equal(scheduler.hasActiveInvocation, false);
-  assert.equal(scheduler.hasActiveProcessPoll, false);
-  assert.equal(scheduler.firstThread, node);
-  assert.equal(node.next, null);
+    assert.equal(await scheduler.run(), 2);
+    assert.deepEqual(order, [
+      'poll',
+      'dispose',
+      'host:poll',
+      'instruction:1:0',
+      'host:sync',
+      'instruction:1:1',
+      'host:async',
+      'instruction:1:2',
+      'instruction:1:3',
+      'host:microtasks',
+      'instruction:1:4',
+      'instruction:2:0',
+      'removed:2',
+    ]);
+    assert.deepEqual(
+      hostLeases,
+      Array.from({length: 4}, () => [true, false, false]),
+    );
+    assert.equal(node.process, null);
+    assert.equal(node.flags & 1, 0);
+    assert.equal(scheduler.hasActiveInvocation, false);
+    assert.equal(scheduler.hasActiveProcessPoll, false);
+    assert.equal(scheduler.firstThread, node);
+    assert.equal(node.next, null);
+    scheduler.removeAllChildren();
+    assert.equal(child.disposed, true);
+  });
+}
+
+test('browser profile services background work after a cheap complete traversal, including polling-only passes', async (t) => {
+  setRuntimeProfile('browser-optimized');
+  t.after(() => setRuntimeProfile('native'));
+  t.mock.method(performance, 'now', () => 0);
+  const order = [];
+  let calls = 0;
+  const scheduler = new BurikoBpScheduler(root(), (state) => {
+    order.push(state.id);
+    return state.id === 1 && calls++ === 0 ? 2 : 1;
+  });
+  scheduler.attachDataCodecWorkers({hasPendingWork: () => true});
+  const first = scheduler.append(thread(1));
+  const second = scheduler.append(thread(2));
+  let hostLease;
+  const pulse = () =>
+    setTimeout(() => {
+      order.push('host');
+      hostLease = [scheduler.hasActiveInvocation, scheduler.hasActiveProcessPoll];
+    }, 0);
+  let timer = pulse();
+  t.after(() => clearTimeout(timer));
+  assert.equal(await scheduler.run(), 0);
+  assert.deepEqual(order, [1, 1, 2, 'host']);
+  assert.deepEqual(hostLease, [true, false]);
+  order.length = 0;
+  for (const node of [first, second])
+    node.installProcess({
+      enqueueMessage() {},
+      poll() {
+        order.push(`poll:${node.state.id}`);
+        return 0;
+      },
+      dispose() {},
+    });
+  timer = pulse();
+  assert.equal(await scheduler.run(), 0);
+  assert.deepEqual(order, ['poll:1', 'poll:2', 'host']);
+  assert.deepEqual(hostLease, [true, false]);
   scheduler.removeAllChildren();
-  assert.equal(child.disposed, true);
 });
 
 test('thread destruction frees local storage before process and recursively removes shared borrowers', () => {

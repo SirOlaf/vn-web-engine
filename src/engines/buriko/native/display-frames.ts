@@ -75,11 +75,21 @@ export class BurikoDisplayFrames {
   ): Promise<number> {
     const finishTiming = beginRuntimeSpan('buriko.display.present');
     try {
-      this.device.prepare(count, rectangles, x, y);
+      const finishPrepare = beginRuntimeSpan('buriko.display.prepare');
+      try {
+        this.device.prepare(count, rectangles, x, y);
+      } finally {
+        finishPrepare?.({rectangles: count, full: rectangles === null});
+      }
       const result = {waitCount: 0};
       await this.device.present(result);
-      await this.paintInline();
-      this.children.invalidateVisible();
+      const finishAfterPresent = beginRuntimeSpan('buriko.display.after-present');
+      try {
+        await this.paintInline();
+        this.children.invalidateVisible();
+      } finally {
+        finishAfterPresent?.();
+      }
       return result.waitCount;
     } finally {
       finishTiming?.();

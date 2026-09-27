@@ -18,6 +18,40 @@ import {burikoRosettaSseReciprocal} from './cpu-numerical-profile.js';
 export {burikoRosettaSseReciprocal} from './cpu-numerical-profile.js';
 const f32 = Math.fround;
 
+let rgbaCoefficientWeight = -1;
+let rgbaCoefficients: Uint32Array | undefined;
+
+/** One transparency's alpha pairs; the flag distinguishes a cached transparent result. */
+function rgbaPairCoefficients(weight: number): Uint32Array {
+  rgbaCoefficients ??= new Uint32Array(65536);
+  if (rgbaCoefficientWeight !== weight) {
+    rgbaCoefficients.fill(0);
+    rgbaCoefficientWeight = weight;
+  }
+  return rgbaCoefficients;
+}
+
+function cachedRgbaPairPixel(
+  source: number,
+  destination: number,
+  weight: number,
+  coefficients: Uint32Array,
+): number {
+  const key = ((source >>> 24) << 8) | (destination >>> 24);
+  let entry = coefficients[key]!;
+  if (entry === 0) {
+    const sourceAlpha = f32((source >>> 24) * f32((256 - weight) / 256)),
+      destinationAlpha = f32(f32((destination >>> 24) / 256) * f32(256 - sourceAlpha)),
+      alpha = f32(sourceAlpha + destinationAlpha),
+      reciprocal = burikoRosettaSseReciprocal(alpha === 0 ? 1 : alpha),
+      first = Math.trunc(f32(f32(reciprocal * sourceAlpha) * 256)),
+      second = Math.trunc(f32(f32(reciprocal * destinationAlpha) * 256));
+    entry = 0x80000000 | (Math.trunc(alpha) << 18) | (second << 9) | first;
+    coefficients[key] = entry;
+  }
+  return weightedRgb(source, destination, entry & 511, (entry >>> 9) & 511, (entry >>> 18) & 255);
+}
+
 function weightedRgb(
   source: number,
   destination: number,
@@ -78,8 +112,62 @@ export function burikoAlphaTailPixel(
   );
 }
 
+/** Validated rows retain native source-pair/destination-pair loads and odd-tail arithmetic. */
+function blendInitializedRgba(
+  destination: BurikoBitmap,
+  source: BurikoBitmap,
+  weight: number,
+  opaqueShortcut: boolean,
+): boolean {
+  if (!Number.isInteger(weight) || weight < 0 || weight > 256) return false;
+  const width = source.width >>> 0,
+    height = source.height >>> 0,
+    input = initializedBurikoBitmapView(source, width, height),
+    output = initializedBurikoBitmapView(destination, width, height);
+  // Requiring initialized output permits direct stores without changing any validity
+  // metadata. Missing or partially initialized storage retains checked fault order.
+  if (input === null || output === null) return false;
+  const coefficients = rgbaPairCoefficients(weight);
+  for (let y = 0; y < height; y++) {
+    const sourceRow = source.offset + y * source.stride,
+      targetRow = destination.offset + y * destination.stride;
+    let x = 0;
+    for (; x + 1 < width; x += 2) {
+      const at = x * 4,
+        first = input.getUint32(sourceRow + at, true),
+        second = input.getUint32(sourceRow + at + 4, true);
+      if (first >>> 24 === 0 && second >>> 24 === 0) continue;
+      if (opaqueShortcut && first >>> 24 === 255 && second >>> 24 === 255) {
+        output.setUint32(targetRow + at, first, true);
+        output.setUint32(targetRow + at + 4, second, true);
+      } else {
+        const oldFirst = output.getUint32(targetRow + at, true),
+          oldSecond = output.getUint32(targetRow + at + 4, true),
+          resultFirst = cachedRgbaPairPixel(first, oldFirst, weight, coefficients),
+          resultSecond = cachedRgbaPairPixel(second, oldSecond, weight, coefficients);
+        output.setUint32(targetRow + at, resultFirst, true);
+        output.setUint32(targetRow + at + 4, resultSecond, true);
+      }
+    }
+    if (x < width) {
+      const at = x * 4,
+        pixel = input.getUint32(sourceRow + at, true);
+      if (pixel >>> 24 !== 0)
+        output.setUint32(
+          targetRow + at,
+          opaqueShortcut && pixel >>> 24 === 255
+            ? pixel
+            : burikoAlphaTailPixel(pixel, output.getUint32(targetRow + at, true), weight),
+          true,
+        );
+    }
+  }
+  return true;
+}
+
 /** 14003d690: normal format-2 over format-2, with native pair shortcuts and integer tail. */
 function blendBurikoAlphaPixels(destination: BurikoBitmap, source: BurikoBitmap): void {
+  if (blendInitializedRgba(destination, source, 0, true)) return;
   // One scratch tuple per operation avoids allocating a destination pair for
   // every pixel pair. Read both values before writing to preserve MOVQ overlap.
   const oldPixels: [number, number] = [0, 0];
@@ -119,6 +207,7 @@ function blendBurikoAlphaWithTransparencyPixels(
   source: BurikoBitmap,
   destinationWeight: number,
 ): void {
+  if (blendInitializedRgba(destination, source, destinationWeight, false)) return;
   visitBurikoPixelPairsReusingSource(
     destination,
     source,

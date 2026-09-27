@@ -63,15 +63,23 @@ test('native alpha mixing weights colors by coverage and retains reciprocal-tabl
 });
 
 test('sprite mixing preserves all alpha pairs and native quantization across changing factors', () => {
-  const first = allocateBurikoBitmap(256, 256, 2),
-    second = allocateBurikoBitmap(256, 256, 2),
-    output = allocateBurikoBitmap(256, 256, 2),
-    expected = allocateBurikoBitmap(256, 256, 2);
-  for (let a = 0; a < 256; a++)
-    for (let b = 0; b < 256; b++) {
-      const offset = (a * 256 + b) * 4;
-      first.storage.view.setUint32(offset, (a << 24) | 0x00ff80, true);
-      second.storage.view.setUint32(offset, (b << 24) | 0xff007f, true);
+  // All alpha pairs, then every four-pixel arrangement of binary coverage.
+  // Padded rows and the final single-pixel tail retain their native traversal.
+  const create = () => ({...allocateBurikoBitmap(260, 261, 2), width: 257}),
+    first = create(),
+    second = create(),
+    output = create(),
+    expected = create();
+  for (let a = 0; a < first.height; a++)
+    for (let b = 0; b < first.width; b++) {
+      const offset = a * first.stride + b * 4,
+        binaryIndex = (a - 256) * first.width + b,
+        arrangement = binaryIndex >>> 2,
+        lane = (binaryIndex & 3) * 2,
+        firstAlpha = a < 256 ? a & 255 : ((arrangement >>> lane) & 1) * 255,
+        secondAlpha = a < 256 ? b & 255 : ((arrangement >>> (lane + 1)) & 1) * 255;
+      first.storage.view.setUint32(offset, (firstAlpha << 24) | 0x00ff80, true);
+      second.storage.view.setUint32(offset, (secondAlpha << 24) | 0xff007f, true);
     }
   first.storage.written(0, first.storage.bytes.length);
   second.storage.written(0, second.storage.bytes.length);
@@ -88,7 +96,7 @@ test('sprite mixing preserves all alpha pairs and native quantization across cha
 });
 
 test('sprite mixing retains alias traversal, unwritten faults, and partial output validity', () => {
-  function run(format, configure, checked) {
+  function run(format, configure, checked, factor) {
     const bytes = Uint8Array.from({length: 160}, (_, index) => (index * 67) & 255),
       storage = new BurikoBitmapStorage(bytes, true),
       first = {storage, offset: 8, stride: 32, width: 5, height: 3, format, bytesPerPixel: 4},
@@ -98,7 +106,7 @@ test('sprite mixing retains alias traversal, unwritten faults, and partial outpu
     if (checked) first.storage.initializedView = () => null;
     let error;
     try {
-      mixBurikoBitmaps(output, first, second, 129, null, 0);
+      mixBurikoBitmaps(output, first, second, factor, null, 0);
     } catch (failure) {
       error = failure.message;
     }
@@ -135,8 +143,12 @@ test('sprite mixing retains alias traversal, unwritten faults, and partial outpu
     },
   ];
   for (const format of [1, 2])
-    for (const configure of cases)
-      assert.deepEqual(run(format, configure, false), run(format, configure, true));
+    for (const factor of [129, 256])
+      for (const configure of cases)
+        assert.deepEqual(
+          run(format, configure, false, factor),
+          run(format, configure, true, factor),
+        );
 });
 
 test('bitmap operation strips use actual worker capacity and complete every normal draw job', () => {

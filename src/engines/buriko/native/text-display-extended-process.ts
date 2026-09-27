@@ -14,6 +14,7 @@ import {
   releaseBurikoHorizontalTextLayout,
   type BurikoHorizontalTextEffect,
   type BurikoHorizontalTextLayoutNode,
+  type BurikoHorizontalTextLayoutResult,
 } from './text-layout-horizontal.js';
 import {
   addBurikoHorizontalReadings,
@@ -97,22 +98,28 @@ export class BurikoExtendedTextDisplayProcess extends BurikoTextDisplayProcess {
         originalExtent = this.window.lineExtent,
         maximum = {value: originalExtent},
         effect = disableEffect === 0 ? this.effect : BURIKO_DISABLED_HORIZONTAL_TEXT_EFFECT;
-      const built = await runAsActor(() =>
-        buildBurikoHorizontalTextLayout(this.settings, {
-          source,
-          readingEnabled: reading,
-          annotations: this.settings.annotations,
-          cursor,
-          rectangle: region,
-          lineAdvance: this.window.textLineAdvance(),
-          fontId: this.window.fontId,
-          proportional: this.window.characterSpacing,
-          wrapping,
-          color: this.color,
-          effect,
-          maximumFontSize: maximum,
-        }),
-      );
+      const finishBuildTiming = beginRuntimeSpan('buriko.text.prepare.build');
+      let built: BurikoHorizontalTextLayoutResult;
+      try {
+        built = await runAsActor(() =>
+          buildBurikoHorizontalTextLayout(this.settings, {
+            source,
+            readingEnabled: reading,
+            annotations: this.settings.annotations,
+            cursor,
+            rectangle: region,
+            lineAdvance: this.window.textLineAdvance(),
+            fontId: this.window.fontId,
+            proportional: this.window.characterSpacing,
+            wrapping,
+            color: this.color,
+            effect,
+            maximumFontSize: maximum,
+          }),
+        );
+      } finally {
+        finishBuildTiming?.();
+      }
       this.nodes = built.nodes;
       if (
         textByte(source.bytes, source.offset) !== 0 &&
@@ -120,27 +127,38 @@ export class BurikoExtendedTextDisplayProcess extends BurikoTextDisplayProcess {
       )
         runAsActor(() => this.window.setLineExtent(maximum.value));
       if (built.result !== 0) {
-        if (reading !== 0)
-          await runAsActor(() =>
-            addBurikoHorizontalReadings(
-              this.settings,
-              this.nodes,
-              this.window.fontId,
-              this.readingColor,
-              effect,
-              this.settings.annotations,
-            ),
+        if (reading !== 0) {
+          const finishReadingsTiming = beginRuntimeSpan('buriko.text.prepare.readings');
+          try {
+            await runAsActor(() =>
+              addBurikoHorizontalReadings(
+                this.settings,
+                this.nodes,
+                this.window.fontId,
+                this.readingColor,
+                effect,
+                this.settings.annotations,
+              ),
+            );
+          } finally {
+            finishReadingsTiming?.({nodes: this.nodes.length});
+          }
+        }
+        const finishAlignmentTiming = beginRuntimeSpan('buriko.text.prepare.align');
+        try {
+          alignBurikoHorizontalTextNodes(
+            this.settings,
+            this.nodes,
+            cursor,
+            region,
+            this.window.fontId,
+            wrapping,
+            effect,
+            this.window.alignment,
           );
-        alignBurikoHorizontalTextNodes(
-          this.settings,
-          this.nodes,
-          cursor,
-          region,
-          this.window.fontId,
-          wrapping,
-          effect,
-          this.window.alignment,
-        );
+        } finally {
+          finishAlignmentTiming?.({nodes: this.nodes.length});
+        }
         runAsActor(() => this.window.setTextCursor(cursor.x, cursor.y));
         this.readingEnabled = reading | 0;
         this.schedule(0);

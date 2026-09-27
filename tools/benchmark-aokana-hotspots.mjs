@@ -51,10 +51,22 @@ function populate(bytes, seed) {
   }
 }
 
-function bitmap(lib, seed, format = 2) {
-  const storage = new lib.BurikoBitmapStorage(new Uint8Array(1280 * 720 * 4), true);
+function bitmap(lib, seed, format = 2, width = 1280, height = 720) {
+  const storage = new lib.BurikoBitmapStorage(new Uint8Array(width * height * 4), true);
   populate(storage.bytes, seed);
-  return {storage, offset: 0, stride: 1280 * 4, width: 1280, height: 720, format, bytesPerPixel: 4};
+  return {storage, offset: 0, stride: width * 4, width, height, format, bytesPerPixel: 4};
+}
+
+function rgbaMix(lib, factor) {
+  const output = bitmap(lib, 123, 2, 2790, 2056),
+    first = bitmap(lib, 456, 2, 2790, 2056),
+    second = bitmap(lib, 789, 2, 2790, 2056);
+  return {
+    run() {
+      lib.mixBurikoBitmaps(output, first, second, factor, null, 0);
+      return output.storage.bytes;
+    },
+  };
 }
 
 function blend(lib, operation) {
@@ -296,6 +308,10 @@ for (const [name, create] of [
   ['Alpha into RGB, 720p', (lib) => blend(lib, 'alpha')],
   ['All-channel crossfade, 720p', (lib) => blend(lib, 'crossfade')],
   ['Fused transition, 720p', (lib) => blend(lib, 'fused')],
+  ...[0, 78, 177, 256].map((factor) => [
+    `RGBA sprite mix, 2790x2056 factor ${factor}`,
+    (lib) => rgbaMix(lib, factor),
+  ]),
   ['Affine scene, 1080p with 720 strip draws', affineScene],
   ['Ogg checksums, 128 maximum-size pages', oggChecksum],
   ['Import packed BGR24, 720p', importRgb],

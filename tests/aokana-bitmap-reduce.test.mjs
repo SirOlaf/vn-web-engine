@@ -54,13 +54,15 @@ test('checked reduction retains stride, pair aliasing, odd-edge and destination 
   ]) {
     const create = (scalar) => {
       const bytes = pattern(256),
-        // Imported per-byte validity has no initialized-prefix proof, retaining scalar checks.
         sourceStorage = scalar
           ? BurikoBitmapStorage.tracked(bytes, new Uint8Array(bytes.length).fill(1))
           : new BurikoBitmapStorage(bytes, true),
         destinationStorage = alias
           ? sourceStorage
           : new BurikoBitmapStorage(new Uint8Array(128).fill(0xcc), false);
+      // Keep the checked traversal as an independent reference even when tracked
+      // validity imports establish the same contiguous initialization proof.
+      if (scalar) sourceStorage.initializedView = () => null;
       return {
         source: descriptor(sourceStorage, 9, 5, sourceStride, sourceOffset),
         destination: descriptor(destinationStorage, 6, 4, destinationStride, destinationOffset),
@@ -81,6 +83,53 @@ test('checked reduction retains stride, pair aliasing, odd-edge and destination 
       assert.deepEqual(checked.destination.storage.initializedRange(0, 128), initialized);
       assert.equal(checked.destination.storage.bytes[28], 0xcc, 'row padding remains untouched');
     }
+  }
+});
+
+test('large reduction retains byte rounding, odd tails and padding across RGB and RGBA planes', () => {
+  for (const [width, height, destinationWidth, destinationHeight, format] of [
+    [129, 131, 67, 67, 1],
+    [130, 132, 65, 66, 2],
+    [137, 133, 63, 65, 2],
+  ]) {
+    const sourceStride = width * 4 + 12,
+      destinationStride = destinationWidth * 4 + 20,
+      create = (scalar) => {
+        const bytes = pattern(sourceStride * height + 4),
+          sourceStorage = scalar
+            ? BurikoBitmapStorage.tracked(bytes, new Uint8Array(bytes.length).fill(1))
+            : new BurikoBitmapStorage(bytes, true),
+          destinationStorage = new BurikoBitmapStorage(
+            new Uint8Array(destinationStride * destinationHeight + 8).fill(0xcc),
+            false,
+          );
+        if (scalar) sourceStorage.initializedView = () => null;
+        return {
+          source: {...descriptor(sourceStorage, width, height, sourceStride, 4), format},
+          destination: {
+            ...descriptor(
+              destinationStorage,
+              destinationWidth,
+              destinationHeight,
+              destinationStride,
+              8,
+            ),
+            format,
+          },
+        };
+      };
+    const accelerated = create(false),
+      scalar = create(true);
+    reduceBurikoBitmapHalf(accelerated.destination, accelerated.source);
+    reduceBurikoBitmapHalf(scalar.destination, scalar.source);
+    assert.deepEqual(accelerated.destination.storage.bytes, scalar.destination.storage.bytes);
+    assert.deepEqual(
+      accelerated.destination.storage.initializedRange(
+        0,
+        accelerated.destination.storage.bytes.length,
+      ),
+      scalar.destination.storage.initializedRange(0, scalar.destination.storage.bytes.length),
+    );
   }
 });
 

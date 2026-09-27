@@ -8,7 +8,8 @@ import type {BurikoGridEvaluationWorkers} from '../native/grid-evaluation-worker
 import type {BurikoDataCodecWorkers} from '../native/data-codec-workers.js';
 import type {BurikoSharedLoaderWorker} from '../native/shared-loader-worker.js';
 import {HostTaskBudget, yieldToHost} from '../../../core/host-task-budget.js';
-import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
+import {beginRuntimeSpan, recordRuntimeMetric} from '../../../platform/runtime-performance.js';
+import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
 
 export const BURIKO_BP_BURST_INSTRUCTIONS = 0x400000;
 export type BurikoBpSchedulerResult = 0 | 1 | 2;
@@ -120,6 +121,9 @@ export class BurikoBpScheduler {
   exclusiveMode = false;
   private running = false;
   private readonly hostBudget = new HostTaskBudget();
+  private browserOptimized = false;
+  private budgetYields = 0;
+  private backgroundYields = 0;
   private invocationToken: object | null = null;
   private dispatchingInstruction: BurikoBpThread | null = null;
   private processPollToken: object | null = null;
@@ -277,13 +281,25 @@ export class BurikoBpScheduler {
     this.gridEvaluationWorkers = workers;
   }
 
-  private yieldBackgroundWork(): Promise<void> | undefined {
+  private checkpointHostBudget(): Promise<void> | undefined {
+    const pending = this.hostBudget.checkpoint();
+    if (pending !== undefined) this.budgetYields++;
+    return pending;
+  }
+
+  private yieldBackgroundWork(endOfTraversal = false): Promise<void> | undefined {
     const gridPending = this.gridEvaluationWorkers?.hasPendingWork() ?? false,
       codecPending = this.dataCodecWorkers?.hasPendingWork() ?? false,
       loaderPending = this.sharedLoaderWorker?.hasPendingWork() ?? false;
-    if (gridPending || codecPending || loaderPending)
+    if (
+      (gridPending || codecPending || loaderPending) &&
+      (!this.browserOptimized ||
+        (endOfTraversal && this.backgroundYields === 0 && this.budgetYields === 0))
+    ) {
+      this.backgroundYields++;
       return yieldToHost().then(() => this.hostBudget.reset());
-    return this.hostBudget.checkpoint();
+    }
+    return this.checkpointHostBudget();
   }
 
   attachDataCodecWorkers(workers: BurikoDataCodecWorkers): void {
@@ -380,11 +396,23 @@ export class BurikoBpScheduler {
       throw new Error('Buriko scheduler instruction executor is not bound');
     const token = this.beginInvocation();
     this.running = true;
+    // Snapshot the shared preference once per pass. Native retains each existing
+    // background turn; the browser variant coalesces them without ending BP traversal.
+    this.browserOptimized = getRuntimeProfile() === 'browser-optimized';
+    this.budgetYields = 0;
+    this.backgroundYields = 0;
+    if (this.browserOptimized) this.hostBudget.reset();
     const finishTiming = beginRuntimeSpan('buriko.vm.scheduler', undefined, 16);
     try {
       return await this.runInvocation(executeInstruction, token);
     } finally {
-      finishTiming?.();
+      finishTiming?.({
+        browserOptimized: this.browserOptimized,
+        backgroundYields: this.backgroundYields,
+        budgetYields: this.budgetYields,
+      });
+      recordRuntimeMetric('buriko.vm.background-yields', this.backgroundYields);
+      recordRuntimeMetric('buriko.vm.budget-yields', this.budgetYields);
       this.running = false;
       this.endInvocation(token);
     }
@@ -398,7 +426,7 @@ export class BurikoBpScheduler {
     let condition = false;
     let node = this.root.next;
     while (node !== null) {
-      const pending = this.hostBudget.checkpoint();
+      const pending = this.checkpointHostBudget();
       if (pending !== undefined) await pending;
       if (this.exclusiveMode && node !== this.exclusiveThread) {
         node = node.next;
@@ -419,7 +447,7 @@ export class BurikoBpScheduler {
         const processResult = typeof pollResult === 'number' ? pollResult : await pollResult;
         // A completed process can do substantial work before releasing this child.
         // Service the host before starting an instruction on the same child.
-        const pending = this.hostBudget.checkpoint();
+        const pending = this.checkpointHostBudget();
         if (pending !== undefined) await pending;
         if (processResult === 0 || processResult === -1) {
           if (processResult === -1) stop = true;
@@ -458,7 +486,7 @@ export class BurikoBpScheduler {
           // Host time slicing retains the native burst count and selected BP child.
           // Even a short sequence of native calls can exhaust a slice. Promise
           // settlement alone does not reset the budget or service host tasks.
-          const pending = this.hostBudget.checkpoint();
+          const pending = this.checkpointHostBudget();
           if (pending !== undefined) {
             finishSlice?.({instructions: sliceInstructions});
             finishSlice = undefined;
@@ -500,7 +528,7 @@ export class BurikoBpScheduler {
       if (work !== undefined) await work;
     }
     // An invocation that only polled waiting processes still cannot starve a native worker.
-    const work = this.yieldBackgroundWork();
+    const work = this.yieldBackgroundWork(true);
     if (work !== undefined) await work;
     return stop ? 1 : condition ? 2 : 0;
   }

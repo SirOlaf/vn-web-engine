@@ -6,6 +6,7 @@ import type {BurikoMountedProgramPaths} from './program-paths.js';
 import type {BurikoSpecialFolders} from './special-folders.js';
 import {BurikoMountedFileMetadata} from './file-metadata.js';
 import type {WindowsDriveTypeHost} from '../../../platform/windows-drives.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 export function terminatedNativeBytes(bytes: Uint8Array): Uint8Array {
   const end = bytes.indexOf(0);
@@ -180,7 +181,12 @@ export class BurikoProgramOutputFile {
           const source = await (files instanceof BurikoMountedFileMetadata
             ? files.openOutputContents(path)
             : files.open(path));
-          contents = new Uint8Array(await source.read(0, source.size));
+          const finish = beginRuntimeSpan('buriko.file.output-preload');
+          try {
+            contents = new Uint8Array(await source.read(0, source.size));
+          } finally {
+            finish?.({sourceBytes: source.size, completedBytes: contents.length});
+          }
         } catch (error) {
           if (!(error instanceof FileError) || error.code !== 'NOT_FOUND') throw error;
         }
@@ -442,6 +448,17 @@ export class BurikoProgramFiles {
     offset >>>= 0;
     length >>>= 0;
     if (offset >= source.size || length === 0) return new Uint8Array();
-    return source.read(offset, Math.min(length, source.size - offset));
+    const finish = beginRuntimeSpan('buriko.file.read');
+    if (!finish) return source.read(offset, Math.min(length, source.size - offset));
+    let success = false,
+      completedBytes = 0;
+    try {
+      const bytes = await source.read(offset, Math.min(length, source.size - offset));
+      success = true;
+      completedBytes = bytes.length;
+      return bytes;
+    } finally {
+      finish?.({sourceBytes: source.size, offset, requestedBytes: length, completedBytes, success});
+    }
   }
 }

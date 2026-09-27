@@ -1,5 +1,7 @@
 import {checkRange} from '../../core/binary.js';
+import {finishTask, runCooperativeTask, type CooperativeTask} from '../../core/cooperative-task.js';
 import {randomByteGenerator, signature, unsignedVarint, view} from './binary.js';
+import {beginRuntimeSpan} from '../../platform/runtime-performance.js';
 export interface BurikoImageDestination {
   readonly bytes: Uint8Array;
   readonly initialized: Uint8Array;
@@ -39,7 +41,7 @@ export function frequencyTree(weights: readonly number[]): {root: number; childr
 }
 /** Legacy CompressedBG version 1; all 8,159 CBG assets in this installation select this path. */
 export function decodeCompressedBgV1(bytes: Uint8Array): BurikoImage {
-  return decodeLegacy(bytes, true);
+  return finishTask(decodeLegacy(bytes, true));
 }
 
 /** 0x1400bfa50 accepts every non-v2 legacy version and scalar byte-channel depth. */
@@ -47,14 +49,32 @@ export function decodeCompressedBgLegacy(
   bytes: Uint8Array,
   destination?: BurikoImageDestination,
 ): BurikoImage {
-  return decodeLegacy(bytes, false, destination);
+  return finishTask(decodeLegacy(bytes, false, destination));
 }
 
-function decodeLegacy(
+/** The same legacy worker, with bounded steps and borrowed-storage validation on resumption. */
+export function decodeCompressedBgLegacyAsync(
+  bytes: Uint8Array,
+  destination?: BurikoImageDestination,
+  beforeResume?: () => void,
+): Promise<BurikoImage> {
+  return runCooperativeTask(decodeLegacy(bytes, false, destination), beforeResume);
+}
+
+/** Add four byte lanes independently, retaining each native byte store's wraparound. */
+function addPixelBytes(first: number, second: number): number {
+  const mask = 0x00ff00ff;
+  return (
+    (((first & mask) + (second & mask)) & mask) |
+    (((((first >>> 8) & mask) + ((second >>> 8) & mask)) & mask) << 8)
+  );
+}
+
+function* decodeLegacy(
   bytes: Uint8Array,
   strictVersionOne: boolean,
   destination?: BurikoImageDestination,
-): BurikoImage {
+): CooperativeTask<BurikoImage> {
   checkRange(bytes.length, 0, 48);
   if (
     !signature(bytes, 'CompressedBG___\0') ||
@@ -83,6 +103,7 @@ function decodeLegacy(
     table[i] = value;
     sum = (sum + value) & 255;
     xor ^= value;
+    if ((i & 16383) === 16383) yield;
   }
   if (sum !== bytes[44] || xor !== bytes[45])
     throw new Error('CompressedBG table checksum mismatch');
@@ -101,162 +122,242 @@ function decodeLegacy(
   const tree = frequencyTree(weights),
     bitBytes = bytes.subarray(48 + tableSize),
     intermediate = new Uint8Array(intermediateSize);
-  // Pack the first node and, where both codes fit, a second symbol into one
-  // twelve-bit lookup. Scalar tails retain the exact invalid-branch and
-  // truncated-bitstream behavior. Entry fields, from the low bit: first code
-  // length (4), pair length (4; zero means no pair), first node (9; 511 is an
-  // absent child), second symbol (8). A 256-leaf tree has at most 511 nodes.
-  const prefixBits = 12,
-    prefixTable = new Int32Array(1 << prefixBits);
-  for (let prefix = 0; prefix < prefixTable.length; prefix++) {
-    let node: number | undefined = tree.root,
-      consumed = 0;
-    while (consumed < prefixBits && node !== undefined && node >= 256) {
-      node = tree.children[node]![(prefix >>> (prefixBits - 1 - consumed)) & 1];
-      consumed++;
-    }
-    let entry = ((node ?? 511) << 8) | consumed;
-    if (node !== undefined && node < 256) {
-      let second: number | undefined = tree.root,
-        total = consumed;
-      while (total < prefixBits && second !== undefined && second >= 256) {
-        second = tree.children[second]![(prefix >>> (prefixBits - 1 - total)) & 1];
-        total++;
+  let finishPhase = beginRuntimeSpan('buriko.decode.cbg.entropy');
+  try {
+    // Fill each leaf's contiguous prefix range once. A sixteen-bit prefix
+    // then emits up to four symbols; long codes retain the scalar tree walk.
+    // Node fields: consumed bits (5), first node (9; 511 is an absent child).
+    const prefixBits = intermediate.length >= 65536 ? 16 : 12,
+      prefixNodes = new Uint16Array(1 << prefixBits),
+      prefixLengths = new Uint8Array(1 << prefixBits),
+      prefixSymbols = new Uint32Array(1 << prefixBits);
+    function fillPrefixes(node: number | undefined, prefix: number, consumed: number): void {
+      if (node === undefined || node < 256 || consumed === prefixBits) {
+        const remaining = prefixBits - consumed;
+        prefixNodes.fill(
+          ((node ?? 511) << 5) | consumed,
+          prefix << remaining,
+          (prefix + 1) << remaining,
+        );
+        return;
       }
-      if (second !== undefined && second < 256) entry |= (second << 17) | (total << 4);
+      fillPrefixes(tree.children[node]![0], prefix << 1, consumed + 1);
+      fillPrefixes(tree.children[node]![1], (prefix << 1) | 1, consumed + 1);
     }
-    prefixTable[prefix] = entry;
-  }
-  let bitPosition = 0;
-  for (let i = 0; i < intermediate.length; i++) {
-    let node: number;
-    const remaining = bitBytes.length * 8 - bitPosition;
-    if (remaining >= prefixBits) {
-      const byteIndex = bitPosition >>> 3,
-        shift = bitPosition & 7,
-        prefix =
-          (((bitBytes[byteIndex]! << 16) |
-            (bitBytes[byteIndex + 1]! << 8) |
-            bitBytes[byteIndex + 2]!) >>>
-            (24 - prefixBits - shift)) &
-          (prefixTable.length - 1),
-        entry = prefixTable[prefix]!;
-      node = (entry >>> 8) & 511;
-      if (node === 511) throw new Error('Invalid CompressedBG code');
-      const pairConsumed = (entry >>> 4) & 15;
-      if (pairConsumed !== 0 && i + 1 < intermediate.length) {
-        bitPosition += pairConsumed;
-        intermediate[i] = node;
-        intermediate[++i] = entry >>> 17;
-        continue;
+    fillPrefixes(tree.root, 0, 0);
+    for (let prefix = 0; prefix < prefixNodes.length; prefix++) {
+      let consumed = 0,
+        count = 0,
+        symbols = 0;
+      while (count < 4) {
+        const next = prefixNodes[(prefix << consumed) & (prefixNodes.length - 1)]!,
+          node = next >>> 5,
+          total = consumed + (next & 31);
+        if (node >= 256 || total > prefixBits) break;
+        symbols |= node << (count * 8);
+        consumed = total;
+        count++;
       }
-      bitPosition += entry & 15;
-    } else node = tree.root;
-    while (node >= 256) {
-      if (bitPosition >= bitBytes.length * 8) throw new Error('Truncated BURIKO bitstream');
-      const position = bitPosition++,
-        bit = (bitBytes[position >>> 3]! >>> (7 - (position & 7))) & 1,
-        child = tree.children[node]![bit];
-      if (child === undefined) throw new Error('Invalid CompressedBG code');
-      node = child;
+      prefixLengths[prefix] = consumed | (count << 5);
+      prefixSymbols[prefix] = symbols;
     }
-    intermediate[i] = node;
-  }
-  const residuals = new Uint8Array(size);
-  cursor.position = 0;
-  let p = 0,
-    literal = true;
-  while (cursor.position < intermediate.length) {
-    const count = unsignedVarint(intermediate, cursor);
-    checkRange(size, p, count);
-    if (literal) {
-      checkRange(intermediate.length, cursor.position, count);
-      residuals.set(intermediate.subarray(cursor.position, cursor.position + count), p);
-      cursor.position += count;
+    const intermediateData = view(intermediate);
+    yield;
+    let bitPosition = 0;
+    for (let i = 0; i < intermediate.length;) {
+      const end = Math.min(intermediate.length, i + 16384);
+      for (; i < end;) {
+        let node: number;
+        const remaining = bitBytes.length * 8 - bitPosition;
+        if (remaining >= prefixBits) {
+          const byteIndex = bitPosition >>> 3,
+            shift = bitPosition & 7,
+            prefix =
+              (((bitBytes[byteIndex]! << 16) |
+                (bitBytes[byteIndex + 1]! << 8) |
+                bitBytes[byteIndex + 2]!) >>>
+                (24 - prefixBits - shift)) &
+              (prefixNodes.length - 1),
+            lengths = prefixLengths[prefix]!,
+            count = lengths >>> 5;
+          if (count !== 0 && i + 4 <= intermediate.length) {
+            bitPosition += lengths & 31;
+            // The following iteration replaces unused bytes in this word. This
+            // scratch buffer remains private until all entropy decoding succeeds.
+            intermediateData.setUint32(i, prefixSymbols[prefix]!, true);
+            i += count;
+            continue;
+          }
+          const entry = prefixNodes[prefix]!;
+          node = entry >>> 5;
+          if (node === 511) throw new Error('Invalid CompressedBG code');
+          bitPosition += entry & 31;
+        } else node = tree.root;
+        while (node >= 256) {
+          if (bitPosition >= bitBytes.length * 8) throw new Error('Truncated BURIKO bitstream');
+          const position = bitPosition++,
+            bit = (bitBytes[position >>> 3]! >>> (7 - (position & 7))) & 1,
+            child = tree.children[node]![bit];
+          if (child === undefined) throw new Error('Invalid CompressedBG code');
+          node = child;
+        }
+        intermediate[i++] = node;
+      }
+      yield;
     }
-    p += count;
-    literal = !literal;
-  }
-  if (p !== size) throw new Error('CompressedBG residual size mismatch');
-  const header =
-    destination === undefined ? bytes.slice(16, 32) : destination.bytes.subarray(0, 16);
-  const pixels =
-    destination !== undefined
-      ? destination.bytes.subarray(16, 16 + width * height * outputChannels)
-      : depth === 24
-        ? new Uint8Array(width * height * 4)
-        : residuals;
-  if (width !== 0 && height !== 0) {
+    finishPhase?.({sourceBytes: bitBytes.length, intermediateBytes: intermediateSize, prefixBits});
+    finishPhase = beginRuntimeSpan('buriko.decode.cbg.runs');
+    const residuals = new Uint8Array(size);
+    cursor.position = 0;
+    let p = 0,
+      literal = true,
+      nextRunCheckpoint = 65536;
+    while (cursor.position < intermediate.length) {
+      const count = unsignedVarint(intermediate, cursor);
+      checkRange(size, p, count);
+      if (literal) {
+        checkRange(intermediate.length, cursor.position, count);
+        for (let copied = 0; copied < count;) {
+          const end = Math.min(count, copied + 65536);
+          residuals.set(
+            intermediate.subarray(cursor.position + copied, cursor.position + end),
+            p + copied,
+          );
+          copied = end;
+          if (copied < count) yield;
+        }
+        cursor.position += count;
+      }
+      p += count;
+      literal = !literal;
+      if (cursor.position >= nextRunCheckpoint) {
+        nextRunCheckpoint = cursor.position + 65536;
+        yield;
+      }
+    }
+    if (p !== size) throw new Error('CompressedBG residual size mismatch');
+    finishPhase?.({intermediateBytes: intermediateSize, residualBytes: size});
+    finishPhase = beginRuntimeSpan('buriko.decode.cbg.predictor');
+    const header =
+      destination === undefined ? bytes.slice(16, 32) : destination.bytes.subarray(0, 16);
+    const pixels =
+      destination !== undefined
+        ? destination.bytes.subarray(16, 16 + width * height * outputChannels)
+        : depth === 24
+          ? new Uint8Array(width * height * 4)
+          : residuals;
+    if (width !== 0 && height !== 0) {
+      if (depth === 24) {
+        // Reconstruct directly into expanded BGR0 pixels. Creating a subarray (or
+        // calling fill) per pixel costs much more than the three-byte predictor.
+        const stride = width * 4;
+        let source = 0;
+        for (let y = 0; y < height; y++) {
+          const row = y * stride,
+            end = row + stride;
+          if (y === 0) {
+            pixels[row] = residuals[source++]!;
+            pixels[row + 1] = residuals[source++]!;
+            pixels[row + 2] = residuals[source++]!;
+          } else {
+            pixels[row] = residuals[source++]! + pixels[row - stride]!;
+            pixels[row + 1] = residuals[source++]! + pixels[row + 1 - stride]!;
+            pixels[row + 2] = residuals[source++]! + pixels[row + 2 - stride]!;
+          }
+          pixels[row + 3] = 0;
+          if (y === 0) {
+            for (let pixel = row + 4; pixel < end; pixel += 4) {
+              pixels[pixel] = residuals[source++]! + pixels[pixel - 4]!;
+              pixels[pixel + 1] = residuals[source++]! + pixels[pixel - 3]!;
+              pixels[pixel + 2] = residuals[source++]! + pixels[pixel - 2]!;
+              pixels[pixel + 3] = 0;
+            }
+          } else {
+            for (let pixel = row + 4; pixel < end; pixel += 4) {
+              pixels[pixel] =
+                residuals[source++]! + ((pixels[pixel - stride]! + pixels[pixel - 4]!) >>> 1);
+              pixels[pixel + 1] =
+                residuals[source++]! + ((pixels[pixel + 1 - stride]! + pixels[pixel - 3]!) >>> 1);
+              pixels[pixel + 2] =
+                residuals[source++]! + ((pixels[pixel + 2 - stride]! + pixels[pixel - 2]!) >>> 1);
+              pixels[pixel + 3] = 0;
+            }
+          }
+          // Native caller destinations publish initialization after each row;
+          // this order also matters when the two caller views overlap.
+          destination?.initialized.fill(1, 16 + row, 16 + end);
+          yield;
+        }
+      } else if (depth === 32 && (pixels.byteOffset & 3) === 0) {
+        // Lanes have independent left/up dependencies. Word access is exact for aligned
+        // RGBA, including in-place residuals and masks which overlap earlier pixel rows.
+        const words = new Uint32Array(pixels.buffer, pixels.byteOffset, size / 4),
+          input = new Uint32Array(residuals.buffer, residuals.byteOffset, size / 4);
+        for (let y = 0; y < height; y++) {
+          const row = y * width,
+            end = row + width;
+          let left = y === 0 ? input[row]! : addPixelBytes(input[row]!, words[row - width]!);
+          words[row] = left;
+          for (let i = row + 1; i < end;) {
+            const limit = Math.min(end, i + 16384);
+            if (y === 0) {
+              for (; i < limit; i++) {
+                left = addPixelBytes(input[i]!, left);
+                words[i] = left;
+              }
+            } else {
+              for (; i < limit; i++) {
+                const up = words[i - width]!,
+                  average = (up & left) + (((up ^ left) & 0xfefefefe) >>> 1);
+                left = addPixelBytes(input[i]!, average);
+                words[i] = left;
+              }
+            }
+            if (i < end) {
+              yield;
+              left = words[i - 1]!;
+            }
+          }
+          destination?.initialized.fill(1, 16 + row * 4, 16 + end * 4);
+          yield;
+        }
+      } else {
+        // A byte-linear walk keeps each reconstructed left/up dependency in the
+        // same order as the native scalar predictor, for every channel depth.
+        const stride = width * channels;
+        for (let c = 0; c < channels; c++) pixels[c] = residuals[c]!;
+        for (let i = channels; i < stride; i++) pixels[i] = residuals[i]! + pixels[i - channels]!;
+        destination?.initialized.fill(1, 16, 16 + stride);
+        yield;
+        for (let y = 1; y < height; y++) {
+          const row = y * stride,
+            firstPixelEnd = row + channels,
+            end = row + stride;
+          for (let i = row; i < firstPixelEnd; i++) pixels[i] = residuals[i]! + pixels[i - stride]!;
+          for (let i = firstPixelEnd; i < end; i++)
+            pixels[i] = residuals[i]! + ((pixels[i - stride]! + pixels[i - channels]!) >>> 1);
+          destination?.initialized.fill(1, 16 + row, 16 + end);
+          yield;
+        }
+      }
+    }
     if (depth === 24) {
-      // Reconstruct directly into expanded BGR0 pixels. Creating a subarray (or
-      // calling fill) per pixel costs much more than the three-byte predictor.
-      const stride = width * 4;
-      let source = 0;
-      for (let y = 0; y < height; y++) {
-        const row = y * stride,
-          end = row + stride;
-        if (y === 0) {
-          pixels[row] = residuals[source++]!;
-          pixels[row + 1] = residuals[source++]!;
-          pixels[row + 2] = residuals[source++]!;
-        } else {
-          pixels[row] = residuals[source++]! + pixels[row - stride]!;
-          pixels[row + 1] = residuals[source++]! + pixels[row + 1 - stride]!;
-          pixels[row + 2] = residuals[source++]! + pixels[row + 2 - stride]!;
-        }
-        pixels[row + 3] = 0;
-        if (y === 0) {
-          for (let pixel = row + 4; pixel < end; pixel += 4) {
-            pixels[pixel] = residuals[source++]! + pixels[pixel - 4]!;
-            pixels[pixel + 1] = residuals[source++]! + pixels[pixel - 3]!;
-            pixels[pixel + 2] = residuals[source++]! + pixels[pixel - 2]!;
-            pixels[pixel + 3] = 0;
-          }
-        } else {
-          for (let pixel = row + 4; pixel < end; pixel += 4) {
-            pixels[pixel] =
-              residuals[source++]! + ((pixels[pixel - stride]! + pixels[pixel - 4]!) >>> 1);
-            pixels[pixel + 1] =
-              residuals[source++]! + ((pixels[pixel + 1 - stride]! + pixels[pixel - 3]!) >>> 1);
-            pixels[pixel + 2] =
-              residuals[source++]! + ((pixels[pixel + 2 - stride]! + pixels[pixel - 2]!) >>> 1);
-            pixels[pixel + 3] = 0;
-          }
-        }
-        // Native caller destinations publish initialization after each row;
-        // this order also matters when the two caller views overlap.
-        destination?.initialized.fill(1, 16 + row, 16 + end);
-      }
-    } else {
-      // A byte-linear walk keeps each reconstructed left/up dependency in the
-      // same order as the native scalar predictor, for every channel depth.
-      const stride = width * channels;
-      for (let c = 0; c < channels; c++) pixels[c] = residuals[c]!;
-      for (let i = channels; i < stride; i++) pixels[i] = residuals[i]! + pixels[i - channels]!;
-      destination?.initialized.fill(1, 16, 16 + stride);
-      for (let y = 1; y < height; y++) {
-        const row = y * stride,
-          firstPixelEnd = row + channels,
-          end = row + stride;
-        for (let i = row; i < firstPixelEnd; i++) pixels[i] = residuals[i]! + pixels[i - stride]!;
-        for (let i = firstPixelEnd; i < end; i++)
-          pixels[i] = residuals[i]! + ((pixels[i - stride]! + pixels[i - channels]!) >>> 1);
-        destination?.initialized.fill(1, 16 + row, 16 + end);
-      }
+      view(header).setUint16(4, 32, true);
+      view(header).setUint16(8, 7, true);
     }
+    finishPhase?.({width, height, depth, outputBytes: pixels.length});
+    finishPhase = undefined;
+    return {
+      width,
+      height,
+      bitDepth: view(header).getUint16(4, true),
+      flags: view(header).getUint16(8, true),
+      header,
+      pixels,
+    };
+  } finally {
+    finishPhase?.();
   }
-  if (depth === 24) {
-    view(header).setUint16(4, 32, true);
-    view(header).setUint16(8, 7, true);
-  }
-  return {
-    width,
-    height,
-    bitDepth: view(header).getUint16(4, true),
-    flags: view(header).getUint16(8, true),
-    header,
-    pixels,
-  };
 }
 /** Raw BURIKO image buffers have a 16-byte header followed by packed pixels. */
 export function readBurikoImage(bytes: Uint8Array): BurikoImage {

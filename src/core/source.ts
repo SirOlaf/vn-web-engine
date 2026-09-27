@@ -25,7 +25,13 @@ export class BlobSource implements ByteSource {
       success = true;
       return bytes;
     } finally {
-      finishTiming?.({requestedBytes: length, completedBytes: received, success});
+      finishTiming?.({
+        sourceBytes: this.size,
+        offset,
+        requestedBytes: length,
+        completedBytes: received,
+        success,
+      });
       if (success) recordRuntimeMetric('source.local-read.completed-bytes', received);
       finished(received);
     }
@@ -63,7 +69,13 @@ export class HttpSource implements ByteSource {
       success = true;
       return bytes;
     } finally {
-      finishTiming?.({requestedBytes: length, completedBytes: received, success});
+      finishTiming?.({
+        sourceBytes: this.size,
+        offset,
+        requestedBytes: length,
+        completedBytes: received,
+        success,
+      });
       if (success) recordRuntimeMetric('source.remote-read.completed-bytes', received);
       finished(received);
     }

@@ -13,9 +13,17 @@ import {
   readRasterText,
   rasterTextBitmap,
   visibleRasterText,
+  hasRasterText,
+  withRasterText,
+  clearRasterTextPresentation,
 } from '../dist/text/raster-text.js';
 import {rasterTextSlots} from '../dist/text/browser-raster-text.js';
 import {slotText} from '../dist/text/glyph-slots.js';
+import {
+  startRuntimePerformanceRecording,
+  stopRuntimePerformanceRecording,
+  getRuntimePerformanceSnapshot,
+} from '../dist/platform/runtime-performance.js';
 
 const compositor = new BurikoBitmapCompositor();
 const bitmap = (w, h, color = 0, format = 1) => {
@@ -146,4 +154,108 @@ test('textless alpha replay cannot introduce a native divide fault, while native
     () => blendBurikoAlphaWithTransparency(bitmap(3, 3, 0, 2), bitmap(3, 3, 0xffffffff, 2), 256),
     /division by zero/,
   );
+});
+
+test('cropped clears retire stale textless planes without losing retained snapshots', () => {
+  for (const direct of [false, true]) {
+    const surface = bitmap(12, 8),
+      a = glyph('A');
+    if (direct)
+      surface.storage = new surface.storage.constructor(
+        new Uint8Array(surface.storage.bytes.length + 1).subarray(1),
+        true,
+      );
+    compositor.draw(surface, 4, 0, a, 0, 0);
+    const snapshot = {
+      ...surface,
+      storage: surface.storage.cloneRange(0, surface.storage.bytes.length),
+    };
+    const nativeSnapshot = snapshot.storage.bytes.slice(),
+      blankSnapshot = rasterTextBitmap(snapshot).storage.bytes.slice();
+    for (let pass = 0; pass < 2; pass++)
+      for (let row = 0; row < 8; row += 2) {
+        const strip = {...surface, offset: row * surface.stride, height: 2};
+        if (direct) {
+          strip.storage.bytes.fill(0, strip.offset, strip.offset + strip.height * strip.stride);
+          clearRasterTextPresentation(strip);
+        } else clearBurikoBitmap(strip);
+      }
+    assert.equal(hasRasterText(surface), false);
+    assert.equal(rasterTextBitmap(surface), surface);
+    assert.ok(surface.storage.bytes.every((value) => value === 0));
+    let calls = 0;
+    const operation = withRasterText((destination) => {
+      calls++;
+      destination.storage.bytes[0] = 17;
+    });
+    operation(surface);
+    assert.equal(calls, 1);
+    assert.equal(surface.storage.bytes[0], 17);
+    surface.storage.release();
+    assert.equal(readRasterText(snapshot)[0].text, 'A');
+    assert.deepEqual(snapshot.storage.bytes, nativeSnapshot);
+    assert.deepEqual(rasterTextBitmap(snapshot).storage.bytes, blankSnapshot);
+  }
+});
+
+test('empty glyph metadata cannot retire decorative ink and repeated misses reuse a byte witness', () => {
+  const surface = bitmap(12, 8, 0xffffff);
+  recordRasterText(surface, '', {decorative: true});
+  const alternate = rasterTextBitmap(surface).storage;
+  startRuntimePerformanceRecording();
+  try {
+    for (let repeat = 0; repeat < 10; repeat++)
+      clearBurikoBitmap(surface, {left: 0, top: 0, right: 11, bottom: 3});
+    assert.equal(readRasterText(surface).length, 0);
+    assert.equal(rasterTextBitmap(surface).storage, alternate);
+    assert.equal(surface.storage.bytes[4 * surface.stride], 255);
+    assert.equal(alternate.bytes[4 * surface.stride], 0);
+    const checks = () =>
+      getRuntimePerformanceSnapshot().aggregates.find(
+        (item) => item.name === 'text.raster.retirement-checks',
+      )?.count ?? 0;
+    assert.equal(checks(), 1);
+    for (let repeat = 0; repeat < 2; repeat++)
+      clearBurikoBitmap(surface, {left: 0, top: 4, right: 11, bottom: 7});
+    assert.equal(hasRasterText(surface), false);
+    assert.equal(checks(), 2);
+    assert.ok(surface.storage.bytes.every((value) => value === 0));
+  } finally {
+    stopRuntimePerformanceRecording();
+  }
+});
+
+test('recurring text and decorative overlays retain their planes without repeated scans or clones', () => {
+  for (const decorative of [false, true]) {
+    const surface = bitmap(12, 16),
+      source = bitmap(4, 8, 0xffffff);
+    recordRasterText(source, decorative ? '' : 'A', {decorative, size: 8, width: 4});
+    compositor.draw(surface, 4, 8, source, 0, 0);
+    const alternate = rasterTextBitmap(surface).storage,
+      native = surface.storage.bytes.slice(),
+      textless = alternate.bytes.slice();
+    startRuntimePerformanceRecording();
+    try {
+      for (let frame = 0; frame < 4; frame++) {
+        for (let row = 0; row < 16; row += 2)
+          clearBurikoBitmap({...surface, offset: row * surface.stride, height: 2});
+        compositor.draw(surface, 4, 8, source, 0, 0);
+        assert.equal(rasterTextBitmap(surface).storage, alternate);
+        assert.deepEqual(surface.storage.bytes, native);
+        assert.deepEqual(alternate.bytes, textless);
+        assert.equal(readRasterText(surface).length, decorative ? 0 : 1);
+      }
+      const aggregates = getRuntimePerformanceSnapshot().aggregates;
+      assert.equal(
+        aggregates.some((item) => item.name === 'text.raster.retirement-checks'),
+        false,
+      );
+      assert.equal(
+        aggregates.find((item) => item.name === 'text.raster.replay.source-glyphs').total,
+        decorative ? 0 : 4,
+      );
+    } finally {
+      stopRuntimePerformanceRecording();
+    }
+  }
 });

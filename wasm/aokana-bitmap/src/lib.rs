@@ -8,6 +8,62 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 }
 
 #[inline]
+fn average_bytes(first: u32, second: u32) -> u32 {
+    (first | second).wrapping_sub(((first ^ second) & 0xfefefefe) >> 1)
+}
+
+/// Nonaliased initialized rows from 0549E0/053750. PAVGB rounds upward after
+/// the vertical pair, then again after the horizontal pair, including RGB byte 4.
+#[no_mangle]
+pub unsafe extern "C" fn reduce_half(
+    source: *const u32,
+    destination: *mut u32,
+    pair_width: usize,
+    pair_height: usize,
+    odd_column: usize,
+    odd_row: usize,
+) {
+    let source_width = pair_width * 2 + odd_column;
+    let destination_width = pair_width + odd_column;
+    for row in 0..pair_height + odd_row {
+        let top = source.add(row * 2 * source_width);
+        // Duplicating the final odd row leaves the first upward average unchanged.
+        let bottom = if row < pair_height {
+            top.add(source_width)
+        } else {
+            top
+        };
+        let output = destination.add(row * destination_width);
+        let mut column = 0;
+        while column + 4 <= pair_width {
+            let first = u8x16_avgr(
+                v128_load(top.add(column * 2) as *const v128),
+                v128_load(bottom.add(column * 2) as *const v128),
+            );
+            let second = u8x16_avgr(
+                v128_load(top.add(column * 2 + 4) as *const v128),
+                v128_load(bottom.add(column * 2 + 4) as *const v128),
+            );
+            let even = i32x4_shuffle::<0, 2, 4, 6>(first, second);
+            let odd = i32x4_shuffle::<1, 3, 5, 7>(first, second);
+            v128_store(output.add(column) as *mut v128, u8x16_avgr(even, odd));
+            column += 4;
+        }
+        while column < pair_width {
+            *output.add(column) = average_bytes(
+                average_bytes(*top.add(column * 2), *bottom.add(column * 2)),
+                average_bytes(*top.add(column * 2 + 1), *bottom.add(column * 2 + 1)),
+            );
+            column += 1;
+        }
+        if odd_column != 0 {
+            *output.add(pair_width) =
+                average_bytes(*top.add(pair_width * 2), *bottom.add(pair_width * 2));
+        }
+    }
+}
+
+#[inline]
 unsafe fn affine_pixel(source: *const u32, width: i32, height: i32, x: i32, y: i32) -> u32 {
     if x >= 0 && y >= 0 && x < width && y < height {
         *source.add((y * width + x) as usize)
@@ -116,10 +172,249 @@ pub unsafe extern "C" fn affine_copy(
     }
 }
 
-/// Initialized RGBA-over-RGB 052710 sampling. The host supplies a complete source
-/// footprint and retains native Q16 coordinates relative to that footprint.
-#[no_mangle]
-pub unsafe extern "C" fn affine_alpha_rgb(
+#[inline]
+unsafe fn affine_alpha_four(pixels: v128, old: v128, opacity: v128) -> v128 {
+    let alpha = i8x16_swizzle(
+        pixels,
+        i8x16(3, 3, 3, 3, 7, 7, 7, 7, 11, 11, 11, 11, 15, 15, 15, 15),
+    );
+    // Affine entry 127 uses numerator 128 even when overall opacity is reduced.
+    let half = i8x16_add(
+        u8x16_shr(alpha, 1),
+        v128_and(u8x16_ge(alpha, u8x16_splat(254)), i8x16_splat(1)),
+    );
+    let low = u16x8_shr(i16x8_mul(u16x8_extend_low_u8x16(half), opacity), 8);
+    let high = u16x8_shr(i16x8_mul(u16x8_extend_high_u8x16(half), opacity), 8);
+    v128_bitselect(
+        weighted_bytes(pixels, old, low, high),
+        old,
+        i32x4_splat(0x00ffffff),
+    )
+}
+
+#[inline]
+unsafe fn affine_lerp_four(first: v128, second: v128, fraction: v128) -> v128 {
+    u8x16_narrow_i16x8(
+        affine_lerp(
+            u16x8_extend_low_u8x16(first),
+            u16x8_extend_low_u8x16(second),
+            fraction,
+        ),
+        affine_lerp(
+            u16x8_extend_high_u8x16(first),
+            u16x8_extend_high_u8x16(second),
+            fraction,
+        ),
+    )
+}
+
+/// Four adjacent output pixels have four adjacent source pixels when the column
+/// increment is exactly one pixel. Row increments remain independent and wrapping.
+/// Border pixels retain the same scalar zero taps as the general affine kernel.
+unsafe fn affine_alpha_horizontal<const BILINEAR: bool>(
+    source: *const u32,
+    destination: *mut u32,
+    source_width: i32,
+    source_height: i32,
+    width: usize,
+    height: usize,
+    mut start_x: i32,
+    mut start_y: i32,
+    row_x: i32,
+    row_y: i32,
+    opacity: u32,
+) {
+    let opacity_vector = i16x8_splat(opacity as i16);
+    for row in 0..height {
+        let mut fixed_x = start_x;
+        let fixed_y = start_y;
+        let y = if BILINEAR {
+            fixed_y >> 16
+        } else {
+            fixed_y.wrapping_add(0x8000) >> 16
+        };
+        let fraction_x = i16x8_splat(((start_x as u32 >> 12) & 15) as i16);
+        let fraction_y = i16x8_splat(((start_y as u32 >> 12) & 15) as i16);
+        let mut column = 0;
+        while column < width {
+            let x = if BILINEAR {
+                fixed_x >> 16
+            } else {
+                fixed_x.wrapping_add(0x8000) >> 16
+            };
+            if column + 4 <= width
+                && x >= 0
+                && y >= 0
+                && x + 3 + (BILINEAR as i32) < source_width
+                && y + (BILINEAR as i32) < source_height
+            {
+                let top = source.add((y * source_width + x) as usize);
+                let pixels = if BILINEAR {
+                    let bottom = top.add(source_width as usize);
+                    affine_lerp_four(
+                        affine_lerp_four(
+                            v128_load(top as *const v128),
+                            v128_load(top.add(1) as *const v128),
+                            fraction_x,
+                        ),
+                        affine_lerp_four(
+                            v128_load(bottom as *const v128),
+                            v128_load(bottom.add(1) as *const v128),
+                            fraction_x,
+                        ),
+                        fraction_y,
+                    )
+                } else {
+                    v128_load(top as *const v128)
+                };
+                let target = destination.add(row * width + column);
+                v128_store(
+                    target as *mut v128,
+                    affine_alpha_four(pixels, v128_load(target as *const v128), opacity_vector),
+                );
+                fixed_x = fixed_x.wrapping_add(4 * 65536);
+                column += 4;
+            } else {
+                let pixel = affine_sample(
+                    source,
+                    source_width,
+                    source_height,
+                    fixed_x,
+                    fixed_y,
+                    BILINEAR as u32,
+                );
+                let alpha = pixel >> 25;
+                let coefficient = (if alpha == 127 { 128 } else { alpha }) * opacity >> 8;
+                if coefficient != 0 {
+                    let target = destination.add(row * width + column);
+                    *target = weighted_pixel(pixel, *target, coefficient, true);
+                }
+                fixed_x = fixed_x.wrapping_add(65536);
+                column += 1;
+            }
+        }
+        start_x = start_x.wrapping_add(row_x);
+        start_y = start_y.wrapping_add(row_y);
+    }
+}
+
+/// Four unrelated source addresses share channel arithmetic. Coordinates retain
+/// signed Q16 wrapping; missing border taps use the checked one-pixel sampler.
+#[inline]
+unsafe fn affine_sample_four<const BILINEAR: bool>(
+    source: *const u32,
+    source_width: i32,
+    source_height: i32,
+    fixed_x: v128,
+    fixed_y: v128,
+) -> v128 {
+    let rounding = i32x4_splat(if BILINEAR { 0 } else { 0x8000 });
+    let x = i32x4_shr(i32x4_add(fixed_x, rounding), 16);
+    let y = i32x4_shr(i32x4_add(fixed_y, rounding), 16);
+    let interior = v128_and(
+        v128_and(i32x4_ge(x, i32x4_splat(0)), i32x4_ge(y, i32x4_splat(0))),
+        v128_and(
+            i32x4_lt(x, i32x4_splat(source_width - BILINEAR as i32)),
+            i32x4_lt(y, i32x4_splat(source_height - BILINEAR as i32)),
+        ),
+    );
+    if !i32x4_all_true(interior) {
+        return u32x4(
+            affine_sample(
+                source,
+                source_width,
+                source_height,
+                i32x4_extract_lane::<0>(fixed_x),
+                i32x4_extract_lane::<0>(fixed_y),
+                BILINEAR as u32,
+            ),
+            affine_sample(
+                source,
+                source_width,
+                source_height,
+                i32x4_extract_lane::<1>(fixed_x),
+                i32x4_extract_lane::<1>(fixed_y),
+                BILINEAR as u32,
+            ),
+            affine_sample(
+                source,
+                source_width,
+                source_height,
+                i32x4_extract_lane::<2>(fixed_x),
+                i32x4_extract_lane::<2>(fixed_y),
+                BILINEAR as u32,
+            ),
+            affine_sample(
+                source,
+                source_width,
+                source_height,
+                i32x4_extract_lane::<3>(fixed_x),
+                i32x4_extract_lane::<3>(fixed_y),
+                BILINEAR as u32,
+            ),
+        );
+    }
+    let addresses = i32x4_add(i32x4_mul(y, i32x4_splat(source_width)), x);
+    let first = source.add(u32x4_extract_lane::<0>(addresses) as usize);
+    let second = source.add(u32x4_extract_lane::<1>(addresses) as usize);
+    let third = source.add(u32x4_extract_lane::<2>(addresses) as usize);
+    let fourth = source.add(u32x4_extract_lane::<3>(addresses) as usize);
+    let top = u32x4(*first, *second, *third, *fourth);
+    if !BILINEAR {
+        return top;
+    }
+    let right = u32x4(*first.add(1), *second.add(1), *third.add(1), *fourth.add(1));
+    let stride = source_width as usize;
+    let bottom = u32x4(
+        *first.add(stride),
+        *second.add(stride),
+        *third.add(stride),
+        *fourth.add(stride),
+    );
+    let diagonal = u32x4(
+        *first.add(stride + 1),
+        *second.add(stride + 1),
+        *third.add(stride + 1),
+        *fourth.add(stride + 1),
+    );
+    let fx = v128_and(u32x4_shr(fixed_x, 12), i32x4_splat(15));
+    let fy = v128_and(u32x4_shr(fixed_y, 12), i32x4_splat(15));
+    let fx_low = i8x16_shuffle::<0, 1, 0, 1, 0, 1, 0, 1, 4, 5, 4, 5, 4, 5, 4, 5>(fx, fx);
+    let fx_high = i8x16_shuffle::<8, 9, 8, 9, 8, 9, 8, 9, 12, 13, 12, 13, 12, 13, 12, 13>(fx, fx);
+    let fy_low = i8x16_shuffle::<0, 1, 0, 1, 0, 1, 0, 1, 4, 5, 4, 5, 4, 5, 4, 5>(fy, fy);
+    let fy_high = i8x16_shuffle::<8, 9, 8, 9, 8, 9, 8, 9, 12, 13, 12, 13, 12, 13, 12, 13>(fy, fy);
+    // Each horizontal signed shift floors independently before the vertical one.
+    u8x16_narrow_i16x8(
+        affine_lerp(
+            affine_lerp(
+                u16x8_extend_low_u8x16(top),
+                u16x8_extend_low_u8x16(right),
+                fx_low,
+            ),
+            affine_lerp(
+                u16x8_extend_low_u8x16(bottom),
+                u16x8_extend_low_u8x16(diagonal),
+                fx_low,
+            ),
+            fy_low,
+        ),
+        affine_lerp(
+            affine_lerp(
+                u16x8_extend_high_u8x16(top),
+                u16x8_extend_high_u8x16(right),
+                fx_high,
+            ),
+            affine_lerp(
+                u16x8_extend_high_u8x16(bottom),
+                u16x8_extend_high_u8x16(diagonal),
+                fx_high,
+            ),
+            fy_high,
+        ),
+    )
+}
+
+unsafe fn affine_alpha_general<const BILINEAR: bool>(
     source: *const u32,
     destination: *mut u32,
     source_width: i32,
@@ -132,42 +427,144 @@ pub unsafe extern "C" fn affine_alpha_rgb(
     column_y: i32,
     row_x: i32,
     row_y: i32,
-    bilinear: u32,
     opacity: u32,
 ) {
+    let lanes = i32x4(0, 1, 2, 3);
+    let offsets_x = i32x4_mul(lanes, i32x4_splat(column_x));
+    let offsets_y = i32x4_mul(lanes, i32x4_splat(column_y));
+    let step_x = i32x4_splat(column_x.wrapping_mul(4));
+    let step_y = i32x4_splat(column_y.wrapping_mul(4));
+    let opacity_vector = i16x8_splat(opacity as i16);
     for row in 0..height {
-        let mut fixed_x = start_x;
-        let mut fixed_y = start_y;
-        for column in 0..width {
-            let pixel = affine_sample(
+        let mut fixed_x = i32x4_add(i32x4_splat(start_x), offsets_x);
+        let mut fixed_y = i32x4_add(i32x4_splat(start_y), offsets_y);
+        let mut column = 0;
+        while column + 4 <= width {
+            let pixels = affine_sample_four::<BILINEAR>(
                 source,
                 source_width,
                 source_height,
                 fixed_x,
                 fixed_y,
-                bilinear,
+            );
+            let target = destination.add(row * width + column);
+            v128_store(
+                target as *mut v128,
+                affine_alpha_four(pixels, v128_load(target as *const v128), opacity_vector),
+            );
+            fixed_x = i32x4_add(fixed_x, step_x);
+            fixed_y = i32x4_add(fixed_y, step_y);
+            column += 4;
+        }
+        let mut tail_x = i32x4_extract_lane::<0>(fixed_x);
+        let mut tail_y = i32x4_extract_lane::<0>(fixed_y);
+        while column < width {
+            let pixel = affine_sample(
+                source,
+                source_width,
+                source_height,
+                tail_x,
+                tail_y,
+                BILINEAR as u32,
             );
             let alpha = pixel >> 25;
             let coefficient = (if alpha == 127 { 128 } else { alpha }) * opacity >> 8;
             if coefficient != 0 {
                 let target = destination.add(row * width + column);
-                let old = *target;
-                let retained = 128 - coefficient;
-                let red_blue = (((pixel & 0xff00ff) * coefficient + (old & 0xff00ff) * retained)
-                    >> 7)
-                    & 0xff00ff;
-                let green = ((((pixel >> 8) & 255) * coefficient + ((old >> 8) & 255) * retained)
-                    >> 7)
-                    << 8;
-                *target = (old & 0xff000000) | red_blue | green;
+                *target = weighted_pixel(pixel, *target, coefficient, true);
             }
-            // Zero-coefficient stores would reproduce old bytes. With initialized,
-            // nonaliased buffers, leaving them in place also preserves zero pairs/tails.
-            fixed_x = fixed_x.wrapping_add(column_x);
-            fixed_y = fixed_y.wrapping_add(column_y);
+            tail_x = tail_x.wrapping_add(column_x);
+            tail_y = tail_y.wrapping_add(column_y);
+            column += 1;
         }
         start_x = start_x.wrapping_add(row_x);
         start_y = start_y.wrapping_add(row_y);
+    }
+}
+
+/// Initialized RGBA-over-RGB 052710 sampling. The host supplies a complete source
+/// footprint and retains native Q16 coordinates relative to that footprint.
+#[no_mangle]
+pub unsafe extern "C" fn affine_alpha_rgb(
+    source: *const u32,
+    destination: *mut u32,
+    source_width: i32,
+    source_height: i32,
+    width: usize,
+    height: usize,
+    start_x: i32,
+    start_y: i32,
+    column_x: i32,
+    column_y: i32,
+    row_x: i32,
+    row_y: i32,
+    bilinear: u32,
+    opacity: u32,
+) {
+    if column_x == 65536 && column_y == 0 {
+        if bilinear == 0 {
+            affine_alpha_horizontal::<false>(
+                source,
+                destination,
+                source_width,
+                source_height,
+                width,
+                height,
+                start_x,
+                start_y,
+                row_x,
+                row_y,
+                opacity,
+            );
+        } else {
+            affine_alpha_horizontal::<true>(
+                source,
+                destination,
+                source_width,
+                source_height,
+                width,
+                height,
+                start_x,
+                start_y,
+                row_x,
+                row_y,
+                opacity,
+            );
+        }
+        return;
+    }
+    if bilinear == 0 {
+        affine_alpha_general::<false>(
+            source,
+            destination,
+            source_width,
+            source_height,
+            width,
+            height,
+            start_x,
+            start_y,
+            column_x,
+            column_y,
+            row_x,
+            row_y,
+            opacity,
+        );
+    } else {
+        affine_alpha_general::<true>(
+            source,
+            destination,
+            source_width,
+            source_height,
+            width,
+            height,
+            start_x,
+            start_y,
+            column_x,
+            column_y,
+            row_x,
+            row_y,
+            opacity,
+        );
     }
 }
 
@@ -358,6 +755,57 @@ fn mix_alpha_coefficient(first_alpha: u32, alpha: u32) -> u32 {
     (reciprocal * ((first_alpha << 7) as f32)) as u32
 }
 
+#[inline]
+unsafe fn cached_mix_alpha(coefficients: *mut u8, first: u32, second: u32, factor: u32) -> u32 {
+    let entry = coefficients.add((((first >> 24) << 8) | (second >> 24)) as usize);
+    if *entry == 0 {
+        let first_alpha = (first >> 24) * (256 - factor);
+        let alpha = first_alpha + (second >> 24) * factor;
+        let value = mix_alpha_coefficient(first_alpha, alpha);
+        *entry = (value + 1) as u8;
+        value
+    } else {
+        (*entry - 1) as u32
+    }
+}
+
+/// At factor zero the native reciprocal truncates to 127 for all 255 nonzero
+/// first alphas, and zero for alpha zero. Second-source RGB remains observable.
+unsafe fn mix_rgba_zero(
+    first: *const u32,
+    second: *const u32,
+    destination: *mut u32,
+    pixels: usize,
+) {
+    let weight = i16x8_splat(127);
+    let rgb_mask = i32x4_splat(0x00ffffff);
+    let mut index = 0;
+    while index + 3 < pixels {
+        let a = v128_load(first.add(index) as *const v128);
+        let b = v128_load(second.add(index) as *const v128);
+        let transparent = i32x4_eq(u32x4_shr(a, 24), i32x4_splat(0));
+        let rgb = v128_bitselect(b, weighted_bytes(a, b, weight, weight), transparent);
+        v128_store(
+            destination.add(index) as *mut v128,
+            v128_bitselect(rgb, a, rgb_mask),
+        );
+        index += 4;
+    }
+    while index < pixels {
+        let a = *first.add(index);
+        let b = *second.add(index);
+        let rgb = if a >> 24 == 0 {
+            b & 0x00ffffff
+        } else {
+            let red_blue = (((a & 0xff00ff) * 127 + (b & 0xff00ff)) >> 7) & 0xff00ff;
+            let green = ((((a >> 8) & 255) * 127 + ((b >> 8) & 255)) >> 7) << 8;
+            red_blue | green
+        };
+        *destination.add(index) = rgb | (a & 0xff000000);
+        index += 1;
+    }
+}
+
 /// Bounded, nonaliased native 03BEF0: coefficient truncation precedes RGB weighting.
 /// Unlike fused_rgb, every output pixel is replaced, including zero-alpha pairs.
 #[no_mangle]
@@ -368,26 +816,76 @@ pub unsafe extern "C" fn mix_rgba(
     pixels: usize,
     factor: u32,
 ) {
+    if factor == 0 {
+        mix_rgba_zero(first, second, destination, pixels);
+        return;
+    }
     let coefficients = core::ptr::addr_of_mut!(MIX_ALPHA_COEFFICIENTS).cast::<u8>();
     if MIX_ALPHA_FACTOR != factor {
         core::ptr::write_bytes(coefficients, 0, 256 * 256);
         MIX_ALPHA_FACTOR = factor;
     }
     let inverse = 256 - factor;
-    for index in 0..pixels {
+    let mut index = 0;
+    while index + 3 < pixels {
+        let a = v128_load(first.add(index) as *const v128);
+        let b = v128_load(second.add(index) as *const v128);
+        // The coefficient lookup retains native reciprocal truncation. Only the
+        // subsequent bounded channel weights and independent output alpha use SIMD.
+        let weights = u32x4(
+            cached_mix_alpha(
+                coefficients,
+                u32x4_extract_lane::<0>(a),
+                u32x4_extract_lane::<0>(b),
+                factor,
+            ),
+            cached_mix_alpha(
+                coefficients,
+                u32x4_extract_lane::<1>(a),
+                u32x4_extract_lane::<1>(b),
+                factor,
+            ),
+            cached_mix_alpha(
+                coefficients,
+                u32x4_extract_lane::<2>(a),
+                u32x4_extract_lane::<2>(b),
+                factor,
+            ),
+            cached_mix_alpha(
+                coefficients,
+                u32x4_extract_lane::<3>(a),
+                u32x4_extract_lane::<3>(b),
+                factor,
+            ),
+        );
+        let rgb = weighted_bytes(
+            a,
+            b,
+            i16x8_shuffle::<0, 0, 0, 0, 2, 2, 2, 2>(weights, weights),
+            i16x8_shuffle::<4, 4, 4, 4, 6, 6, 6, 6>(weights, weights),
+        );
+        let alpha = i32x4_shl(
+            u32x4_shr(
+                i32x4_add(
+                    i32x4_mul(u32x4_shr(a, 24), u32x4_splat(inverse)),
+                    i32x4_mul(u32x4_shr(b, 24), u32x4_splat(factor)),
+                ),
+                8,
+            ),
+            24,
+        );
+        v128_store(
+            destination.add(index) as *mut v128,
+            v128_bitselect(rgb, alpha, i32x4_splat(0x00ffffff)),
+        );
+        index += 4;
+    }
+    while index < pixels {
         let first = *first.add(index);
         let second = *second.add(index);
         let first_alpha = (first >> 24) * inverse;
         let alpha = first_alpha + (second >> 24) * factor;
-        let key = (((first >> 24) << 8) | (second >> 24)) as usize;
-        let entry = coefficients.add(key);
-        let coefficient = if *entry == 0 {
-            let value = mix_alpha_coefficient(first_alpha, alpha);
-            *entry = (value + 1) as u8;
-            value
-        } else {
-            (*entry - 1) as u32
-        };
+        let coefficient = cached_mix_alpha(coefficients, first, second, factor);
         let retained = 128 - coefficient;
         // The weights sum to 128, so each packed pair remains below 0x80008000.
         let red_blue =
@@ -395,6 +893,7 @@ pub unsafe extern "C" fn mix_rgba(
         let green =
             ((((first >> 8) & 255) * coefficient + ((second >> 8) & 255) * retained) >> 7) << 8;
         *destination.add(index) = red_blue | green | ((alpha >> 8) << 24);
+        index += 1;
     }
 }
 

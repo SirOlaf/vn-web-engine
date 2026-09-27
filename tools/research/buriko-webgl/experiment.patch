@@ -1,0 +1,4223 @@
+diff --git a/src/engines/buriko/native/bitmap-affine.ts b/src/engines/buriko/native/bitmap-affine.ts
+index 32f4aad..c3f48f0 100644
+--- a/src/engines/buriko/native/bitmap-affine.ts
++++ b/src/engines/buriko/native/bitmap-affine.ts
+@@ -15,6 +15,8 @@ import {runBurikoBitmapOperation} from './bitmap-operation-jobs.js';
+ import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
+ import {tryBurikoBitmapAffineAlphaWasm, tryBurikoBitmapAffineWasm} from './bitmap-alpha-wasm.js';
+ import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
++import {flushPixelBatch} from '../../../graphics/pixel-batch.js';
++import {hasBurikoGpuBatch, tryQueueBurikoAffine} from './bitmap-gpu.js';
+ 
+ const AFFINE_PIXEL_METRICS = {
+   copy: 'buriko.affine.copy.pixels',
+@@ -424,6 +426,21 @@ function affinePixels(
+   revision: BurikoBpAbi['revision'],
+ ): void {
+   const coordinates = burikoBitmapAffineCoordinates(transform, revision);
++  if (mode === 'alpha' && hasBurikoGpuBatch()) {
++    const replayTransform = {...transform};
++    if (
++      tryQueueBurikoAffine(
++        destination,
++        source,
++        coordinates,
++        transparency,
++        bilinear,
++        (output, input) =>
++          affinePixels(output, input, replayTransform, transparency, bilinear, mode, revision),
++      )
++    )
++      return;
++  } else flushPixelBatch();
+   const forceAlpha = destination.format === 2 && source.format === 1;
+   // Prove full storage envelopes once. Fallback accesses retain partial writes,
+   // unwritten-memory faults and unusual native signed-pitch behavior.
+@@ -670,6 +687,7 @@ export const transformBurikoBitmap = withBurikoBitmapText(transformBurikoBitmapP
+     (args[2].format === 1 || args[2].format === 2) &&
+     (args[1].format === args[2].format || (args[1].format === 2 && args[2].format === 1)),
+   opacity: (args) => (256 - args[4]) / 256,
++  batchable: true,
+   map: (x, y, args) => {
+     const coordinate = burikoBitmapAffineCoordinates(args[3], args[0].revision),
+       determinant = coordinate.columnX * coordinate.rowY - coordinate.rowX * coordinate.columnY,
+@@ -698,6 +716,7 @@ export const blendTransformedBurikoBitmap = withBurikoBitmapText(
+       (args[2].format === 1 || args[2].format === 2) &&
+       args[4] < 256,
+     opacity: (args) => (256 - args[4]) / 256,
++    batchable: true,
+     map: (x, y, args) => {
+       const coordinate = burikoBitmapAffineCoordinates(args[3], args[0].revision),
+         determinant = coordinate.columnX * coordinate.rowY - coordinate.rowX * coordinate.columnY,
+diff --git a/src/engines/buriko/native/bitmap-alpha.ts b/src/engines/buriko/native/bitmap-alpha.ts
+index 4280f65..6b65b40 100644
+--- a/src/engines/buriko/native/bitmap-alpha.ts
++++ b/src/engines/buriko/native/bitmap-alpha.ts
+@@ -15,6 +15,7 @@ import {
+ } from './bitmap-pairs.js';
+ 
+ import {burikoRosettaSseReciprocal} from './cpu-numerical-profile.js';
++import {hasBurikoGpuBatch, tryQueueBurikoAlpha} from './bitmap-gpu.js';
+ export {burikoRosettaSseReciprocal} from './cpu-numerical-profile.js';
+ const f32 = Math.fround;
+ 
+@@ -239,6 +240,13 @@ function blendInitializedAlphaIntoRgb(
+ 
+ /** 14003d950 has deliberately different alpha-byte handling in its opaque pair and tail. */
+ function blendBurikoAlphaIntoRgbPixels(destination: BurikoBitmap, source: BurikoBitmap): void {
++  if (
++    hasBurikoGpuBatch() &&
++    tryQueueBurikoAlpha(destination, source, null, (output, input) =>
++      blendBurikoAlphaIntoRgbPixels(output, input),
++    )
++  )
++    return;
+   if (blendInitializedAlphaIntoRgb(destination, source, null)) return;
+   visitBurikoPixelPairsReusingSource(
+     destination,
+@@ -275,6 +283,13 @@ function blendBurikoAlphaIntoRgbWithTransparencyPixels(
+   source: BurikoBitmap,
+   transparency: number,
+ ): void {
++  if (
++    hasBurikoGpuBatch() &&
++    tryQueueBurikoAlpha(destination, source, transparency, (output, input) =>
++      blendBurikoAlphaIntoRgbWithTransparencyPixels(output, input, transparency),
++    )
++  )
++    return;
+   if (blendInitializedAlphaIntoRgb(destination, source, transparency)) return;
+   const coefficient = (pixel: number): number => Math.imul(pixel >>> 25, 256 - transparency) >>> 8;
+   visitBurikoPixelPairsReusingSource(
+@@ -389,7 +404,9 @@ function mixBurikoAllChannelsPixels(
+ 
+ export const blendBurikoAlpha = withBurikoBitmapText(blendBurikoAlphaPixels);
+ 
+-export const blendBurikoAlphaIntoRgb = withBurikoBitmapText(blendBurikoAlphaIntoRgbPixels);
++export const blendBurikoAlphaIntoRgb = withBurikoBitmapText(blendBurikoAlphaIntoRgbPixels, {
++  batchable: true,
++});
+ 
+ export const blendBurikoAlphaWithTransparency = withBurikoBitmapText(
+   blendBurikoAlphaWithTransparencyPixels,
+@@ -398,7 +415,7 @@ export const blendBurikoAlphaWithTransparency = withBurikoBitmapText(
+ 
+ export const blendBurikoAlphaIntoRgbWithTransparency = withBurikoBitmapText(
+   blendBurikoAlphaIntoRgbWithTransparencyPixels,
+-  {opacity: (args) => (256 - args[2]) / 256},
++  {opacity: (args) => (256 - args[2]) / 256, batchable: true},
+ );
+ 
+ export const mixBurikoAllChannels = withBurikoBitmapText(mixBurikoAllChannelsPixels, {
+diff --git a/src/engines/buriko/native/bitmap-compositor.ts b/src/engines/buriko/native/bitmap-compositor.ts
+index e3fe83a..882997c 100644
+--- a/src/engines/buriko/native/bitmap-compositor.ts
++++ b/src/engines/buriko/native/bitmap-compositor.ts
+@@ -51,12 +51,14 @@ import {
+ } from './bitmap-effects.js';
+ import type {BurikoDistributedProcessing} from './distributed-processing.js';
+ import type {BurikoBpAbi} from '../bp/abi.js';
++import type {GraphicsBackend} from '../../../graphics/graphics-backend.js';
+ 
+ export type BurikoBitmapResult = 0 | 1 | 2 | 3;
+ export type BurikoBitmapDrawResult = BurikoBitmapResult | 4;
+ 
+ /** Native renderer globals, separate from individual CSurfaceManager instances. */
+ export class BurikoBitmapCompositor {
++  graphicsBackend: GraphicsBackend = 'software';
+   constructor(
+     readonly compatibility: '1.69' | '1.72' = '1.72',
+     readonly revision: BurikoBpAbi['revision'] = compatibility === '1.69' ? '1.520.6' : '1.685.3',
+diff --git a/src/engines/buriko/native/bitmap-copy.ts b/src/engines/buriko/native/bitmap-copy.ts
+index 7b682e0..70fce96 100644
+--- a/src/engines/buriko/native/bitmap-copy.ts
++++ b/src/engines/buriko/native/bitmap-copy.ts
+@@ -9,9 +9,15 @@ import {
+ } from './bitmap.js';
+ import {bitmapRead8, bitmapRead32, bitmapWrite8, bitmapWrite32} from './bitmap-scalar.js';
+ import {burikoAlphaHalfCoefficient, writeBurikoMappedPairs} from './bitmap-pairs.js';
++import {hasBurikoGpuBatch, tryQueueBurikoClear, tryQueueBurikoCopy} from './bitmap-gpu.js';
+ 
+ /** 140041310 ignores unsuccessful rectangle cropping and then clears the original descriptor. */
+ function clearBurikoBitmapPixels(target: BurikoBitmap): void {
++  if (
++    hasBurikoGpuBatch() &&
++    tryQueueBurikoClear(target, (destination) => clearBurikoBitmapPixels(destination))
++  )
++    return;
+   const rowBytes = Math.imul(target.bytesPerPixel, target.width) >>> 0;
+   for (let y = 0; y < target.height >>> 0; y++) {
+     if (rowBytes === 0) continue;
+@@ -22,7 +28,10 @@ function clearBurikoBitmapPixels(target: BurikoBitmap): void {
+   }
+ }
+ 
+-const clearBurikoBitmapRegion = withBurikoBitmapText(clearBurikoBitmapPixels, {clear: true});
++const clearBurikoBitmapRegion = withBurikoBitmapText(clearBurikoBitmapPixels, {
++  clear: true,
++  batchable: true,
++});
+ 
+ export function clearBurikoBitmap(
+   bitmap: BurikoBitmap,
+@@ -112,6 +121,13 @@ function copyInitializedRows(
+  * Only row lengths that are not divisible by four use the native overlap-safe memmove.
+  */
+ function copyBurikoBitmapRowsPixels(destination: BurikoBitmap, source: BurikoBitmap): void {
++  if (
++    hasBurikoGpuBatch() &&
++    tryQueueBurikoCopy(destination, source, (output, input) =>
++      copyBurikoBitmapRowsPixels(output, input),
++    )
++  )
++    return;
+   const rowBytes = Math.imul(source.bytesPerPixel, source.width) >>> 0;
+   const height = source.height >>> 0;
+   if (copyInitializedRows(destination, source, rowBytes, height)) return;
+@@ -281,6 +297,7 @@ function blendBurikoRgbIntoAlphaWithTransparencyPixels(
+ 
+ export const copyBurikoBitmapRows = withBurikoBitmapText(copyBurikoBitmapRowsPixels, {
+   replace: true,
++  batchable: true,
+ });
+ 
+ export const copyBurikoRgbToAlpha = withBurikoBitmapText(copyBurikoRgbToAlphaPixels, {
+diff --git a/src/engines/buriko/native/bitmap.ts b/src/engines/buriko/native/bitmap.ts
+index 21cfafc..4612044 100644
+--- a/src/engines/buriko/native/bitmap.ts
++++ b/src/engines/buriko/native/bitmap.ts
+@@ -1,18 +1,30 @@
+ import {cloneRasterText, releaseRasterText, withRasterText} from '../../../text/raster-text.js';
++import {observePixelStorage} from '../../../graphics/pixel-batch.js';
+ 
+ /** Native bitmap backing identity is shared by cropped descriptors and copied slot records. */
+ export class BurikoBitmapStorage {
+-  readonly bytes: Uint8Array;
+-  readonly view: DataView;
++  private readonly backingBytes: Uint8Array;
++  private readonly backingView: DataView;
+   private defined: Uint8Array | null;
+   private initializedPrefix = 0;
+   private disposed = false;
+   private nativeHeapReads = false;
+   constructor(bytes: Uint8Array, initialized: boolean) {
+-    this.bytes = bytes;
+-    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
++    this.backingBytes = bytes;
++    this.backingView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+     this.defined = initialized ? null : new Uint8Array(bytes.length);
+   }
++  get byteLength(): number {
++    return this.backingBytes.byteLength;
++  }
++  get bytes(): Uint8Array {
++    observePixelStorage(this);
++    return this.backingBytes;
++  }
++  get view(): DataView {
++    observePixelStorage(this);
++    return this.backingView;
++  }
+   /** Import validity metadata without reading retained pixel storage. */
+   static tracked(bytes: Uint8Array, initialized?: Uint8Array): BurikoBitmapStorage {
+     const storage = new BurikoBitmapStorage(bytes, true);
+@@ -30,7 +42,7 @@ export class BurikoBitmapStorage {
+       !Number.isSafeInteger(length) ||
+       offset < 0 ||
+       length < 0 ||
+-      offset + length > this.bytes.length
++      offset + length > this.backingBytes.length
+     )
+       throw new RangeError('Buriko bitmap accesses outside native allocation');
+     if (read && this.defined !== null && !this.nativeHeapReads)
+@@ -40,7 +52,7 @@ export class BurikoBitmapStorage {
+   }
+   written(offset: number, length: number): void {
+     this.range(offset, length, false);
+-    if (offset === 0 && length === this.bytes.length) this.defined = null;
++    if (offset === 0 && length === this.backingBytes.length) this.defined = null;
+     else if (this.defined !== null) {
+       this.defined.fill(1, offset, offset + length);
+       // Sequential row/pair writes eventually initialize the entire allocation.
+@@ -48,23 +60,28 @@ export class BurikoBitmapStorage {
+       if (offset <= this.initializedPrefix && offset + length > this.initializedPrefix) {
+         this.initializedPrefix = offset + length;
+         while (this.defined[this.initializedPrefix] === 1) this.initializedPrefix++;
+-        if (this.initializedPrefix === this.bytes.length) this.defined = null;
++        if (this.initializedPrefix === this.backingBytes.length) this.defined = null;
+       }
+     }
+   }
+   /** Synchronous pixel kernels may bypass per-pixel checks only on initialized, bounded spans. */
+   initializedView(offset: number, length: number): DataView | null {
++    observePixelStorage(this);
++    return this.batchingView(offset, length);
++  }
++  /** Admission/staging only: prove validity without observing this batch's pending writes. */
++  batchingView(offset: number, length: number): DataView | null {
+     if (
+       this.disposed ||
+       !Number.isSafeInteger(offset) ||
+       !Number.isSafeInteger(length) ||
+       offset < 0 ||
+       length < 0 ||
+-      offset + length > this.bytes.length ||
++      offset + length > this.backingBytes.length ||
+       (this.defined !== null && offset + length > this.initializedPrefix)
+     )
+       return null;
+-    return this.view;
++    return this.backingView;
+   }
+   /** Native callers may sample untouched _aligned_malloc bytes without a fault. */
+   allowNativeHeapReads(): void {
+@@ -79,8 +96,9 @@ export class BurikoBitmapStorage {
+   }
+   /** Native temporary pixel snapshots preserve unwritten bytes and their state. */
+   cloneRange(offset: number, length: number): BurikoBitmapStorage {
++    observePixelStorage(this);
+     this.range(offset, length, false);
+-    const clone = new BurikoBitmapStorage(this.bytes.slice(offset, offset + length), true);
++    const clone = new BurikoBitmapStorage(this.backingBytes.slice(offset, offset + length), true);
+     if (this.defined !== null) {
+       clone.defined = this.defined.slice(offset, offset + length);
+       clone.initializedPrefix = Math.max(0, Math.min(length, this.initializedPrefix - offset));
+@@ -90,11 +108,60 @@ export class BurikoBitmapStorage {
+     return clone;
+   }
+   release(): void {
++    observePixelStorage(this);
+     releaseRasterText(this);
+     this.disposed = true;
+   }
+ }
+ 
++// Capture before importing modules can replace methods. Deferred pixel work may
++// call only these native accessors, never an extension holding retained raw views.
++const bitmapStoragePrototype = BurikoBitmapStorage.prototype;
++const bitmapStoragePrototypeAudit = {};
++const bitmapStorageDescriptors = new Map(
++  Reflect.ownKeys(bitmapStoragePrototype).map((key) => [
++    key,
++    Object.getOwnPropertyDescriptor(bitmapStoragePrototype, key)!,
++  ]),
++);
++
++/** The optional cache belongs to one synchronous traversal with no foreign callbacks. */
++export function isBatchableBurikoBitmapStorage(
++  storage: unknown,
++  audited?: Set<object>,
++): storage is BurikoBitmapStorage {
++  if (storage === null || typeof storage !== 'object') return false;
++  if (audited?.has(storage)) return true;
++  if (Object.getPrototypeOf(storage) !== bitmapStoragePrototype) return false;
++  if (!audited?.has(bitmapStoragePrototypeAudit)) {
++    if (
++      Object.getPrototypeOf(bitmapStoragePrototype) !== Object.prototype ||
++      Reflect.ownKeys(bitmapStoragePrototype).length !== bitmapStorageDescriptors.size
++    )
++      return false;
++    for (const [key, original] of bitmapStorageDescriptors) {
++      const current = Object.getOwnPropertyDescriptor(bitmapStoragePrototype, key);
++      if (
++        current === undefined ||
++        current.value !== original.value ||
++        current.get !== original.get ||
++        current.set !== original.set ||
++        current.writable !== original.writable ||
++        current.enumerable !== original.enumerable ||
++        current.configurable !== original.configurable
++      )
++        return false;
++    }
++    audited?.add(bitmapStoragePrototypeAudit);
++  }
++  for (const key of Reflect.ownKeys(storage)) {
++    const descriptor = Object.getOwnPropertyDescriptor(storage, key)!;
++    if (descriptor.get || descriptor.set || bitmapStorageDescriptors.has(key)) return false;
++  }
++  audited?.add(storage);
++  return true;
++}
++
+ /** 32-byte native descriptor at bitmap slot +8: pointer,+8 stride,+c width,+10 height,+14 format,+18 bpp. */
+ export interface BurikoBitmap {
+   storage: BurikoBitmapStorage | null;
+diff --git a/src/engines/buriko/native/display-render-jobs.ts b/src/engines/buriko/native/display-render-jobs.ts
+index 484ae57..0b230b3 100644
+--- a/src/engines/buriko/native/display-render-jobs.ts
++++ b/src/engines/buriko/native/display-render-jobs.ts
+@@ -1,8 +1,214 @@
+ import type {BurikoBitmapRectangle} from './bitmap.js';
+ import {BurikoBitmapCompositor} from './bitmap-compositor.js';
+-import type {BurikoDisplayContext} from './display-object.js';
+-import {BurikoDisplayObjectLists, type BurikoDisplayListEntry} from './display-object-lists.js';
+-import {BurikoDistributedProcessing} from './distributed-processing.js';
++import {
++  BurikoDisplayObject,
++  BurikoDisplayObjectEnvironment,
++  type BurikoDisplayContext,
++} from './display-object.js';
++import {BurikoDisplayObjectLists, BurikoDisplayListEntry} from './display-object-lists.js';
++import {BurikoDistributedAllocator, BurikoDistributedProcessing} from './distributed-processing.js';
++import {BurikoBackdrop, BurikoNormalBackdrop} from './display-backdrop.js';
++import {BurikoDisplaySprite} from './display-sprite.js';
++import {BurikoDisplayGroup} from './display-group.js';
++import {BurikoVirtualDisplayObject} from './display-virtual.js';
++import {BurikoWindowDisplayObject} from './display-window.js';
++import {BurikoWindowDisplayState} from './display-window-state.js';
++import {BurikoSurfaces} from './surfaces.js';
++import {BurikoSpriteEffects} from './sprite-effects.js';
++import type {BurikoGpuBitmapBatch} from './bitmap-gpu.js';
++import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
++
++interface PrototypeAudit {
++  readonly parent: object | null;
++  readonly properties: ReadonlyMap<PropertyKey, PropertyDescriptor>;
++}
++let prototypeAudits: ReadonlyMap<object, PrototypeAudit> | undefined;
++
++// Window -> object manager -> renderer forms an ES module cycle. Capture the
++// audited methods after module initialization; earlier calls stay in software.
++queueMicrotask(() => {
++  prototypeAudits = new Map(
++    [
++      BurikoDisplayObject,
++      BurikoBackdrop,
++      BurikoNormalBackdrop,
++      BurikoDisplaySprite,
++      BurikoDisplayGroup,
++      BurikoVirtualDisplayObject,
++      BurikoWindowDisplayObject,
++      BurikoDisplayObjectEnvironment,
++      BurikoBitmapCompositor,
++      BurikoSurfaces,
++      BurikoSpriteEffects,
++      BurikoWindowDisplayState,
++      BurikoDisplayObjectLists,
++      BurikoDisplayListEntry,
++      BurikoDistributedAllocator,
++      BurikoDistributedProcessing,
++    ].map((constructor) => {
++      const prototype: object = constructor.prototype;
++      return [
++        prototype,
++        {
++          parent: Object.getPrototypeOf(prototype) as object | null,
++          properties: new Map(
++            Reflect.ownKeys(prototype).map((key) => [
++              key,
++              Object.getOwnPropertyDescriptor(prototype, key)!,
++            ]),
++          ),
++        },
++      ];
++    }),
++  );
++});
++
++/** Only closed built-in draw paths may retain GPU writes across object callbacks. */
++function canBatchTraversal(
++  lists: BurikoDisplayObjectLists,
++  compositor: BurikoBitmapCompositor,
++  processing: BurikoDistributedProcessing,
++): boolean {
++  const audits = prototypeAudits;
++  if (audits === undefined) return false;
++  const verifiedPrototypes = new Map<object, ReadonlySet<PropertyKey>>(),
++    verifiedObjects = new Set<BurikoDisplayObject>(),
++    visiting = new Set<BurikoDisplayObject>(),
++    verifiedCollaborators = new Set<object>(),
++    verifiedAllocators = new Set<BurikoDistributedAllocator>(),
++    verifiedCompositors = new Set<BurikoBitmapCompositor>();
++  const methods = (prototype: object): ReadonlySet<PropertyKey> | null => {
++    const cached = verifiedPrototypes.get(prototype);
++    if (cached !== undefined) return cached;
++    const audit = audits.get(prototype);
++    if (
++      audit === undefined ||
++      Object.getPrototypeOf(prototype) !== audit.parent ||
++      Reflect.ownKeys(prototype).length !== audit.properties.size
++    )
++      return null;
++    const inherited =
++      audit.parent === Object.prototype
++        ? new Set<PropertyKey>()
++        : audit.parent === null
++          ? null
++          : methods(audit.parent);
++    if (inherited === null) return null;
++    const names = new Set(inherited);
++    for (const [key, original] of audit.properties) {
++      const current = Object.getOwnPropertyDescriptor(prototype, key);
++      if (
++        current === undefined ||
++        current.value !== original.value ||
++        current.get !== original.get ||
++        current.set !== original.set ||
++        current.writable !== original.writable ||
++        current.enumerable !== original.enumerable ||
++        current.configurable !== original.configurable
++      )
++        return null;
++      if (typeof original.value === 'function' || original.get || original.set) names.add(key);
++    }
++    verifiedPrototypes.set(prototype, names);
++    return names;
++  };
++  const collaborator = (value: object, prototype: object): boolean => {
++    if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== prototype)
++      return false;
++    if (verifiedCollaborators.has(value)) return true;
++    const names = methods(prototype);
++    if (names === null) return false;
++    for (const key of Reflect.ownKeys(value)) {
++      const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
++      // Provider functions and installed worker callbacks are data fields, not
++      // draw virtuals. They need not reject an otherwise closed native traversal.
++      if (descriptor.get || descriptor.set || names.has(key)) return false;
++    }
++    verifiedCollaborators.add(value);
++    return true;
++  };
++  const checkAllocator = (allocator: BurikoDistributedAllocator): boolean => {
++    if (!collaborator(allocator, BurikoDistributedAllocator.prototype)) return false;
++    if (verifiedAllocators.has(allocator)) return true;
++    verifiedAllocators.add(allocator);
++    // Quota updates call into active pools, including suspended asynchronous
++    // pools. Audit their methods before querying or entering the native scheduler.
++    for (const field of ['active', 'runningPools']) {
++      const pools: unknown = Object.getOwnPropertyDescriptor(allocator, field)?.value;
++      if (!Array.isArray(pools)) return false;
++      for (const pool of pools) if (!checkProcessing(pool)) return false;
++    }
++    return !allocator.hasRunningSynchronousPools;
++  };
++  const checkProcessing = (pool: BurikoDistributedProcessing): boolean =>
++    collaborator(pool, BurikoDistributedProcessing.prototype) && checkAllocator(pool.allocator);
++  const checkCompositor = (value: BurikoBitmapCompositor): boolean => {
++    if (!collaborator(value, BurikoBitmapCompositor.prototype)) return false;
++    if (verifiedCompositors.has(value)) return true;
++    verifiedCompositors.add(value);
++    return value.processing === null || checkProcessing(value.processing);
++  };
++  const check = (object: BurikoDisplayObject): boolean => {
++    if (!(object instanceof BurikoDisplayObject)) return false;
++    if (verifiedObjects.has(object)) return true;
++    if (visiting.has(object)) return false;
++    const names = methods(Object.getPrototypeOf(object) as object);
++    if (names === null) return false;
++    const related: BurikoDisplayObject[] = [];
++    for (const key of Reflect.ownKeys(object)) {
++      const descriptor = Object.getOwnPropertyDescriptor(object, key)!;
++      if (
++        descriptor.get ||
++        descriptor.set ||
++        typeof descriptor.value === 'function' ||
++        names.has(key)
++      )
++        return false;
++      if (descriptor.value instanceof BurikoDisplayObject) related.push(descriptor.value);
++    }
++    if (
++      !collaborator(object.environment, BurikoDisplayObjectEnvironment.prototype) ||
++      !checkCompositor(object.environment.compositor)
++    )
++      return false;
++    if (
++      (object instanceof BurikoDisplaySprite || object instanceof BurikoNormalBackdrop) &&
++      !collaborator(object.surfaces, BurikoSurfaces.prototype)
++    )
++      return false;
++    if (
++      object instanceof BurikoDisplaySprite &&
++      (!collaborator(object.effects, BurikoSpriteEffects.prototype) ||
++        !checkCompositor(object.effects.compositor))
++    )
++      return false;
++    if (
++      object instanceof BurikoWindowDisplayObject &&
++      !collaborator(object.windowState, BurikoWindowDisplayState.prototype)
++    )
++      return false;
++    visiting.add(object);
++    const parent = object.parent;
++    if (parent !== null && (typeof parent !== 'object' || !check(parent))) return false;
++    // Dynamic masks can forward through another object's virtuals without that
++    // object appearing in either display list. Cyclic associations stay in software.
++    for (const reference of related) if (!check(reference)) return false;
++    visiting.delete(object);
++    verifiedObjects.add(object);
++    return true;
++  };
++  if (
++    !collaborator(lists, BurikoDisplayObjectLists.prototype) ||
++    !checkCompositor(compositor) ||
++    !checkProcessing(processing)
++  )
++    return false;
++  for (const expanded of [false, true])
++    for (const entry of lists.entries(expanded))
++      if (!collaborator(entry, BurikoDisplayListEntry.prototype) || !check(entry.object))
++        return false;
++  return true;
++}
+ 
+ export interface BurikoDisplayRenderJob {
+   rectangle: BurikoBitmapRectangle;
+@@ -53,6 +259,7 @@ export class BurikoDisplayRenderJobs {
+     readonly context: BurikoDisplayContext,
+     /** CObjectManager +78; native setter shifts its layer argument left16. */
+     public minimumKey: number,
++    private readonly batch: BurikoGpuBitmapBatch | null = null,
+   ) {}
+ 
+   /** 06e650 expands roots only in the current ordinary node's inclusive key interval. */
+@@ -102,6 +309,23 @@ export class BurikoDisplayRenderJobs {
+     return 1;
+   }
+   run(jobs: readonly BurikoDisplayRenderJob[], distributedFlag: number): void {
++    if (this.batch !== null) {
++      let admitted = false;
++      try {
++        admitted = canBatchTraversal(this.lists, this.compositor, this.processing);
++      } catch {
++        // Admission must not move a native traversal fault ahead of earlier draws.
++        // The unchanged worker below will raise it at its original position.
++      }
++      if (admitted) {
++        this.batch.run(this.context.bitmap, () => this.runNative(jobs, distributedFlag));
++        return;
++      }
++      recordRuntimeMetric('buriko.gpu.rejected-traversals', 1);
++    }
++    this.runNative(jobs, distributedFlag);
++  }
++  private runNative(jobs: readonly BurikoDisplayRenderJob[], distributedFlag: number): void {
+     this.jobs = jobs;
+     this.cursor = 0;
+     this.processing.setCallback((state: BurikoDisplayRenderJobs) => state.claimAndDraw(), this);
+diff --git a/src/engines/buriko/native/display-renderer.ts b/src/engines/buriko/native/display-renderer.ts
+index 78f0353..52ddaf2 100644
+--- a/src/engines/buriko/native/display-renderer.ts
++++ b/src/engines/buriko/native/display-renderer.ts
+@@ -13,6 +13,7 @@ import {
+   type BurikoDisplayRenderJob,
+ } from './display-render-jobs.js';
+ import {BurikoDistributedProcessing} from './distributed-processing.js';
++import {BurikoGpuBitmapBatch} from './bitmap-gpu.js';
+ 
+ export interface BurikoDisplayDamageResult {
+   /** An all-ones DWORD means full redraw; otherwise this is the output rectangle count. */
+@@ -25,6 +26,7 @@ export class BurikoDisplayRenderer {
+   readonly processing: BurikoDistributedProcessing;
+   readonly ownsProcessing: boolean;
+   private disposed = false;
++  private gpuBatch: BurikoGpuBitmapBatch | null = null;
+   constructor(
+     readonly manager: BurikoObjectManager,
+     pixelBudget: number,
+@@ -48,6 +50,9 @@ export class BurikoDisplayRenderer {
+       this.processing,
+       context,
+       this.manager.minimumKey,
++      this.manager.compositor.graphicsBackend === 'webgl2'
++        ? (this.gpuBatch ??= new BurikoGpuBitmapBatch())
++        : null,
+     );
+   }
+   /** Virtual08, 06ea20; backdrop types6,7,9,10,11 cannot use independent strips. */
+@@ -187,6 +192,8 @@ export class BurikoDisplayRenderer {
+     this.check();
+     this.manager.clearObjectLists();
+     if (this.ownsProcessing) this.processing.dispose();
++    this.gpuBatch?.dispose();
++    this.gpuBatch = null;
+     this.disposed = true;
+   }
+ }
+diff --git a/src/engines/buriko/native/distributed-processing.ts b/src/engines/buriko/native/distributed-processing.ts
+index 3f43cf3..c6bac98 100644
+--- a/src/engines/buriko/native/distributed-processing.ts
++++ b/src/engines/buriko/native/distributed-processing.ts
+@@ -88,6 +88,11 @@ export class BurikoDistributedAllocator {
+     this.runningPools.splice(index, 1);
+   }
+ 
++  /** A render batch cannot cross another pool's arbitrary synchronous callbacks. */
++  get hasRunningSynchronousPools(): boolean {
++    return this.runningPools.some((pool) => pool.isSynchronousRun);
++  }
++
+   /** Nested native pools can depend on callbacks belonging to an ancestor pool. */
+   advance(): boolean {
+     for (let attempt = 0; attempt < this.runningPools.length; attempt++) {
+@@ -170,6 +175,11 @@ export class BurikoDistributedProcessing {
+   private sharedDepth = 0;
+   private nextWorker = 0;
+ 
++  /** Only queried for pools registered in the allocator's running stack. */
++  get isSynchronousRun(): boolean {
++    return this.asyncWorkerCallback === null;
++  }
++
+   constructor(
+     readonly allocator: BurikoDistributedAllocator,
+     workerCount: number,
+diff --git a/src/engines/buriko/native/production-display-resource-graph.ts b/src/engines/buriko/native/production-display-resource-graph.ts
+index 8ae54fc..fe37eb5 100644
+--- a/src/engines/buriko/native/production-display-resource-graph.ts
++++ b/src/engines/buriko/native/production-display-resource-graph.ts
+@@ -18,6 +18,7 @@ import {
+   type WindowsCharacterTranslationHost,
+ } from '../../../platform/windows-character-translation.js';
+ import {BrowserGdiImageCodec} from '../../../graphics/browser-gdi-image.js';
++import type {GraphicsBackend} from '../../../graphics/graphics-backend.js';
+ import {BrowserWindowsSystemProfileHost} from '../../../platform/browser-windows-system-profile.js';
+ import {BrowserWindowsProcessHost} from '../../../platform/browser-windows-process.js';
+ import {BrowserWindowsDynamicLibraryHost} from '../../../platform/windows-dynamic-library.js';
+@@ -246,6 +247,8 @@ export interface BurikoProductionDisplayResourceGraphInputs {
+   readonly displayHost?: import('../../../platform/window-display.js').WindowDisplayHost;
+   /** Retain the logical device while suppressing all main-canvas presentation. */
+   readonly presentationMode?: 'canvas' | 'none';
++  /** Select native-equivalent bitmap composition; defaults to software. */
++  readonly graphicsBackend?: GraphicsBackend;
+   readonly navigator: Navigator;
+   readonly readViewportScreenMapping: () => BurikoViewportScreenMapping;
+   /** Explicit host wheel-unit conversion; absent until a browser/device profile is selected. */
+@@ -716,6 +719,7 @@ export class BurikoProductionDisplayResourceGraph {
+         this.engineVersion.bpAbi.compatibility,
+         this.engineVersion.bpAbi.revision,
+       );
++      this.compositor.graphicsBackend = inputs.graphicsBackend ?? 'software';
+       this.damage = new BurikoDisplayDamage(inputs.damageCapacity, {
+         left: 0,
+         top: 0,
+diff --git a/src/engines/buriko/native/surfaces.ts b/src/engines/buriko/native/surfaces.ts
+index a67053d..745bd12 100644
+--- a/src/engines/buriko/native/surfaces.ts
++++ b/src/engines/buriko/native/surfaces.ts
+@@ -29,6 +29,7 @@ import {BurikoBitmapCompositor} from './bitmap-compositor.js';
+ import {BurikoNativeFonts} from './fonts.js';
+ import {BurikoDistributedAllocator} from './distributed-processing.js';
+ import type {BurikoMovieRegistry} from './movie-registry.js';
++import {withBurikoGpuSuspended} from './bitmap-gpu.js';
+ import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+ import {BurikoSurfaceCoefficientTables} from './surface-coefficients.js';
+ import {convertBurikoBitmapToMask, invertBurikoBitmapMask} from './bitmap-mask-conversion.js';
+@@ -425,7 +426,12 @@ export class BurikoSurfaces {
+   snapshot(index: number): BurikoBitmap | null {
+     const bitmap = this.descriptor(index);
+     if (bitmap === null) return null;
+-    return {...(this.slot(index)!.attachment?.snapshot() ?? bitmap)};
++    const attachment = this.slot(index)!.attachment;
++    if (attachment !== null) {
++      // Producers may hold raw pixel views and invoke further pixel operations.
++      return {...(withBurikoGpuSuspended(() => attachment.snapshot()) ?? bitmap)};
++    }
++    return {...bitmap};
+   }
+   /** 1.69 Flash getters borrow the producer DIB without replacing the CMemoryDX backing. */
+   attachBitmap(index: number, attachment: BurikoSurfaceBitmapAttachment): void {
+diff --git a/src/text/raster-text.ts b/src/text/raster-text.ts
+index 4b1a8d8..6ba3766 100644
+--- a/src/text/raster-text.ts
++++ b/src/text/raster-text.ts
+@@ -1,8 +1,11 @@
+ import type {Rect} from '../graphics/surface.js';
++import {recordRuntimeMetric} from '../platform/runtime-performance.js';
++import {flushPixelBatch, observePixelStorage} from '../graphics/pixel-batch.js';
+ 
+ /** Optional presentation provenance. These objects never replace engine-owned pixels. */
+ export interface RasterTextStorage {
+   readonly bytes: Uint8Array;
++  readonly byteLength?: number;
+   cloneRange(offset: number, length: number): RasterTextStorage;
+ }
+ export interface RasterTextBitmap {
+@@ -44,6 +47,9 @@ interface Plane {
+   bitmap: RasterTextBitmap;
+   blank: RasterTextStorage;
+   glyphs: RasterTextGlyph[];
++  clearedBytes: number;
++  receivedText: boolean;
++  differenceByte: number;
+ }
+ const planes = new WeakMap<RasterTextStorage, Plane>();
+ let nextGlyph = 0;
+@@ -121,6 +127,9 @@ function ensure(bitmap: RasterTextBitmap): Plane | undefined {
+         bitmap: {...bitmap, offset: 0},
+         blank: bitmap.storage.cloneRange(0, bitmap.storage.bytes.length),
+         glyphs: [],
++        clearedBytes: 0,
++        receivedText: false,
++        differenceByte: -1,
+       };
+       planes.set(bitmap.storage, plane);
+     } finally {
+@@ -130,6 +139,57 @@ function ensure(bitmap: RasterTextBitmap): Plane | undefined {
+   return plane;
+ }
+ 
++/** Cropped clears can erase the last text without ever clearing a whole allocation at once. */
++function retireClearedPlane(bitmap: RasterTextBitmap, plane: Plane): void {
++  const storage = bitmap.storage;
++  if (!storage) return;
++  const length = storage.byteLength ?? storage.bytes.length;
++  plane.clearedBytes += Math.min(length, bitmap.width * bitmap.height * bitmap.bytesPerPixel);
++  if (!(plane.clearedBytes >= length)) return;
++  plane.clearedBytes = 0;
++  const receivedText = plane.receivedText;
++  plane.receivedText = false;
++  // An entire redraw can clear old text and immediately draw it again. Avoid
++  // repeated full scans or retiring/recloning that still-active presentation.
++  if (receivedText || plane.glyphs.length !== 0) return;
++  const original = storage.bytes,
++    blank = plane.blank.bytes;
++  if (
++    original.length !== blank.length ||
++    !(original.buffer instanceof ArrayBuffer) ||
++    !(blank.buffer instanceof ArrayBuffer)
++  )
++    return;
++  // Unchanged decorative ink can have no glyphs or incoming text. Remember a
++  // failed comparison so later clears elsewhere do not rescan the allocation.
++  if (plane.differenceByte >= 0 && original[plane.differenceByte] !== blank[plane.differenceByte])
++    return;
++  recordRuntimeMetric('text.raster.retirement-checks', 1);
++  let byte = 0;
++  if (((original.byteOffset | blank.byteOffset) & 3) === 0) {
++    const words = Math.floor(length / 4),
++      first = new Uint32Array(original.buffer, original.byteOffset, words),
++      second = new Uint32Array(blank.buffer, blank.byteOffset, words);
++    for (let index = 0; index < words; index++)
++      if (first[index] !== second[index]) {
++        byte = index * 4;
++        while (original[byte] === blank[byte]) byte++;
++        plane.differenceByte = byte;
++        return;
++      }
++    byte = words * 4;
++  }
++  for (; byte < length; byte++)
++    if (original[byte] !== blank[byte]) {
++      plane.differenceByte = byte;
++      return;
++    }
++  // Empty glyph metadata alone is insufficient: decorative ink has no glyphs.
++  // Only byte equality proves this alternate plane no longer contributes.
++  planes.delete(storage);
++  recordRuntimeMetric('text.raster.retired-stale-planes', 1);
++}
++
+ export function readRasterText(bitmap: RasterTextBitmap): RasterTextGlyph[] {
+   const plane = bitmap.storage && planes.get(bitmap.storage);
+   if (!plane) return [];
+@@ -205,6 +265,7 @@ export function visibleRasterText(bitmap: RasterTextBitmap): RasterTextGlyph[] {
+   return glyphs.filter((g) => visible.has(rasterTextGlyphKey(g)));
+ }
+ export function releaseRasterText(storage: RasterTextStorage): void {
++  observePixelStorage(storage);
+   planes.delete(storage);
+ }
+ /** Synchronize a native write that contains no text, without replaying that write. */
+@@ -224,9 +285,10 @@ export function clearRasterTextPresentation(bitmap: RasterTextBitmap): void {
+   if (
+     bitmap.offset === 0 &&
+     bitmap.width * bitmap.bytesPerPixel === bitmap.stride &&
+-    bitmap.height * bitmap.stride === storage.bytes.length
++    bitmap.height * bitmap.stride === (storage.byteLength ?? storage.bytes.length)
+   )
+     planes.delete(storage);
++  else retireClearedPlane(bitmap, plane);
+ }
+ /** Texture uploads may compare/skip native bytes, but still need the latest text
+  * provenance (two different strings can have identical native raster pixels). */
+@@ -254,6 +316,7 @@ export function copyRasterTextPresentation(
+   plane.glyphs.push(
+     ...glyphs.map((g) => ({...g, x: g.x + x, y: g.y + y, clip: shifted(g.clip, x, y)})),
+   );
++  plane.receivedText ||= hasRasterText(source);
+ }
+ /** Called by native storage cloning, not by the presentation clone above. */
+ export function cloneRasterText(
+@@ -271,6 +334,9 @@ export function cloneRasterText(
+       bitmap: {...plane.bitmap, storage: target, offset: plane.bitmap.offset - offset},
+       blank: plane.blank.cloneRange(offset, length),
+       glyphs: plane.glyphs.map((g) => ({...g, clip: {...g.clip}})),
++      clearedBytes: 0,
++      receivedText: true,
++      differenceByte: -1,
+     });
+   } finally {
+     depth--;
+@@ -284,8 +350,10 @@ export function recordRasterText(
+   style: RasterTextStyle = {},
+ ): void {
+   if (depth) return;
++  if (bitmap.storage) observePixelStorage(bitmap.storage);
+   const plane = ensure(bitmap);
+   if (!plane) return;
++  plane.receivedText = true;
+   const [ox, oy] = origin(bitmap, plane);
+   removeRegion(plane, shifted(bounds(bitmap), ox, oy));
+   // Glyph buffers are transparent/black before composition. Preserve the native
+@@ -323,6 +391,8 @@ export function recordRasterText(
+ // suppresses duplicate presentation work when one kernel calls another.
+ type Kernel = (...args: any[]) => any;
+ export interface RasterTextOperationOptions<T extends Kernel> {
++  /** This kernel handles its own pixel-batch admission and CPU observation barriers. */
++  batchable?: boolean;
+   source?: number | number[];
+   destination?: number;
+   map?: (x: number, y: number, args: Parameters<T>) => [number, number];
+@@ -374,6 +444,7 @@ export function withRasterText<T extends Kernel>(
+   options: RasterTextOperationOptions<T> = {},
+ ): T {
+   return function (this: unknown, ...args: Parameters<T>): ReturnType<T> {
++    if (!options.batchable) flushPixelBatch();
+     if (depth) return kernel.apply(this, args);
+     const destination = args[options.destination ?? 0];
+     if (!isBitmap(destination) || !args.some((a) => isBitmap(a) && hasRasterText(a)))
+@@ -397,6 +468,8 @@ export function withRasterText<T extends Kernel>(
+       result = kernel.apply(this, args);
+       if (options.applied && !options.applied(result, args)) return result;
+       presentationReplay = true;
++      recordRuntimeMetric('text.raster.replay.destination-glyphs', plane.glyphs.length);
++      recordRuntimeMetric('text.raster.replay.source-glyphs', captured.length);
+       kernel.apply(
+         this,
+         options.alternateArgs ? options.alternateArgs(alternate as Parameters<T>) : alternate,
+@@ -406,6 +479,10 @@ export function withRasterText<T extends Kernel>(
+       depth--;
+     }
+     const [ox, oy] = origin(destination, plane);
++    if (!options.clear)
++      plane.receivedText ||=
++        sources.some(hasRasterText) ||
++        args.some((a, i) => i !== (options.destination ?? 0) && isBitmap(a) && hasRasterText(a));
+     if (
+       (typeof options.replace === 'function' ? options.replace(args) : options.replace) ||
+       options.clear
+@@ -455,9 +532,11 @@ export function withRasterText<T extends Kernel>(
+       destination.storage &&
+       destination.offset === 0 &&
+       destination.width * destination.bytesPerPixel === destination.stride &&
+-      destination.height * destination.stride === destination.storage.bytes.length
++      destination.height * destination.stride ===
++        (destination.storage.byteLength ?? destination.storage.bytes.length)
+     )
+       planes.delete(destination.storage);
++    else if (options.clear) retireClearedPlane(destination, plane);
+     return result;
+   } as T;
+ }
+diff --git a/tests/aokana-display-render-jobs.test.mjs b/tests/aokana-display-render-jobs.test.mjs
+index 3502dac..5b52a35 100644
+--- a/tests/aokana-display-render-jobs.test.mjs
++++ b/tests/aokana-display-render-jobs.test.mjs
+@@ -18,6 +18,7 @@ import {
+ } from '../dist/engines/buriko/native/distributed-processing.js';
+ import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
+ import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
++import {BurikoBackdrop} from '../dist/engines/buriko/native/display-backdrop.js';
+ const rect = (left, top, right, bottom) => ({left, top, right, bottom});
+ 
+ test('redraw request replaces the initial mode, then accumulates later requests', () => {
+@@ -146,3 +147,108 @@ test('live list traversal detects destruction of its current native node', () =>
+   assert.throws(() => node.object, /released/);
+   assert.throws(() => entries.next(), /released/);
+ });
++
++test('GPU admission excludes custom draw collaborators and preserves their native calls', async () => {
++  // Prototype auditing waits until circular module initialization has completed.
++  await Promise.resolve();
++  const compositor = new BurikoBitmapCompositor(),
++    lists = new BurikoDisplayObjectLists(),
++    bounds = rect(0, 0, 3, 3),
++    env = new BurikoDisplayObjectEnvironment(compositor, new BurikoDisplayDamage(16, bounds)),
++    pool = new BurikoDistributedProcessing(new BurikoDistributedAllocator(2), 2),
++    object = new BurikoDisplayObject(env, 0, 0, 1),
++    context = {
++      bitmap: {
++        storage: new BurikoBitmapStorage(new Uint8Array(64), true),
++        offset: 0,
++        stride: 16,
++        width: 4,
++        height: 4,
++        format: 1,
++        bytesPerPixel: 4,
++      },
++      bounds,
++    };
++  object.configureGeometry(4, 4);
++  object.setActivation(1);
++  lists.insert(object);
++  let admitted = 0,
++    draws = 0;
++  const batch = {
++    run(_root, operation) {
++      admitted++;
++      return operation();
++    },
++  };
++  const jobs = new BurikoDisplayRenderJobs(lists, compositor, pool, context, 0, batch);
++  try {
++    jobs.run([{rectangle: bounds, key: 0}], 0);
++    assert.equal(admitted, 1);
++    const nativeComposite = compositor.composite;
++    compositor.composite = function (...args) {
++      return nativeComposite.apply(this, args);
++    };
++    jobs.run([{rectangle: bounds, key: 0}], 0);
++    assert.equal(admitted, 1, 'a compositor method override must keep the traversal in software');
++    delete compositor.composite;
++    object.draw = () => {
++      draws++;
++    };
++    jobs.run([{rectangle: bounds, key: 0}], 0);
++    assert.equal(admitted, 1);
++    assert.equal(draws, 1, 'custom callbacks retain their original call count');
++  } finally {
++    pool.dispose();
++  }
++});
++
++test('GPU admission preserves earlier native writes before a released-list-node fault', async () => {
++  await Promise.resolve();
++  function run(gpu) {
++    const compositor = new BurikoBitmapCompositor(),
++      lists = new BurikoDisplayObjectLists(),
++      bounds = rect(0, 0, 3, 3),
++      env = new BurikoDisplayObjectEnvironment(compositor, new BurikoDisplayDamage(16, bounds)),
++      pool = new BurikoDistributedProcessing(new BurikoDistributedAllocator(2), 2),
++      context = {
++        bitmap: {
++          storage: new BurikoBitmapStorage(new Uint8Array(64).fill(73), true),
++          offset: 0,
++          stride: 16,
++          width: 4,
++          height: 4,
++          format: 1,
++          bytesPerPixel: 4,
++        },
++        bounds,
++      };
++    env.displayContext = context;
++    const first = new BurikoBackdrop(env, 0),
++      second = new BurikoDisplayObject(env, 1, 0, 1);
++    lists.insert(first);
++    lists.insert(second);
++    const entries = lists.entries(false);
++    entries.next();
++    entries.next().value.release();
++    const batch = {
++      run() {
++        assert.fail('released nodes must decline admission');
++      },
++    };
++    const jobs = new BurikoDisplayRenderJobs(
++      lists,
++      compositor,
++      pool,
++      context,
++      0,
++      gpu ? batch : null,
++    );
++    assert.throws(() => jobs.run([{rectangle: bounds, key: 0}], 0), /released list node/);
++    // The native fault also leaves its run barrier active; admission must not bypass it.
++    assert.throws(() => pool.dispose(), /native run barrier/);
++    return context.bitmap.storage.bytes.slice();
++  }
++  const reference = run(false);
++  assert.deepEqual(reference, new Uint8Array(64));
++  assert.deepEqual(run(true), reference);
++});
+diff --git a/tests/aokana-dom-text.test.mjs b/tests/aokana-dom-text.test.mjs
+index 2227960..ba48769 100644
+--- a/tests/aokana-dom-text.test.mjs
++++ b/tests/aokana-dom-text.test.mjs
+@@ -13,9 +13,17 @@ import {
+   readRasterText,
+   rasterTextBitmap,
+   visibleRasterText,
++  hasRasterText,
++  withRasterText,
++  clearRasterTextPresentation,
+ } from '../dist/text/raster-text.js';
+ import {rasterTextSlots} from '../dist/text/browser-raster-text.js';
+ import {slotText} from '../dist/text/glyph-slots.js';
++import {
++  startRuntimePerformanceRecording,
++  stopRuntimePerformanceRecording,
++  getRuntimePerformanceSnapshot,
++} from '../dist/platform/runtime-performance.js';
+ 
+ const compositor = new BurikoBitmapCompositor();
+ const bitmap = (w, h, color = 0, format = 1) => {
+@@ -147,3 +155,107 @@ test('textless alpha replay cannot introduce a native divide fault, while native
+     /division by zero/,
+   );
+ });
++
++test('cropped clears retire stale textless planes without losing retained snapshots', () => {
++  for (const direct of [false, true]) {
++    const surface = bitmap(12, 8),
++      a = glyph('A');
++    if (direct)
++      surface.storage = new surface.storage.constructor(
++        new Uint8Array(surface.storage.bytes.length + 1).subarray(1),
++        true,
++      );
++    compositor.draw(surface, 4, 0, a, 0, 0);
++    const snapshot = {
++      ...surface,
++      storage: surface.storage.cloneRange(0, surface.storage.bytes.length),
++    };
++    const nativeSnapshot = snapshot.storage.bytes.slice(),
++      blankSnapshot = rasterTextBitmap(snapshot).storage.bytes.slice();
++    for (let pass = 0; pass < 2; pass++)
++      for (let row = 0; row < 8; row += 2) {
++        const strip = {...surface, offset: row * surface.stride, height: 2};
++        if (direct) {
++          strip.storage.bytes.fill(0, strip.offset, strip.offset + strip.height * strip.stride);
++          clearRasterTextPresentation(strip);
++        } else clearBurikoBitmap(strip);
++      }
++    assert.equal(hasRasterText(surface), false);
++    assert.equal(rasterTextBitmap(surface), surface);
++    assert.ok(surface.storage.bytes.every((value) => value === 0));
++    let calls = 0;
++    const operation = withRasterText((destination) => {
++      calls++;
++      destination.storage.bytes[0] = 17;
++    });
++    operation(surface);
++    assert.equal(calls, 1);
++    assert.equal(surface.storage.bytes[0], 17);
++    surface.storage.release();
++    assert.equal(readRasterText(snapshot)[0].text, 'A');
++    assert.deepEqual(snapshot.storage.bytes, nativeSnapshot);
++    assert.deepEqual(rasterTextBitmap(snapshot).storage.bytes, blankSnapshot);
++  }
++});
++
++test('empty glyph metadata cannot retire decorative ink and repeated misses reuse a byte witness', () => {
++  const surface = bitmap(12, 8, 0xffffff);
++  recordRasterText(surface, '', {decorative: true});
++  const alternate = rasterTextBitmap(surface).storage;
++  startRuntimePerformanceRecording();
++  try {
++    for (let repeat = 0; repeat < 10; repeat++)
++      clearBurikoBitmap(surface, {left: 0, top: 0, right: 11, bottom: 3});
++    assert.equal(readRasterText(surface).length, 0);
++    assert.equal(rasterTextBitmap(surface).storage, alternate);
++    assert.equal(surface.storage.bytes[4 * surface.stride], 255);
++    assert.equal(alternate.bytes[4 * surface.stride], 0);
++    const checks = () =>
++      getRuntimePerformanceSnapshot().aggregates.find(
++        (item) => item.name === 'text.raster.retirement-checks',
++      )?.count ?? 0;
++    assert.equal(checks(), 1);
++    for (let repeat = 0; repeat < 2; repeat++)
++      clearBurikoBitmap(surface, {left: 0, top: 4, right: 11, bottom: 7});
++    assert.equal(hasRasterText(surface), false);
++    assert.equal(checks(), 2);
++    assert.ok(surface.storage.bytes.every((value) => value === 0));
++  } finally {
++    stopRuntimePerformanceRecording();
++  }
++});
++
++test('recurring text and decorative overlays retain their planes without repeated scans or clones', () => {
++  for (const decorative of [false, true]) {
++    const surface = bitmap(12, 16),
++      source = bitmap(4, 8, 0xffffff);
++    recordRasterText(source, decorative ? '' : 'A', {decorative, size: 8, width: 4});
++    compositor.draw(surface, 4, 8, source, 0, 0);
++    const alternate = rasterTextBitmap(surface).storage,
++      native = surface.storage.bytes.slice(),
++      textless = alternate.bytes.slice();
++    startRuntimePerformanceRecording();
++    try {
++      for (let frame = 0; frame < 4; frame++) {
++        for (let row = 0; row < 16; row += 2)
++          clearBurikoBitmap({...surface, offset: row * surface.stride, height: 2});
++        compositor.draw(surface, 4, 8, source, 0, 0);
++        assert.equal(rasterTextBitmap(surface).storage, alternate);
++        assert.deepEqual(surface.storage.bytes, native);
++        assert.deepEqual(alternate.bytes, textless);
++        assert.equal(readRasterText(surface).length, decorative ? 0 : 1);
++      }
++      const aggregates = getRuntimePerformanceSnapshot().aggregates;
++      assert.equal(
++        aggregates.some((item) => item.name === 'text.raster.retirement-checks'),
++        false,
++      );
++      assert.equal(
++        aggregates.find((item) => item.name === 'text.raster.replay.source-glyphs').total,
++        decorative ? 0 : 4,
++      );
++    } finally {
++      stopRuntimePerformanceRecording();
++    }
++  }
++});
+diff --git a/ui/player/Sidebar.svelte b/ui/player/Sidebar.svelte
+index 0d8e04b..b11ed11 100644
+--- a/ui/player/Sidebar.svelte
++++ b/ui/player/Sidebar.svelte
+@@ -38,6 +38,14 @@
+           >True fullscreen</option
+         >
+       </select>
++      {#if game === 'buriko'}
++        <label for="graphics-backend">Graphics backend</label>
++        <select id="graphics-backend" aria-describedby="graphics-backend-help">
++          <option value="software">Software (default)</option>
++          <option value="webgl2">WebGL 2 (experimental)</option>
++        </select>
++        <p id="graphics-backend-help">Applies the next time a game starts.</p>
++      {/if}
+       <button id="fullscreen" type="button" aria-pressed="false" aria-describedby="fullscreen-help"
+         >Fill page</button
+       >
+diff --git a/ui/runtimes/buriko.ts b/ui/runtimes/buriko.ts
+index c8ebf77..e82d425 100644
+--- a/ui/runtimes/buriko.ts
++++ b/ui/runtimes/buriko.ts
+@@ -1,6 +1,11 @@
+ import {BlobSource} from '../../src/core/source.js';
+ import {BrowserAudioContextHost} from '../../src/audio/browser-audio-context-host.js';
+ import {beginRuntimeActivity} from '../../src/platform/runtime-activity.js';
++import {
++  getGraphicsBackendPreference,
++  setGraphicsBackendPreference,
++  type GraphicsBackend,
++} from '../../src/graphics/graphics-backend.js';
+ import {
+   MountedFileSystem,
+   OverlayFileSystem,
+@@ -68,6 +73,13 @@ const windowLayer = document.querySelector<HTMLElement>('#window-layer')!;
+ const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas')!;
+ const diagnosticMode = document.documentElement.classList.contains('no-canvas');
+ const textMode = document.querySelector<HTMLSelectElement>('#text-mode')!;
++const graphicsBackend = document.querySelector<HTMLSelectElement>('#graphics-backend')!;
++let selectedGraphicsBackend = getGraphicsBackendPreference();
++graphicsBackend.value = selectedGraphicsBackend;
++graphicsBackend.onchange = () => {
++  selectedGraphicsBackend = graphicsBackend.value === 'webgl2' ? 'webgl2' : 'software';
++  setGraphicsBackendPreference(selectedGraphicsBackend);
++};
+ let activeGraph: BurikoProductionDisplayResourceGraph | null = null;
+ textMode.onchange = () => {
+   try {
+@@ -168,6 +180,7 @@ async function launch(
+   installation: Installation,
+   backend: BurikoSpeakerBackend,
+   presentationMode: 'canvas' | 'none',
++  selectedGraphicsBackend: GraphicsBackend,
+ ): Promise<void> {
+   if (installation.startupError !== null) throw new Error(installation.startupError);
+   const finishStartup = beginRuntimeActivity('Starting game');
+@@ -260,6 +273,7 @@ async function launch(
+       childWindowCoordinates: displayHost.coordinates,
+       childWindowParent: displayHost.auxiliaryLayer,
+       presentationMode,
++      graphicsBackend: selectedGraphicsBackend,
+       navigator,
+       readViewportScreenMapping: () => displayHost.readViewportScreenMapping(),
+       monitors: [[0, 0, width, height]],
+@@ -501,7 +515,7 @@ play.addEventListener('click', async () => {
+       audioHost = new BrowserAudioContextHost(audio, document);
+       await audioHost.resume();
+     }
+-    await launch(selected, backend, mode);
++    await launch(selected, backend, mode, selectedGraphicsBackend);
+   } catch (error) {
+     report('The game stopped.');
+     fatalError.textContent = errorMessage(error);
+diff --git a/src/engines/buriko/native/bitmap-gpu.ts b/src/engines/buriko/native/bitmap-gpu.ts
+new file mode 100644
+index 0000000..7687d4a
+--- /dev/null
++++ b/src/engines/buriko/native/bitmap-gpu.ts
+@@ -0,0 +1,536 @@
++import {
++  flushPixelBatch,
++  withPixelBatch,
++  type SynchronousPixelBatch,
++} from '../../../graphics/pixel-batch.js';
++import {
++  WebGLIntegerCompositor,
++  type WebGLIntegerCommand,
++  type WebGLIntegerPlane,
++} from '../../../graphics/webgl-integer-compositor.js';
++import {beginRuntimeSpan, recordRuntimeMetric} from '../../../platform/runtime-performance.js';
++import {reportRuntimeAdvisory} from '../../../platform/runtime-advisories.js';
++import {
++  isBatchableBurikoBitmapStorage,
++  type BurikoBitmap,
++  type BurikoBitmapStorage,
++} from './bitmap.js';
++import type {BurikoBitmapAffineCoordinates} from './bitmap-affine.js';
++
++interface Parameters {
++  kind: 0 | 1 | 2 | 3; // Clear, row copy, affine alpha, ordinary alpha.
++  sourceX: number;
++  sourceY: number;
++  width: number;
++  height: number;
++  transparency: number; // -1 selects ordinary alpha's pair/tail rules.
++  bilinear: boolean;
++  coordinates: BurikoBitmapAffineCoordinates;
++}
++const ZERO_COORDINATES: BurikoBitmapAffineCoordinates = {
++  startX: 0,
++  startY: 0,
++  columnX: 0,
++  columnY: 0,
++  rowX: 0,
++  rowY: 0,
++};
++
++/** Native byte channels are independent; no normalized colors or hardware blending. */
++const FRAGMENT = `#version 300 es
++precision highp float;
++precision highp int;
++precision highp usampler2D;
++uniform usampler2D sourcePixels;
++uniform usampler2D oldDestination;
++uniform int kind;
++uniform ivec2 origin;
++uniform ivec2 sourceOrigin;
++uniform ivec2 sourceSize;
++uniform uvec2 start;
++uniform uvec2 columnStep;
++uniform uvec2 rowStep;
++uniform int transparency;
++uniform int bilinear;
++layout(location=0) out uvec4 result;
++uvec4 sourceAt(ivec2 p) {
++  if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, sourceSize))) return uvec4(0);
++  return texelFetch(sourcePixels, sourceOrigin + p, 0);
++}
++uvec4 lerp4(uvec4 a, uvec4 b, uint fraction) {
++  return (a * (16u - fraction) + b * fraction) >> 4u;
++}
++void main() {
++  ivec2 position = ivec2(gl_FragCoord.xy), local = position - origin;
++  if (kind == 0) { result = uvec4(0); return; }
++  uvec4 source;
++  if (kind == 2) {
++    uvec2 fixedPosition = start + uint(local.x) * columnStep + uint(local.y) * rowStep;
++    if (bilinear == 0) source = sourceAt(ivec2(fixedPosition + uvec2(32768u)) >> 16);
++    else {
++      ivec2 p = ivec2(fixedPosition) >> 16;
++      uvec2 fraction = (fixedPosition >> 12u) & 15u;
++      source = lerp4(lerp4(sourceAt(p), sourceAt(p + ivec2(1, 0)), fraction.x),
++        lerp4(sourceAt(p + ivec2(0, 1)), sourceAt(p + ivec2(1, 1)), fraction.x), fraction.y);
++    }
++  } else source = sourceAt(local);
++  if (kind == 1) { result = source; return; }
++  uvec4 old = texelFetch(oldDestination, position, 0);
++  uint index = source.a >> 1u;
++  uint coefficient;
++  if (kind == 2) coefficient = ((index == 127u ? 128u : index) * uint(256 - transparency)) >> 8u;
++  else if (transparency >= 0) coefficient = (index * uint(256 - transparency)) >> 8u;
++  else {
++    bool tail = local.x == sourceSize.x - 1 && (sourceSize.x & 1) != 0;
++    if (tail && source.a >= 254u) { result = uvec4(source.rgb, 0u); return; }
++    if (!tail && source.a >= 254u && sourceAt(ivec2(local.x ^ 1, local.y)).a >= 254u) {
++      result = source; return;
++    }
++    coefficient = !tail && index == 127u ? 128u : index;
++  }
++  result = uvec4((source.rgb * coefficient + old.rgb * (128u - coefficient)) >> 7u, old.a);
++}`;
++
++function createCompositor(): WebGLIntegerCompositor<Parameters> {
++  return new WebGLIntegerCompositor({
++    fragmentSource: FRAGMENT,
++    // Every oldDestination fetch uses this output pixel; sources are immutable.
++    independentPixels: true,
++    bindUniforms(gl, program) {
++      // Values persist with this private program. Independent strips commonly
++      // change only their origin and Q16 start, so avoid redundant driver calls.
++      const scalar = (name: string) => {
++        const location = gl.getUniformLocation(program, name);
++        let previous = NaN;
++        return (value: number) => {
++          if (value === previous) return;
++          gl.uniform1i(location, value);
++          previous = value;
++        };
++      };
++      const pair = (name: string, unsigned = false) => {
++        const location = gl.getUniformLocation(program, name);
++        let previousX = NaN,
++          previousY = NaN;
++        return (x: number, y: number) => {
++          if (x === previousX && y === previousY) return;
++          if (unsigned) gl.uniform2ui(location, x, y);
++          else gl.uniform2i(location, x, y);
++          previousX = x;
++          previousY = y;
++        };
++      };
++      const kind = scalar('kind'),
++        origin = pair('origin'),
++        sourceOrigin = pair('sourceOrigin'),
++        size = pair('sourceSize'),
++        start = pair('start', true),
++        column = pair('columnStep', true),
++        row = pair('rowStep', true),
++        transparency = scalar('transparency'),
++        bilinear = scalar('bilinear');
++      return (p, command) => {
++        kind(p.kind);
++        if (p.kind === 0) return;
++        origin(command.rectangle.x, command.rectangle.y);
++        sourceOrigin(p.sourceX, p.sourceY);
++        size(p.width, p.height);
++        if (p.kind === 1) return;
++        transparency(p.transparency);
++        if (p.kind !== 2) return;
++        start(p.coordinates.startX >>> 0, p.coordinates.startY >>> 0);
++        column(p.coordinates.columnX >>> 0, p.coordinates.columnY >>> 0);
++        row(p.coordinates.rowX >>> 0, p.coordinates.rowY >>> 0);
++        bilinear(Number(p.bilinear));
++      };
++    },
++  });
++}
++
++interface Target {
++  storage: BurikoBitmapStorage;
++  plane: WebGLIntegerPlane;
++  commands: WebGLIntegerCommand<Parameters>[];
++  replay: (() => void)[];
++  pixels: number;
++}
++interface Input {
++  storage: BurikoBitmapStorage;
++  stride: number;
++  plane: WebGLIntegerPlane;
++}
++let active: BurikoGpuBitmapBatch | null = null;
++
++/** Keep software rendering free of deferred-command closures and descriptor snapshots. */
++export function hasBurikoGpuBatch(): boolean {
++  return active?.acceptsCommands ?? false;
++}
++
++/** Foreign callbacks may retain raw views or replace methods audited at traversal entry. */
++export function withBurikoGpuSuspended<T>(operation: () => T): T {
++  flushPixelBatch();
++  const previous = active;
++  previous?.invalidate();
++  active = null;
++  try {
++    return operation();
++  } finally {
++    active = previous;
++  }
++}
++
++/** Only an audited synchronous display traversal installs this scope. */
++export class BurikoGpuBitmapBatch implements SynchronousPixelBatch {
++  private readonly gpu = createCompositor();
++  private root: BurikoBitmap | null = null;
++  private targets: Target[] = [];
++  private inputs: Input[] = [];
++  private watched = new Set<ArrayBufferLike>();
++  private commandCount = 0;
++  private auditValid = false;
++  private storageAudit = new Set<object>();
++
++  get storageAuditCache(): Set<object> {
++    return this.storageAudit;
++  }
++
++  get acceptsCommands(): boolean {
++    return this.auditValid;
++  }
++
++  /** An unknown callback invalidates admission for the rest of this traversal. */
++  invalidate(): void {
++    this.auditValid = false;
++  }
++
++  /** Numerical probes can force small batches through the same production path. */
++  constructor(
++    private readonly minimumPixels = 16384,
++    private readonly minimumCommands = 8,
++  ) {}
++
++  run<T>(root: BurikoBitmap, operation: () => T): T {
++    if (this.gpu.failed || root.format !== 1) return operation();
++    return withPixelBatch(this, () => {
++      const previous = active,
++        previousRoot = this.root,
++        previousAudit = this.auditValid,
++        previousStorageAudit = this.storageAudit;
++      this.root = {...root};
++      this.auditValid = true;
++      this.storageAudit = new Set();
++      active = this;
++      recordRuntimeMetric('buriko.gpu.frames', 1);
++      try {
++        return operation();
++      } finally {
++        try {
++          flushPixelBatch();
++        } finally {
++          active = previous;
++          this.root = previousRoot;
++          this.auditValid = previousAudit;
++          this.storageAudit = previousStorageAudit;
++        }
++      }
++    });
++  }
++
++  hasPending(storage: object): boolean {
++    if (this.commandCount === 0) return false;
++    if (!isBatchableBurikoBitmapStorage(storage, this.storageAudit)) {
++      this.invalidate();
++      return true;
++    }
++    const view = storage.batchingView(0, 0);
++    return view !== null && this.watched.has(view.buffer);
++  }
++
++  /** Per-target streams are independent: dependencies and aliases flush before admission. */
++  flush(): void {
++    if (this.commandCount === 0) {
++      this.targets = [];
++      this.inputs = [];
++      this.watched.clear();
++      return;
++    }
++    const previous = active;
++    active = null;
++    const targets = this.targets,
++      inputs = this.inputs;
++    this.targets = [];
++    this.inputs = [];
++    this.watched.clear();
++    this.commandCount = 0;
++    const finish = beginRuntimeSpan('buriko.gpu.flush');
++    try {
++      for (const target of targets) {
++        // Avoid GPU roundtrips for fragments interrupted by an unsupported CPU operation.
++        const useGpu =
++          target.commands.length >= this.minimumCommands && target.pixels >= this.minimumPixels;
++        const completed =
++          useGpu &&
++          this.gpu.run(
++            target.plane,
++            inputs.map((i) => i.plane),
++            target.commands,
++          );
++        if (completed) {
++          recordRuntimeMetric('buriko.gpu.commands', target.commands.length);
++          recordRuntimeMetric('buriko.gpu.pixels', target.pixels);
++          recordRuntimeMetric('buriko.gpu.readbacks', 1);
++        } else {
++          for (const replay of target.replay) replay();
++          recordRuntimeMetric('buriko.gpu.software-commands', target.commands.length);
++        }
++      }
++      if (this.gpu.failed)
++        reportRuntimeAdvisory({
++          id: 'webgl-composition-fallback',
++          title: 'Software graphics fallback',
++          message:
++            'The experimental WebGL 2 backend is unavailable or its context was lost. Rendering continues in software. Restart the game to retry WebGL 2.',
++        });
++    } finally {
++      finish?.();
++      active = previous;
++    }
++  }
++
++  queue(
++    destination: BurikoBitmap,
++    source: BurikoBitmap | null,
++    parameters: Parameters,
++    replay: (d: BurikoBitmap, s: BurikoBitmap | null) => void,
++  ): boolean {
++    const root = this.root;
++    if (
++      !this.auditValid ||
++      !root ||
++      this.gpu.failed ||
++      destination.format !== 1 ||
++      destination.bytesPerPixel !== 4 ||
++      destination.stride !== root.stride ||
++      !root.storage
++    )
++      return this.decline();
++    const output = initializedPlane(destination);
++    const input = source === null ? null : initializedPlane(source);
++    if (
++      !output ||
++      (source !== null && !input) ||
++      (input && input.bytes.buffer === output.bytes.buffer)
++    )
++      return this.decline();
++    const delta = destination.offset - root.offset;
++    const y = Math.floor(delta / root.stride),
++      x = (delta - y * root.stride) / 4;
++    if (
++      !Number.isSafeInteger(x) ||
++      x < 0 ||
++      y < 0 ||
++      x + destination.width > root.width ||
++      y + destination.height > root.height
++    )
++      return this.decline();
++    const storage = destination.storage!;
++    const full = initializedPlane({...root, storage});
++    if (!full) return this.decline();
++    // All queued inputs remain immutable, and every target is a distinct buffer.
++    if (
++      this.inputs.some((i) => i.plane.bytes.buffer === full.bytes.buffer) ||
++      this.targets.some(
++        (t) => t.storage !== storage && t.plane.bytes.buffer === full.bytes.buffer,
++      ) ||
++      (input && this.targets.some((t) => t.plane.bytes.buffer === input.bytes.buffer)) ||
++      this.commandCount >= 4096
++    )
++      flushPixelBatch();
++    let target = this.targets.find((t) => t.storage === storage);
++    if (!target) {
++      if (this.targets.length >= 4) flushPixelBatch();
++      target = {storage, plane: full, commands: [], replay: [], pixels: 0};
++      this.targets.push(target);
++    }
++    let sourceIndex: number | null = null;
++    if (source && input) {
++      sourceIndex = this.inputs.findIndex(
++        (i) => i.storage === source.storage && i.stride === source.stride,
++      );
++      if (sourceIndex < 0) {
++        // One upload per backing row layout, preserving the crop as integer uniforms.
++        const width = source.stride / 4,
++          height = Math.floor(source.storage!.byteLength / source.stride);
++        if (
++          width > 8192 ||
++          height > 8192 ||
++          height < 1 ||
++          Math.floor(source.offset / source.stride) + source.height > height ||
++          this.inputs.length >= 32
++        )
++          return this.decline();
++        sourceIndex = this.inputs.length;
++        this.inputs.push({
++          storage: source.storage!,
++          stride: source.stride,
++          plane: {...input, offset: 0, width, height},
++        });
++      }
++      parameters.sourceY = Math.floor(source.offset / source.stride);
++      parameters.sourceX = (source.offset - parameters.sourceY * source.stride) / 4;
++      this.watched.add(input.bytes.buffer);
++    }
++    target.commands.push({
++      source: sourceIndex,
++      rectangle: {x, y, width: destination.width, height: destination.height},
++      parameters,
++    });
++    const d = {...destination},
++      s = source && {...source};
++    target.replay.push(() => replay(d, s));
++    target.pixels += destination.width * destination.height;
++    this.watched.add(full.bytes.buffer);
++    this.commandCount++;
++    return true;
++  }
++
++  private decline(): false {
++    flushPixelBatch();
++    return false;
++  }
++  dispose(): void {
++    this.flush();
++    this.gpu.dispose();
++  }
++}
++
++/** Deliberately declines holes, shared memory, unusual pitches and invalid descriptors. */
++function initializedPlane(bitmap: BurikoBitmap): WebGLIntegerPlane | null {
++  const {storage, width, height, stride, offset} = bitmap;
++  if (!isBatchableBurikoBitmapStorage(storage, active?.storageAuditCache)) {
++    // The ensuing software path can invoke arbitrary storage overrides. Do not
++    // reuse the traversal audit after that callback, even for other allocations.
++    active?.invalidate();
++    return null;
++  }
++  if (
++    bitmap.bytesPerPixel !== 4 ||
++    !Number.isSafeInteger(width) ||
++    width < 1 ||
++    width > 8192 ||
++    !Number.isSafeInteger(height) ||
++    height < 1 ||
++    height > 8192 ||
++    !Number.isSafeInteger(stride) ||
++    stride < width * 4 ||
++    stride > 32767 * 4 ||
++    (stride & 3) !== 0 ||
++    !Number.isSafeInteger(offset) ||
++    offset < 0 ||
++    (offset & 3) !== 0 ||
++    (offset % stride) + width * 4 > stride
++  )
++    return null;
++  const view = storage.batchingView(offset, (height - 1) * stride + width * 4);
++  if (!view || !(view.buffer instanceof ArrayBuffer)) return null;
++  return {
++    bytes: new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
++    offset,
++    stride,
++    width,
++    height,
++  };
++}
++
++function parameters(
++  kind: Parameters['kind'],
++  source: BurikoBitmap | null,
++  transparency = 0,
++): Parameters {
++  return {
++    kind,
++    sourceX: 0,
++    sourceY: 0,
++    width: source?.width ?? 0,
++    height: source?.height ?? 0,
++    transparency,
++    bilinear: false,
++    coordinates: ZERO_COORDINATES,
++  };
++}
++export function tryQueueBurikoClear(
++  destination: BurikoBitmap,
++  replay: (d: BurikoBitmap) => void,
++): boolean {
++  return active?.queue(destination, null, parameters(0, null), (d) => replay(d)) ?? false;
++}
++export function tryQueueBurikoCopy(
++  destination: BurikoBitmap,
++  source: BurikoBitmap,
++  replay: (d: BurikoBitmap, s: BurikoBitmap) => void,
++): boolean {
++  if (!active) return false;
++  if (
++    source.format !== 1 ||
++    source.width > destination.width ||
++    source.height > destination.height
++  ) {
++    flushPixelBatch();
++    return false;
++  }
++  return active.queue(
++    {...destination, width: source.width, height: source.height},
++    source,
++    parameters(1, source),
++    (d, s) => replay(d, s!),
++  );
++}
++export function tryQueueBurikoAlpha(
++  destination: BurikoBitmap,
++  source: BurikoBitmap,
++  transparency: number | null,
++  replay: (d: BurikoBitmap, s: BurikoBitmap) => void,
++): boolean {
++  if (!active) return false;
++  if (
++    source.format !== 2 ||
++    source.width > destination.width ||
++    source.height > destination.height ||
++    (transparency !== null &&
++      (!Number.isInteger(transparency) || transparency < 0 || transparency > 255))
++  ) {
++    flushPixelBatch();
++    return false;
++  }
++  return active.queue(
++    {...destination, width: source.width, height: source.height},
++    source,
++    parameters(3, source, transparency ?? -1),
++    (d, s) => replay(d, s!),
++  );
++}
++export function tryQueueBurikoAffine(
++  destination: BurikoBitmap,
++  source: BurikoBitmap,
++  coordinates: BurikoBitmapAffineCoordinates,
++  transparency: number,
++  bilinear: boolean,
++  replay: (d: BurikoBitmap, s: BurikoBitmap) => void,
++): boolean {
++  if (!active) return false;
++  if (
++    source.format !== 2 ||
++    !Number.isInteger(transparency) ||
++    transparency < 0 ||
++    transparency > 255
++  ) {
++    flushPixelBatch();
++    return false;
++  }
++  return active.queue(
++    destination,
++    source,
++    {...parameters(2, source, transparency), coordinates: {...coordinates}, bilinear},
++    (d, s) => replay(d, s!),
++  );
++}
+diff --git a/src/graphics/graphics-backend.ts b/src/graphics/graphics-backend.ts
+new file mode 100644
+index 0000000..18c39e0
+--- /dev/null
++++ b/src/graphics/graphics-backend.ts
+@@ -0,0 +1,31 @@
++/** Browser graphics backend preference. CPU rendering remains the compatibility default. */
++export type GraphicsBackend = 'software' | 'webgl2';
++
++const STORAGE_KEY = 'vn.graphics-backend';
++
++function preferenceStorage(): Storage | null {
++  try {
++    return globalThis.localStorage;
++  } catch {
++    return null;
++  }
++}
++
++/** Read the persisted backend preference, falling back safely when storage is unavailable. */
++export function getGraphicsBackendPreference(): GraphicsBackend {
++  try {
++    return preferenceStorage()?.getItem(STORAGE_KEY) === 'webgl2' ? 'webgl2' : 'software';
++  } catch {
++    return 'software';
++  }
++}
++
++/** Persist a backend preference when browser storage is available. */
++export function setGraphicsBackendPreference(backend: GraphicsBackend): void {
++  if (backend !== 'software' && backend !== 'webgl2') return;
++  try {
++    preferenceStorage()?.setItem(STORAGE_KEY, backend);
++  } catch {
++    /* A preference remains optional when browser storage is disabled. */
++  }
++}
+diff --git a/src/graphics/pixel-batch.ts b/src/graphics/pixel-batch.ts
+new file mode 100644
+index 0000000..3061df7
+--- /dev/null
++++ b/src/graphics/pixel-batch.ts
+@@ -0,0 +1,40 @@
++/** Optional synchronous pixel work. Native storage must be current at observation boundaries. */
++export interface SynchronousPixelBatch {
++  hasPending(storage: object): boolean;
++  flush(): void;
++}
++
++let current: SynchronousPixelBatch | undefined;
++
++/** Materialize pending pixels without recursively intercepting the flush itself. */
++export function flushPixelBatch(): void {
++  const batch = current;
++  if (batch === undefined) return;
++  current = undefined;
++  try {
++    batch.flush();
++  } finally {
++    current = batch;
++  }
++}
++
++/** Raw storage access is a barrier only when that storage has deferred writes. */
++export function observePixelStorage(storage: object): void {
++  if (current?.hasPending(storage)) flushPixelBatch();
++}
++
++/** The operation and its batch must complete synchronously before this scope returns. */
++export function withPixelBatch<T>(batch: SynchronousPixelBatch, operation: () => T): T {
++  flushPixelBatch();
++  const previous = current;
++  current = batch;
++  try {
++    return operation();
++  } finally {
++    try {
++      flushPixelBatch();
++    } finally {
++      current = previous;
++    }
++  }
++}
+diff --git a/src/graphics/webgl-integer-compositor.ts b/src/graphics/webgl-integer-compositor.ts
+new file mode 100644
+index 0000000..f93585d
+--- /dev/null
++++ b/src/graphics/webgl-integer-compositor.ts
+@@ -0,0 +1,700 @@
++/** A bounded four-byte plane. Row zero maps to texture y=0 without a vertical flip. */
++export interface WebGLIntegerPlane {
++  readonly bytes: Uint8Array;
++  /** Byte offset relative to bytes, not to its underlying ArrayBuffer. */
++  readonly offset: number;
++  readonly stride: number;
++  readonly width: number;
++  readonly height: number;
++}
++
++export interface WebGLIntegerRectangle {
++  readonly x: number;
++  readonly y: number;
++  readonly width: number;
++  readonly height: number;
++}
++
++export interface WebGLIntegerCommand<Parameters> {
++  /** Index into this batch's immutable source planes; null binds a zero 1×1 plane. */
++  readonly source: number | null;
++  readonly rectangle: WebGLIntegerRectangle;
++  readonly parameters: Parameters;
++}
++
++export interface WebGLIntegerCompositorOptions<Parameters> {
++  /** Complete GLSL ES 3 fragment shader with an unsigned integer color output. */
++  readonly fragmentSource: string;
++  /** Cache engine-specific uniforms once. The returned setter must only set uniforms. */
++  readonly bindUniforms: (
++    gl: WebGL2RenderingContext,
++    program: WebGLProgram,
++  ) => (parameters: Parameters, command: WebGLIntegerCommand<Parameters>) => void;
++  /**
++   * Opt in only when oldDestination is read at the current output fragment alone.
++   * Disjoint commands may be submitted out of order; parameter binding must not
++   * depend on submission order. Default false preserves the original command order.
++   */
++  readonly independentPixels?: boolean;
++  /** Aggregate CPU staging/readback/grid and GPU texture bytes; defaults to 128 MiB. */
++  readonly maxBytes?: number;
++  /** Must return a canvas/context exclusively owned by this compositor. */
++  readonly createCanvas?: () => HTMLCanvasElement | OffscreenCanvas;
++}
++
++interface IntegerTexture {
++  readonly handle: WebGLTexture;
++  readonly width: number;
++  readonly height: number;
++}
++
++interface CommandWave<Parameters> {
++  readonly commands: WebGLIntegerCommand<Parameters>[];
++  rectangle: WebGLIntegerRectangle;
++}
++
++const WAVE_TILE_WIDTH = 64;
++const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;
++const MAX_SOURCES = 128;
++const MAX_COMMANDS = 32768;
++const VERTEX_SOURCE = `#version 300 es
++void main() {
++  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
++  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
++}`;
++
++/**
++ * Synchronous integer composition with one completed readback per batch. The caller
++ * owns arithmetic and eligibility; this class never uses fixed-function blending.
++ * Shader samplers sourcePixels and oldDestination use units 0 and 1. gl_FragCoord
++ * addresses destination pixels, including when a command covers only a subrectangle.
++ *
++ * Sources are snapshots taken at run entry, not live views of intermediate output.
++ * An accepted batch commits all destination rows only after completed, error-free GL
++ * execution. Unsupported inputs or unavailable GL return false without CPU writes.
++ */
++export class WebGLIntegerCompositor<Parameters> {
++  private readonly maxBytes: number;
++  private canvas: HTMLCanvasElement | OffscreenCanvas | null = null;
++  private gl: WebGL2RenderingContext | null = null;
++  private program: WebGLProgram | null = null;
++  private sourceUniform: WebGLUniformLocation | null = null;
++  private destinationUniform: WebGLUniformLocation | null = null;
++  private setUniforms: ReturnType<
++    WebGLIntegerCompositorOptions<Parameters>['bindUniforms']
++  > | null = null;
++  private vertexArray: WebGLVertexArrayObject | null = null;
++  private framebuffers: [WebGLFramebuffer, WebGLFramebuffer] | null = null;
++  private destinations: [IntegerTexture, IntegerTexture] | null = null;
++  private readonly sources: (IntegerTexture | null)[] = [];
++  private zero: IntegerTexture | null = null;
++  private staging: Uint8Array<ArrayBuffer> | null = null;
++  private schedulingGrid: Uint32Array<ArrayBuffer> | null = null;
++  private maxTextureSize = 0;
++  private maxViewportWidth = 0;
++  private maxViewportHeight = 0;
++  private unavailable = false;
++  private busy = false;
++  private readonly contextLost = (): void => {
++    // Keep this instance disabled: programs/textures cannot survive context loss.
++    this.unavailable = true;
++  };
++
++  constructor(private readonly options: WebGLIntegerCompositorOptions<Parameters>) {
++    const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
++    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024 || maxBytes > 512 * 1024 * 1024)
++      throw new RangeError('Integer compositor memory limit must be 1 KiB to 512 MiB');
++    this.maxBytes = maxBytes;
++  }
++
++  /** A context, shader, or GL failure permanently disables this instance. Input rejection does not. */
++  get failed(): boolean {
++    return this.unavailable;
++  }
++
++  run(
++    destination: WebGLIntegerPlane,
++    sources: readonly WebGLIntegerPlane[],
++    commands: readonly WebGLIntegerCommand<Parameters>[],
++  ): boolean {
++    if (
++      this.unavailable ||
++      this.busy ||
++      sources.length > MAX_SOURCES ||
++      commands.length > MAX_COMMANDS
++    )
++      return false;
++    if (!this.validPlane(destination) || sources.some((source) => !this.validPlane(source)))
++      return false;
++    // Preserve span metadata even if a caller's uniform setter closes over its input records.
++    destination = {...destination};
++    sources = sources.map((source) => ({...source}));
++    const selected: WebGLIntegerCommand<Parameters>[] = [];
++    for (const command of commands) {
++      const {x, y, width, height} = command.rectangle;
++      if (
++        (command.source !== null &&
++          (!Number.isSafeInteger(command.source) ||
++            command.source < 0 ||
++            command.source >= sources.length)) ||
++        ![x, y, width, height].every(Number.isSafeInteger) ||
++        x < 0 ||
++        y < 0 ||
++        width < 0 ||
++        height < 0 ||
++        x + width > destination.width ||
++        y + height > destination.height
++      )
++        return false;
++      if (width !== 0 && height !== 0)
++        selected.push({...command, rectangle: {x, y, width, height}});
++    }
++    if (selected.length === 0) return true;
++    const destinationLength = destination.width * destination.height * 4,
++      sourceLength = sources.reduce((sum, source) => sum + source.width * source.height * 4, 0),
++      stageLength = destinationLength * 2 + sourceLength,
++      textureBytes = stageLength + 4,
++      gridColumns = Math.ceil(destination.width / WAVE_TILE_WIDTH),
++      gridCells = this.options.independentPixels ? gridColumns * destination.height : 0,
++      gridBytes = gridCells * 4;
++    if (
++      !Number.isSafeInteger(stageLength) ||
++      !Number.isSafeInteger(gridBytes) ||
++      stageLength + textureBytes + gridBytes > this.maxBytes
++    )
++      return false;
++    this.busy = true;
++    try {
++      this.initialize();
++      const gl = this.gl!;
++      if (
++        destination.width > this.maxViewportWidth ||
++        destination.height > this.maxViewportHeight ||
++        [destination, ...sources].some(
++          (plane) => plane.width > this.maxTextureSize || plane.height > this.maxTextureSize,
++        )
++      )
++        return false;
++      this.prepareTextures(destination, sources);
++      const retainedStage = Math.max(this.staging?.byteLength ?? 0, stageLength),
++        retainedGrid = Math.max(this.schedulingGrid?.byteLength ?? 0, gridBytes);
++      if (retainedStage + retainedGrid + textureBytes > this.maxBytes) {
++        this.staging = null;
++        this.schedulingGrid = null;
++      }
++      if (this.staging === null || this.staging.byteLength < stageLength)
++        this.staging = new Uint8Array(stageLength);
++      if (
++        gridCells !== 0 &&
++        (this.schedulingGrid === null || this.schedulingGrid.length < gridCells)
++      )
++        this.schedulingGrid = new Uint32Array(gridCells);
++      const waves = this.commandWaves(selected, gridColumns, gridCells);
++      const staging = this.staging;
++      this.copyIn(destination, 0);
++      let cursor = destinationLength;
++      const offsets = sources.map((source) => {
++        const offset = cursor;
++        this.copyIn(source, offset);
++        cursor += source.width * source.height * 4;
++        return offset;
++      });
++      const readback = staging.subarray(cursor, cursor + destinationLength);
++      this.resetState();
++      gl.useProgram(this.program);
++      gl.bindVertexArray(this.vertexArray);
++      gl.uniform1i(this.sourceUniform, 0);
++      gl.uniform1i(this.destinationUniform, 1);
++      for (let index = 0; index < sources.length; index++) {
++        const source = sources[index]!;
++        this.upload(
++          this.sources[index]!,
++          staging.subarray(offsets[index]!, offsets[index]! + source.width * source.height * 4),
++        );
++      }
++      const destinationBytes = staging.subarray(0, destinationLength);
++      this.upload(this.destinations![0], destinationBytes);
++      this.upload(this.destinations![1], destinationBytes);
++      gl.viewport(0, 0, destination.width, destination.height);
++      let input: 0 | 1 = 0,
++        output: 0 | 1 = 1,
++        previous: WebGLIntegerRectangle | null = null;
++      for (const wave of waves) {
++        if (previous !== null) this.preserveRectangle(input, output, previous);
++        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers![output]);
++        this.bindTexture(1, this.destinations![input]);
++        gl.enable(gl.SCISSOR_TEST);
++        gl.activeTexture(gl.TEXTURE0);
++        let source: IntegerTexture | null = null;
++        for (const command of wave.commands) {
++          const nextSource = command.source === null ? this.zero! : this.sources[command.source]!;
++          if (source !== nextSource) {
++            gl.bindTexture(gl.TEXTURE_2D, nextSource.handle);
++            source = nextSource;
++          }
++          this.setUniforms!(command.parameters, command);
++          const {x, y, width, height} = command.rectangle;
++          gl.scissor(x, y, width, height);
++          gl.drawArrays(gl.TRIANGLES, 0, 3);
++        }
++        // Both targets differed only inside this wave. Copying its bounding box
++        // also copies unchanged gaps safely, with one preservation blit next wave.
++        previous = wave.rectangle;
++        [input, output] = [output, input];
++      }
++      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffers![input]);
++      gl.readPixels(
++        0,
++        0,
++        destination.width,
++        destination.height,
++        gl.RGBA_INTEGER,
++        gl.UNSIGNED_BYTE,
++        readback,
++      );
++      if (gl.isContextLost() || gl.getError() !== gl.NO_ERROR || this.unavailable)
++        throw new Error('Integer composition did not complete');
++      // A caller uniform callback must not detach/resize input storage. Recheck before commit.
++      if (!this.validPlane(destination)) return false;
++      const rowBytes = destination.width * 4;
++      if (destination.stride === rowBytes)
++        Uint8Array.prototype.set.call(destination.bytes, readback, destination.offset);
++      else
++        for (let row = 0; row < destination.height; row++)
++          Uint8Array.prototype.set.call(
++            destination.bytes,
++            readback.subarray(row * rowBytes, (row + 1) * rowBytes),
++            destination.offset + row * destination.stride,
++          );
++      return true;
++    } catch {
++      this.unavailable = true;
++      this.release();
++      return false;
++    } finally {
++      this.busy = false;
++    }
++  }
++
++  /** Permanently retires this instance and its exclusively owned graphics context. */
++  dispose(): void {
++    this.unavailable = true;
++    this.release();
++  }
++
++  /** A 64×1 grid adds conservative dependencies without pairwise rectangle searches. */
++  private commandWaves(
++    commands: WebGLIntegerCommand<Parameters>[],
++    columns: number,
++    cells: number,
++  ): CommandWave<Parameters>[] {
++    if (cells === 0)
++      return commands.map((command) => ({commands: [command], rectangle: command.rectangle}));
++    const grid = this.schedulingGrid!;
++    grid.fill(0, 0, cells);
++    const waves: CommandWave<Parameters>[] = [];
++    for (const command of commands) {
++      const {x, y, width, height} = command.rectangle,
++        left = Math.floor(x / WAVE_TILE_WIDTH),
++        right = Math.ceil((x + width) / WAVE_TILE_WIDTH),
++        bottom = y + height;
++      let level = 0;
++      for (let row = y; row < bottom; row++)
++        for (let column = left; column < right; column++)
++          level = Math.max(level, grid[row * columns + column]!);
++      for (let row = y; row < bottom; row++)
++        grid.fill(level + 1, row * columns + left, row * columns + right);
++      const wave = waves[level];
++      if (wave === undefined) waves[level] = {commands: [command], rectangle: command.rectangle};
++      else {
++        wave.commands.push(command);
++        const previous = wave.rectangle,
++          minimumX = Math.min(previous.x, x),
++          minimumY = Math.min(previous.y, y);
++        wave.rectangle = {
++          x: minimumX,
++          y: minimumY,
++          width: Math.max(previous.x + previous.width, x + width) - minimumX,
++          height: Math.max(previous.y + previous.height, bottom) - minimumY,
++        };
++      }
++    }
++    return waves;
++  }
++
++  private validPlane(plane: WebGLIntegerPlane): boolean {
++    const {bytes, offset, stride, width, height} = plane;
++    if (
++      !(bytes instanceof Uint8Array) ||
++      !(bytes.buffer instanceof ArrayBuffer) ||
++      ![offset, stride, width, height].every(Number.isSafeInteger) ||
++      offset < 0 ||
++      width <= 0 ||
++      height <= 0 ||
++      stride < width * 4
++    )
++      return false;
++    const end = offset + (height - 1) * stride + width * 4;
++    return Number.isSafeInteger(end) && end <= bytes.byteLength;
++  }
++
++  private copyIn(plane: WebGLIntegerPlane, offset: number): void {
++    const rowBytes = plane.width * 4;
++    if (plane.stride === rowBytes)
++      this.staging!.set(
++        new Uint8Array(
++          plane.bytes.buffer,
++          plane.bytes.byteOffset + plane.offset,
++          rowBytes * plane.height,
++        ),
++        offset,
++      );
++    else
++      for (let row = 0; row < plane.height; row++)
++        this.staging!.set(
++          new Uint8Array(
++            plane.bytes.buffer,
++            plane.bytes.byteOffset + plane.offset + row * plane.stride,
++            rowBytes,
++          ),
++          offset + row * rowBytes,
++        );
++  }
++
++  private initialize(): void {
++    if (this.gl !== null) {
++      if (this.gl.isContextLost()) throw new Error('Integer graphics context lost');
++      return;
++    }
++    const canvas = this.options.createCanvas?.() ?? document.createElement('canvas');
++    canvas.width = 1;
++    canvas.height = 1;
++    const gl = canvas.getContext('webgl2', {
++      alpha: false,
++      antialias: false,
++      depth: false,
++      stencil: false,
++      premultipliedAlpha: false,
++      preserveDrawingBuffer: false,
++    }) as WebGL2RenderingContext | null;
++    if (gl === null) throw new Error('Integer WebGL2 unavailable');
++    this.canvas = canvas;
++    this.gl = gl;
++    canvas.addEventListener('webglcontextlost', this.contextLost);
++    this.maxTextureSize = Number(gl.getParameter(gl.MAX_TEXTURE_SIZE));
++    const viewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array;
++    this.maxViewportWidth = viewport[0]!;
++    this.maxViewportHeight = viewport[1]!;
++    if (
++      this.maxTextureSize < 2 ||
++      this.maxViewportWidth < 2 ||
++      this.maxViewportHeight < 2 ||
++      Number(gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)) < 2
++    )
++      throw new Error('Insufficient integer graphics limits');
++    this.vertexArray = gl.createVertexArray();
++    if (this.vertexArray === null) throw new Error('Cannot allocate integer vertex array');
++    gl.bindVertexArray(this.vertexArray);
++    this.resetState();
++    this.healthCheck();
++    this.program = this.createProgram(this.options.fragmentSource);
++    gl.useProgram(this.program);
++    this.setUniforms = this.options.bindUniforms(gl, this.program);
++    this.sourceUniform = gl.getUniformLocation(this.program, 'sourcePixels');
++    this.destinationUniform = gl.getUniformLocation(this.program, 'oldDestination');
++    const first = gl.createFramebuffer();
++    if (first === null) throw new Error('Cannot allocate integer framebuffer');
++    const second = gl.createFramebuffer();
++    if (second === null) {
++      gl.deleteFramebuffer(first);
++      throw new Error('Cannot allocate integer framebuffer');
++    }
++    this.framebuffers = [first, second];
++    this.zero = this.createTexture(1, 1);
++    this.upload(this.zero, new Uint8Array(4));
++    if (gl.getError() !== gl.NO_ERROR || gl.isContextLost())
++      throw new Error('Integer graphics initialization failed');
++  }
++
++  private resetState(): void {
++    const gl = this.gl!;
++    for (const capability of [
++      gl.BLEND,
++      gl.DITHER,
++      gl.DEPTH_TEST,
++      gl.STENCIL_TEST,
++      gl.CULL_FACE,
++      gl.SCISSOR_TEST,
++      gl.RASTERIZER_DISCARD,
++    ])
++      gl.disable(capability);
++    gl.colorMask(true, true, true, true);
++    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
++    gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
++    for (const parameter of [
++      gl.UNPACK_ROW_LENGTH,
++      gl.UNPACK_SKIP_PIXELS,
++      gl.UNPACK_SKIP_ROWS,
++      gl.PACK_ROW_LENGTH,
++      gl.PACK_SKIP_PIXELS,
++      gl.PACK_SKIP_ROWS,
++    ])
++      gl.pixelStorei(parameter, 0);
++    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
++    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
++    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
++    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
++    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
++  }
++
++  private createProgram(fragmentSource: string): WebGLProgram {
++    const gl = this.gl!;
++    const compile = (type: number, source: string): WebGLShader => {
++      const shader = gl.createShader(type);
++      if (shader === null) throw new Error('Cannot allocate integer shader');
++      gl.shaderSource(shader, source);
++      gl.compileShader(shader);
++      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
++        gl.deleteShader(shader);
++        throw new Error('Integer shader compilation failed');
++      }
++      return shader;
++    };
++    const vertex = compile(gl.VERTEX_SHADER, VERTEX_SOURCE);
++    let fragment: WebGLShader | null = null;
++    let program: WebGLProgram | null = null;
++    try {
++      fragment = compile(gl.FRAGMENT_SHADER, fragmentSource);
++      program = gl.createProgram();
++      if (program === null) throw new Error('Cannot allocate integer program');
++      gl.attachShader(program, vertex);
++      gl.attachShader(program, fragment);
++      gl.linkProgram(program);
++      if (!gl.getProgramParameter(program, gl.LINK_STATUS))
++        throw new Error('Integer shader link failed');
++      return program;
++    } catch (error) {
++      gl.deleteProgram(program);
++      throw error;
++    } finally {
++      gl.deleteShader(vertex);
++      gl.deleteShader(fragment);
++    }
++  }
++
++  private createTexture(width: number, height: number): IntegerTexture {
++    const gl = this.gl!,
++      handle = gl.createTexture();
++    if (handle === null) throw new Error('Cannot allocate integer texture');
++    gl.bindTexture(gl.TEXTURE_2D, handle);
++    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
++    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
++    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
++    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
++    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8UI, width, height);
++    return {handle, width, height};
++  }
++
++  private bindTexture(unit: number, texture: IntegerTexture): void {
++    const gl = this.gl!;
++    gl.activeTexture(gl.TEXTURE0 + unit);
++    gl.bindTexture(gl.TEXTURE_2D, texture.handle);
++  }
++
++  private upload(texture: IntegerTexture, bytes: Uint8Array<ArrayBuffer>): void {
++    const gl = this.gl!;
++    gl.bindTexture(gl.TEXTURE_2D, texture.handle);
++    gl.texSubImage2D(
++      gl.TEXTURE_2D,
++      0,
++      0,
++      0,
++      texture.width,
++      texture.height,
++      gl.RGBA_INTEGER,
++      gl.UNSIGNED_BYTE,
++      bytes,
++    );
++  }
++
++  private attach(framebuffer: WebGLFramebuffer, texture: IntegerTexture): void {
++    const gl = this.gl!;
++    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
++    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture.handle, 0);
++    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
++      throw new Error('Incomplete integer framebuffer');
++  }
++
++  private prepareTextures(
++    destination: WebGLIntegerPlane,
++    sources: readonly WebGLIntegerPlane[],
++  ): void {
++    const gl = this.gl!;
++    const fits = (texture: IntegerTexture, plane: WebGLIntegerPlane): boolean =>
++      texture.width === plane.width && texture.height === plane.height;
++    // Delete all obsolete textures before allocating replacements, retaining no image cache.
++    if (this.destinations !== null && !fits(this.destinations[0], destination)) {
++      for (const framebuffer of this.framebuffers!) {
++        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
++        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
++      }
++      for (const texture of this.destinations) gl.deleteTexture(texture.handle);
++      this.destinations = null;
++    }
++    for (let index = 0; index < this.sources.length; index++) {
++      const texture = this.sources[index],
++        source = sources[index];
++      if (texture && (source === undefined || !fits(texture, source))) {
++        gl.deleteTexture(texture.handle);
++        this.sources[index] = null;
++      }
++    }
++    this.sources.length = sources.length;
++    if (this.destinations === null) {
++      const first = this.createTexture(destination.width, destination.height);
++      try {
++        this.destinations = [first, this.createTexture(destination.width, destination.height)];
++      } catch (error) {
++        gl.deleteTexture(first.handle);
++        throw error;
++      }
++      this.attach(this.framebuffers![0], this.destinations[0]);
++      this.attach(this.framebuffers![1], this.destinations[1]);
++    }
++    for (let index = 0; index < sources.length; index++) {
++      const source = sources[index]!;
++      this.sources[index] ??= this.createTexture(source.width, source.height);
++    }
++  }
++
++  private preserveRectangle(input: 0 | 1, output: 0 | 1, rectangle: WebGLIntegerRectangle): void {
++    const gl = this.gl!,
++      {x, y, width, height} = rectangle;
++    gl.disable(gl.SCISSOR_TEST);
++    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffers![input]);
++    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebuffers![output]);
++    gl.blitFramebuffer(
++      x,
++      y,
++      x + width,
++      y + height,
++      x,
++      y,
++      x + width,
++      y + height,
++      gl.COLOR_BUFFER_BIT,
++      gl.NEAREST,
++    );
++  }
++
++  /** Independently verifies integer upload, arithmetic, partial draws, blit, and readback. */
++  private healthCheck(): void {
++    const gl = this.gl!,
++      textures: IntegerTexture[] = [],
++      framebuffers: WebGLFramebuffer[] = [];
++    let program: WebGLProgram | null = null;
++    try {
++      program = this.createProgram(`#version 300 es
++precision highp int;
++precision highp usampler2D;
++uniform usampler2D sourcePixels;
++uniform usampler2D oldDestination;
++layout(location=0) out uvec4 result;
++void main() {
++  ivec2 p = ivec2(gl_FragCoord.xy);
++  uvec4 a = texelFetch(sourcePixels, p, 0), b = texelFetch(oldDestination, p, 0);
++  result = ((a * 3u + b * 5u + uvec4(0u, 1u, 127u, 255u)) & 255u) ^ uvec4(128u, 0u, 255u, 1u);
++}`);
++      const source = new Uint8Array([
++        0, 1, 127, 128, 254, 255, 2, 3, 23, 45, 67, 89, 255, 128, 1, 0,
++      ]);
++      const original = new Uint8Array([
++        255, 254, 129, 128, 0, 1, 2, 3, 250, 120, 30, 10, 13, 17, 19, 23,
++      ]);
++      for (let index = 0; index < 3; index++) textures.push(this.createTexture(2, 2));
++      this.upload(textures[0]!, source);
++      this.upload(textures[1]!, original);
++      this.upload(textures[2]!, original);
++      for (let index = 0; index < 2; index++) {
++        const framebuffer = gl.createFramebuffer();
++        if (framebuffer === null) throw new Error('Cannot allocate integer health framebuffer');
++        framebuffers.push(framebuffer);
++        this.attach(framebuffer, textures[index + 1]!);
++      }
++      gl.useProgram(program);
++      gl.uniform1i(gl.getUniformLocation(program, 'sourcePixels'), 0);
++      gl.uniform1i(gl.getUniformLocation(program, 'oldDestination'), 1);
++      gl.viewport(0, 0, 2, 2);
++      this.bindTexture(0, textures[0]!);
++      const expected = original.slice(),
++        rectangles = [
++          {x: 0, y: 0, width: 1, height: 2},
++          {x: 0, y: 1, width: 2, height: 1},
++        ];
++      let input = 0,
++        output = 1;
++      for (const [index, rectangle] of rectangles.entries()) {
++        if (index !== 0) {
++          gl.disable(gl.SCISSOR_TEST);
++          gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffers[input]!);
++          gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, framebuffers[output]!);
++          gl.blitFramebuffer(0, 0, 1, 2, 0, 0, 1, 2, gl.COLOR_BUFFER_BIT, gl.NEAREST);
++        }
++        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffers[output]!);
++        this.bindTexture(1, textures[input + 1]!);
++        gl.enable(gl.SCISSOR_TEST);
++        gl.scissor(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
++        gl.drawArrays(gl.TRIANGLES, 0, 3);
++        for (let y = rectangle.y; y < rectangle.y + rectangle.height; y++)
++          for (let x = rectangle.x; x < rectangle.x + rectangle.width; x++)
++            for (let channel = 0; channel < 4; channel++) {
++              const offset = (y * 2 + x) * 4 + channel;
++              expected[offset] =
++                ((source[offset]! * 3 + expected[offset]! * 5 + [0, 1, 127, 255][channel]!) & 255) ^
++                [128, 0, 255, 1][channel]!;
++            }
++        [input, output] = [output, input];
++      }
++      const actual = new Uint8Array(16);
++      gl.readPixels(0, 0, 2, 2, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, actual);
++      if (
++        gl.isContextLost() ||
++        gl.getError() !== gl.NO_ERROR ||
++        actual.some((value, index) => value !== expected[index])
++      )
++        throw new Error('Integer graphics health check failed');
++    } finally {
++      for (const framebuffer of framebuffers) gl.deleteFramebuffer(framebuffer);
++      for (const texture of textures) gl.deleteTexture(texture.handle);
++      gl.deleteProgram(program);
++      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
++    }
++  }
++
++  private release(): void {
++    const gl = this.gl;
++    if (gl !== null) {
++      for (const texture of this.destinations ?? []) gl.deleteTexture(texture.handle);
++      for (const texture of this.sources) if (texture) gl.deleteTexture(texture.handle);
++      for (const framebuffer of this.framebuffers ?? []) gl.deleteFramebuffer(framebuffer);
++      gl.deleteTexture(this.zero?.handle ?? null);
++      gl.deleteProgram(this.program);
++      gl.deleteVertexArray(this.vertexArray);
++      gl.getExtension('WEBGL_lose_context')?.loseContext();
++    }
++    this.canvas?.removeEventListener('webglcontextlost', this.contextLost);
++    this.gl = null;
++    this.canvas = null;
++    this.program = null;
++    this.sourceUniform = null;
++    this.destinationUniform = null;
++    this.setUniforms = null;
++    this.vertexArray = null;
++    this.framebuffers = null;
++    this.destinations = null;
++    this.sources.length = 0;
++    this.zero = null;
++    this.staging = null;
++    this.schedulingGrid = null;
++  }
++}
+diff --git a/tests/aokana-gpu-observation.test.mjs b/tests/aokana-gpu-observation.test.mjs
+new file mode 100644
+index 0000000..5194e9f
+--- /dev/null
++++ b/tests/aokana-gpu-observation.test.mjs
+@@ -0,0 +1,175 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
++import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
++import {
++  BurikoGpuBitmapBatch,
++  hasBurikoGpuBatch,
++  withBurikoGpuSuspended,
++} from '../dist/engines/buriko/native/bitmap-gpu.js';
++import {
++  clearBurikoBitmap,
++  copyBurikoBitmapRows,
++} from '../dist/engines/buriko/native/bitmap-copy.js';
++import {blendBurikoAlphaIntoRgb} from '../dist/engines/buriko/native/bitmap-alpha.js';
++import {blendTransformedBurikoBitmap} from '../dist/engines/buriko/native/bitmap-affine.js';
++import {recordRasterText, rasterTextBitmap, readRasterText} from '../dist/text/raster-text.js';
++
++function bitmap(width = 13, height = 8, format = 1, seed = 17) {
++  const bytes = Uint8Array.from({length: width * height * 4}, (_, i) => (i * 31 + seed) & 255);
++  return {
++    storage: new BurikoBitmapStorage(bytes, true),
++    offset: 0,
++    stride: width * 4,
++    width,
++    height,
++    format,
++    bytesPerPixel: 4,
++  };
++}
++
++test('deferred native and textless pixels remain current at observation and producer boundaries', () => {
++  function run(deferred) {
++    const destination = bitmap(),
++      source = bitmap(13, 8, 2, 97),
++      rgb = bitmap(13, 8, 1, 3);
++    recordRasterText(source, 'Synthetic', {width: 7, height: 5});
++    const retainedSource = source.storage.bytes,
++      retainedTarget = destination.storage.bytes;
++    const batch = new BurikoGpuBitmapBatch(Number.MAX_SAFE_INTEGER);
++    const observations = [];
++    const operation = () => {
++      clearBurikoBitmap(destination);
++      blendBurikoAlphaIntoRgb(destination, source);
++      observations.push(
++        destination.storage.cloneRange(0, destination.storage.byteLength).bytes.slice(),
++      );
++      copyBurikoBitmapRows(destination, rgb);
++      withBurikoGpuSuspended(() => {
++        // A producer can use pointers retained before this scope or call a native leaf itself.
++        observations.push(retainedTarget.slice());
++        clearBurikoBitmap(destination);
++        retainedTarget[3] = 117;
++        retainedSource[0] ^= 255;
++      });
++      // A producer can also replace audited methods; do not resume deferral this traversal.
++      assert.equal(hasBurikoGpuBatch(), false);
++      blendBurikoAlphaIntoRgb(destination, source);
++      // Separately constructed storage descriptors may alias the queued allocation.
++      const alias = new BurikoBitmapStorage(retainedTarget.subarray(4), true);
++      observations.push(alias.view.getUint32(0, true));
++      copyBurikoBitmapRows(destination, rgb);
++      source.storage.release();
++    };
++    try {
++      if (deferred) batch.run(destination, operation);
++      else operation();
++      return {
++        observations,
++        pixels: destination.storage.bytes.slice(),
++        textless: rasterTextBitmap(destination).storage.bytes.slice(),
++        glyphs: readRasterText(destination).map(({id, ...glyph}) => glyph),
++      };
++    } finally {
++      batch.dispose();
++    }
++  }
++  assert.deepEqual(run(true), run(false));
++});
++
++test('unavailable GPU replays pixel kernels without repeating metadata or native callbacks', () => {
++  function run(deferred) {
++    const destination = bitmap(),
++      source = bitmap(13, 8, 2),
++      compositor = new BurikoBitmapCompositor();
++    const batch = new BurikoGpuBitmapBatch(0, 1);
++    let calls = 0;
++    const operation = () => {
++      calls++;
++      clearBurikoBitmap(destination);
++      for (let i = 0; i < 9; i++)
++        blendTransformedBurikoBitmap(
++          compositor,
++          destination,
++          source,
++          {x: 16385, y: -21845, pivotX: 0, pivotY: 0, angle: 0, scaleX: 65536, scaleY: 65536},
++          i * 13,
++          i & 1,
++        );
++    };
++    try {
++      if (deferred) batch.run(destination, operation);
++      else operation();
++      return {calls, pixels: destination.storage.bytes.slice()};
++    } finally {
++      batch.dispose();
++    }
++  }
++  assert.equal(typeof globalThis.OffscreenCanvas, 'undefined');
++  assert.deepEqual(run(true), run(false));
++});
++
++test('a native fault materializes the accepted prefix and preserves partial stores', () => {
++  function run(deferred) {
++    const destination = bitmap(),
++      good = bitmap(13, 8, 1, 89),
++      bad = bitmap(13, 8);
++    bad.storage = new BurikoBitmapStorage(new Uint8Array(13 * 4 + 8), true);
++    const batch = new BurikoGpuBitmapBatch(Number.MAX_SAFE_INTEGER);
++    const operation = () => {
++      clearBurikoBitmap(destination);
++      copyBurikoBitmapRows(destination, good);
++      copyBurikoBitmapRows(destination, bad);
++    };
++    let message;
++    try {
++      assert.throws(
++        () => (deferred ? batch.run(destination, operation) : operation()),
++        (error) => {
++          message = error.message;
++          return /outside native allocation/.test(message);
++        },
++      );
++      return {message, pixels: destination.storage.bytes.slice()};
++    } finally {
++      batch.dispose();
++    }
++  }
++  assert.deepEqual(run(true), run(false));
++});
++
++test('custom storage callbacks observe completed pixels without extra admission calls', () => {
++  function run(deferred, observeAlias) {
++    const destination = bitmap(),
++      source = bitmap(13, 8, 1, 89),
++      retained = destination.storage.bytes,
++      observations = [];
++    const custom = observeAlias ? new BurikoBitmapStorage(retained, true) : source.storage;
++    const nativeView = custom.batchingView;
++    custom.batchingView = function (offset, length) {
++      observations.push(retained[0]);
++      return nativeView.call(this, offset, length);
++    };
++    const batch = new BurikoGpuBitmapBatch(Number.MAX_SAFE_INTEGER);
++    const operation = () => {
++      clearBurikoBitmap(destination);
++      if (observeAlias) observations.push(custom.bytes[0]);
++      else copyBurikoBitmapRows(destination, source);
++      // Unknown storage callbacks can mutate previously audited collaborators.
++      assert.equal(hasBurikoGpuBatch(), false);
++      copyBurikoBitmapRows(destination, bitmap(13, 8, 1, 47));
++    };
++    try {
++      if (deferred) batch.run(destination, operation);
++      else operation();
++      return {observations, pixels: destination.storage.bytes.slice()};
++    } finally {
++      batch.dispose();
++    }
++  }
++  for (const observeAlias of [false, true]) {
++    const expected = run(false, observeAlias);
++    assert.deepEqual(expected.observations, [0]);
++    assert.deepEqual(run(true, observeAlias), expected);
++  }
++});
+diff --git a/tools/benchmark-buriko-webgl.mjs b/tools/benchmark-buriko-webgl.mjs
+new file mode 100644
+index 0000000..1ed22b7
+--- /dev/null
++++ b/tools/benchmark-buriko-webgl.mjs
+@@ -0,0 +1,518 @@
++import {
++  parseSyntheticBrowserOptions,
++  runSyntheticBrowserProbe,
++} from './lib/synthetic-browser-probe.mjs';
++
++async function syntheticCases() {
++  let bitmap, compositorModule, affine;
++  try {
++    [bitmap, compositorModule, affine] = await Promise.all([
++      import('../dist/engines/buriko/native/bitmap.js'),
++      import('../dist/engines/buriko/native/bitmap-compositor.js'),
++      import('../dist/engines/buriko/native/bitmap-affine.js'),
++    ]);
++  } catch (error) {
++    throw new Error('Runtime imports failed; run npm run build:runtime first. ' + error.message);
++  }
++  const {BurikoBitmapStorage} = bitmap;
++  const {BurikoBitmapCompositor} = compositorModule;
++  const {burikoBitmapAffineCoordinates, blendTransformedBurikoBitmap} = affine;
++  let seed = 0x934cf219;
++  function random() {
++    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
++    return seed;
++  }
++  const compositor = new BurikoBitmapCompositor();
++  const identity = {x: 1, y: 0, pivotX: 0, pivotY: 0, angle: 0, scaleX: 65536, scaleY: 65536};
++  const cases = [];
++  for (let index = 0; index < 96; index++) {
++    const sw = 17 + (random() % 20),
++      sh = 11 + (random() % 13);
++    const width = 13 + (random() % 28),
++      height = 7 + (random() % 19);
++    const sourceLength = sw * sh * 4,
++      destinationLength = width * height * 4;
++    const buffer = new Uint8Array(sourceLength + destinationLength);
++    const words = new Uint32Array(buffer.buffer);
++    for (let i = 0; i < words.length; i++) words[i] = random();
++    for (let i = 0; i < sw * sh; i += 13)
++      words[i] = (words[i] & 0xffffff) | ([0, 1, 2, 253, 254, 255][((i / 13) % 6) | 0] << 24);
++    const storage = new BurikoBitmapStorage(buffer, true);
++    const source = {
++      storage,
++      offset: 0,
++      stride: sw * 4,
++      width: sw,
++      height: sh,
++      format: 2,
++      bytesPerPixel: 4,
++    };
++    const destination = {
++      storage,
++      offset: sourceLength,
++      stride: width * 4,
++      width,
++      height,
++      format: 1,
++      bytesPerPixel: 4,
++    };
++    let transform = {
++      ...identity,
++      x: ((random() % (10 * 65536)) - 5 * 65536) | 1,
++      y: (random() % (10 * 65536)) - 5 * 65536,
++      angle: ((random() % 31) - 15) * 65536,
++      scaleX: 32768 + (random() % 98304),
++      scaleY: 32768 + (random() % 98304),
++    };
++    if (index % 12 === 0) transform = {...identity, x: 0x7fff8001, y: -0x7fff7fff};
++    if (index % 12 === 1) transform = {...identity, scaleX: 1, scaleY: 1};
++    if (index % 12 === 2) transform = {...identity, x: 0x8001, y: 0x8fff};
++    if (index % 12 === 3) transform = {...identity, x: -0x8fff, y: -0x7001};
++    if (index % 12 === 4) transform = {...identity, angle: 90 * 65536, pivotX: (sw - 1) * 65536};
++    const initial = Array.from(words.subarray(sw * sh));
++    const sourcePixels = Array.from(words.subarray(0, sw * sh));
++    const transparency = [0, 1, 7, 63, 127, 128, 191, 255][index % 8];
++    const bilinear = (index >>> 3) & 1;
++    const coordinates = burikoBitmapAffineCoordinates(transform, compositor.revision);
++    const layers = index % 12 === 5 ? 3 : 1;
++    for (let layer = 0; layer < layers; layer++)
++      blendTransformedBurikoBitmap(
++        compositor,
++        destination,
++        source,
++        transform,
++        transparency,
++        bilinear,
++      );
++    cases.push({
++      sw,
++      sh,
++      width,
++      height,
++      layers,
++      source: sourcePixels,
++      initial,
++      expected: Array.from(words.subarray(sw * sh)),
++      coordinates,
++      transparency,
++      bilinear,
++    });
++  }
++  const performanceCoordinates = burikoBitmapAffineCoordinates(
++    {...identity, x: -0x4000, y: 0x7000, angle: 2 * 65536, scaleX: 68000, scaleY: 68000},
++    compositor.revision,
++  );
++
++  return {cases, coordinates: performanceCoordinates};
++}
++
++/**
++ * Bounded initialized, nonalias RGBA-to-RGB only. Integer texture fetches implement
++ * Q16 wrapping, Q4 horizontal/vertical floors, Q7 opacity, and preserved output alpha.
++ * Native aliases, faults, strip transform setup, and scene ordering remain outside this probe.
++ */
++async function pageMain({cases, coordinates}, options) {
++  const canvas = document.createElement('canvas');
++  const gl = canvas.getContext('webgl2', {
++    alpha: false,
++    antialias: false,
++    depth: false,
++    stencil: false,
++    preserveDrawingBuffer: false,
++  });
++  if (!gl) return {available: false, reason: 'WebGL2 unavailable', userAgent: navigator.userAgent};
++  const debug = gl.getExtension('WEBGL_debug_renderer_info');
++  const adapter = {
++    vendor: gl.getParameter(gl.VENDOR),
++    renderer: gl.getParameter(gl.RENDERER),
++    version: gl.getParameter(gl.VERSION),
++    unmaskedVendor: debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : null,
++    unmaskedRenderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : null,
++    webgpuAvailable: Boolean(navigator.gpu),
++    userAgent: navigator.userAgent,
++  };
++  if (navigator.gpu) {
++    try {
++      const a = await Promise.race([
++        navigator.gpu.requestAdapter(),
++        new Promise((_, reject) =>
++          setTimeout(() => reject(new Error('WebGPU adapter probe timed out')), 3000),
++        ),
++      ]);
++      adapter.webgpuAdapter = a
++        ? {
++            ...a.info.toJSON?.(),
++            vendor: a.info.vendor,
++            architecture: a.info.architecture,
++            device: a.info.device,
++            description: a.info.description,
++          }
++        : null;
++    } catch (e) {
++      adapter.webgpuError = String(e);
++    }
++  }
++  function shader(type, text) {
++    const s = gl.createShader(type);
++    gl.shaderSource(s, text);
++    gl.compileShader(s);
++    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
++    return s;
++  }
++  const vertex = shader(
++    gl.VERTEX_SHADER,
++    `#version 300 es
++  void main() { vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`,
++  );
++  const fragment = shader(
++    gl.FRAGMENT_SHADER,
++    `#version 300 es
++  precision highp float;
++  precision highp int;
++  precision highp usampler2D;
++  uniform usampler2D sourcePixels;
++  uniform usampler2D oldDestination;
++  uniform ivec2 sourceSize;
++  uniform uvec2 start;
++  uniform uvec2 columnStep;
++  uniform uvec2 rowStep;
++  uniform uint transparency;
++  uniform int bilinear;
++  layout(location=0) out uvec4 result;
++  uvec4 sourceAt(ivec2 p) {
++    if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, sourceSize))) return uvec4(0);
++    return texelFetch(sourcePixels, p, 0);
++  }
++  uvec4 interpolateQ4(uvec4 a, uvec4 b, uint fraction) { return (a * (16u - fraction) + b * fraction) >> 4u; }
++  void main() {
++    ivec2 position = ivec2(gl_FragCoord.xy);
++    uvec2 fixedPosition = start + uint(position.x) * columnStep + uint(position.y) * rowStep;
++    uvec4 source;
++    if (bilinear == 0) source = sourceAt(ivec2(fixedPosition + uvec2(32768u)) >> 16);
++    else {
++      ivec2 p = ivec2(fixedPosition) >> 16;
++      uvec2 fraction = (fixedPosition >> 12u) & 15u;
++      uvec4 upper = interpolateQ4(sourceAt(p), sourceAt(p + ivec2(1, 0)), fraction.x);
++      uvec4 lower = interpolateQ4(sourceAt(p + ivec2(0, 1)), sourceAt(p + ivec2(1, 1)), fraction.x);
++      source = interpolateQ4(upper, lower, fraction.y);
++    }
++    uint index = source.a >> 1u;
++    uint coefficient = ((index == 127u ? 128u : index) * (256u - transparency)) >> 8u;
++    uvec4 old = texelFetch(oldDestination, position, 0);
++    result = uvec4((source.rgb * coefficient + old.rgb * (128u - coefficient)) >> 7u, old.a);
++  }`,
++  );
++  const program = gl.createProgram();
++  gl.attachShader(program, vertex);
++  gl.attachShader(program, fragment);
++  gl.linkProgram(program);
++  if (!gl.getProgramParameter(program, gl.LINK_STATUS))
++    throw new Error(gl.getProgramInfoLog(program));
++  gl.useProgram(program);
++  gl.bindVertexArray(gl.createVertexArray());
++  gl.disable(gl.BLEND);
++  gl.disable(gl.DITHER);
++  gl.disable(gl.DEPTH_TEST);
++  gl.disable(gl.CULL_FACE);
++  gl.enable(gl.SCISSOR_TEST);
++  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
++  gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
++  const uniform = Object.fromEntries(
++    [
++      'sourcePixels',
++      'oldDestination',
++      'sourceSize',
++      'start',
++      'columnStep',
++      'rowStep',
++      'transparency',
++      'bilinear',
++    ].map((n) => [n, gl.getUniformLocation(program, n)]),
++  );
++  gl.uniform1i(uniform.sourcePixels, 0);
++  gl.uniform1i(uniform.oldDestination, 1);
++  function texture(width, height) {
++    const t = gl.createTexture();
++    gl.bindTexture(gl.TEXTURE_2D, t);
++    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
++    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
++    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
++    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
++    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8UI, width, height);
++    return t;
++  }
++  const framebuffer = gl.createFramebuffer();
++  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
++  function attach(t) {
++    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
++    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
++      throw new Error('Integer framebuffer incomplete');
++  }
++  function setCoordinates(c, sw, sh, bilinear, transparency) {
++    gl.uniform2i(uniform.sourceSize, sw, sh);
++    gl.uniform2ui(uniform.start, c.startX >>> 0, c.startY >>> 0);
++    gl.uniform2ui(uniform.columnStep, c.columnX >>> 0, c.columnY >>> 0);
++    gl.uniform2ui(uniform.rowStep, c.rowX >>> 0, c.rowY >>> 0);
++    gl.uniform1i(uniform.bilinear, bilinear);
++    gl.uniform1ui(uniform.transparency, transparency);
++  }
++  function bind(unit, t) {
++    gl.activeTexture(gl.TEXTURE0 + unit);
++    gl.bindTexture(gl.TEXTURE_2D, t);
++  }
++  function upload(t, data, width, height, x = 0, y = 0, w = width, h = height) {
++    gl.bindTexture(gl.TEXTURE_2D, t);
++    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, width);
++    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x);
++    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y);
++    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, data);
++    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
++    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
++    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
++  }
++  function read(x, y, width, height, output) {
++    gl.readPixels(x, y, width, height, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, output);
++  }
++  let parityPixels = 0;
++  for (const c of cases) {
++    const source = texture(c.sw, c.sh),
++      old = texture(c.width, c.height),
++      out = texture(c.width, c.height);
++    upload(source, new Uint8Array(new Uint32Array(c.source).buffer), c.sw, c.sh);
++    upload(old, new Uint8Array(new Uint32Array(c.initial).buffer), c.width, c.height);
++    bind(0, source);
++    setCoordinates(c.coordinates, c.sw, c.sh, c.bilinear, c.transparency);
++    gl.viewport(0, 0, c.width, c.height);
++    gl.scissor(0, 0, c.width, c.height);
++    let input = old,
++      outputTexture = out;
++    for (let layer = 0; layer < c.layers; layer++) {
++      bind(1, input);
++      attach(outputTexture);
++      gl.drawArrays(gl.TRIANGLES, 0, 3);
++      [input, outputTexture] = [outputTexture, input];
++    }
++    const output = new Uint8Array(c.width * c.height * 4);
++    read(0, 0, c.width, c.height, output);
++    const words = new Uint32Array(output.buffer);
++    for (let i = 0; i < words.length; i++)
++      if (words[i] !== c.expected[i])
++        throw new Error(
++          `Parity failed: case ${cases.indexOf(c)}, pixel ${i}, actual ${words[i].toString(16)}, expected ${c.expected[i].toString(16)}`,
++        );
++    parityPixels += words.length;
++    gl.deleteTexture(source);
++    gl.deleteTexture(old);
++    gl.deleteTexture(out);
++  }
++  if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL error after correctness checks');
++  const width = options.smoke ? 256 : 1920,
++    height = options.smoke ? 144 : 1080,
++    bytes = width * height * 4;
++  const sourceData = new Uint8Array(bytes),
++    oldData = new Uint8Array(bytes),
++    readback = new Uint8Array(bytes);
++  let state = 0x1823f731;
++  for (let i = 0; i < bytes; i++) {
++    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
++    sourceData[i] = state >>> 24;
++    oldData[i] = state >>> 16;
++  }
++  const source = texture(width, height),
++    old = texture(width, height),
++    out = texture(width, height);
++  upload(source, sourceData, width, height);
++  upload(old, oldData, width, height);
++  upload(out, oldData, width, height);
++  gl.viewport(0, 0, width, height);
++  function sourceRoi(y, h, bilinear) {
++    const xs = [],
++      ys = [];
++    for (const yy of [y, y + h - 1])
++      for (const xx of [0, width - 1]) {
++        const fx =
++          (coordinates.startX +
++            Math.imul(xx, coordinates.columnX) +
++            Math.imul(yy, coordinates.rowX)) |
++          0;
++        const fy =
++          (coordinates.startY +
++            Math.imul(xx, coordinates.columnY) +
++            Math.imul(yy, coordinates.rowY)) |
++          0;
++        xs.push((bilinear ? fx : (fx + 32768) | 0) >> 16);
++        ys.push((bilinear ? fy : (fy + 32768) | 0) >> 16);
++      }
++    const x = Math.max(0, Math.min(...xs)),
++      top = Math.max(0, Math.min(...ys));
++    const right = Math.min(width, Math.max(...xs) + 1 + bilinear),
++      bottom = Math.min(height, Math.max(...ys) + 1 + bilinear);
++    return {x, y: top, w: Math.max(0, right - x), h: Math.max(0, bottom - top)};
++  }
++  function measure({strips, readEach, uploadEach, layers = 1, bilinear}) {
++    gl.finish();
++    let uploadSubmitMs = 0,
++      drawSubmitMs = 0,
++      readbackMs = 0,
++      uploadedBytes = 0,
++      readbackBytes = 0;
++    const totalStart = performance.now();
++    let t = performance.now();
++    if (!uploadEach) {
++      bind(0, source);
++      upload(source, sourceData, width, height);
++      bind(1, old);
++      upload(old, oldData, width, height);
++      uploadedBytes += 2 * bytes;
++    }
++    uploadSubmitMs += performance.now() - t;
++    setCoordinates(coordinates, width, height, bilinear, 31);
++    let input = old,
++      output = out;
++    for (let layer = 0; layer < layers; layer++) {
++      bind(0, source);
++      bind(1, input);
++      attach(output);
++      for (let strip = 0; strip < strips; strip++) {
++        const y = Math.floor((strip * height) / strips),
++          end = Math.floor(((strip + 1) * height) / strips),
++          h = end - y;
++        if (uploadEach) {
++          const roi = sourceRoi(y, h, bilinear);
++          t = performance.now();
++          bind(0, source);
++          if (roi.w && roi.h) upload(source, sourceData, width, height, roi.x, roi.y, roi.w, roi.h);
++          bind(1, input);
++          upload(input, oldData, width, height, 0, y, width, h);
++          uploadedBytes += roi.w * roi.h * 4 + width * h * 4;
++          uploadSubmitMs += performance.now() - t;
++        }
++        t = performance.now();
++        gl.scissor(0, y, width, h);
++        gl.drawArrays(gl.TRIANGLES, 0, 3);
++        drawSubmitMs += performance.now() - t;
++        if (readEach) {
++          t = performance.now();
++          read(0, y, width, h, readback.subarray(y * width * 4, end * width * 4));
++          readbackMs += performance.now() - t;
++          readbackBytes += width * h * 4;
++        }
++      }
++      [input, output] = [output, input];
++    }
++    if (!readEach) {
++      t = performance.now();
++      read(0, 0, width, height, readback);
++      readbackMs += performance.now() - t;
++      readbackBytes += bytes;
++    }
++    const totalMs = performance.now() - totalStart;
++    const error = gl.getError();
++    if (error !== gl.NO_ERROR) throw new Error('WebGL error ' + error);
++    return {totalMs, uploadSubmitMs, drawSubmitMs, readbackMs, uploadedBytes, readbackBytes};
++  }
++  const results = [];
++  const modes = [
++    {name: 'whole-frame', strips: 1, readEach: false, uploadEach: false},
++    {name: '120-strips-final-read', strips: 120, readEach: false, uploadEach: false},
++    {name: '360-strips-final-read', strips: 360, readEach: false, uploadEach: false},
++    {name: '120-strips-each-read', strips: 120, readEach: true, uploadEach: false},
++    {name: '360-strips-each-read', strips: 360, readEach: true, uploadEach: false},
++    {name: '120-strips-each-roi-upload-read', strips: 120, readEach: true, uploadEach: true},
++    {name: '360-strips-each-roi-upload-read', strips: 360, readEach: true, uploadEach: true},
++    {
++      name: '8-layers-120-strips-final-read',
++      strips: 120,
++      readEach: false,
++      uploadEach: false,
++      layers: 8,
++    },
++  ];
++  let wholeFrameReference;
++  let stripParityComparisons = 0;
++  for (const bilinear of [0, 1])
++    for (const mode of modes.filter((mode) => !options.smoke || mode.strips <= 120)) {
++      measure({...mode, bilinear});
++      // Validate completed output outside measurement, including the ROI upload/readback paths.
++      if (mode.name === 'whole-frame') wholeFrameReference = readback.slice();
++      else if ((mode.layers ?? 1) === 1) {
++        for (let i = 0; i < readback.length; i++)
++          if (readback[i] !== wholeFrameReference[i])
++            throw new Error(`${mode.name} differs at byte ${i}, sampler ${bilinear}`);
++        stripParityComparisons++;
++      }
++      const samples = [];
++      for (let run = 0; run < options.iterations; run++) {
++        await new Promise((r) => setTimeout(r, 15));
++        samples.push(measure({...mode, bilinear}));
++      }
++      const median = (key) =>
++        samples.map((s) => s[key]).sort((a, b) => a - b)[Math.floor(samples.length / 2)];
++      const result = {
++        name: mode.name,
++        bilinear,
++        strips: mode.strips,
++        layers: mode.layers ?? 1,
++        ...Object.fromEntries(Object.keys(samples[0]).map((k) => [k, median(k)])),
++        samples,
++      };
++      results.push(result);
++      await fetch('/progress', {
++        method: 'POST',
++        body: JSON.stringify({...result, samples: undefined}),
++      });
++    }
++  return {
++    available: true,
++    adapter,
++    parity: {
++      cases: cases.length,
++      pixels: parityPixels,
++      draws: cases.reduce((sum, c) => sum + c.layers, 0),
++      repeatedLayerCases: cases.filter((c) => c.layers > 1).length,
++      stripParityComparisons,
++      reference:
++        'production scalar affine-alpha via disjoint ranges of shared backing; RGB destination alpha preserved',
++    },
++    width,
++    height,
++    coordinates,
++    warmupsPerMode: 1,
++    measuredRunsPerMode: options.iterations,
++    results,
++    notes: [
++      'No assets, game URL, screenshots, CPU profiler, or forced software renderer.',
++      'Method times are CPU wall time; readback includes pending GPU work. Total includes input upload and synchronous result readback.',
++      'Shader and texture setup, source generation, fixture/reference creation, typed-array staging allocation, correctness comparisons, and the initial finish are outside timing. CPU result readback is included.',
++      'Resident batches upload source + old destination once; 8-layer case ping-pongs output and reads back once. Per-strip ROI uploads repeat shared source rows needed by the rotated mapping.',
++      "Benchmark strips scissor one global Q16 coordinate field. Actual native batching must preserve each strip's independent transform setup and command order.",
++      'This tests bounded initialized nonalias RGBA-to-RGB composition, not overlapping storage, unwritten/fault behavior, raster-text metadata, or full native scene equivalence.',
++    ],
++  };
++}
++
++if (process.argv.includes('--help')) {
++  console.log(
++    'Usage: node tools/benchmark-buriko-webgl.mjs [--browser /path/to/browser] [--output /path/to/results.json] [--iterations 3] [--smoke]',
++  );
++  console.log(
++    'Runs generated numeric affine-alpha parity and 1080p upload/draw/readback measurements in an isolated headless Chromium profile. Build dist first with npm run build:runtime.',
++  );
++  console.log(
++    'Browser: --browser, BROWSER, CHROME_BIN, then installed Brave/Chrome/Chromium. --smoke uses 256×144, fewer strip modes, and one measured run. No game URL, assets, screenshots, or forced software renderer.',
++  );
++  console.log(
++    'Results and browser logs default to a retained temporary directory. Existing --output files are rejected.',
++  );
++} else {
++  try {
++    await runSyntheticBrowserProbe({
++      options: parseSyntheticBrowserOptions(process.argv.slice(2)),
++      fixture: await syntheticCases(),
++      pageMain,
++    });
++  } catch (error) {
++    console.error(error.message);
++    process.exitCode = 1;
++  }
++}
+diff --git a/tools/lib/synthetic-browser-probe.mjs b/tools/lib/synthetic-browser-probe.mjs
+new file mode 100644
+index 0000000..1bb5c92
+--- /dev/null
++++ b/tools/lib/synthetic-browser-probe.mjs
+@@ -0,0 +1,378 @@
++import {spawn} from 'node:child_process';
++import {createWriteStream} from 'node:fs';
++import {access, mkdtemp, writeFile, realpath, readFile} from 'node:fs/promises';
++import {createServer} from 'node:http';
++import {tmpdir} from 'node:os';
++import {delimiter, join, resolve, sep} from 'node:path';
++
++const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
++
++class DevToolsConnection {
++  nextId = 0;
++  pending = new Map();
++  constructor(socket) {
++    this.socket = socket;
++    socket.addEventListener('message', ({data}) => {
++      const message = JSON.parse(data);
++      const request = this.pending.get(message.id);
++      if (!request) return;
++      this.pending.delete(message.id);
++      clearTimeout(request.timeout);
++      if (message.error) request.reject(new Error(message.error.message));
++      else request.resolve(message.result);
++    });
++    socket.addEventListener('close', () => this.cancel(new Error('Browser disconnected')));
++    socket.addEventListener('error', () => {});
++  }
++  cancel(error) {
++    for (const request of this.pending.values()) {
++      clearTimeout(request.timeout);
++      request.reject(error);
++    }
++    this.pending.clear();
++  }
++  static async connect(endpoint) {
++    const socket = new WebSocket(endpoint);
++    const connection = new DevToolsConnection(socket);
++    await new Promise((resolve, reject) => {
++      const timeout = setTimeout(() => {
++        socket.close();
++        reject(new Error('DevTools connection timed out'));
++      }, 10000);
++      const finish = (callback) => (event) => {
++        clearTimeout(timeout);
++        callback(event);
++      };
++      socket.addEventListener('open', finish(resolve), {once: true});
++      socket.addEventListener(
++        'error',
++        finish(() => reject(new Error('DevTools connection failed'))),
++        {once: true},
++      );
++      socket.addEventListener(
++        'close',
++        finish(() => reject(new Error('DevTools connection closed'))),
++        {once: true},
++      );
++    });
++    return connection;
++  }
++  command(method, params = {}, sessionId, timeoutMs = 20000) {
++    if (this.socket.readyState !== WebSocket.OPEN)
++      return Promise.reject(new Error('DevTools connection closed'));
++    const id = ++this.nextId;
++    return new Promise((resolve, reject) => {
++      const timeout = setTimeout(() => {
++        this.pending.delete(id);
++        reject(new Error(method + ' timed out'));
++      }, timeoutMs);
++      this.pending.set(id, {resolve, reject, timeout});
++      try {
++        this.socket.send(JSON.stringify({id, method, params, ...(sessionId ? {sessionId} : {})}));
++      } catch (error) {
++        clearTimeout(timeout);
++        this.pending.delete(id);
++        reject(error);
++      }
++    });
++  }
++}
++
++export function parseSyntheticBrowserOptions(args) {
++  const values = {smoke: false, iterations: 3};
++  for (let index = 0; index < args.length; index++) {
++    const name = args[index];
++    if (name === '--smoke') values.smoke = true;
++    else if (
++      ['--browser', '--output', '--iterations'].includes(name) &&
++      args[index + 1] &&
++      !args[index + 1].startsWith('--')
++    )
++      values[name.slice(2)] = args[++index];
++    else throw new Error('Unknown or incomplete argument: ' + name);
++  }
++  if (!args.includes('--iterations') && values.smoke) values.iterations = 1;
++  values.iterations = Number(values.iterations);
++  if (!Number.isSafeInteger(values.iterations) || values.iterations < 1 || values.iterations > 20)
++    throw new Error('--iterations must be an integer from 1 to 20');
++  return values;
++}
++
++async function findBrowser(explicit) {
++  const requested = explicit || process.env.BROWSER || process.env.CHROME_BIN;
++  const candidates = requested
++    ? [requested]
++    : [
++        '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
++        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
++        '/Applications/Chromium.app/Contents/MacOS/Chromium',
++        'brave-browser',
++        'google-chrome',
++        'google-chrome-stable',
++        'chromium',
++        'chromium-browser',
++        ...[process.env.LOCALAPPDATA, process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]
++          .filter(Boolean)
++          .flatMap((root) => [
++            join(root, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
++            join(root, 'Google', 'Chrome', 'Application', 'chrome.exe'),
++          ]),
++      ];
++  for (const candidate of candidates) {
++    const paths =
++      candidate.includes('/') || candidate.includes('\\')
++        ? [resolve(candidate)]
++        : (process.env.PATH ?? '')
++            .split(delimiter)
++            .map((directory) => resolve(directory, candidate));
++    for (const path of paths) {
++      try {
++        await access(path);
++        return path;
++      } catch {}
++    }
++  }
++  throw new Error(
++    requested
++      ? 'Browser not found: ' + requested
++      : 'No Chromium browser found; set --browser /path/to/browser, BROWSER, or CHROME_BIN',
++  );
++}
++
++export async function runSyntheticBrowserProbe({
++  options,
++  fixture = {},
++  pageMain,
++  runtimeRoot = null,
++  name = 'vn-webgl-affine',
++}) {
++  if (typeof WebSocket !== 'function')
++    throw new Error(
++      'This tool requires Node.js with built-in WebSocket support (Node 22 or newer).',
++    );
++  const browserExecutable = await findBrowser(options.browser);
++  const root = await mkdtemp(join(tmpdir(), name + '-'));
++  const runtimeDirectory = runtimeRoot === null ? null : await realpath(runtimeRoot);
++  const outputPath = options.output ? resolve(options.output) : join(root, 'results.json');
++  // Reserve the result before launching so an existing report is never overwritten.
++  await writeFile(outputPath, '', {flag: 'wx'});
++  const profile = join(root, 'profile');
++  const browserArgs = [
++    '--headless=new',
++    '--remote-debugging-port=0',
++    '--user-data-dir=' + profile,
++    '--no-first-run',
++    '--no-default-browser-check',
++    '--disable-background-networking',
++    '--disable-component-update',
++    '--disable-sync',
++    '--disable-extensions',
++    'about:blank',
++  ];
++  const page =
++    '<!doctype html><meta charset="utf-8"><title>Synthetic numeric affine probe</title><p>Numeric diagnostics only</p><script>window.ready = fetch("/cases").then(r=>r.json()).then(d=>{window.runProbe=()=>(' +
++    pageMain.toString() +
++    ')(d.fixture,d.options)});</script>';
++  const server = createServer(async (request, response) => {
++    if (request.url === '/progress' && request.method === 'POST') {
++      let text = '';
++      try {
++        for await (const chunk of request) {
++          text += chunk;
++          if (text.length > 8192) {
++            response.writeHead(413);
++            response.end();
++            return;
++          }
++        }
++      } catch {
++        response.destroy();
++        return;
++      }
++      console.log(text);
++      response.writeHead(204);
++      response.end();
++      return;
++    }
++    // This optional route serves compiled JavaScript only, never assets or arbitrary files.
++    const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
++    if (
++      runtimeDirectory !== null &&
++      /^\/runtime\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]+\.js$/.test(path)
++    ) {
++      try {
++        const file = await realpath(join(runtimeDirectory, path.slice('/runtime/'.length)));
++        if (!file.startsWith(runtimeDirectory + sep)) throw new Error('Runtime path escapes root');
++        const code = await readFile(file);
++        response.writeHead(200, {'Content-Type': 'text/javascript', 'Cache-Control': 'no-store'});
++        response.end(code);
++      } catch {
++        response.writeHead(404);
++        response.end('Compiled runtime module unavailable; build dist first.');
++      }
++      return;
++    }
++    if (request.url !== '/' && request.url !== '/cases') {
++      response.writeHead(404);
++      response.end();
++      return;
++    }
++    response.writeHead(200, {
++      'Content-Type': request.url === '/' ? 'text/html' : 'application/json',
++      'Cache-Control': 'no-store',
++      'Content-Security-Policy':
++        "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
++    });
++    response.end(
++      request.url === '/'
++        ? page
++        : JSON.stringify({
++            fixture,
++            options: {smoke: options.smoke, iterations: options.iterations},
++          }),
++    );
++  });
++  let browser,
++    cdp,
++    browserClosed,
++    completedResult,
++    interrupted = false,
++    stderrTail = '';
++  const browserLog = join(root, 'browser.log');
++  const log = createWriteStream(browserLog);
++  const interrupt = () => {
++    interrupted = true;
++    cdp?.cancel(new Error('Benchmark interrupted'));
++    if (browser && browser.exitCode === null && browser.signalCode === null)
++      browser.kill('SIGTERM');
++  };
++  process.on('SIGINT', interrupt);
++  process.on('SIGTERM', interrupt);
++  const metadata = {
++    createdAt: new Date().toISOString(),
++    browserExecutable,
++    browserArgs,
++    profile,
++    browserLog,
++    outputPath,
++    smoke: options.smoke,
++  };
++  try {
++    await new Promise((resolve, reject) => {
++      server.once('error', reject);
++      server.listen(0, '127.0.0.1', resolve);
++    });
++    if (interrupted) throw new Error('Benchmark interrupted');
++    const url = 'http://127.0.0.1:' + server.address().port + '/';
++    metadata.url = url;
++    console.log('Isolated synthetic probe; no screenshots or game assets. Profile: ' + profile);
++    browser = spawn(browserExecutable, browserArgs, {stdio: ['ignore', 'ignore', 'pipe']});
++    browserClosed = new Promise((resolve) => {
++      browser.once('exit', resolve);
++      browser.once('error', resolve);
++    });
++    const endpoint = await new Promise((resolve, reject) => {
++      const timeout = setTimeout(
++        () => reject(new Error('DevTools endpoint timed out; see ' + browserLog)),
++        20000,
++      );
++      browser.stderr.on('data', (data) => {
++        log.write(data);
++        stderrTail = (stderrTail + data).slice(-32768);
++        const match = stderrTail.match(/DevTools listening on (ws:\/\/[^\s]+)/);
++        if (match) {
++          clearTimeout(timeout);
++          resolve(match[1]);
++        }
++      });
++      browser.once('error', (error) => {
++        clearTimeout(timeout);
++        reject(error);
++      });
++      browser.once('exit', (code, signal) => {
++        clearTimeout(timeout);
++        reject(new Error(`Browser exited ${code}/${signal}; see ${browserLog}`));
++      });
++    });
++    cdp = await DevToolsConnection.connect(endpoint);
++    metadata.version = await cdp.command('Browser.getVersion');
++    const {targetId} = await cdp.command('Target.createTarget', {url});
++    const {sessionId} = await cdp.command('Target.attachToTarget', {targetId, flatten: true});
++    await cdp.command('Runtime.enable', {}, sessionId);
++    let ready = false;
++    const deadline = Date.now() + 10000;
++    while (Date.now() < deadline) {
++      const state = await cdp.command(
++        'Runtime.evaluate',
++        {expression: 'Boolean(window.ready)', returnByValue: true},
++        sessionId,
++      );
++      if (state.result.value) {
++        ready = true;
++        break;
++      }
++      await delay(50);
++    }
++    if (!ready) throw new Error('Synthetic fixture did not load');
++    const output = await cdp.command(
++      'Runtime.evaluate',
++      {
++        expression: 'window.ready.then(()=>window.runProbe())',
++        awaitPromise: true,
++        returnByValue: true,
++      },
++      sessionId,
++      180000,
++    );
++    if (output.exceptionDetails)
++      throw new Error(
++        output.exceptionDetails.exception?.description ?? JSON.stringify(output.exceptionDetails),
++      );
++    const result = {...metadata, ...output.result.value, finishedAt: new Date().toISOString()};
++    completedResult = result;
++    await writeFile(outputPath, JSON.stringify(result, null, 2) + '\n');
++    const {casesDetail: _casesDetail, ...parity} = result.parity ?? {};
++    console.log(
++      JSON.stringify({
++        resultPath: outputPath,
++        adapter: result.adapter,
++        parity,
++        available: result.available,
++      }),
++    );
++    if (!result.available) throw new Error(result.reason ?? 'WebGL2 unavailable');
++    return result;
++  } catch (error) {
++    await writeFile(
++      outputPath,
++      JSON.stringify(
++        {
++          ...(completedResult ?? metadata),
++          error: error.message,
++          finishedAt: new Date().toISOString(),
++        },
++        null,
++        2,
++      ) + '\n',
++    );
++    throw error;
++  } finally {
++    if (cdp?.socket.readyState === WebSocket.OPEN)
++      await cdp.command('Browser.close', {}, undefined, 2000).catch(() => {});
++    cdp?.socket.close();
++    cdp?.cancel(new Error('Benchmark finished'));
++    if (browser && browser.exitCode === null && browser.signalCode === null) {
++      await Promise.race([browserClosed, delay(1000)]);
++      if (browser.exitCode === null && browser.signalCode === null) browser.kill('SIGTERM');
++      await Promise.race([browserClosed, delay(2000)]);
++      if (browser.exitCode === null && browser.signalCode === null) browser.kill('SIGKILL');
++      await Promise.race([browserClosed, delay(1000)]);
++    }
++    server.closeAllConnections();
++    await new Promise((resolve) => server.close(resolve));
++    await new Promise((resolve) => log.end(resolve));
++    process.removeListener('SIGINT', interrupt);
++    process.removeListener('SIGTERM', interrupt);
++    console.log('Results: ' + outputPath);
++  }
++}
+diff --git a/tools/verify-buriko-gpu.mjs b/tools/verify-buriko-gpu.mjs
+new file mode 100644
+index 0000000..218f5eb
+--- /dev/null
++++ b/tools/verify-buriko-gpu.mjs
+@@ -0,0 +1,558 @@
++import {
++  parseSyntheticBrowserOptions,
++  runSyntheticBrowserProbe,
++} from './lib/synthetic-browser-probe.mjs';
++
++/** Executes exported production code. Every pixel and text glyph is generated here. */
++async function productionProbe(_fixture, options) {
++  const modules = await Promise.all([
++    ...[
++      'bitmap',
++      'bitmap-alpha',
++      'bitmap-affine',
++      'bitmap-copy',
++      'bitmap-scalar',
++      'bitmap-gpu',
++      'bitmap-compositor',
++      'distributed-processing',
++      'display-damage',
++      'display-object',
++      'display-manager',
++      'display-state',
++      'display-renderer',
++      'surfaces',
++    ].map((name) => import('/runtime/engines/buriko/native/' + name + '.js')),
++    import('/runtime/text/raster-text.js'),
++    import('/runtime/platform/runtime-performance.js'),
++  ]);
++  const lib = Object.assign({}, ...modules);
++  // The production renderer records its built-in prototype audit in a microtask.
++  await Promise.resolve();
++  const assert = (condition, message) => {
++    if (!condition) throw new Error(message);
++  };
++  const equal = (actual, expected, name) => {
++    assert(actual.length === expected.length, name + ': length differs');
++    for (let i = 0; i < actual.length; i++)
++      if (actual[i] !== expected[i])
++        throw new Error(`${name}: byte ${i}, GPU=${actual[i]}, software=${expected[i]}`);
++  };
++  function populate(bytes, seed) {
++    let state = seed >>> 0;
++    for (let i = 0; i < bytes.length; i++) {
++      state ^= state << 13;
++      state ^= state >>> 17;
++      state ^= state << 5;
++      bytes[i] = state & 255;
++    }
++  }
++  function bitmap(width, height, format = 1, seed = 17, padding = 8) {
++    const stride = width * 4 + padding;
++    const bytes = new Uint8Array(stride * height);
++    populate(bytes, seed);
++    return {
++      storage: new lib.BurikoBitmapStorage(bytes, true),
++      offset: 0,
++      stride,
++      width,
++      height,
++      format,
++      bytesPerPixel: 4,
++    };
++  }
++  const crop = (bitmap, x, y, width, height) => ({
++    ...bitmap,
++    offset: bitmap.offset + y * bitmap.stride + x * 4,
++    width,
++    height,
++  });
++  const identity = {x: 1, y: 0, pivotX: 0, pivotY: 0, angle: 0, scaleX: 65536, scaleY: 65536};
++  function alphaPattern(bitmap) {
++    const alpha = [254, 255, 254, 127, 0, 1, 2, 253, 255, 254, 128, 255];
++    const bytes = bitmap.storage.bytes;
++    for (let y = 0; y < bitmap.height; y++)
++      for (let x = 0; x < bitmap.width; x++)
++        bytes[bitmap.offset + y * bitmap.stride + x * 4 + 3] = alpha[(x + y * 3) % alpha.length];
++  }
++  function recording(operation) {
++    lib.startRuntimePerformanceRecording();
++    let value;
++    try {
++      value = operation();
++    } finally {
++      lib.stopRuntimePerformanceRecording();
++    }
++    const aggregates = lib.getRuntimePerformanceSnapshot().aggregates;
++    const metrics = Object.fromEntries(
++      aggregates.filter((a) => a.kind === 'metric').map((a) => [a.name, a.total]),
++    );
++    return {value, metrics};
++  }
++  function requireGpu(metrics, name) {
++    assert(
++      (metrics['buriko.gpu.commands'] ?? 0) > 0,
++      name + ': silently fell back to CPU (no GPU commands)',
++    );
++    assert((metrics['buriko.gpu.readbacks'] ?? 0) > 0, name + ': no completed GPU readback');
++  }
++  const compositor = new lib.BurikoBitmapCompositor();
++  const batch = new lib.BurikoGpuBitmapBatch(0, 1);
++  const cases = [];
++  function compare(name, create, expectGpu = true) {
++    const reference = create(),
++      actual = create();
++    let expectedError, actualError, expectedValue, actualValue;
++    try {
++      expectedValue = reference.operation();
++    } catch (error) {
++      expectedError = error.message;
++    }
++    const {metrics} = recording(() => {
++      try {
++        actualValue = batch.run(actual.output, actual.operation);
++      } catch (error) {
++        actualError = error.message;
++      }
++    });
++    assert(
++      actualError === expectedError,
++      `${name}: fault mismatch ${actualError} / ${expectedError}`,
++    );
++    equal(actual.output.storage.bytes, reference.output.storage.bytes, name);
++    if (reference.extra)
++      for (const [index, expected] of reference.extra().entries())
++        equal(actual.extra()[index], expected, name + ' extra ' + index);
++    if (expectedValue !== undefined)
++      assert(
++        JSON.stringify(actualValue) === JSON.stringify(expectedValue),
++        name + ': observed values differ',
++      );
++    if (expectGpu) requireGpu(metrics, name);
++    cases.push({
++      name,
++      fault: actualError ?? null,
++      gpuCommands: metrics['buriko.gpu.commands'] ?? 0,
++      readbacks: metrics['buriko.gpu.readbacks'] ?? 0,
++    });
++  }
++  for (const width of [1, 2, 3, 5, 17, 31])
++    for (const transparency of [null, 0, 1, 127, 255]) {
++      compare(`ordinary alpha width ${width}, transparency ${transparency}`, () => {
++        const output = bitmap(width + 4, 9, 1, 173),
++          source = bitmap(width + 2, 7, 2, 881);
++        alphaPattern(source);
++        const input = crop(source, 1, 1, width, 5),
++          destination = crop(output, 2, 2, width, 5);
++        return {
++          output,
++          operation: () =>
++            transparency === null
++              ? lib.blendBurikoAlphaIntoRgb(destination, input)
++              : lib.blendBurikoAlphaIntoRgbWithTransparency(destination, input, transparency),
++        };
++      });
++    }
++  for (const sampling of [0, 1])
++    for (let index = 0; index < 12; index++) {
++      compare(`affine sampler ${sampling}, case ${index}`, () => {
++        const output = bitmap(43, 29, 1, 515),
++          source = bitmap(39, 27, 2, 616),
++          rgb = bitmap(11, 7, 1, 717);
++        alphaPattern(source);
++        const input = crop(source, 1, 2, 37, 23),
++          destination = crop(output, 3, 4, 31, 19);
++        const transforms = [
++          {...identity, x: 0x8001, y: -0x8fff},
++          {...identity, x: -0x8fff, y: 0x7001},
++          {...identity, angle: 7 * 65536, scaleX: 70000, scaleY: 55000},
++          {...identity, angle: 90 * 65536, pivotX: 30 * 65536},
++          {...identity, x: -0x7fff8001, y: 0x7fff8001},
++          {...identity, scaleX: 1, scaleY: 1},
++        ];
++        return {
++          output,
++          operation() {
++            lib.clearBurikoBitmap(output, {left: 1, top: 2, right: 14, bottom: 10});
++            lib.copyBurikoBitmapRows(crop(output, 7, 3, 11, 7), rgb);
++            lib.blendTransformedBurikoBitmap(
++              compositor,
++              destination,
++              input,
++              transforms[index % transforms.length],
++              [0, 1, 63, 127, 191, 255][(index + Math.floor(index / 6)) % 6],
++              sampling,
++            );
++            lib.blendBurikoAlphaIntoRgb(crop(output, 4, 5, 17, 9), crop(input, 0, 0, 17, 9));
++          },
++        };
++      });
++    }
++  compare('source mutation, CPU reads, snapshots and release barriers', () => {
++    const output = bitmap(17, 9, 1, 33),
++      source = bitmap(17, 9, 2, 44),
++      rgb = bitmap(17, 9, 1, 55);
++    let snapshot;
++    return {
++      output,
++      extra: () => [snapshot.bytes],
++      operation() {
++        lib.blendBurikoAlphaIntoRgb(output, source);
++        const observed = [lib.bitmapRead32(output, output.offset)];
++        lib.copyBurikoBitmapRows(output, rgb);
++        snapshot = output.storage.cloneRange(0, output.storage.byteLength);
++        lib.blendBurikoAlphaIntoRgb(output, source);
++        source.storage.view.setUint32(0, 0xff03117f, true);
++        lib.blendBurikoAlphaIntoRgb(output, source);
++        source.storage.release();
++        observed.push(lib.bitmapRead32(output, output.offset));
++        return observed;
++      },
++    };
++  });
++  compare('same backing alias preserves scalar pair/store ordering', () => {
++    const output = bitmap(17, 9, 1, 91);
++    const alias = {
++      ...output,
++      storage: new lib.BurikoBitmapStorage(output.storage.bytes, true),
++      format: 2,
++    };
++    return {
++      output,
++      operation() {
++        lib.clearBurikoBitmap(output, {left: 0, top: 0, right: 2, bottom: 0});
++        lib.blendBurikoAlphaIntoRgb(crop(output, 1, 2, 13, 5), crop(alias, 0, 1, 13, 5));
++      },
++    };
++  });
++  compare('unwritten destination initializes through CPU fallback before GPU use', () => {
++    const output = bitmap(13, 5, 1, 13, 0),
++      source = bitmap(13, 5, 2, 41, 0);
++    output.storage = new lib.BurikoBitmapStorage(output.storage.bytes, false);
++    return {
++      output,
++      operation() {
++        lib.clearBurikoBitmap(output);
++        lib.blendBurikoAlphaIntoRgb(output, source);
++        output.storage.range(0, output.storage.byteLength, true);
++      },
++    };
++  });
++  compare('queued work flushes before a later unwritten-source fault', () => {
++    const output = bitmap(9, 4, 1, 81),
++      source = bitmap(9, 4, 1, 19);
++    source.storage = new lib.BurikoBitmapStorage(source.storage.bytes, false);
++    source.storage.written(0, source.stride);
++    return {
++      output,
++      operation() {
++        lib.clearBurikoBitmap(output, {left: 1, top: 2, right: 7, bottom: 3});
++        lib.copyBurikoBitmapRows(output, source);
++      },
++    };
++  });
++  compare('partial final source row preserves CPU fallback and row padding', () => {
++    const output = bitmap(17, 9, 1, 38),
++      source = bitmap(13, 5, 1, 82);
++    source.storage = new lib.BurikoBitmapStorage(
++      source.storage.bytes.slice(0, source.storage.byteLength - 8),
++      true,
++    );
++    return {
++      output,
++      operation() {
++        lib.clearBurikoBitmap(output, {left: 0, top: 0, right: 3, bottom: 1});
++        lib.copyBurikoBitmapRows(crop(output, 2, 2, 13, 5), source);
++      },
++    };
++  });
++  compare('native and alternate raster text targets stay equivalent', () => {
++    const output = bitmap(33, 21, 1, 10),
++      source = bitmap(9, 7, 2, 11);
++    alphaPattern(source);
++    lib.recordRasterText(source, 'GPU', {size: 7, width: 9});
++    const glyphs = () => lib.visibleRasterText(output).map(({id, ...glyph}) => glyph);
++    return {
++      output,
++      extra: () => [lib.rasterTextBitmap(output).storage.bytes],
++      operation() {
++        lib.blendBurikoAlphaIntoRgb(crop(output, 3, 4, 9, 7), source);
++        lib.clearBurikoBitmap(output, {left: 0, top: 0, right: 3, bottom: 2});
++        lib.blendBurikoAlphaIntoRgb(crop(output, 15, 10, 9, 7), source);
++        return glyphs();
++      },
++    };
++  });
++  batch.dispose();
++  // Observe the otherwise unchanged DOM factory only to obtain this backend's canvas.
++  // WebGL's supported context-loss extension then exercises production CPU fallback.
++  const lostBatch = new lib.BurikoGpuBitmapBatch(0, 1);
++  const lossReference = bitmap(17, 9, 1, 77),
++    lossActual = bitmap(17, 9, 1, 77),
++    lossSource = bitmap(17, 9, 2, 88);
++  const originalCreateElement = document.createElement;
++  const lossCanvases = [];
++  document.createElement = function (...args) {
++    const element = Reflect.apply(originalCreateElement, this, args);
++    if (String(args[0]).toLowerCase() === 'canvas') lossCanvases.push(element);
++    return element;
++  };
++  let initialLossMetrics;
++  try {
++    lib.blendBurikoAlphaIntoRgb(lossReference, lossSource);
++    initialLossMetrics = recording(() =>
++      lostBatch.run(lossActual, () => lib.blendBurikoAlphaIntoRgb(lossActual, lossSource)),
++    ).metrics;
++  } finally {
++    document.createElement = originalCreateElement;
++  }
++  requireGpu(initialLossMetrics, 'context-loss setup');
++  equal(lossActual.storage.bytes, lossReference.storage.bytes, 'context-loss setup');
++  const lossGl = lossCanvases.map((canvas) => canvas.getContext('webgl2')).find(Boolean);
++  assert(lossGl, 'production backend context was not created');
++  const loseContext = lossGl.getExtension('WEBGL_lose_context');
++  assert(loseContext, 'context-loss extension unavailable');
++  loseContext.loseContext();
++  lib.blendBurikoAlphaIntoRgb(lossReference, lossSource);
++  const afterLoss = recording(() =>
++    lostBatch.run(lossActual, () => lib.blendBurikoAlphaIntoRgb(lossActual, lossSource)),
++  ).metrics;
++  equal(
++    lossActual.storage.bytes,
++    lossReference.storage.bytes,
++    'production CPU replay after context loss',
++  );
++  assert((afterLoss['buriko.gpu.commands'] ?? 0) === 0, 'lost context reported completed GPU work');
++  assert(
++    (afterLoss['buriko.gpu.software-commands'] ?? 0) > 0,
++    'context-loss queued work did not replay in software',
++  );
++  cases.push({
++    name: 'production context-loss replay',
++    fault: null,
++    gpuCommands: initialLossMetrics['buriko.gpu.commands'],
++    readbacks: initialLossMetrics['buriko.gpu.readbacks'],
++    softwareCommandsAfterLoss: afterLoss['buriko.gpu.software-commands'],
++  });
++  lostBatch.dispose();
++  await fetch('/progress', {
++    method: 'POST',
++    body: JSON.stringify({
++      productionParityCases: cases.length,
++      gpuCommands: cases.reduce((n, c) => n + c.gpuCommands, 0),
++      readbacks: cases.reduce((n, c) => n + c.readbacks, 0),
++    }),
++  });
++
++  function scene(backend, width, height) {
++    const bounds = {left: 0, top: 0, right: width - 1, bottom: height - 1};
++    const compositor = new lib.BurikoBitmapCompositor();
++    compositor.graphicsBackend = backend;
++    compositor.defaultFormat = 1;
++    const allocator = new lib.BurikoDistributedAllocator(3),
++      environment = new lib.BurikoDisplayObjectEnvironment(
++        compositor,
++        new lib.BurikoDisplayDamage(32, bounds),
++      ),
++      surfaces = new lib.BurikoSurfaces(null, compositor, allocator),
++      manager = new lib.BurikoDisplayManager(
++        environment,
++        surfaces,
++        new lib.BurikoNativeDisplayState(width, height),
++      ),
++      output = bitmap(width, height, 1, 918, 0);
++    manager.bindDisplayContext({bitmap: output, bounds});
++    manager.backdrop.resizeToDisplay();
++    const processing = new lib.BurikoDistributedProcessing(allocator, 3);
++    const renderer = new lib.BurikoDisplayRenderer(manager, width * 3 + 646, processing);
++    const slots = [1, 2, 3];
++    for (const [slot, sourceWidth, sourceHeight, sampling] of [
++      [1, width, height, 1],
++      [2, Math.floor(width * 0.52344) | 1, height, 0],
++      [3, Math.min(width, 641), Math.min(height, 72), null],
++    ]) {
++      surfaces.allocate(slot, sourceWidth, sourceHeight, slot === 3 ? 1 : 2);
++      const source = surfaces.descriptor(slot);
++      populate(source.storage.bytes, slot * 173);
++      source.storage.written(0, source.storage.byteLength);
++      if (slot !== 3) alphaPattern(source);
++      else
++        lib.recordRasterText(source, 'SYNTHETIC LIVE TEXT', {
++          size: Math.min(24, sourceHeight),
++          width: Math.min(280, sourceWidth),
++        });
++      const sprite = manager.find('sprite', manager.createSprite());
++      if (sampling === null) {
++        assert(sprite.configureSimple(slot) === 0, 'simple scene configuration failed');
++        sprite.setCoordinates(
++          Math.min(32, width - sourceWidth) << 16,
++          Math.max(0, height - sourceHeight - 24) << 16,
++          0,
++        );
++        sprite.blendMode = 0;
++      } else {
++        sprite.setCoordinates(
++          (-Math.floor(width / 2) << 16) + 0x8000,
++          (-Math.floor(height / 2) << 16) + 0x8000,
++          0,
++        );
++        assert(
++          sprite.configureAffineBlend({
++            sourceSurface: slot,
++            pivotX: 0,
++            pivotY: 0,
++            angle: 0,
++            perspective: 0,
++            pivotPolicy: 0,
++            sampling,
++          }) === 0,
++          'affine scene configuration failed',
++        );
++        sprite.blendMode = 0x20;
++      }
++      sprite.setActivation(1);
++    }
++    return {
++      output,
++      run: () => renderer.drawFull(),
++      dispose() {
++        manager.dispose();
++        processing.dispose();
++        for (const slot of slots) surfaces.release(slot);
++        output.storage.release();
++      },
++    };
++  }
++  const width = options.smoke ? 320 : 1920,
++    height = options.smoke ? 180 : 1080;
++  const software = scene('software', width, height),
++    gpu = scene('webgl2', width, height);
++  const scenes = [];
++  let warmupMs;
++  try {
++    let start = performance.now();
++    software.run();
++    const softwareMs = performance.now() - start;
++    start = performance.now();
++    gpu.run();
++    warmupMs = {software: softwareMs, gpu: performance.now() - start};
++    equal(gpu.output.storage.bytes, software.output.storage.bytes, 'scene native warmup');
++    equal(
++      lib.rasterTextBitmap(gpu.output).storage.bytes,
++      lib.rasterTextBitmap(software.output).storage.bytes,
++      'scene textless warmup',
++    );
++    assert(lib.visibleRasterText(software.output).length > 0, 'scene text fixture was not drawn');
++    assert(
++      lib.rasterTextBitmap(software.output).storage !== software.output.storage,
++      'scene has no alternate text plane',
++    );
++    for (let sample = 0; sample < options.iterations; sample++) {
++      await new Promise((resolve) => setTimeout(resolve, 20));
++      const softwareRecorded = recording(() => {
++        const start = performance.now();
++        software.run();
++        return performance.now() - start;
++      });
++      const softwareMs = softwareRecorded.value;
++      const recorded = recording(() => {
++        const start = performance.now();
++        gpu.run();
++        return performance.now() - start;
++      });
++      requireGpu(recorded.metrics, 'production display scene');
++      equal(
++        gpu.output.storage.bytes,
++        software.output.storage.bytes,
++        'scene native frame ' + sample,
++      );
++      equal(
++        lib.rasterTextBitmap(gpu.output).storage.bytes,
++        lib.rasterTextBitmap(software.output).storage.bytes,
++        'scene textless frame ' + sample,
++      );
++      const glyphs = (bitmap) => lib.visibleRasterText(bitmap).map(({id, ...glyph}) => glyph);
++      assert(
++        JSON.stringify(glyphs(gpu.output)) === JSON.stringify(glyphs(software.output)),
++        'scene glyph metadata differs',
++      );
++      const result = {
++        sample,
++        softwareMs,
++        gpuMs: recorded.value,
++        gpuCommands: recorded.metrics['buriko.gpu.commands'],
++        readbacks: recorded.metrics['buriko.gpu.readbacks'],
++        softwareCommands: recorded.metrics['buriko.gpu.software-commands'] ?? 0,
++      };
++      scenes.push(result);
++      await fetch('/progress', {method: 'POST', body: JSON.stringify({scene: result})});
++    }
++  } finally {
++    software.dispose();
++    gpu.dispose();
++  }
++  const canvas = document.createElement('canvas'),
++    gl = canvas.getContext('webgl2');
++  const debug = gl?.getExtension('WEBGL_debug_renderer_info');
++  const adapter = gl
++    ? {
++        vendor: gl.getParameter(gl.VENDOR),
++        renderer: debug
++          ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)
++          : gl.getParameter(gl.RENDERER),
++        version: gl.getParameter(gl.VERSION),
++      }
++    : {};
++  gl?.getExtension('WEBGL_lose_context')?.loseContext();
++  const median = (key) =>
++    scenes.map((s) => s[key]).sort((a, b) => a - b)[Math.floor(scenes.length / 2)];
++  return {
++    available: true,
++    adapter,
++    parity: {
++      cases: cases.length,
++      gpuCommands: cases.reduce((n, c) => n + c.gpuCommands, 0),
++      readbacks: cases.reduce((n, c) => n + c.readbacks, 0),
++      casesDetail: cases,
++    },
++    scene: {
++      width,
++      height,
++      warmups: 1,
++      warmupMs,
++      samples: scenes,
++      medianSoftwareMs: median('softwareMs'),
++      medianGpuMs: median('gpuMs'),
++    },
++    notes: [
++      'Imports and executes the production bitmap backend and native display traversal; no duplicated test shader.',
++      'Generated numeric buffers and synthetic text only; no game URL, game assets, screenshots, or forced software renderer.',
++      'Scene timing includes native traversal, GPU uploads, rectangle preservation and synchronous CPU readback. Both backends have identical diagnostic recording enabled. Setup, warmup and byte comparisons are outside measured intervals.',
++      'warmupMs records the first scene draw for each backend, including lazy GPU initialization and first text-plane work; diagnostics are off for both warmups.',
++      'GPU commands and completed readbacks are required for admitted parity cases and every measured scene frame. CPU software is the reference; no renderer behavior is patched.',
++    ],
++  };
++}
++
++if (process.argv.includes('--help')) {
++  console.log(
++    'Usage: node tools/verify-buriko-gpu.mjs [--browser /path/to/browser] [--output /path/to/results.json] [--iterations 3] [--smoke]',
++  );
++  console.log(
++    'Checks exported production CPU/WebGL2 bitmap paths and benchmarks an exact-pixel 1080p native display scene with simple/affine layers and live synthetic raster text. Build dist first.',
++  );
++  console.log(
++    '--smoke uses a 320×180 scene and one measured frame. Only generated fixtures and compiled dist JavaScript are served, in an isolated headless profile. No game assets or screenshots.',
++  );
++} else {
++  try {
++    await runSyntheticBrowserProbe({
++      options: parseSyntheticBrowserOptions(process.argv.slice(2)),
++      pageMain: productionProbe,
++      runtimeRoot: new URL('../dist/', import.meta.url),
++      name: 'vn-production-gpu',
++    });
++  } catch (error) {
++    console.error(error.message);
++    process.exitCode = 1;
++  }
++}

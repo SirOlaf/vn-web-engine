@@ -1,4 +1,5 @@
 import type {Rect} from './surface.js';
+import {beginRuntimeSpan, recordRuntimeMetric} from '../platform/runtime-performance.js';
 
 const canvasVersions = new WeakMap<HTMLCanvasElement, object>();
 
@@ -30,9 +31,17 @@ export class CanvasFramePresenter {
       this.height === this.canvas.height &&
       this.canvasVersion === canvasVersions.get(this.canvas);
     if (intact && this.revision === revision) return;
-    if (intact && damage !== undefined)
-      this.context.putImageData(frame, 0, 0, damage.x, damage.y, damage.width, damage.height);
-    else this.context.putImageData(frame, 0, 0);
+    const partial = intact && damage !== undefined;
+    const pixels = partial ? damage.width * damage.height : frame.width * frame.height;
+    const finishUpload = beginRuntimeSpan('graphics.canvas.upload');
+    try {
+      if (partial)
+        this.context.putImageData(frame, 0, 0, damage.x, damage.y, damage.width, damage.height);
+      else this.context.putImageData(frame, 0, 0);
+    } finally {
+      finishUpload?.({width: frame.width, height: frame.height, pixels, partial});
+      recordRuntimeMetric('graphics.canvas.upload.pixels', pixels);
+    }
     this.canvasVersion = invalidateCanvasFrame(this.canvas);
     this.frame = frame;
     this.revision = revision;

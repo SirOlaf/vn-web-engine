@@ -8,6 +8,7 @@ import {
   stopRuntimePerformanceRecording,
   subscribeRuntimePerformance,
 } from '../dist/platform/runtime-performance.js';
+import {getRuntimeProfile, setRuntimeProfile} from '../dist/platform/runtime-profile.js';
 
 test('optional timing recorder bounds data, measures browser delays, and fully stops observation', (t) => {
   let now = 1000;
@@ -48,6 +49,7 @@ test('optional timing recorder bounds data, measures browser delays, and fully s
   }
   t.after(() => {
     stopRuntimePerformanceRecording();
+    setRuntimeProfile('native');
     for (const [key, descriptor] of originals) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete globalThis[key];
@@ -70,11 +72,18 @@ test('optional timing recorder bounds data, measures browser delays, and fully s
   assert.equal(timers.size, 0);
   assert.equal(observers.length, 0);
   const unsubscribe = subscribeRuntimePerformance((status) => statuses.push(status));
+  assert.equal(getRuntimeProfile(), 'native');
   startRuntimePerformanceRecording();
   startRuntimePerformanceRecording();
   assert.equal(timers.size, 1);
   assert.equal(observers.length, 1);
   assert.equal(statuses.at(-1).recording, true);
+  assert.equal(getRuntimePerformanceSnapshot().buildId, null, 'direct runtime has no bundle stamp');
+  assert.deepEqual(getRuntimePerformanceSnapshot().runtimeProfiles, ['native']);
+  setRuntimeProfile('browser-optimized');
+  setRuntimeProfile('browser-optimized');
+  assert.throws(() => setRuntimeProfile('private unsupported profile'), TypeError);
+  assert.equal(getRuntimeProfile(), 'browser-optimized');
 
   const fast = beginRuntimeSpan('test.fast');
   now += 3;
@@ -117,6 +126,12 @@ test('optional timing recorder bounds data, measures browser delays, and fully s
     ],
   });
   let snapshot = getRuntimePerformanceSnapshot();
+  assert.deepEqual(snapshot.runtimeProfiles, ['native', 'browser-optimized']);
+  snapshot.runtimeProfiles.length = 0;
+  assert.deepEqual(getRuntimePerformanceSnapshot().runtimeProfiles, [
+    'native',
+    'browser-optimized',
+  ]);
   assert.equal(snapshot.completedSpans, 4);
   assert.deepEqual(snapshot.browser, {userAgent: 'Test browser', hardwareConcurrency: 8});
   assert.equal(snapshot.aggregates.find((entry) => entry.name === 'test.fast').count, 1);
@@ -178,6 +193,7 @@ test('optional timing recorder bounds data, measures browser delays, and fully s
     2,
   );
   const stopped = getRuntimePerformanceSnapshot();
+  setRuntimeProfile('native');
   const readsAtStop = clockReads;
   now += 100;
   unfinished();
@@ -197,6 +213,7 @@ test('optional timing recorder bounds data, measures browser delays, and fully s
   assert.equal(snapshot.completedSpans, 0);
   assert.equal(snapshot.events.length, 1);
   assert.equal(snapshot.longTasksAvailable, false);
+  assert.deepEqual(snapshot.runtimeProfiles, ['native']);
   stopRuntimePerformanceRecording();
   assert.equal(timers.size, 0);
   assert.equal(statuses.length, statusCount);

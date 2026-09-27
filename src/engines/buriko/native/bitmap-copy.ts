@@ -77,33 +77,45 @@ function copyInitializedRows(
     destinationEnd = Math.max(destination.offset, destinationLast) + rowBytes;
   if (
     input.initializedView(sourceBegin, sourceEnd - sourceBegin) === null ||
-    output.initializedView(destinationBegin, destinationEnd - destinationBegin) === null
+    !Number.isSafeInteger(destinationBegin) ||
+    !Number.isSafeInteger(destinationEnd) ||
+    destinationBegin < 0 ||
+    destinationEnd > output.bytes.length ||
+    // A replacement copy does not consume old output bytes, only its live bounds.
+    output.initializedView(0, 0) === null
   )
     return false;
+  let identical = false;
   if (input.bytes.buffer === output.bytes.buffer) {
     const sourceBase = input.bytes.byteOffset,
       destinationBase = output.bytes.byteOffset;
-    if (
+    identical =
       sourceBase + source.offset === destinationBase + destination.offset &&
-      source.stride === destination.stride
-    )
-      return true;
+      source.stride === destination.stride;
     if (
+      !identical &&
       sourceBase + sourceBegin < destinationBase + destinationEnd &&
       destinationBase + destinationBegin < sourceBase + sourceEnd
     )
       return false;
   }
-  if (source.stride === rowBytes && destination.stride === rowBytes)
-    output.bytes.set(input.bytes.subarray(source.offset, sourceEnd), destination.offset);
+  if (!identical) {
+    if (source.stride === rowBytes && destination.stride === rowBytes)
+      output.bytes.set(input.bytes.subarray(source.offset, sourceEnd), destination.offset);
+    else
+      for (let row = 0; row < height; row++) {
+        const offset = source.offset + row * source.stride;
+        output.bytes.set(
+          input.bytes.subarray(offset, offset + rowBytes),
+          destination.offset + row * destination.stride,
+        );
+      }
+  }
+  // Different descriptors can share identical bytes but own separate validity maps.
+  if (destination.stride === rowBytes) output.written(destination.offset, rowBytes * height);
   else
-    for (let row = 0; row < height; row++) {
-      const offset = source.offset + row * source.stride;
-      output.bytes.set(
-        input.bytes.subarray(offset, offset + rowBytes),
-        destination.offset + row * destination.stride,
-      );
-    }
+    for (let row = 0; row < height; row++)
+      output.written(destination.offset + row * destination.stride, rowBytes);
   return true;
 }
 

@@ -1,6 +1,7 @@
 import type {Rect} from '../graphics/surface.js';
 import {BrowserRasterText} from './browser-raster-text.js';
 import type {RasterTextGlyph} from './raster-text.js';
+import {beginRuntimeSpan, recordRuntimeMetric} from '../platform/runtime-performance.js';
 
 export type BrowserTextMode = 'native' | 'dom';
 export interface BrowserRasterTextFrame {
@@ -137,33 +138,51 @@ export class BrowserRasterTextPresentation {
     this.render(canvas, value);
   }
   private render(canvas: HTMLCanvasElement, value: Presentation): void {
+    recordRuntimeMetric('text.presentation.dom-mode', this.mode === 'dom' ? 1 : 0);
     if (this.mode === 'native') {
       value.overlay?.hide();
       return;
     }
     if (!canvas.parentElement || !value.width || !value.height) return;
-    let {frame, glyphs} = value.base();
-    if (value.patches.length) {
-      const scratch = canvas.ownerDocument.createElement('canvas');
-      scratch.width = value.width;
-      scratch.height = value.height;
-      const context = scratch.getContext('2d')!;
-      context.putImageData(frame, 0, 0);
-      for (const patch of value.patches) {
-        context.save();
-        patch.paint(context);
-        context.restore();
-        glyphs = [...rasterTextOutsideRegion(glyphs, patch.region), ...patch.glyphs];
+    const finishDom = beginRuntimeSpan('text.presentation.dom');
+    try {
+      const finishBase = beginRuntimeSpan('text.presentation.base');
+      let base: BrowserRasterTextFrame;
+      try {
+        base = value.base();
+      } finally {
+        finishBase?.({width: value.width, height: value.height});
       }
-      frame = context.getImageData(0, 0, value.width, value.height);
-      if (value.patches.length >= 64) {
-        const rendered = {frame, glyphs};
-        value.base = () => rendered;
-        value.patches = [];
+      let {frame, glyphs} = base;
+      if (value.patches.length) {
+        const scratch = canvas.ownerDocument.createElement('canvas');
+        scratch.width = value.width;
+        scratch.height = value.height;
+        const context = scratch.getContext('2d')!;
+        context.putImageData(frame, 0, 0);
+        for (const patch of value.patches) {
+          context.save();
+          patch.paint(context);
+          context.restore();
+          glyphs = [...rasterTextOutsideRegion(glyphs, patch.region), ...patch.glyphs];
+        }
+        frame = context.getImageData(0, 0, value.width, value.height);
+        if (value.patches.length >= 64) {
+          const rendered = {frame, glyphs};
+          value.base = () => rendered;
+          value.patches = [];
+        }
       }
+      const finishOverlay = beginRuntimeSpan('text.presentation.overlay');
+      try {
+        value.overlay ??= new BrowserRasterText(canvas);
+        value.overlay.show(frame, glyphs);
+      } finally {
+        finishOverlay?.({glyphs: glyphs.length});
+      }
+    } finally {
+      finishDom?.({width: value.width, height: value.height});
     }
-    value.overlay ??= new BrowserRasterText(canvas);
-    value.overlay.show(frame, glyphs);
   }
   clear(canvas: HTMLCanvasElement): void {
     this.presentations.get(canvas)?.overlay?.dispose();

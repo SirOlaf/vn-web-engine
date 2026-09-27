@@ -6,6 +6,7 @@ import type {BurikoProcedureState} from './procedure.js';
 import type {BurikoBpOpcodeContext} from './types.js';
 import type {BurikoBitmapRegistration} from './bitmap-registration.js';
 import {textBytes} from './text.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 /** 09D5D0/09D4B0/09D570 extend CF's actual worker and destructor publication. */
 export class BurikoRegisterBitmapProcess extends BurikoDataDecodeProcess {
@@ -39,18 +40,29 @@ export class BurikoRegisterBitmapProcess extends BurikoDataDecodeProcess {
       if (worker.destination === null)
         throw new Error('Buriko registered bitmap has no decoded output');
       const source = {...worker.destination, initialized: worker.initialized};
-      const imported = (this.index | 0) === -1 ? 0 : this.registration.import(this.index, source);
+      const finishImport = beginRuntimeSpan('buriko.bitmap.register-import');
+      let imported: number;
+      try {
+        imported = (this.index | 0) === -1 ? 0 : this.registration.import(this.index, source);
+      } finally {
+        finishImport?.({bytes: worker.result, skipped: (this.index | 0) === -1});
+      }
       if (imported === 0) {
         if (this.name !== null) {
-          if ((this.preloadFlag | 0) !== 0)
-            this.registration.preload(this.archive, this.name, source, worker.result);
-          else
-            this.registration.cache(
-              this.archive === null ? null : {bytes: this.archive, offset: 0},
-              {bytes: this.name, offset: 0},
-              source,
-              worker.result,
-            );
+          const finishCache = beginRuntimeSpan('buriko.bitmap.register-cache');
+          try {
+            if ((this.preloadFlag | 0) !== 0)
+              this.registration.preload(this.archive, this.name, source, worker.result);
+            else
+              this.registration.cache(
+                this.archive === null ? null : {bytes: this.archive, offset: 0},
+                {bytes: this.name, offset: 0},
+                source,
+                worker.result,
+              );
+          } finally {
+            finishCache?.({bytes: worker.result, preload: (this.preloadFlag | 0) !== 0});
+          }
         }
         this.result = 0;
       } else this.result = imported;

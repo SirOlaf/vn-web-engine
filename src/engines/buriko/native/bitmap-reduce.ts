@@ -5,6 +5,7 @@ import {
   type BurikoBitmap,
 } from './bitmap.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
+import {tryBurikoBitmapReduceWasm} from './bitmap-alpha-wasm.js';
 
 // ceil((a + b) / 2) = (a | b) - ((a ^ b) / 2), independently for all four bytes.
 const average = (first: number, second: number): number =>
@@ -34,6 +35,22 @@ function reduceInitialized(
   if (sourceView === null || destinationView === null) return false;
   const sourceRowStep = source.stride << 1,
     writtenBytes = (width + Number(oddColumn)) * 4;
+  if (
+    tryBurikoBitmapReduceWasm(
+      destination,
+      source,
+      destinationView,
+      sourceView,
+      width,
+      height,
+      oddColumn,
+      oddRow,
+    )
+  ) {
+    for (let y = 0; y < height + Number(oddRow); y++)
+      destination.storage!.written(destination.offset + y * destination.stride, writtenBytes);
+    return true;
+  }
   for (let y = 0; y < height; y++) {
     const top = source.offset + y * sourceRowStep,
       bottom = top + source.stride,

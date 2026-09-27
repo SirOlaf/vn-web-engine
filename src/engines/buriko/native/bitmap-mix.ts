@@ -403,6 +403,29 @@ function mixInitializedRows(
     b = initializedBurikoBitmapView(second, width, height),
     output = writableBurikoBitmapView(destination, width, height);
   if (a === null || b === null || output === null) return false;
+  // At 256 the first coverage is zero, so the reciprocal coefficient is exactly
+  // zero even when both alphas are zero. RGB and RGBA both reproduce the second
+  // pixel, including its otherwise invisible color bytes. Validate both sources
+  // above first, and retain MOVQ traversal when the second source aliases output.
+  if (factor === 256 && b.buffer !== output.buffer) {
+    const rowBytes = width * 4,
+      sourceBytes = new Uint8Array(b.buffer, b.byteOffset, b.byteLength),
+      outputBytes = new Uint8Array(output.buffer, output.byteOffset, output.byteLength);
+    if (second.stride === rowBytes && destination.stride === rowBytes) {
+      outputBytes.set(
+        sourceBytes.subarray(second.offset, second.offset + rowBytes * height),
+        destination.offset,
+      );
+      destination.storage!.written(destination.offset, rowBytes * height);
+    } else
+      for (let row = 0; row < height; row++) {
+        const target = destination.offset + row * destination.stride,
+          source = second.offset + row * second.stride;
+        outputBytes.set(sourceBytes.subarray(source, source + rowBytes), target);
+        destination.storage!.written(target, rowBytes);
+      }
+    return true;
+  }
   if (
     destination.format === 2 &&
     tryBurikoBitmapMixWasm(destination, first, second, output, a, b, width, height, factor)

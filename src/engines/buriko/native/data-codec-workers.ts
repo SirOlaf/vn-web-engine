@@ -7,6 +7,7 @@ import type {BurikoEngineErrors} from './engine-errors.js';
 import {codecView, type BurikoCodecPointer} from './codec-storage.js';
 import {decodeBurikoResourcePointer} from './resource-decode.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 /** FE440's captured native worker record; completion does not dispose the procedure. */
 export interface BurikoDataCodecWorker {
@@ -58,7 +59,7 @@ export class BurikoDataCodecWorkers {
     source: BurikoBpPointer | null,
     count: number,
   ): BurikoDataCodecWorker | null {
-    return this.schedule(destination, source, count, async (worker) => {
+    return this.schedule('encode', destination, source, count, async (worker) => {
       worker.result = await this.run(
         worker,
         encodeBurikoSdcSteps(worker.destination, worker.source, worker.count, this.readSystemTime),
@@ -76,7 +77,7 @@ export class BurikoDataCodecWorkers {
     errors: BurikoEngineErrors,
   ): BurikoDataCodecWorker | null {
     count >>>= 0;
-    return this.schedule(destination, source, size, async (worker) => {
+    return this.schedule('struct-encode', destination, source, size, async (worker) => {
       // Each started native thread is also a distinct critical-section actor.
       await scratch.section.enter(worker);
       try {
@@ -115,7 +116,7 @@ export class BurikoDataCodecWorkers {
     inputLength: number,
     processing: BurikoDistributedProcessing,
   ): BurikoDataCodecWorker | null {
-    return this.schedule(destination, source, inputLength, async (worker) => {
+    return this.schedule('decode', destination, source, inputLength, async (worker) => {
       const magic = 'SDC FORMAT 1.00\0';
       let sdc = true;
       for (let index = 0; index < magic.length; index++) {
@@ -166,6 +167,7 @@ export class BurikoDataCodecWorkers {
   }
 
   private schedule(
+    kind: 'decode' | 'encode' | 'struct-encode',
     destination: BurikoBpPointer | null,
     source: BurikoBpPointer | null,
     count: number,
@@ -186,8 +188,11 @@ export class BurikoDataCodecWorkers {
       released: false,
     };
     this.pending.add(worker);
+    const finishQueue = beginRuntimeSpan('buriko.codec.queue-wait');
     try {
       setTimeout(async () => {
+        finishQueue?.({inputBytes: worker.count});
+        const finishWork = beginRuntimeSpan('buriko.codec.worker.' + kind);
         try {
           if (worker.released)
             throw new Error('Buriko codec worker accesses a released native record');
@@ -196,11 +201,13 @@ export class BurikoDataCodecWorkers {
         } catch (error) {
           this.failure = {error};
         } finally {
+          finishWork?.({inputBytes: worker.count, done: worker.done, result: worker.result});
           this.pending.delete(worker);
           notify();
         }
       }, 0);
     } catch {
+      finishQueue?.({inputBytes: worker.count, failed: true});
       this.pending.delete(worker);
       notify();
       return null;

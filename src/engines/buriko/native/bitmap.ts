@@ -1,4 +1,5 @@
 import {cloneRasterText, releaseRasterText, withRasterText} from '../../../text/raster-text.js';
+import {indexOfZeroByte} from '../../../core/binary.js';
 
 /** Native bitmap backing identity is shared by cropped descriptors and copied slot records. */
 export class BurikoBitmapStorage {
@@ -20,6 +21,9 @@ export class BurikoBitmapStorage {
       if (initialized.length !== bytes.length)
         throw new RangeError('Buriko bitmap validity does not cover its backing storage');
       storage.defined = initialized.slice();
+      const firstUndefined = indexOfZeroByte(storage.defined);
+      if (firstUndefined < 0) storage.defined = null;
+      else storage.initializedPrefix = firstUndefined;
     }
     return storage;
   }
@@ -33,10 +37,14 @@ export class BurikoBitmapStorage {
       offset + length > this.bytes.length
     )
       throw new RangeError('Buriko bitmap accesses outside native allocation');
-    if (read && this.defined !== null && !this.nativeHeapReads)
-      for (let index = offset; index < offset + length; index++)
-        if (this.defined[index] === 0)
-          throw new Error('Buriko bitmap reads unwritten native allocation');
+    if (
+      read &&
+      this.defined !== null &&
+      !this.nativeHeapReads &&
+      offset + length > this.initializedPrefix &&
+      indexOfZeroByte(this.defined.subarray(offset, offset + length)) >= 0
+    )
+      throw new Error('Buriko bitmap reads unwritten native allocation');
   }
   written(offset: number, length: number): void {
     this.range(offset, length, false);

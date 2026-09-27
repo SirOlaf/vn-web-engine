@@ -5,6 +5,14 @@ import type {BurikoBitmap} from './bitmap.js';
 import type {BurikoBitmapAffineCoordinates} from './bitmap-affine.js';
 
 interface BurikoBitmapExports extends WasmPixelExports {
+  reduce_half: (
+    source: number,
+    destination: number,
+    pairWidth: number,
+    pairHeight: number,
+    oddColumn: number,
+    oddRow: number,
+  ) => void;
   affine_alpha_rgb: (
     source: number,
     destination: number,
@@ -74,6 +82,50 @@ function getKernel(): BurikoBitmapExports | null {
     if (kernel !== null) workspace = new WasmPixelWorkspace(kernel);
   }
   return kernel;
+}
+
+/** Native PAVGB reduction; checked aliased or unusual views retain the JS traversal. */
+export function tryBurikoBitmapReduceWasm(
+  destination: BurikoBitmap,
+  source: BurikoBitmap,
+  output: DataView,
+  input: DataView,
+  pairWidth: number,
+  pairHeight: number,
+  oddColumn: boolean,
+  oddRow: boolean,
+): boolean {
+  const width = pairWidth + Number(oddColumn),
+    height = pairHeight + Number(oddRow);
+  if (width * height < BURIKO_BITMAP_WASM_MIN_PIXELS || input.buffer === output.buffer)
+    return false;
+  const exports = getKernel();
+  if (exports === null) return false;
+  return workspace!.transform(
+    {
+      view: input,
+      offset: source.offset,
+      pitch: source.stride,
+      rowBytes: (pairWidth * 2 + Number(oddColumn)) * 4,
+      rows: pairHeight * 2 + Number(oddRow),
+    },
+    {
+      view: output,
+      offset: destination.offset,
+      pitch: destination.stride,
+      rowBytes: width * 4,
+      rows: height,
+    },
+    (sourcePointer, destinationPointer) =>
+      exports.reduce_half(
+        sourcePointer,
+        destinationPointer,
+        pairWidth,
+        pairHeight,
+        Number(oddColumn),
+        Number(oddRow),
+      ),
+  );
 }
 
 /** Initialized affine alpha drawing with a conservatively bounded source footprint. */
@@ -384,5 +436,6 @@ export function tryBurikoBitmapMixWasm(
     (firstPointer, destinationPointer, secondPointer) =>
       exports.mix_rgba(firstPointer, secondPointer, destinationPointer, width * height, factor),
     {view: secondInput, offset: second.offset, pitch: second.stride},
+    false,
   );
 }

@@ -14,7 +14,7 @@ import {clearBurikoBitmap} from './bitmap-copy.js';
 import {runBurikoBitmapOperation} from './bitmap-operation-jobs.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
 import {tryBurikoBitmapAffineAlphaWasm, tryBurikoBitmapAffineWasm} from './bitmap-alpha-wasm.js';
-import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
+import {beginRuntimeSpan, recordRuntimeMetric} from '../../../platform/runtime-performance.js';
 
 const AFFINE_PIXEL_METRICS = {
   copy: 'buriko.affine.copy.pixels',
@@ -431,25 +431,48 @@ function affinePixels(
     writeOnly = input !== null && (mode === 'copy' || mode === 'dim'),
     output = affineView(destination, false, writeOnly);
   if (mode === 'alpha' && input !== null && output !== null && input.buffer !== output.buffer) {
-    const wasm = tryBurikoBitmapAffineAlphaWasm(
-      destination,
-      source,
-      output,
-      input,
-      coordinates,
-      bilinear,
-      transparency,
+    recordRuntimeMetric('buriko.affine.alpha.column-x', coordinates.columnX);
+    recordRuntimeMetric('buriko.affine.alpha.column-y', coordinates.columnY);
+    if (coordinates.columnX === 65536 && coordinates.columnY === 0)
+      recordRuntimeMetric(
+        'buriko.affine.alpha.unit-column-pixels',
+        (destination.width >>> 0) * (destination.height >>> 0),
+      );
+    // Include eligibility checks, source-window staging and output copying, not
+    // just WASM execution. Presentation replays enter these same boundaries.
+    const finishWasm = beginRuntimeSpan(
+      bilinear ? 'buriko.affine.alpha.wasm-bilinear' : 'buriko.affine.alpha.wasm-nearest',
     );
-    if (!wasm)
-      blendInitializedAffine(
+    let wasm = false;
+    try {
+      wasm = tryBurikoBitmapAffineAlphaWasm(
         destination,
         source,
         output,
         input,
         coordinates,
-        transparency,
         bilinear,
+        transparency,
       );
+    } finally {
+      finishWasm?.({applied: wasm});
+    }
+    if (!wasm) {
+      const finishJs = beginRuntimeSpan('buriko.affine.alpha.javascript');
+      try {
+        blendInitializedAffine(
+          destination,
+          source,
+          output,
+          input,
+          coordinates,
+          transparency,
+          bilinear,
+        );
+      } finally {
+        finishJs?.({bilinear});
+      }
+    }
     recordRuntimeMetric(
       wasm ? 'buriko.affine.alpha.bounded-pixels' : 'buriko.affine.alpha.js-pixels',
       (destination.width >>> 0) * (destination.height >>> 0),

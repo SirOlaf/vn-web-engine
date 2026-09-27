@@ -1,11 +1,16 @@
 import {decodeDsc} from '../../../formats/buriko/dsc.js';
-import {decodeCompressedBgLegacy, packedImage} from '../../../formats/buriko/compressed-bg.js';
+import {
+  decodeCompressedBgLegacyAsync,
+  packedImage,
+  type BurikoImage,
+} from '../../../formats/buriko/compressed-bg.js';
 import {signature} from '../../../formats/buriko/binary.js';
 import {decodeBurikoCompressedBgV2} from './compressed-bg-v2.js';
 import {BurikoUndefinedResourceRead, BurikoResourceCodecException} from './resource-memory.js';
 import {requireBurikoResourceRange} from './bf-entropy.js';
 import {BurikoDistributedProcessing} from './distributed-processing.js';
 import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 export {BurikoUndefinedResourceRead} from './resource-memory.js';
 
 export interface BurikoResourceDestination {
@@ -110,7 +115,12 @@ export async function decodeBurikoResource(
         true,
       );
       if (size > 0x4000000) return {status: 6, bytes: null};
-      decoded = decodeDsc(stored);
+      const finishDecode = beginRuntimeSpan('buriko.decode.dsc');
+      try {
+        decoded = decodeDsc(stored);
+      } finally {
+        finishDecode?.({inputBytes: stored.length, outputBytes: size});
+      }
       decodedSize = decoded.length;
       initializedLength = decoded.length;
       if (decoded.length !== size) return {status: 5, bytes: null};
@@ -150,6 +160,7 @@ export async function decodeBurikoResource(
           mainProcessing.capacity,
         );
         let faulted = true;
+        const finishDecode = beginRuntimeSpan('buriko.decode.cbg-v2');
         try {
           const resource = await decodeBurikoCompressedBgV2(
             stored,
@@ -163,6 +174,7 @@ export async function decodeBurikoResource(
           initialized = resource.initialized;
           faulted = false;
         } finally {
+          finishDecode?.({inputBytes: stored.length, success: !faulted});
           // An access fault can leave native workers inside the barrier. Preserve that original
           // fault instead of replacing it with the cleanup attempt's secondary failure.
           try {
@@ -172,7 +184,14 @@ export async function decodeBurikoResource(
           }
         }
       } else {
-        const image = decodeCompressedBgLegacy(stored, caller);
+        const finishDecode = beginRuntimeSpan('buriko.decode.cbg-legacy');
+        let image: BurikoImage;
+        try {
+          image = await decodeCompressedBgLegacyAsync(stored, caller, beforeResume);
+          beforeResume?.();
+        } finally {
+          finishDecode?.({inputBytes: stored.length});
+        }
         decoded =
           caller === undefined
             ? packedImage(image)

@@ -1,3 +1,4 @@
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 import {recolorBurikoBitmapAlpha as recolorAlpha} from './bitmap-recolor.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {
@@ -387,53 +388,64 @@ function measureWideText(
   font: MutableFont,
   proportional: number,
 ): BurikoHorizontalMeasuredText {
-  const scratch = allocateBurikoBitmap(
-    Math.imul(font.size, 2),
-    font.size,
-    alphaScratchFormat(state),
-  );
-  const extra = fontExtra(font),
-    integerExtra = metricInteger(extra);
-  let total = 0,
-    firstLeft = 0,
-    lastRight = 0,
-    first = true,
-    index = 0;
-  while (index < text.length) {
-    const character = text.charCodeAt(index),
-      marked = (character | 0x80000000) >>> 0,
-      custom = isBurikoCustomGlyphCode(marked),
-      glyph = state.customGlyphs.draw(scratch, character, font.record, 0xffffff, state.field1D1D94),
-      spacing = characterSpacing(state, proportional, font);
-    let metrics: {width: number; left: number; right: number};
-    if ((proportional | 0) === 0) {
-      const width = custom
-        ? state.customGlyphs.width(marked)
-        : glyph.fullWidth === 0
-          ? divide(cellWidth(font), 2)
-          : cellWidth(font);
-      metrics = {
-        width: (width + integerExtra) | 0,
-        left: 0,
-        right: 0,
-      };
-    } else if (custom) metrics = {width: state.customGlyphs.width(marked), left: 0, right: 0};
-    else metrics = glyphMetrics(state, glyph, null, font, proportional, cellWidth(font), extra);
-    total = (total + spacing + metrics.left + metrics.width + metrics.right) | 0;
-    if (first) firstLeft = metrics.left;
-    first = false;
-    lastRight = metrics.right;
-    index++;
+  const finishTiming = beginRuntimeSpan('buriko.text.layout.measure');
+  try {
+    const scratch = allocateBurikoBitmap(
+      Math.imul(font.size, 2),
+      font.size,
+      alphaScratchFormat(state),
+    );
+    const extra = fontExtra(font),
+      integerExtra = metricInteger(extra);
+    let total = 0,
+      firstLeft = 0,
+      lastRight = 0,
+      first = true,
+      index = 0;
+    while (index < text.length) {
+      const character = text.charCodeAt(index),
+        marked = (character | 0x80000000) >>> 0,
+        custom = isBurikoCustomGlyphCode(marked),
+        glyph = state.customGlyphs.draw(
+          scratch,
+          character,
+          font.record,
+          0xffffff,
+          state.field1D1D94,
+        ),
+        spacing = characterSpacing(state, proportional, font);
+      let metrics: {width: number; left: number; right: number};
+      if ((proportional | 0) === 0) {
+        const width = custom
+          ? state.customGlyphs.width(marked)
+          : glyph.fullWidth === 0
+            ? divide(cellWidth(font), 2)
+            : cellWidth(font);
+        metrics = {
+          width: (width + integerExtra) | 0,
+          left: 0,
+          right: 0,
+        };
+      } else if (custom) metrics = {width: state.customGlyphs.width(marked), left: 0, right: 0};
+      else metrics = glyphMetrics(state, glyph, null, font, proportional, cellWidth(font), extra);
+      total = (total + spacing + metrics.left + metrics.width + metrics.right) | 0;
+      if (first) firstLeft = metrics.left;
+      first = false;
+      lastRight = metrics.right;
+      index++;
+    }
+    scratch.storage?.release();
+    const trailingSpacing = characterSpacing(state, proportional, font);
+    total = (total - trailingSpacing) | 0;
+    const withoutLastBearing = (total - lastRight) | 0;
+    return {
+      total,
+      withoutLastBearing,
+      withoutFirstBearing: (withoutLastBearing - firstLeft) | 0,
+    };
+  } finally {
+    finishTiming?.({utf16Units: text.length});
   }
-  scratch.storage?.release();
-  const trailingSpacing = characterSpacing(state, proportional, font);
-  total = (total - trailingSpacing) | 0;
-  const withoutLastBearing = (total - lastRight) | 0;
-  return {
-    total,
-    withoutLastBearing,
-    withoutFirstBearing: (withoutLastBearing - firstLeft) | 0,
-  };
 }
 
 /** 078FF0's drawing-backed wide-text measurement for callers after the preparation phase. */
@@ -927,15 +939,20 @@ export async function buildBurikoHorizontalTextLayout(
       allocationHeight = custom ? (customHeight + effectHeight) | 0 : scratchDimensions.height,
       glyphBitmap = allocateBurikoBitmap(allocationWidth, allocationHeight, format);
     clearBurikoBitmap(glyphBitmap);
-    const glyph = runAsActor(() =>
-      state.customGlyphs.draw(
-        glyphBitmap,
-        character,
-        current.record,
-        currentColor,
-        state.field1D1D94,
-      ),
-    );
+    const glyph = runAsActor(() => {
+      const finishTiming = beginRuntimeSpan('buriko.text.layout.glyph-draw');
+      try {
+        return state.customGlyphs.draw(
+          glyphBitmap,
+          character,
+          current.record,
+          currentColor,
+          state.field1D1D94,
+        );
+      } finally {
+        finishTiming?.({utf16Units: decoded.length});
+      }
+    });
 
     if (state.field1D1E40 !== 0 && character > 0x7f && character !== 0x3000) {
       const ordinary = current.record.raster?.glyph(character),
@@ -1005,8 +1022,14 @@ export async function buildBurikoHorizontalTextLayout(
       annotationBaseExtent = 0;
     if ((options.readingEnabled | 0) !== 0) {
       if (rubyCountdown === 0) {
-        const remaining = state.text.encodeWide(text.slice(index), 1),
+        const finishTiming = beginRuntimeSpan('buriko.text.layout.annotation-match');
+        let match: ReturnType<BurikoRubyAnnotations['matchPrefix']>;
+        try {
+          const remaining = state.text.encodeWide(text.slice(index), 1);
           match = options.annotations.matchPrefix({bytes: remaining, offset: 0}, true);
+        } finally {
+          finishTiming?.({utf16Units: text.length - index});
+        }
         if (match !== null && match.wide !== null) {
           const wide = match.wide;
           const measured = runAsActor(() =>

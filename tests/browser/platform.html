@@ -59,6 +59,66 @@
         /abort browser/,
       );
       equal([...(await other.snapshot()).get('shared')], [20]);
+      let retainedRecords, retainedBytes;
+      await store.update((records) => {
+        retainedRecords = records;
+        retainedBytes = Uint8Array.from({length: 513}, (_, index) => (index * 37) & 255);
+        records.set('unaligned', retainedBytes.subarray(1));
+        records.set('tail', retainedBytes);
+        records.set('remove', Uint8Array.of(7));
+      });
+      retainedBytes.fill(99);
+      retainedRecords.get('tail')[0] = 111;
+      const before = await other.snapshot();
+      equal(before.get('tail')[0], 0, 'callback-held views remain isolated');
+      before.get('tail')[0] = 222;
+      // Existing databases can contain views with a nonzero byte offset.
+      const raw = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(`vn-runtime:${JSON.stringify(ns)}`);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        await new Promise((resolve, reject) => {
+          const transaction = raw.transaction('records', 'readwrite');
+          transaction.oncomplete = resolve;
+          transaction.onabort = () => reject(transaction.error);
+          transaction
+            .objectStore('records')
+            .put(
+              Uint8Array.from({length: 513}, (_, index) => (index * 37) & 255).subarray(1),
+              'unaligned',
+            );
+        });
+      } finally {
+        raw.close();
+      }
+      await store.update((records) => {
+        // Keep one record unchanged while touching both a full word and the odd tail.
+        records.get('tail')[4] ^= 255;
+        records.get('tail')[512] ^= 255;
+        records.delete('remove');
+        records.set('empty', new Uint8Array());
+      });
+      const after = await other.snapshot();
+      equal(after.get('tail')[0], 0, 'snapshot-held views remain isolated');
+      equal(after.get('tail')[4], ((4 * 37) & 255) ^ 255);
+      equal(after.get('tail')[512], ((512 * 37) & 255) ^ 255);
+      equal(
+        [...after.get('unaligned')],
+        Array.from({length: 512}, (_, i) => ((i + 1) * 37) & 255),
+      );
+      equal(after.has('remove'), false);
+      equal(after.get('empty').length, 0);
+      await rejects(
+        () =>
+          store.update((records) => {
+            records.get('tail')[0] = 123;
+            return Promise.resolve();
+          }),
+        /synchronous/,
+      );
+      equal((await other.snapshot()).get('tail')[0], 0, 'invalid callback return aborts');
       store.close();
       await rejects(() => store.snapshot(), /closed/);
       const reopened = await IndexedDbStore.open(ns);

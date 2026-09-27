@@ -8,6 +8,7 @@
     subscribeRuntimePerformance,
   } from '../../src/platform/runtime-performance.js';
   import {downloadBytes} from '../library.js';
+  import {RUNTIME_BUILD_ID} from '../../src/platform/runtime-build.js';
 
   let status = getRuntimePerformanceStatus();
   onMount(() => {
@@ -31,6 +32,7 @@
 
 <details class="performance-diagnostics">
   <summary>Performance diagnostics</summary>
+  {#if RUNTIME_BUILD_ID}<p>Build: {RUNTIME_BUILD_ID}</p>{/if}
   <p>Start recording, reproduce a stall, then stop and download the timings.</p>
   <div class="file-actions">
     <button type="button" onclick={startRuntimePerformanceRecording} disabled={status.recording}

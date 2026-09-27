@@ -6,6 +6,7 @@ import {BurikoProgramFiles, type BurikoProgramOutputFile} from './program-files.
 import {burikoRegistryFold} from './registry-case.js';
 import {textBytes} from './text.js';
 import type {BurikoFileTimes} from './file-metadata.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 /** CFileDX/ DCFile owns the actual open read or write lifetime and its signed64 cursor. */
 export class BurikoNativeFile {
@@ -120,30 +121,46 @@ export class BurikoNativeFile {
     const source = this.source;
     if (source === null) return {success: false, transferred: 0};
     if (this.position >= BigInt(source.size) || count === 0) return {success: true, transferred: 0};
-    let bytes: Uint8Array;
+    let bytes: Uint8Array,
+      completedBytes = 0,
+      success = false;
+    const offset = Number(this.position);
+    const finishRead = beginRuntimeSpan('buriko.file.native-read');
     try {
-      bytes = await source.read(
-        Number(this.position),
-        Math.min(count, source.size - Number(this.position)),
-      );
+      bytes = await source.read(offset, Math.min(count, source.size - offset));
+      completedBytes = bytes.length;
+      success = true;
     } catch (error) {
       if (error instanceof FileError || error instanceof DOMException)
         return {success: false, transferred: 0};
       throw error;
+    } finally {
+      finishRead?.({
+        sourceBytes: source.size,
+        offset,
+        requestedBytes: count,
+        completedBytes,
+        success,
+      });
     }
-    const destination = pointerView(output, bytes.length);
-    if (initialized !== undefined && output.offset + bytes.length > initialized.length)
-      throw new RangeError('Buriko native file read exceeds destination initialization mask');
-    copyMemoryBytes(
-      new Uint8Array(destination.buffer, destination.byteOffset, destination.byteLength),
-      0,
-      bytes,
-      0,
-      bytes.length,
-    );
-    initialized?.fill(1, output.offset, output.offset + bytes.length);
-    this.position += BigInt(bytes.length);
-    return {success: true, transferred: bytes.length >>> 0};
+    const finishCopy = beginRuntimeSpan('buriko.file.read-copy');
+    try {
+      const destination = pointerView(output, bytes.length);
+      if (initialized !== undefined && output.offset + bytes.length > initialized.length)
+        throw new RangeError('Buriko native file read exceeds destination initialization mask');
+      copyMemoryBytes(
+        new Uint8Array(destination.buffer, destination.byteOffset, destination.byteLength),
+        0,
+        bytes,
+        0,
+        bytes.length,
+      );
+      initialized?.fill(1, output.offset, output.offset + bytes.length);
+      this.position += BigInt(bytes.length);
+      return {success: true, transferred: bytes.length >>> 0};
+    } finally {
+      finishCopy?.({bytes: bytes.length});
+    }
   }
   /** 08CCB0 observes the supplied transfer bytes at call time, after the worker dequeues its job. */
   async write(source: BurikoBpPointer, count: number): Promise<number> {

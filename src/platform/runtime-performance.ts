@@ -1,3 +1,6 @@
+import {subscribeRuntimeProfile, type RuntimeProfile} from './runtime-profile.js';
+import {RUNTIME_BUILD_ID} from './runtime-build.js';
+
 /** Optional, in-memory wall-clock diagnostics shared by all engines. */
 const EVENT_LIMIT = 2048;
 const AGGREGATE_LIMIT = 128;
@@ -44,6 +47,8 @@ export interface RuntimePerformanceSnapshot extends RuntimePerformanceStatus {
   readonly schemaVersion: 1;
   readonly measurement: string;
   readonly startedAt: string | null;
+  readonly buildId: string | null;
+  readonly runtimeProfiles: readonly RuntimeProfile[];
   readonly browser: {
     readonly userAgent: string;
     readonly hardwareConcurrency: number | null;
@@ -66,6 +71,7 @@ interface Recording {
   readonly browser: NonNullable<RuntimePerformanceSnapshot['browser']>;
   readonly events: RuntimePerformanceEvent[];
   readonly aggregates: Map<string, RuntimePerformanceAggregate>;
+  readonly runtimeProfiles: Set<RuntimeProfile>;
   stoppedAt?: number;
   eventCursor: number;
   overwrittenEvents: number;
@@ -226,6 +232,7 @@ export function startRuntimePerformanceRecording(): void {
     },
     events: [],
     aggregates: new Map(),
+    runtimeProfiles: new Set(),
     eventCursor: 0,
     overwrittenEvents: 0,
     completedSpans: 0,
@@ -234,6 +241,9 @@ export function startRuntimePerformanceRecording(): void {
     visibility: visibility(),
   };
   active = latest = recording;
+  const unsubscribeProfile = subscribeRuntimeProfile((profile) => {
+    recording.runtimeProfiles.add(profile);
+  });
   const onVisibility = () => {
     recording.visibility = visibility();
     addEvent(recording, {
@@ -299,6 +309,7 @@ export function startRuntimePerformanceRecording(): void {
     }
   }, LOOP_INTERVAL_MS);
   recording.stopMonitoring = () => {
+    unsubscribeProfile();
     clearInterval(timer);
     if (typeof document !== 'undefined')
       document.removeEventListener('visibilitychange', onVisibility);
@@ -330,6 +341,8 @@ export function getRuntimePerformanceSnapshot(): RuntimePerformanceSnapshot {
       'Events retain the most recent completed slow operations; aggregates cover the full recording.',
     ...getRuntimePerformanceStatus(),
     startedAt: latest?.startedAtDate ?? null,
+    buildId: RUNTIME_BUILD_ID,
+    runtimeProfiles: latest ? [...latest.runtimeProfiles] : [],
     browser: latest ? {...latest.browser} : null,
     limits: {
       events: EVENT_LIMIT,

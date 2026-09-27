@@ -25,7 +25,10 @@ export class WasmPixelWorkspace {
     this.input = Math.ceil(Number(kernel.__heap_base.value) / 16) * 16;
   }
 
-  /** Returns false before output writes for aliases, overlapping rows or unsupported bounds. */
+  /**
+   * Returns false before output writes for aliases, overlapping rows or unsupported bounds.
+   * With preserveDestination=false, the kernel must replace every destination byte.
+   */
   run(
     source: DataView,
     sourceOffset: number,
@@ -37,6 +40,7 @@ export class WasmPixelWorkspace {
     rows: number,
     operation: (source: number, destination: number, additionalSource: number) => void,
     additionalSource?: WasmPixelRows,
+    preserveDestination = true,
   ): boolean {
     if (
       !(source.buffer instanceof ArrayBuffer) ||
@@ -94,7 +98,10 @@ export class WasmPixelWorkspace {
     if (this.bytes?.buffer !== memory.buffer) this.bytes = new Uint8Array(memory.buffer);
     const bytes = this.bytes;
     this.copyIn(source, sourceOffset, sourcePitch, this.input, rowBytes, rows);
-    this.copyIn(destination, destinationOffset, destinationPitch, output, rowBytes, rows);
+    // Replacement kernels write every destination byte; staging its old contents
+    // is only required by kernels that blend into or selectively retain them.
+    if (preserveDestination)
+      this.copyIn(destination, destinationOffset, destinationPitch, output, rowBytes, rows);
     if (additionalSource !== undefined)
       this.copyIn(
         additionalSource.view,

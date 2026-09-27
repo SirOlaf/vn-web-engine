@@ -12,6 +12,7 @@ import {
   type BrowserRasterTextFrame,
 } from '../../../text/browser-raster-text-presentation.js';
 import {LinearRgbWasm} from '../../../graphics/linear-rgb-wasm.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 import type {Rect} from '../../../graphics/surface.js';
 import {
   CanvasFramePresenter,
@@ -856,7 +857,12 @@ export class BurikoDisplayDevice {
     if (this.display.verticalSynchronization !== 0) {
       const window = this.canvas.ownerDocument.defaultView;
       if (window === null) return 0x80000000;
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      const finishWait = beginRuntimeSpan('buriko.display.vsync-wait');
+      try {
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      } finally {
+        finishWait?.();
+      }
     }
     if (this.lost || this.context === null || this.frame === null) return 0x80000000;
     this.canvasPresenter ??= new CanvasFramePresenter(this.canvas, this.context);

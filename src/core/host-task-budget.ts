@@ -1,6 +1,21 @@
 /** Cooperative main-thread work must return to a host task, not just a microtask. */
 export function yieldToHost(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+  return new Promise((resolve) => {
+    if (typeof MessageChannel === 'undefined') {
+      setTimeout(resolve, 0);
+      return;
+    }
+    // Schedule the continuation's timer from a non-timer task. This resets HTML's
+    // nesting level, avoiding the 4 ms clamp on repeated cooperative yields while
+    // retaining an ordinary timer turn for already queued timers and audio work.
+    const task = new MessageChannel();
+    task.port1.onmessage = () => {
+      task.port1.close();
+      task.port2.close();
+      setTimeout(resolve, 0);
+    };
+    task.port2.postMessage(null);
+  });
 }
 
 /** Wall-time budget between safe resumption points. A single step is never preempted. */

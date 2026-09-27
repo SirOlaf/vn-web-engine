@@ -3,6 +3,7 @@ import {
   allocateBurikoBitmap,
   fillBurikoBitmap16,
   fillBurikoBitmap32,
+  writableBurikoBitmapView,
   type BurikoBitmap,
 } from './bitmap.js';
 import {BurikoBitmapCompositor} from './bitmap-compositor.js';
@@ -16,6 +17,7 @@ import {
 import {recordBurikoBitmapText} from './bitmap-dom-text.js';
 import {BurikoNativeFonts} from './fonts.js';
 import {isNativePunctuation, textByte} from './text.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 /** A caller may bind this field directly to its native DWORD output storage. */
 export interface BurikoFontTextOutput {
@@ -38,33 +40,66 @@ export function rasterBurikoGlyph(
   color: number,
   presentation: {vertical?: boolean; decorative?: boolean} = {},
 ): BurikoGlyph {
-  const glyph = raster.glyph(character);
+  const finishRaster = beginRuntimeSpan('buriko.text.glyph.raster');
+  let glyph: BurikoGlyph;
+  try {
+    glyph = raster.glyph(character);
+  } finally {
+    finishRaster?.({
+      size: raster.geometry.size,
+      sampleScale: raster.settings.sampleScale,
+      gamma: raster.settings.gamma,
+    });
+  }
   const width = Math.min(bitmap.width >>> 0, raster.geometry.width >>> 0);
   const height = Math.min(bitmap.height >>> 0, raster.geometry.height >>> 0);
   if (bitmap.format !== 0 && bitmap.format !== 1 && bitmap.format !== 2) return glyph;
-  for (let y = 0; y < height; y++)
-    for (let x = 0; x < width; x++) {
-      const coverage = textByte(glyph.pixels, y * raster.geometry.stride + x);
-      const offset = bitmap.offset + y * bitmap.stride + x * bitmap.bytesPerPixel;
-      if (bitmap.format === 2) bitmapWrite32(bitmap, offset, (coverage << 24) | (color & 0xffffff));
-      else {
-        const red = Math.imul(coverage, (color >>> 16) & 255);
-        const green = Math.imul(coverage, (color >>> 8) & 255);
-        const blue = Math.imul(coverage, color & 255);
-        if (bitmap.format === 1)
-          bitmapWrite32(
-            bitmap,
-            offset,
-            ((red & 0xffff00) << 8) | (green & 0xffffff00) | (blue >>> 8),
-          );
-        else
-          bitmapWrite16(
-            bitmap,
-            offset,
-            ((((red >>> 1) & 0xfc1f) | (green >>> 6)) & 0xffe0) | (blue >>> 11),
-          );
+  const sourceStride = raster.geometry.stride,
+    sourceEnd = (height - 1) * sourceStride + width,
+    output =
+      bitmap.bytesPerPixel === 4 &&
+      (bitmap.format === 1 || bitmap.format === 2) &&
+      Number.isSafeInteger(sourceStride) &&
+      sourceStride >= width &&
+      Number.isSafeInteger(sourceEnd) &&
+      sourceEnd <= glyph.pixels.length &&
+      bitmap.storage?.bytes.buffer !== glyph.pixels.buffer
+        ? writableBurikoBitmapView(bitmap, width, height)
+        : null;
+  const finishCopy = beginRuntimeSpan('buriko.text.glyph.copy');
+  try {
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const coverage =
+          output === null
+            ? textByte(glyph.pixels, y * sourceStride + x)
+            : glyph.pixels[y * sourceStride + x]!;
+        const offset = bitmap.offset + y * bitmap.stride + x * bitmap.bytesPerPixel;
+        if (bitmap.format === 2) {
+          const value = (coverage << 24) | (color & 0xffffff);
+          if (output === null) bitmapWrite32(bitmap, offset, value);
+          else output.setUint32(offset, value, true);
+        } else {
+          const red = Math.imul(coverage, (color >>> 16) & 255);
+          const green = Math.imul(coverage, (color >>> 8) & 255);
+          const blue = Math.imul(coverage, color & 255);
+          if (bitmap.format === 1) {
+            const value = ((red & 0xffff00) << 8) | (green & 0xffffff00) | (blue >>> 8);
+            if (output === null) bitmapWrite32(bitmap, offset, value);
+            else output.setUint32(offset, value, true);
+          } else
+            bitmapWrite16(
+              bitmap,
+              offset,
+              ((((red >>> 1) & 0xfc1f) | (green >>> 6)) & 0xffe0) | (blue >>> 11),
+            );
+        }
       }
+      if (output !== null) bitmap.storage!.written(bitmap.offset + y * bitmap.stride, width * 4);
     }
+  } finally {
+    finishCopy?.({width, height, format: bitmap.format});
+  }
   const mapped = raster.settings.textOut
     ? burikoGlyphText(character).text
     : character > 0xffff && character <= 0x10ffff

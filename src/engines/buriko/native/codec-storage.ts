@@ -1,5 +1,5 @@
 import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
-import {byteDataView} from '../../../core/binary.js';
+import {byteDataView, indexOfZeroByte} from '../../../core/binary.js';
 import {
   clearIndeterminateMemory,
   hasIndeterminateMemory,
@@ -21,10 +21,15 @@ export function codecView(
     view = pointerView({bytes: pointer.bytes, offset: at}, length);
   if (pointer.initialized !== undefined) {
     pointerView({bytes: pointer.initialized, offset: at}, length);
-    if (read)
-      for (let index = at; index < at + length; index++)
-        if (pointer.initialized[index] === 0)
+    if (read) {
+      if (length >= 64) {
+        if (indexOfZeroByte(pointer.initialized.subarray(at, at + length)) >= 0)
           throw new Error('Buriko codec reads unwritten private storage');
+      } else
+        for (let index = at; index < at + length; index++)
+          if (pointer.initialized[index] === 0)
+            throw new Error('Buriko codec reads unwritten private storage');
+    }
   }
   return view;
 }
@@ -53,8 +58,7 @@ export function codecReadableSpan(
   if (pointer.initialized !== undefined) {
     if (at > pointer.initialized.byteLength || at + length > pointer.initialized.byteLength)
       return null;
-    for (let index = at; index < at + length; index++)
-      if (pointer.initialized[index] === 0) return null;
+    if (indexOfZeroByte(pointer.initialized.subarray(at, at + length)) >= 0) return null;
   }
   if (hasIndeterminateMemory(pointer.bytes, at, length)) return null;
   try {

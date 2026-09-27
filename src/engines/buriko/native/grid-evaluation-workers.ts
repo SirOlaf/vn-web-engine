@@ -7,6 +7,7 @@ import {BurikoGridEvaluator} from './grid-evaluator.js';
 import {gridAllocation, gridOutput, gridRead} from './logical-grid-path.js';
 import type {BurikoLogicalGridManager, BurikoLogicalGridManagers} from './logical-grid.js';
 import {burikoLogicalStatus} from './logical-status.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 type EvaluationJob =
   | {type: 0; grid: BurikoLogicalGridManager; count: number; bytes: Uint8Array}
@@ -164,6 +165,8 @@ export class BurikoGridEvaluationWorkers {
     thread.timer = setTimeout(() => {
       thread.timer = null;
       thread.taskPending = false;
+      const finish = beginRuntimeSpan('buriko.grid.worker');
+      const operation = thread.job?.type ?? -1;
       try {
         this.runThread(thread);
       } catch (error) {
@@ -171,6 +174,7 @@ export class BurikoGridEvaluationWorkers {
         if (this.backgroundFailure === undefined) this.backgroundFailure = error;
         thread.terminated = true;
       } finally {
+        finish?.({operation, status: thread.status, terminated: thread.terminated});
         thread.notify();
       }
     }, 0);

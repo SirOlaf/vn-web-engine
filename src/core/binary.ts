@@ -20,6 +20,29 @@ export function byteDataView(bytes: Uint8Array): DataView {
   return view;
 }
 
+/** First zero byte in a validity mask or binary span, without per-byte bulk scanning. */
+export function indexOfZeroByte(bytes: Uint8Array): number {
+  let index = 0;
+  const prefix = Math.min(bytes.length, (4 - (bytes.byteOffset & 3)) & 3);
+  for (; index < prefix; index++) if (bytes[index] === 0) return index;
+  const count = Math.floor((bytes.length - index) / 4);
+  if (count !== 0 && bytes.buffer instanceof ArrayBuffer) {
+    const words = new Uint32Array(bytes.buffer, bytes.byteOffset + index, count);
+    for (let wordIndex = 0; wordIndex < count; wordIndex++) {
+      const word = words[wordIndex]!;
+      // A borrow into a byte's high bit, with that bit initially clear, detects
+      // a zero lane. Inspect candidate bytes in address order on either endian host.
+      if (((word - 0x01010101) & ~word & 0x80808080) !== 0) {
+        const start = index + wordIndex * 4;
+        for (let byte = start; byte < start + 4; byte++) if (bytes[byte] === 0) return byte;
+      }
+    }
+    index += count * 4;
+  }
+  for (; index < bytes.length; index++) if (bytes[index] === 0) return index;
+  return -1;
+}
+
 export function checkRange(size: number, offset: number, length: number): void {
   if (
     !Number.isSafeInteger(offset) ||

@@ -38,6 +38,7 @@ import {
   transformBurikoBitmap,
   type BurikoBitmapAffineTransform,
 } from './bitmap-affine.js';
+import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
 export interface BurikoSurfaceRecord {
   bitmap: BurikoBitmap | null;
@@ -761,8 +762,20 @@ export class BurikoSurfaces {
     if (destination === null) return 1;
     const source = this.snapshot(sourceIndex);
     if (source === null) return 2;
-    const result = this.compositor.draw(destination, x, y, source, mode, opacity);
-    return [0, 3, 4, 5, 6][result] ?? 7;
+    const finishComposite = beginRuntimeSpan('buriko.bitmap.composite');
+    try {
+      const result = this.compositor.draw(destination, x, y, source, mode, opacity);
+      return [0, 3, 4, 5, 6][result] ?? 7;
+    } finally {
+      finishComposite?.({
+        width: source.width,
+        height: source.height,
+        sourceFormat: source.format,
+        destinationFormat: destination.format,
+        mode,
+        opacity,
+      });
+    }
   }
 
   /** 035B50 clips the source crop without adding the clipped-away offset to destination X/Y. */

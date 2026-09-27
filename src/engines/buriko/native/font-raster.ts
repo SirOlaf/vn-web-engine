@@ -149,6 +149,12 @@ function snapNearInteger(value: number): number {
   return value - floor <= 2 ** -14 ? floor : value;
 }
 
+/** Count nonzero byte lanes without assuming that the provider uses only 0 and 255. */
+function coveredBytes(word: number): number {
+  const high = ((word & 0x7f7f7f7f) + 0x7f7f7f7f) | word;
+  return Math.imul((high >>> 7) & 0x01010101, 0x01010101) >>> 24;
+}
+
 /** TextOutW-only substitutions; the outline path passes the original code directly. */
 export function burikoGlyphText(value: number): {character: number; text: string | null} {
   value >>>= 0;
@@ -273,15 +279,54 @@ export class BurikoFontRaster {
             for (let x = 0; x < geometry.width; x++)
               put(y * geometry.stride + x, read(geometry.offsetX + x, this.offsetY + y));
         } else {
+          const firstSample = this.offsetY * scale * dib.stride + geometry.offsetX * scale,
+            lastSample =
+              ((this.offsetY + geometry.height) * scale - 1) * dib.stride +
+              (geometry.offsetX + geometry.width) * scale;
+          // Full envelope validation permits packed reads only when they cannot fault or
+          // observe our output writes. Unusual geometry retains scalar partial-write order.
+          const packed =
+            (scale === 4 || scale === 8 || scale === 16) &&
+            Number.isSafeInteger(firstSample) &&
+            firstSample >= 0 &&
+            Number.isSafeInteger(lastSample) &&
+            lastSample <= dib.bytes.length &&
+            Number.isSafeInteger(dib.stride) &&
+            dib.stride >= 0 &&
+            (firstSample & 3) === 0 &&
+            (dib.stride & 3) === 0 &&
+            (dib.bytes.byteOffset & 3) === 0 &&
+            Number.isSafeInteger(geometry.stride) &&
+            geometry.stride >= geometry.width &&
+            Number.isSafeInteger(geometry.width) &&
+            Number.isSafeInteger(geometry.height) &&
+            geometry.width > 0 &&
+            geometry.height > 0 &&
+            (geometry.height - 1) * geometry.stride + geometry.width <= pixels.length &&
+            dib.bytes.buffer !== pixels.buffer
+              ? new Uint32Array(
+                  dib.bytes.buffer,
+                  dib.bytes.byteOffset,
+                  Math.floor(dib.bytes.length / 4),
+                )
+              : null;
           for (let y = 0; y < geometry.height; y++)
             for (let x = 0; x < geometry.width; x++) {
               let covered = 0;
-              for (let dy = 0; dy < scale; dy++)
-                for (let dx = 0; dx < scale; dx++)
-                  covered += Number(
-                    read((geometry.offsetX + x) * scale + dx, (this.offsetY + y) * scale + dy) !==
-                      0,
-                  );
+              if (packed !== null) {
+                const start = (firstSample + y * scale * dib.stride + x * scale) / 4;
+                for (let dy = 0; dy < scale; dy++) {
+                  const row = start + dy * (dib.stride / 4);
+                  for (let dx = 0; dx < scale / 4; dx++) covered += coveredBytes(packed[row + dx]!);
+                }
+              } else {
+                for (let dy = 0; dy < scale; dy++)
+                  for (let dx = 0; dx < scale; dx++)
+                    covered += Number(
+                      read((geometry.offsetX + x) * scale + dx, (this.offsetY + y) * scale + dy) !==
+                        0,
+                    );
+              }
               put(
                 y * geometry.stride + x,
                 settings.gamma === 0
