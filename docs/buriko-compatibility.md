@@ -45,6 +45,13 @@ the script to replace them on the failure branch. Numeric use still fails.
 Shared byte-storage provenance lives in `src/core/indeterminate-memory.ts`;
 native readbacks do not receive invented coordinates.
 
+Packed local stores (`e2`) also preserve those indeterminate outputs. Aokana
+unpacks the load status and both coordinates before branching on the status;
+the failure branch supplies its own defaults. An existing valid `BGI.gdb`
+bypasses this failure path, so matching game archives alone do not establish
+matching startup conditions. Missing, empty, or rejected databases can enter
+the failure path; browser save overlays can also differ between profiles.
+
 The 1.69 `80:ec`, `80:ed`, and `80:ee` slots implement registration checking,
 COMAP readback, and the unsalted system identity. Revision 1.685.3 uses these
 slot numbers for DLL operations. The older checker preserves the native
@@ -114,7 +121,12 @@ npm run build:runtime
 BURIKO_PROBE_EXECUTABLE=BGI.OLD node tools/probe-buriko.mjs /path/to/installation
 ```
 
-The override substitutes that file at the selected executable's mounted path
+To exercise startup without a global save database, use
+`BURIKO_PROBE_OMIT_GDB=1 node tools/probe-buriko.mjs /path/to/installation`.
+This omits every `BGI.gdb` from the probe's mounted view and leaves disk files
+unchanged. The probe uses a fresh memory overlay, independent of browser saves.
+
+The executable override substitutes that file at the selected executable's mounted path
 without changing either disk file. The probe does not use process dumps. Its
 default host lacks a browser font set; reaching a font-configuration error is a
 control-flow boundary, not evidence of disc-protection failure or complete

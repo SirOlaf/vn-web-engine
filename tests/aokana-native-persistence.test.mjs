@@ -31,6 +31,9 @@ import {BurikoEngineErrors} from '../dist/engines/buriko/native/engine-errors.js
 import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.js';
 import {legacyGdb, shortModernGdb} from './aokana-persistence-fixtures.mjs';
 import {memoryOpcodes} from '../dist/engines/buriko/bp/opcodes/memory.js';
+import {localOpcodes} from '../dist/engines/buriko/bp/opcodes/locals.js';
+import {controlOpcodes} from '../dist/engines/buriko/bp/opcodes/control.js';
+import {fetchOpcode} from '../dist/engines/buriko/bp/decode.js';
 import {createLegacy169CoreOpcodes} from '../dist/engines/buriko/bp/opcodes/legacy-169.js';
 
 const ptr = (bytes, offset = 0) => ({bytes, offset});
@@ -278,6 +281,53 @@ test('missing GDB coordinates can be stored then overwritten, but cannot be obse
     assert.equal(s.memory.readU32(s.thread, 520), 0);
     s.memory.clearGlobal();
     assert.equal(s.memory.readU32(s.thread, 512), 0);
+  } finally {
+    s.processing.dispose();
+  }
+});
+
+test('GDB startup branches unpack missing, rejected and valid saves before selecting coordinates', async () => {
+  const s = await setup();
+  try {
+    const load = createGroup80Persistence(s.persistence).find((slot) => slot.secondary === 0x80);
+    const handlers = {...memoryOpcodes, ...localOpcodes, ...controlOpcodes};
+    const h = {thread: s.thread, memory: s.memory, diagnostics: {writeWatchEnabled: false}};
+    const valid = shortModernGdb();
+    const rejected = valid.slice();
+    rejected[28] ^= 1; // Invalid SDC checksum returns status 2 without writing coordinates.
+    const program = Uint8Array.from(
+      [
+        [0xe2, 2, 4, 0x80, 8, 0x80, 12, 0x80], // Unpack status, y, x into DWORD locals.
+        [0x19, 4, 0x80], // Load only the status for the success branch.
+        [0x15, 9, 14, 0], // A valid save skips the explicit failure defaults.
+        [0x0e, 8, 0, 0x82, 0], // y = 0 (DWORD).
+        [0x0e, 12, 0, 0x82, 0], // x = 0 (DWORD).
+        [0xe3, 1, 12, 0x80, 8, 0x80], // Coordinates are now safe to use.
+      ].flat(),
+    );
+    for (const [data, status, position] of [
+      [null, 1, [0, 0]],
+      [rejected, 2, [0, 0]],
+      [valid, 0, [640, 300]],
+    ]) {
+      if (data !== null) await s.fs.commit([{kind: 'write', path: '/save/BGI.gdb', data}]);
+      s.thread.frameCursor = 16;
+      s.thread.pc = 0;
+      s.thread.moduleMemory.set(program);
+      assert.equal(await load.execute(h), 0);
+      assert.equal(handlers[fetchOpcode(s.thread)](h), 0);
+      assert.equal(s.thread.stackIndex, 0);
+      assert.equal(s.memory.readU32(s.thread, s.memory.abi.frameTag + 12), status);
+      if (status !== 0)
+        for (const offset of [4, 8])
+          assert.throws(
+            () => s.memory.readU32(s.thread, s.memory.abi.frameTag + offset),
+            /unwritten native stack/,
+          );
+      while (s.thread.pc < program.length) assert.equal(handlers[fetchOpcode(s.thread)](h), 0);
+      assert.deepEqual([pop32(s.thread), pop32(s.thread)].reverse(), position);
+      assert.equal(s.thread.stackIndex, 0);
+    }
   } finally {
     s.processing.dispose();
   }

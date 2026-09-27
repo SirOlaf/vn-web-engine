@@ -1,7 +1,14 @@
 import type {BurikoBpOpcodeHandler} from '../../native/types.js';
-import {pop32, push32} from '../state.js';
+import {pop32, popDeferred32, push32} from '../state.js';
 import {readI8, readI16, readU8, readU16, readU32, readVarInt, readTypedVarInt} from '../decode.js';
-import {localAddress, localDescriptor, pointer, readScalar, writeScalar} from './operands.js';
+import {
+  localAddress,
+  localDescriptor,
+  pointer,
+  readScalar,
+  writeDeferredScalar,
+  writeScalar,
+} from './operands.js';
 import {signedShift} from './integer.js';
 
 export const localOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
@@ -45,7 +52,7 @@ export const localOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
     for (let i = 0; i < count; i++) {
       const local = localDescriptor(h);
       pointer(h, local.address);
-      writeScalar(h, local.address, local.type, pop32(h.thread));
+      writeDeferredScalar(h, local.address, local.type, popDeferred32(h.thread));
     }
     return 0;
   },

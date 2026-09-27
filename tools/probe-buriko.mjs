@@ -4,6 +4,7 @@
  * Run after `npm run build:runtime`.
  * A verified product ID may be supplied as BURIKO_PROBE_PRODUCT_ID when a packed executable hides it.
  * BURIKO_PROBE_EXECUTABLE substitutes a root file at the selected executable's mounted path.
+ * BURIKO_PROBE_OMIT_GDB=1 hides global save databases without modifying disk files.
  */
 import {open, readdir} from 'node:fs/promises';
 import {basename, dirname, join, relative, resolve, sep} from 'node:path';
@@ -149,7 +150,10 @@ async function probe(inputRoot) {
   const root = resolve(inputRoot);
   const directories = [];
   const files = await walk(root, [], directories);
-  const selected = files;
+  const selected =
+    process.env.BURIKO_PROBE_OMIT_GDB === '1'
+      ? files.filter((path) => basename(path).toLowerCase() !== 'bgi.gdb')
+      : files;
   const executable = await selectInterpreter(selected, root);
   const executableOverride = process.env.BURIKO_PROBE_EXECUTABLE;
   const executableInput =
