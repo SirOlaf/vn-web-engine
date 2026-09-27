@@ -28,7 +28,8 @@
     "compare:tips-draw": "npm run build && NOAH_COMPARE_TIPS=1 node tools/verify-extras.mjs",
     "prepare:mask-benchmark": "npm run build && NOAH_MASK_BENCH=1 node tools/verify-extras.mjs",
     "verify:config": "npm run build && node tools/verify-config.mjs",
-    "verify:scene": "npm run build && NOAH_TRACE_STORY=1 node tools/verify-menu.mjs"
+    "verify:scene": "npm run build && NOAH_TRACE_STORY=1 node tools/verify-menu.mjs",
+    "verify:rscript": "npm run build:runtime && node tools/verify-rscript.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
