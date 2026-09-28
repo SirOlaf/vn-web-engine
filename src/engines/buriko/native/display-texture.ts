@@ -39,6 +39,8 @@ export class BurikoDisplayTexture {
   private disposed = false;
   private presentationView: BurikoDisplayTexture | null = null;
   private dirty: BurikoBitmapRectangle[] = [];
+  /** Dirty texels already read by GPU presentation but not yet copied by updateFrom. */
+  private deferred: BurikoBitmapRectangle | null = null;
   /** Conservative union of texels changed by the last successful update. */
   updateBounds: BurikoBitmapRectangle | null = null;
 
@@ -110,8 +112,39 @@ export class BurikoDisplayTexture {
     };
     if (clipped.left <= clipped.right && clipped.top <= clipped.bottom) this.dirty.push(clipped);
   }
-  /** UpdateTexture copies changed dirty rows, clears source dirtiness and reports pixel changes. */
-  updateFrom(source: BurikoDisplayTexture): boolean {
+  /**
+   * Browser-optimized GPU presentation uploads dirty texels straight from this texture. Returns
+   * their bounds and clears dirtiness; a later updateFrom still copies them into its destination.
+   */
+  takeDirtyBounds(): BurikoBitmapRectangle | null {
+    this.check();
+    let bounds: BurikoBitmapRectangle | null = null;
+    for (const rectangle of this.dirty)
+      bounds =
+        bounds === null
+          ? {...rectangle}
+          : {
+              left: Math.min(bounds.left, rectangle.left),
+              top: Math.min(bounds.top, rectangle.top),
+              right: Math.max(bounds.right, rectangle.right),
+              bottom: Math.max(bounds.bottom, rectangle.bottom),
+            };
+    this.dirty = [];
+    if (bounds !== null)
+      this.deferred =
+        this.deferred === null
+          ? {...bounds}
+          : {
+              left: Math.min(this.deferred.left, bounds.left),
+              top: Math.min(this.deferred.top, bounds.top),
+              right: Math.max(this.deferred.right, bounds.right),
+              bottom: Math.max(this.deferred.bottom, bounds.bottom),
+            };
+    return bounds;
+  }
+  /** UpdateTexture copies changed dirty rows, clears source dirtiness and reports pixel changes.
+   * `deferredOnly` copies just the texels taken by GPU presentation, leaving dirtiness pending. */
+  updateFrom(source: BurikoDisplayTexture, deferredOnly = false): boolean {
     this.check();
     source.check();
     if (
@@ -121,7 +154,9 @@ export class BurikoDisplayTexture {
     )
       throw new Error('Buriko display textures have incompatible update descriptors');
     let bounds: BurikoBitmapRectangle | null = null;
-    for (const rectangle of source.dirty)
+    const pending = deferredOnly ? [] : source.dirty;
+    const rectangles = source.deferred === null ? pending : [source.deferred, ...pending];
+    for (const rectangle of rectangles)
       for (let y = rectangle.top; y <= rectangle.bottom; y++) {
         const offset = y * this.pitch + rectangle.left * 4;
         const length = (rectangle.right - rectangle.left + 1) * 4;
@@ -146,7 +181,7 @@ export class BurikoDisplayTexture {
         }
       }
     // Equal pixels may carry a different string, but untouched dirty regions stay unuploaded.
-    for (const rectangle of source.dirty) {
+    for (const rectangle of rectangles) {
       const crop = {
         offset: rectangle.top * this.pitch + rectangle.left * 4,
         width: rectangle.right - rectangle.left + 1,
@@ -154,7 +189,8 @@ export class BurikoDisplayTexture {
       };
       copyRasterTextPresentation({...this.textBitmap, ...crop}, {...source.textBitmap, ...crop});
     }
-    source.dirty = [];
+    if (!deferredOnly) source.dirty = [];
+    source.deferred = null;
     this.updateBounds = bounds;
     return bounds !== null;
   }
@@ -168,6 +204,7 @@ export class BurikoDisplayTexture {
     }
     this.storage.release();
     this.dirty = [];
+    this.deferred = null;
     this.disposed = true;
   }
 }

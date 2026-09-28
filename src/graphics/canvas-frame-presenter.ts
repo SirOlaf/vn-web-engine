@@ -12,7 +12,7 @@ export function invalidateCanvasFrame(canvas: HTMLCanvasElement): object {
 
 /** Avoid uploading an unchanged mutable ImageData; callers advance revision when its bytes change. */
 export class CanvasFramePresenter {
-  private frame: ImageData | null = null;
+  private frame: object | null = null;
   private revision: object | null = null;
   private canvasVersion: object | undefined;
   private width = 0;
@@ -42,6 +42,33 @@ export class CanvasFramePresenter {
       finishUpload?.({width: frame.width, height: frame.height, pixels, partial});
       recordRuntimeMetric('graphics.canvas.upload.pixels', pixels);
     }
+    this.finish(frame, revision);
+  }
+
+  /** Copy a canvas-sized image, such as a WebGL canvas, replacing every canvas pixel. */
+  presentImage(image: HTMLCanvasElement | OffscreenCanvas, revision: object): void {
+    const intact =
+      this.frame === image &&
+      this.width === this.canvas.width &&
+      this.height === this.canvas.height &&
+      this.canvasVersion === canvasVersions.get(this.canvas);
+    if (intact && this.revision === revision) return;
+    const finishCopy = beginRuntimeSpan('graphics.canvas.copy');
+    try {
+      this.context.save();
+      this.context.resetTransform();
+      this.context.globalAlpha = 1;
+      this.context.globalCompositeOperation = 'copy';
+      this.context.imageSmoothingEnabled = false;
+      this.context.drawImage(image, 0, 0);
+      this.context.restore();
+    } finally {
+      finishCopy?.({width: image.width, height: image.height});
+    }
+    this.finish(image, revision);
+  }
+
+  private finish(frame: object, revision: object): void {
     this.canvasVersion = invalidateCanvasFrame(this.canvas);
     this.frame = frame;
     this.revision = revision;

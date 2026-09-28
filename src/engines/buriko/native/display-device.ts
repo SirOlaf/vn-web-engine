@@ -12,6 +12,7 @@ import {
   type BrowserRasterTextFrame,
 } from '../../../text/browser-raster-text-presentation.js';
 import {LinearRgbWasm} from '../../../graphics/linear-rgb-wasm.js';
+import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 import type {Rect} from '../../../graphics/surface.js';
 import {
@@ -24,6 +25,12 @@ import {burikoDisplayViewport} from './display-geometry.js';
 import {BurikoDisplayManager} from './display-manager.js';
 import type {BurikoNativeDisplayState} from './display-state.js';
 import {BurikoDisplayTexture, burikoDisplayTextureSize} from './display-texture.js';
+import {
+  BurikoGpuPresenter,
+  burikoGpuPresentationEnabled,
+  burikoGpuQuadCoordinates,
+  type BurikoGpuQuadCoordinates,
+} from './display-gpu-presenter.js';
 import {BurikoScopedLock} from './scoped-lock.js';
 import {
   BURIKO_PRESENTATION_NUMERICAL_PROFILE,
@@ -116,6 +123,19 @@ export class BurikoDisplayDevice {
   private disposed = false;
   private logicalDeviceReady = false;
   private linearRasterizer: LinearRgbWasm | null | undefined;
+  /** Browser-optimized WebGL presentation; undefined until first eligible, null if unavailable. */
+  private gpu: BurikoGpuPresenter | null | undefined;
+  /** The latest completed frame is the GPU output rather than `frame`. */
+  private gpuFrame = false;
+  private gpuQuad: {
+    vertices: Uint8Array;
+    sampler: BurikoPresentationSampler;
+    texture: BurikoDisplayTexture;
+    width: number;
+    height: number;
+    coordinates: BurikoGpuQuadCoordinates | null;
+  } | null = null;
+  private gpuDrawn: BurikoGpuQuadCoordinates | null = null;
   private canvasPresenter: CanvasFramePresenter | null = null;
   private frameRevision = {};
   private frameDamage: Rect | null | undefined; // Undefined: full upload; null: no pending writes.
@@ -411,9 +431,11 @@ export class BurikoDisplayDevice {
           throw new RangeError('Buriko display damage count exceeds its supplied rectangles');
         source.addDirtyRectangle(rectangle);
       }
-    const changed = sampled.updateFrom(source);
     let mode = this.filterMode;
     if (mode === 3 || mode === 4) mode = this.fullscreen === 0 ? 2 : mode === 3 ? 0 : 1;
+    // GPU presentation reads the source's dirty texels directly and defers the sampled copy.
+    const gpu = this.frame !== null && mode !== 1 ? this.gpuPresenter() : null;
+    const changed = gpu === null ? sampled.updateFrom(source) : false;
     if (mode === 0 || mode === 2) this.sampler = mode === 0 ? 'linear' : 'point';
     if (mode === 1 && this.shader === null)
       throw new Error('Buriko presentation shader has not been created');
@@ -429,6 +451,12 @@ export class BurikoDisplayDevice {
     }
     if (this.frame !== null) {
       const cubic = mode === 1;
+      if (gpu !== null && this.prepareGpu(gpu, source)) return;
+      if (gpu !== null) {
+        sampled.updateFrom(source);
+        this.rasterValid = false;
+      }
+      this.leaveGpu();
       const vertices = this.vertices!;
       let sameQuad = this.rasterValid;
       if (sameQuad)
@@ -506,9 +534,113 @@ export class BurikoDisplayDevice {
         sampler: this.sampler,
       };
     if (this.frame !== null) {
+      if (this.drawMovieGpu(texture)) return;
+      this.leaveGpu();
       this.markFrameChanged();
       this.rasterizeQuad(texture, false);
     }
+  }
+  private gpuEligible(): boolean {
+    return (
+      this.presentationMode === 'canvas' &&
+      getRuntimeProfile() === 'browser-optimized' &&
+      burikoGpuPresentationEnabled() &&
+      (this.textPresentation?.textMode ?? 'native') === 'native'
+    );
+  }
+  private gpuPresenter(): BurikoGpuPresenter | null {
+    if (!this.gpuEligible()) return null;
+    if (this.gpu === undefined) this.gpu = BurikoGpuPresenter.create(this.canvas.ownerDocument);
+    return this.gpu !== null && this.gpu.available ? this.gpu : null;
+  }
+  /** Coordinates are recomputed only when the quad, sampler, texture or output changes. */
+  private gpuCoordinates(
+    texture: BurikoDisplayTexture,
+    vertices: Uint8Array,
+  ): BurikoGpuQuadCoordinates | null {
+    const cached = this.gpuQuad,
+      frame = this.frame!;
+    if (
+      cached !== null &&
+      cached.texture === texture &&
+      cached.sampler === this.sampler &&
+      cached.width === frame.width &&
+      cached.height === frame.height &&
+      cached.vertices.every((value, index) => value === vertices[index])
+    )
+      return cached.coordinates;
+    const coordinates = burikoGpuQuadCoordinates(
+      vertices,
+      texture.width,
+      texture.height,
+      frame.width,
+      frame.height,
+      this.sampler,
+    );
+    this.gpuQuad = {
+      vertices: vertices.slice(),
+      sampler: this.sampler,
+      texture,
+      width: frame.width,
+      height: frame.height,
+      coordinates,
+    };
+    return coordinates;
+  }
+  /** Software frames resume from a complete raster; GPU frames resume from a complete upload. */
+  private enterGpu(gpu: BurikoGpuPresenter): void {
+    if (this.gpuFrame) return;
+    gpu.invalidate();
+    this.gpuDrawn = null;
+    // DOM text reuses `frame` outside the quad; keep it the opaque black of a full raster.
+    const pixels = this.frame!.data;
+    pixels.fill(0);
+    for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255;
+  }
+  private leaveGpu(): void {
+    if (!this.gpuFrame) return;
+    this.gpuFrame = false;
+    this.rasterValid = false;
+    this.markFrameChanged();
+  }
+  private prepareGpu(gpu: BurikoGpuPresenter, source: BurikoDisplayTexture): boolean {
+    const changed = source.takeDirtyBounds();
+    const coordinates = this.gpuCoordinates(source, this.vertices!);
+    // Falling back rasterizes the whole frame after updateFrom copies the taken texels.
+    if (coordinates === null) return false;
+    const resumed = this.gpuFrame;
+    this.enterGpu(gpu);
+    if (resumed && changed === null && this.gpuDrawn === coordinates) return true;
+    const {logicalWidth, logicalHeight} = this.display;
+    if (
+      !gpu.upload(source, logicalWidth, logicalHeight, changed) ||
+      !gpu.draw(source, coordinates, this.sampler, this.frame!.width, this.frame!.height, true)
+    ) {
+      this.leaveGpu();
+      return false;
+    }
+    this.gpuDrawn = coordinates;
+    this.gpuFrame = true;
+    this.rasterValid = false;
+    this.frameRevision = {};
+    return true;
+  }
+  /** Movies draw over the current output; that output must already be the GPU's. */
+  private drawMovieGpu(texture: BurikoDisplayTexture): boolean {
+    if (!this.gpuFrame) return false;
+    const gpu = this.gpuPresenter();
+    if (gpu === null) return false;
+    const coordinates = this.gpuCoordinates(texture, this.vertices!);
+    if (coordinates === null) return false;
+    const {logicalWidth, logicalHeight} = this.display;
+    if (
+      !gpu.upload(texture, logicalWidth, logicalHeight, undefined) ||
+      !gpu.draw(texture, coordinates, this.sampler, this.frame!.width, this.frame!.height, false)
+    )
+      return false;
+    this.gpuDrawn = null;
+    this.frameRevision = {};
+    return true;
   }
   private markFrameChanged(rectangle?: BurikoBitmapRectangle): void {
     this.frameRevision = {};
@@ -803,6 +935,9 @@ export class BurikoDisplayDevice {
   ): BrowserRasterTextFrame {
     const frame = new ImageData(native.data.slice(), native.width, native.height);
     let glyphs: RasterTextGlyph[] = [];
+    // GPU presentation defers the sampled copy; DOM text reads the sampled text plane.
+    if (ordinary !== null && this.source !== null && this.sampled !== null)
+      this.sampled.updateFrom(this.source, true);
     for (const draw of [ordinary, movie]) {
       if (draw === null) continue;
       const bitmap = draw.texture.textBitmap;
@@ -866,7 +1001,10 @@ export class BurikoDisplayDevice {
     }
     if (this.lost || this.context === null || this.frame === null) return 0x80000000;
     this.canvasPresenter ??= new CanvasFramePresenter(this.canvas, this.context);
-    this.canvasPresenter.present(this.frame, this.frameRevision, this.frameDamage ?? undefined);
+    if (this.gpuFrame && this.gpu)
+      this.canvasPresenter.presentImage(this.gpu.output, this.frameRevision);
+    else
+      this.canvasPresenter.present(this.frame, this.frameRevision, this.frameDamage ?? undefined);
     if (this.textPresentation !== null) {
       const frame = this.frame,
         ordinary = this.ordinaryTextDraw,
@@ -884,6 +1022,10 @@ export class BurikoDisplayDevice {
     this.ordinaryTextDraw = this.movieTextDraw = null;
     this.canvasPresenter = null;
     this.linearRasterizer = undefined;
+    this.gpu?.dispose();
+    this.gpu = undefined;
+    this.gpuFrame = false;
+    this.gpuQuad = this.gpuDrawn = null;
     this.rasterValid = false;
     this.releaseShader();
     this.source?.discardPresentation();

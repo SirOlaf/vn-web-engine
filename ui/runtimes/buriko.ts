@@ -24,6 +24,7 @@ import {mountFullscreenControls} from '../player/fullscreen.js';
 import {BurikoBpMemory} from '../../src/engines/buriko/bp/memory.js';
 import {setBurikoBpWasmEnabled} from '../../src/engines/buriko/bp/wasm-core.js';
 import {setBurikoBitmapResidencyEnabled} from '../../src/engines/buriko/native/bitmap-resident.js';
+import {setBurikoGpuPresentationEnabled} from '../../src/engines/buriko/native/display-gpu-presenter.js';
 import {
   BurikoBrowserSpeakerBackend,
   BurikoMemorySpeakerBackend,
@@ -369,6 +370,8 @@ async function launch(
     // It overrides the sidebar's bitmap memory setting, which applies from page load.
     if (new URLSearchParams(location.search).get('bitmap-resident') === '0')
       setBurikoBitmapResidencyEnabled(false);
+    // `?gpu=0` keeps software presentation under the browser-optimized runtime profile.
+    setBurikoGpuPresentationEnabled(new URLSearchParams(location.search).get('gpu') !== '0');
     const memory = new BurikoBpMemory(new Uint8Array(0x10000), graph.engineVersion.bpAbi);
     const data = new BurikoProductionDataOwners(graph, memory);
     const diagnostics = new BurikoBpDiagnostics((notice) => {

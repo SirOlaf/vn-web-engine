@@ -135,3 +135,29 @@ test('level-zero dirty updates preserve unselected sample texels after the initi
   target.updateFrom(source);
   assert.equal(target.storage.view.getUint32(8, true), 0x00445566);
 });
+
+test('texels taken by GPU presentation are still copied by the next sampled update', () => {
+  const source = new BurikoDisplayTexture(4, 2, 22);
+  const target = new BurikoDisplayTexture(4, 2, 22);
+  target.updateFrom(source);
+  const locked = source.lock();
+  locked.storage.view.setUint32(4, 0x00112233, true);
+  locked.storage.view.setUint32(28, 0x00445566, true);
+  source.unlock();
+  source.addDirtyRectangle({left: 1, top: 0, right: 1, bottom: 0});
+  source.addDirtyRectangle({left: 3, top: 1, right: 3, bottom: 1});
+  assert.deepEqual(source.takeDirtyBounds(), {left: 1, top: 0, right: 3, bottom: 1});
+  assert.equal(source.takeDirtyBounds(), null);
+  // A deferred-only sync leaves newer dirtiness for the next full update.
+  const next = source.lock();
+  next.storage.view.setUint32(0, 0x00778899, true);
+  source.unlock();
+  source.addDirtyRectangle({left: 0, top: 0, right: 0, bottom: 0});
+  assert.equal(target.updateFrom(source, true), true);
+  assert.equal(target.storage.view.getUint32(4, true), 0x00112233);
+  assert.equal(target.storage.view.getUint32(28, true), 0x00445566);
+  assert.equal(target.storage.view.getUint32(0, true), 0);
+  assert.equal(target.updateFrom(source), true);
+  assert.equal(target.storage.view.getUint32(0, true), 0x00778899);
+  assert.equal(target.updateFrom(source), false);
+});
