@@ -1,5 +1,5 @@
 import type {PeResource} from '../../../formats/pe/resources.js';
-import {decodeDsc} from '../../../formats/buriko/dsc.js';
+import {decodeBurikoDsc} from './dsc-wasm.js';
 import {signature} from '../../../formats/buriko/binary.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {BurikoNativeText, textByte} from './text.js';
@@ -81,7 +81,7 @@ export class BurikoLocalizedMessages {
 
   load(stored: Uint8Array | null): 0 | 1 {
     if (stored === null) return 0;
-    const decoded = signature(stored, 'DSC FORMAT 1.00\0') ? decodeDsc(stored) : stored,
+    const decoded = signature(stored, 'DSC FORMAT 1.00\0') ? decodeBurikoDsc(stored) : stored,
       bytes = new Uint8Array(decoded.length + 1);
     bytes.set(decoded);
     this.clear();

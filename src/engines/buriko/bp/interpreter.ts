@@ -13,18 +13,25 @@ import type {BurikoBpThread} from './state.js';
 import {controlOpcodes} from './opcodes/control.js';
 import {integerOpcodes} from './opcodes/integer.js';
 import {memoryOpcodes} from './opcodes/memory.js';
+import {localOpcodes} from './opcodes/locals.js';
 
-// Single scalar/stack operations and fixed-width control flow. Variable-length
-// operands, watched writes, bulk memory, native calls and extensions check time
-// after every instruction. Identity checks below exclude replacement handlers.
+// Scalar/stack operations, local-descriptor forms and control flow whose operands
+// (fixed-width or varint immediates) bound their work. Watched writes, bulk memory,
+// native calls and extensions check time after every instruction. Identity checks
+// below exclude replacement handlers.
 const batchableHandlers: Readonly<Record<number, BurikoBpOpcodeHandler>> = Object.fromEntries(
   [
-    0x00, 0x01, 0x02, 0x04, 0x05, 0x06, 0x08, 0x0f, 0x10, 0x11, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-    0x19, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x30, 0x31, 0x32,
-    0x33, 0x34, 0x35, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3e, 0x40, 0x42, 0x56, 0x73, 0xee, 0xef,
+    0x00, 0x01, 0x02, 0x04, 0x05, 0x06, 0x08, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+    0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+    0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
+    0x36, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3e, 0x3f, 0x40, 0x42, 0x56, 0x73, 0xe2, 0xe3, 0xe4, 0xe5,
+    0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xee, 0xef,
   ].map((opcode) => [
     opcode,
-    (controlOpcodes[opcode] ?? integerOpcodes[opcode] ?? memoryOpcodes[opcode])!,
+    (controlOpcodes[opcode] ??
+      integerOpcodes[opcode] ??
+      memoryOpcodes[opcode] ??
+      localOpcodes[opcode])!,
   ]),
 );
 
@@ -102,13 +109,21 @@ export class BurikoBpInterpreter {
     return {defined: true, opcode, result: handler(context)};
   }
 
+  /** dispatchNext without its result record; this runs once per scheduled instruction. */
   step(thread: BurikoBpThread, actor?: object): BurikoBpInstructionResult {
-    const dispatched = this.dispatchNext(thread, actor);
-    if (!dispatched.defined) {
+    const opcode = fetchOpcode(thread);
+    const handler = this.primary[opcode];
+    if (handler === undefined) {
       throw new Error(
-        `Invalid Buriko primary opcode 0x${dispatched.opcode.toString(16)} at 0x${thread.instructionStart.toString(16)}`,
+        `Invalid Buriko primary opcode 0x${opcode.toString(16)} at 0x${thread.instructionStart.toString(16)}`,
       );
     }
-    return dispatched.result;
+    const original = this.contextForThread(thread);
+    if (original.memory.abi.revision !== this.abi.revision)
+      throw new Error('Buriko opcode context has a different bytecode ABI');
+    const context = actor === undefined ? original : {...original, actor};
+    if (context.thread !== thread)
+      throw new Error('Buriko opcode context refers to another thread');
+    return handler(context);
   }
 }

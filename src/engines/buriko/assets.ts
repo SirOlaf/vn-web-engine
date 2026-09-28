@@ -2,7 +2,7 @@ import {readTimeEvents} from '../../formats/buriko/time-event.js';
 import {checkRange} from '../../core/binary.js';
 import {signature, view} from '../../formats/buriko/binary.js';
 import {decodeBse} from '../../formats/buriko/bse.js';
-import {decodeDsc} from '../../formats/buriko/dsc.js';
+import {decodeBurikoDsc} from './native/dsc-wasm.js';
 import {decodeSdc} from '../../formats/buriko/compressed-resource.js';
 import {
   decodeCompressedBgV1,
@@ -28,7 +28,7 @@ export function inspectAsset(stored: Uint8Array, name: string): AssetInspection 
   }
   let image: BurikoImage | undefined;
   if (signature(bytes, 'DSC FORMAT 1.00\0')) {
-    bytes = decodeDsc(bytes);
+    bytes = decodeBurikoDsc(bytes);
     wrappers.push('DSC 1.00');
   } else if (signature(bytes, 'SDC FORMAT 1.00\0')) {
     bytes = decodeSdc(bytes);

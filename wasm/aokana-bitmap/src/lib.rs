@@ -2,6 +2,8 @@
 
 use core::arch::wasm32::*;
 
+pub mod dsc;
+
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
     core::arch::wasm32::unreachable()

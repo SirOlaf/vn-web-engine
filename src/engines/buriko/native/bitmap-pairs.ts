@@ -1,4 +1,9 @@
-import {bitmapStorage, type BurikoBitmap} from './bitmap.js';
+import {
+  bitmapStorage,
+  initializedBurikoBitmapView,
+  writableBurikoBitmapView,
+  type BurikoBitmap,
+} from './bitmap.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
 
 export type BurikoPixelPair = readonly [number, number];
@@ -104,6 +109,34 @@ export function writeBurikoMappedPairs(
   source: BurikoBitmap,
   pixel: (source: number) => number,
 ): void {
+  // A fully initialized source and bounded destination cannot fault, so the checked
+  // traversal reduces to the same pair order with completed rows marked as written.
+  const width = source.width >>> 0,
+    height = source.height >>> 0,
+    input = initializedBurikoBitmapView(source, width, height),
+    output = input === null ? null : writableBurikoBitmapView(destination, width, height);
+  if (input !== null && output !== null) {
+    const storage = destination.storage!;
+    for (let y = 0; y < height; y++) {
+      const sourceRow = source.offset + y * source.stride,
+        destinationRow = destination.offset + y * destination.stride;
+      let x = 0;
+      for (; x + 1 < width; x += 2) {
+        const first = input.getUint32(sourceRow + x * 4, true),
+          second = input.getUint32(sourceRow + x * 4 + 4, true);
+        output.setUint32(destinationRow + x * 4, pixel(first), true);
+        output.setUint32(destinationRow + x * 4 + 4, pixel(second), true);
+      }
+      if (x < width)
+        output.setUint32(
+          destinationRow + x * 4,
+          pixel(input.getUint32(sourceRow + x * 4, true)),
+          true,
+        );
+      storage.written(destinationRow, width * 4);
+    }
+    return;
+  }
   visitBurikoPixelPairs(
     destination,
     source,

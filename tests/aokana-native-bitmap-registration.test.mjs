@@ -34,7 +34,10 @@ import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
 import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
 
-test('91:03/04 register actual image data through shared cache, private decoder and surface consumers', async () => {
+test('91:03/04 register actual image data through shared cache, private decoder and surface consumers', async (t) => {
+  // Codec tasks run in 4 ms wall-clock slices; a frozen clock completes them in one host turn
+  // regardless of machine load, so one scheduler pass deterministically drains the workers.
+  t.mock.method(performance, 'now', () => 0);
   const fs = new StoredFileSystem(new MemoryStore()),
     text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),

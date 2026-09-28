@@ -14,6 +14,9 @@ export function subscribePlayerActivity(
   let show: ReturnType<typeof setTimeout> | undefined;
   let hide: ReturnType<typeof setTimeout> | undefined;
   let tick: ReturnType<typeof setInterval> | undefined;
+  let frame: number | undefined;
+  // Start of the current idle gap; null while reads or activities are pending.
+  let idleSince: number | null = null;
   const elapsed = (startedAt: number) => `${Math.floor((performance.now() - startedAt) / 1000)} s`;
   function render(): void {
     const labels = activities.map(({label, startedAt}) => `${label}… ${elapsed(startedAt)}`);
@@ -31,12 +34,40 @@ export function subscribePlayerActivity(
     if (labels.length) status.label = labels.join(' · ');
     changed({...status});
   }
+  /** Sequential reads publish per chunk; the label needs at most one render per frame. */
+  function renderSoon(): void {
+    if (frame !== undefined) return;
+    if (typeof requestAnimationFrame === 'undefined') {
+      render();
+      return;
+    }
+    frame = requestAnimationFrame(() => {
+      frame = undefined;
+      if (idleSince === null) render();
+    });
+  }
+  function hideAfterIdle(): void {
+    hide = undefined;
+    if (idleSince === null) return;
+    const remaining = idleSince + 200 - performance.now();
+    if (remaining > 0) {
+      hide = setTimeout(hideAfterIdle, remaining);
+      return;
+    }
+    // Keep the original show deadline across short gaps between sequential reads.
+    // Resetting it at every chunk would hide even minutes of continuous file I/O.
+    clearTimeout(show);
+    show = undefined;
+    clearInterval(tick);
+    tick = undefined;
+    status.hidden = true;
+    changed({...status});
+  }
   function update(): void {
     const pending = (source?.pending ?? 0) > 0 || activities.length > 0;
     if (pending) {
-      clearTimeout(hide);
-      hide = undefined;
-      render();
+      idleSince = null;
+      renderSoon();
       if (tick === undefined) tick = setInterval(render, 1000);
       if (show === undefined && status.hidden)
         show = setTimeout(() => {
@@ -45,18 +76,9 @@ export function subscribePlayerActivity(
           show = undefined;
         }, 350);
     } else {
-      clearTimeout(hide);
-      hide = setTimeout(() => {
-        // Keep the original show deadline across short gaps between sequential reads.
-        // Resetting it at every chunk would hide even minutes of continuous file I/O.
-        clearTimeout(show);
-        show = undefined;
-        clearInterval(tick);
-        tick = undefined;
-        status.hidden = true;
-        changed({...status});
-        hide = undefined;
-      }, 200);
+      // One timer spans the gap; it re-arms for the remainder if reads resumed meanwhile.
+      if (idleSince === null) idleSince = performance.now();
+      if (hide === undefined) hide = setTimeout(hideAfterIdle, 200);
     }
   }
   const unsubscribeSource = subscribeSourceActivity((value) => {
@@ -73,5 +95,6 @@ export function subscribePlayerActivity(
     clearTimeout(show);
     clearTimeout(hide);
     clearInterval(tick);
+    if (frame !== undefined) cancelAnimationFrame(frame);
   };
 }

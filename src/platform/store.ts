@@ -56,11 +56,45 @@ export class MemoryStore implements RecordStore {
   }
 }
 
-/** One database per application/game/profile. Never falls back to transient storage. */
+/** Stores in this realm, by database name, for synchronous cache invalidation after a commit. */
+const openStores = new Map<string, Set<IndexedDbStore>>();
+
+/**
+ * One database per application/game/profile. Never falls back to transient storage.
+ *
+ * Snapshots are served from the last committed state this instance observed. A commit by any
+ * instance invalidates the others: synchronously within this realm, and through a
+ * BroadcastChannel for other tabs and workers. Updates always read the database inside their
+ * readwrite transaction, so cross-tab writes still serialize. Snapshot values are shared with
+ * the cache and must be treated as read-only.
+ */
 export class IndexedDbStore implements RecordStore {
   private closed = false;
+  private cache: Map<string, Uint8Array> | null = null;
+  /** Advances on every invalidation; a read may populate the cache only if it is unchanged. */
+  private generation = 0;
+  private readonly channel: BroadcastChannel | null;
   private constructor(private readonly db: IDBDatabase) {
     db.onversionchange = () => this.close();
+    let peers = openStores.get(db.name);
+    if (peers === undefined) openStores.set(db.name, (peers = new Set()));
+    peers.add(this);
+    this.channel =
+      typeof BroadcastChannel === 'undefined'
+        ? null
+        : new BroadcastChannel(`vn-runtime-store:${db.name}`);
+    if (this.channel !== null) this.channel.onmessage = () => this.invalidate();
+  }
+  private invalidate(): void {
+    this.cache = null;
+    this.generation++;
+  }
+  /** Runs when a readwrite transaction has committed `records` as the complete database state. */
+  private committed(records: Map<string, Uint8Array>): void {
+    for (const peer of openStores.get(this.db.name) ?? []) if (peer !== this) peer.invalidate();
+    this.channel?.postMessage(null);
+    this.generation++;
+    this.cache = records;
   }
   static open(
     namespace: readonly string[],
@@ -91,6 +125,7 @@ export class IndexedDbStore implements RecordStore {
   ): Promise<Map<string, Uint8Array>> {
     if (this.closed) return Promise.reject(new Error('Storage is closed'));
     const finishTransaction = beginRuntimeSpan('storage.idb.transaction');
+    const generation = this.generation;
     return new Promise((resolve, reject) => {
       const records = new Map<string, Uint8Array>();
       let failure: unknown,
@@ -130,7 +165,9 @@ export class IndexedDbStore implements RecordStore {
         };
         tx.oncomplete = () => {
           finish(false);
-          resolve(result);
+          if (change) this.committed(result);
+          else if (generation === this.generation && !this.closed) this.cache = result;
+          resolve(change || this.cache !== result ? result : new Map(result));
         };
         const cursor = store.openCursor();
         cursor.onsuccess = () => {
@@ -202,13 +239,23 @@ export class IndexedDbStore implements RecordStore {
     });
   }
   snapshot(): Promise<Map<string, Uint8Array>> {
+    if (this.closed) return Promise.reject(new Error('Storage is closed'));
+    if (this.cache !== null) {
+      recordRuntimeMetric('storage.idb.cached-snapshots', 1);
+      return Promise.resolve(new Map(this.cache));
+    }
     return this.transaction();
   }
   async update(change: (records: Map<string, Uint8Array>) => void): Promise<void> {
     await this.transaction(change);
   }
   close(): void {
+    if (this.closed) return;
     this.closed = true;
+    this.invalidate();
+    openStores.get(this.db.name)?.delete(this);
+    if (openStores.get(this.db.name)?.size === 0) openStores.delete(this.db.name);
+    this.channel?.close();
     this.db.close();
   }
 }

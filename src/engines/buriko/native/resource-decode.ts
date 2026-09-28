@@ -1,4 +1,4 @@
-import {decodeDsc} from '../../../formats/buriko/dsc.js';
+import {decodeBurikoDsc} from './dsc-wasm.js';
 import {
   decodeCompressedBgLegacyAsync,
   packedImage,
@@ -117,7 +117,7 @@ export async function decodeBurikoResource(
       if (size > 0x4000000) return {status: 6, bytes: null};
       const finishDecode = beginRuntimeSpan('buriko.decode.dsc');
       try {
-        decoded = decodeDsc(stored);
+        decoded = decodeBurikoDsc(stored);
       } finally {
         finishDecode?.({inputBytes: stored.length, outputBytes: size});
       }

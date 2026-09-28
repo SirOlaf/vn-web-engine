@@ -125,7 +125,12 @@ test('metadata enumeration skips multi-gigabyte glyph data and retains only owne
     [metadata[0].winAscent, metadata[0].winDescent, metadata[0].weight, metadata[0].italic],
     [1900, 500, 700, true],
   );
-  assert.ok(source.reads.reduce((sum, [, length]) => sum + length, 0) < 512);
+  // Header, directory, then one read spanning the nearby needed tables (head through post).
+  assert.deepEqual(source.reads, [
+    [0, 12],
+    [12, 96],
+    [512, 528],
+  ]);
   for (const name of metadata[0].names) {
     assert.equal(name.bytes.buffer.byteLength, name.bytes.byteLength);
     assert.notEqual(name.bytes.buffer, source.bytes.buffer);

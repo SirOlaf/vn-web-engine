@@ -25,7 +25,10 @@ import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource
 import {BurikoDataCodecWorkers} from '../dist/engines/buriko/native/data-codec-workers.js';
 import {createGroup80DataDecode} from '../dist/engines/buriko/native/group-80-data-decode.js';
 
-test('80:CF decodes ordinary raw and SDC records through actual scheduled workers', async () => {
+test('80:CF decodes ordinary raw and SDC records through actual scheduled workers', async (t) => {
+  // Codec tasks run in 4 ms wall-clock slices; a frozen clock completes them in one host turn
+  // regardless of machine load, so one scheduler pass deterministically drains the workers.
+  t.mock.method(performance, 'now', () => 0);
   const fs = new StoredFileSystem(new MemoryStore()),
     text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),

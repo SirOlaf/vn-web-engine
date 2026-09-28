@@ -275,6 +275,65 @@ async function sourceReader(
   return new FontReader(bytes);
 }
 
+/** Needed tables separated by fewer skipped bytes than this share one source read. */
+const METADATA_READ_GAP = 0x1000;
+
+/**
+ * Merges reads of nearby metadata tables. A merged read never extends past the needed
+ * tables it covers, and each covered range keeps the bounds and truncation checks of a
+ * direct read.
+ */
+class MetadataSource implements ByteSource {
+  private readonly spans: {offset: number; end: number; bytes: Promise<Uint8Array>}[] = [];
+  constructor(private readonly source: ByteSource) {}
+  get size(): number {
+    return this.source.size;
+  }
+  /** Starts one read per cluster of nearby ranges; later reads inside a cluster reuse it. */
+  prefetch(ranges: readonly {offset: number; length: number}[]): void {
+    const sorted = ranges
+      .filter(
+        ({offset, length}) =>
+          !this.spans.some((s) => offset >= s.offset && offset + length <= s.end),
+      )
+      .sort((a, b) => a.offset - b.offset);
+    let start = -1,
+      end = -1,
+      members = 0;
+    const flush = () => {
+      // A lone range reads directly, exactly as without merging.
+      if (members < 2) return;
+      const bytes = this.source.read(start, end - start);
+      // A failed span surfaces when a covered table is read; faces that stop earlier ignore it.
+      bytes.catch(() => undefined);
+      this.spans.push({offset: start, end, bytes});
+    };
+    for (const {offset, length} of sorted) {
+      if (members > 0 && offset - end < METADATA_READ_GAP) {
+        end = Math.max(end, offset + length);
+        members++;
+      } else {
+        flush();
+        start = offset;
+        end = offset + length;
+        members = 1;
+      }
+    }
+    flush();
+  }
+  async read(offset: number, length: number): Promise<Uint8Array> {
+    for (const span of this.spans)
+      if (offset >= span.offset && offset + length <= span.end)
+        return clipped(await span.bytes, offset - span.offset, length);
+    return this.source.read(offset, length);
+  }
+}
+
+/** A short underlying read stays short, so sourceReader reports the same truncation. */
+function clipped(bytes: Uint8Array, offset: number, length: number): Uint8Array {
+  return bytes.subarray(Math.min(offset, bytes.length), Math.min(offset + length, bytes.length));
+}
+
 async function faceMetadata(
   source: ByteSource,
   directoryOffset: number,
@@ -286,31 +345,32 @@ async function faceMetadata(
     count,
     source.size,
   );
+  const needed = directory.flatMap(({tag, offset, length}) => {
+    const bytes = metadataTableBytes(tag, length);
+    return bytes === null ? [] : [{tag, offset, length: Math.min(length, bytes)}];
+  });
+  if (source instanceof MetadataSource) source.prefetch(needed);
   const map = new Map<number, FontReader>();
-  for (const {tag, offset, length} of directory) {
-    let needed: number;
-    switch (tag) {
-      case tags.head:
-        needed = 46;
-        break;
-      case tags.hhea:
-        needed = 4;
-        break;
-      case tags.os2:
-        needed = 86;
-        break;
-      case tags.name:
-        needed = length;
-        break;
-      case tags.post:
-        needed = 16;
-        break;
-      default:
-        continue;
-    }
-    map.set(tag, await sourceReader(source, offset, Math.min(length, needed)));
-  }
+  for (const {tag, offset, length} of needed)
+    map.set(tag, await sourceReader(source, offset, length));
   return metadata(map);
+}
+
+function metadataTableBytes(tag: number, length: number): number | null {
+  switch (tag) {
+    case tags.head:
+      return 46;
+    case tags.hhea:
+      return 4;
+    case tags.os2:
+      return 86;
+    case tags.name:
+      return length;
+    case tags.post:
+      return 16;
+    default:
+      return null;
+  }
 }
 
 /**
@@ -319,8 +379,9 @@ async function faceMetadata(
  * contents are not needed. Returned name bytes own their storage.
  */
 export async function readSfntFontMetadata(
-  source: ByteSource,
+  input: ByteSource,
 ): Promise<readonly SfntFontMetadata[]> {
+  const source = new MetadataSource(input);
   const header = await sourceReader(source, 0, 12);
   const count = collectionCount(header, source.size);
   if (count === null) return [await faceMetadata(source, 0, header)];

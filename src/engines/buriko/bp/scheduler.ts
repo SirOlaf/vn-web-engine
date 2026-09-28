@@ -445,7 +445,7 @@ export class BurikoBpScheduler {
     executeInstruction: (thread: BurikoBpThread) => BurikoBpInstructionResult,
     invocationToken: object,
   ): Promise<BurikoBpSchedulerResult> {
-    const batchableOpcodes = this.browserOptimized ? this.batchableOpcodes : null;
+    const batchableOpcodes = this.batchableOpcodes;
     let stop = this.stopRequested;
     let condition = false;
     let node = this.root.next;

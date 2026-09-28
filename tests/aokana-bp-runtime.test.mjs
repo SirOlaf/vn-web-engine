@@ -545,10 +545,7 @@ for (const profile of ['native', 'browser-optimized']) {
       'host:replacement',
       'end',
     ]);
-    assert.ok(
-      profile === 'native' ? clockReads > 250 : clockReads < 40,
-      `${clockReads} clock reads`,
-    );
+    assert.ok(clockReads < 40, `${clockReads} clock reads`);
     assert.equal(scheduler.hasActiveInvocation, false);
   });
 

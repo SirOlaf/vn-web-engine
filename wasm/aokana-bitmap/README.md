@@ -50,6 +50,16 @@ content cache. The module has no imports, allocator,
 WASI, relaxed SIMD, or host callbacks. Unsupported Wasm/SIMD or memory allocation
 failure selects the existing JavaScript implementation.
 
+`dsc_decode` (`src/dsc.rs`) decodes DSC FORMAT 1.00 resources for
+`src/engines/buriko/native/dsc-wasm.ts`. It reproduces the key-stream code
+lengths, level-order canonical tree, and node limit of `src/formats/buriko/dsc.ts`.
+Every failure returns a nonzero status, and the host reruns the TypeScript
+decoder to raise the reference error. Codes of up to 12 bits and their distance
+bits are read with one prefix lookup from a 64-bit buffer. Longer codes and the
+end of the stream use a scalar tree walk. Literals and repeats store 16-byte
+chunks; repeats shorter than 16 bytes use shuffle tables. The host supplies
+eight zero padding bytes after the input and 16 bytes of output slack.
+
 Rebuild with `npm run build:wasm`. This performs locked, offline Cargo builds of
 both graphics crates and embeds their generated binaries. Normal `npm run build`
 requires neither Rust nor separately served Wasm assets. The current artifact uses

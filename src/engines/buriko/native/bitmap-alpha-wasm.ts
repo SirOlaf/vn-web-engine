@@ -9,7 +9,7 @@ import type {BurikoBitmap} from './bitmap.js';
 import type {BurikoBitmapAffineCoordinates} from './bitmap-affine.js';
 import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
 
-interface BurikoBitmapExports extends WasmPixelExports {
+export interface BurikoBitmapExports extends WasmPixelExports {
   reduce_half: (
     source: number,
     destination: number,
@@ -73,6 +73,7 @@ interface BurikoBitmapExports extends WasmPixelExports {
     factor: number,
     opacity: number,
   ) => void;
+  dsc_decode: (input: number, inputLength: number, output: number, outputLength: number) => number;
 }
 
 let kernel: BurikoBitmapExports | null | undefined;
@@ -86,6 +87,11 @@ const BURIKO_MIX_WORKSPACE_SPANS: WasmPixelWorkspaceSpanNames = {
   stagingOut: 'buriko.sprite.mix.wasm-stage-out',
   memoryGrowth: 'buriko.sprite.mix.wasm-memory-growth',
 };
+
+/** The shared Buriko kernel instance; null when WebAssembly or SIMD is unavailable. */
+export function getBurikoWasmKernel(): BurikoBitmapExports | null {
+  return getKernel();
+}
 
 function getKernel(): BurikoBitmapExports | null {
   if (kernel === undefined) {

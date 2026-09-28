@@ -11,6 +11,7 @@ import {BurikoProductionVmCore} from './production-vm-core.js';
 import {BurikoProductionVmFragments} from './production-vm-fragments.js';
 import {BurikoNativeBank} from './registry.js';
 import {BurikoSharedInterpreters} from './shared-interpreters.js';
+import type {BurikoBpOpcodeContext} from './types.js';
 import {
   createLegacy169NativeDefinitions,
   createLegacy169PrimaryOpcodes,
@@ -98,16 +99,26 @@ export class BurikoProductionInterpreter {
       },
       abi,
     );
+    let context: BurikoBpOpcodeContext | null = null;
     this.interpreter = new BurikoBpInterpreter(
       primary,
       this.bank,
       this.extensions,
-      (thread) => ({
-        thread,
-        memory: core.memory,
-        diagnostics: core.diagnostics,
-        actor: graph.allocator.currentActor,
-      }),
+      (thread) => {
+        // Contexts are immutable records; reuse one while its thread and actor are current.
+        const actor = graph.allocator.currentActor,
+          memory = core.memory,
+          diagnostics = core.diagnostics;
+        if (
+          context === null ||
+          context.thread !== thread ||
+          context.actor !== actor ||
+          context.memory !== memory ||
+          context.diagnostics !== diagnostics
+        )
+          context = {thread, memory, diagnostics, actor};
+        return context;
+      },
       abi,
     );
     this.shared.bindInterpreter(this.interpreter);
