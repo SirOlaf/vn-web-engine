@@ -8,6 +8,7 @@ import {
   type CompressedBgLegacyPlan,
 } from '../../../formats/buriko/compressed-bg.js';
 import {beginRuntimeSpan, recordRuntimeMetric} from '../../../platform/runtime-performance.js';
+import type {BurikoBorrowedBytes} from '../../../formats/buriko/binary.js';
 import {BURIKO_BITMAP_WASM_BINARY} from './bitmap-alpha-wasm-binary.js';
 
 interface BurikoCbgExports {
@@ -81,7 +82,7 @@ function releaseInstance(kernel: BurikoCbgExports): void {
 
 /** 0x1400bfa50 legacy decoding, with Wasm entropy, run, and predictor stages when available. */
 export function decodeBurikoCompressedBgLegacyAsync(
-  bytes: Uint8Array,
+  bytes: Uint8Array | BurikoBorrowedBytes,
   destination?: BurikoImageDestination,
   beforeResume?: () => void,
 ): Promise<BurikoImage> {
@@ -159,8 +160,7 @@ function* decodeLegacyStagesWasm(
       intermediate = heapBase + intermediateOffset,
       residuals = heapBase + residualsOffset,
       output = heapBase + outputOffset,
-      {root} = plan.tree,
-      bitBytes = plan.bitBytes;
+      {root} = plan.tree;
 
     finishPhase = beginRuntimeSpan('buriko.decode.cbg.entropy');
     const childSlots = new Uint16Array(memory.buffer, children, 1024).fill(0xffff);
@@ -171,7 +171,8 @@ function* decodeLegacyStagesWasm(
     yield;
     let bitPosition = 0;
     for (let index = 0; index < intermediateSize;) {
-      const first = Math.floor(bitPosition / 8),
+      const bitBytes = plan.bitBytes,
+        first = Math.floor(bitPosition / 8),
         last = Math.min(bitBytes.length, first + CBG_WINDOW_BYTES),
         windowBytes = last - first;
       heap.set(bitBytes.subarray(first, last), window);
@@ -199,7 +200,7 @@ function* decodeLegacyStagesWasm(
       yield;
     }
     finishPhase?.({
-      sourceBytes: bitBytes.length,
+      sourceBytes: plan.bitBytes.length,
       intermediateBytes: intermediateSize,
       prefixBits,
       wasm: 1,

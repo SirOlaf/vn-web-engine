@@ -1,7 +1,7 @@
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {assertBurikoPathDomain} from './path-domain.js';
 import type {BurikoProgramResources} from './program-resources.js';
-import {textBytes} from './text.js';
+import {scanText, textBytes} from './text.js';
 
 export interface BurikoMfDirectSourceCandidate {
   readonly kind: 'direct';
@@ -53,7 +53,7 @@ export class BurikoMfMovieSourceCandidates {
   ): Promise<BurikoMfArchiveSourceCandidate | null> {
     if (archive === null) return null;
     const member = Uint8Array.from(textBytes(name, true));
-    const found = await this.resources.locateArchiveEntry(textBytes(archive, true), member);
+    const found = await this.resources.locateArchiveEntry(scanText(archive, true), member);
     if (found === null) return null;
     const record = new DataView(
       found.record.buffer,

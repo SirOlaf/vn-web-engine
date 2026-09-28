@@ -1,6 +1,6 @@
 import type {BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoProgramResources} from './program-resources.js';
-import {textBytes} from './text.js';
+import {scanText} from './text.js';
 
 export interface BurikoMovieSourceLocation {
   readonly path: Uint8Array;
@@ -27,8 +27,8 @@ export class BurikoMovieSources {
     }
     if (archive === null) return null;
     const found = await this.resources.locateArchiveEntry(
-      textBytes(archive, true),
-      textBytes(name, true),
+      scanText(archive, true),
+      scanText(name, true),
     );
     if (found === null) return null;
     if (found.path.length > 784)

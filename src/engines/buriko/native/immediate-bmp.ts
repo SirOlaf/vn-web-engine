@@ -2,7 +2,7 @@ import {type BurikoBpPointer} from '../bp/memory.js';
 import {importBurikoWindowsBitmap} from './bitmap-image.js';
 import type {BurikoProgramResources} from './program-resources.js';
 import type {BurikoSurfaces} from './surfaces.js';
-import {textBytes} from './text.js';
+import {scanText} from './text.js';
 
 /** 037170 passes a null ROOT to BDA60, independently of all configured resource roots. */
 export async function loadBurikoImmediateBmp(
@@ -17,7 +17,7 @@ export async function loadBurikoImmediateBmp(
     operationAllocator.withActor(operationActor, operation);
 
   if (name === null) throw new Error('Buriko immediate BMP load dereferences a null filename');
-  const loaded = await runAsActor(() => resources.partialLoose(null, textBytes(name, true), 0, 0));
+  const loaded = await runAsActor(() => resources.partialLoose(null, scanText(name, true), 0, 0));
   if (loaded.result !== 0) return 0xffffffff;
   const bytes = loaded.bytes;
   if (bytes === null) throw new Error('Buriko successful BMP resource lacks its output bytes');

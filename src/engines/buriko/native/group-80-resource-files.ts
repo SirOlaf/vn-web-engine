@@ -1,5 +1,5 @@
 import {pop32, push32} from '../bp/state.js';
-import {textBytes} from './text.js';
+import {textReader} from './text.js';
 import type {BurikoResourceFileServices} from './resource-file-services.js';
 import type {BurikoNativeSlotDefinition} from './types.js';
 export function createGroup80ResourceFiles(
@@ -41,7 +41,7 @@ export function createGroup80ResourceFiles(
           archive = h.memory.resolve(h.thread, pop32(h.thread));
         push32(
           h.thread,
-          await files.available(archive === null ? null : () => textBytes(archive), name),
+          await files.available(archive === null ? null : textReader(archive), name),
         );
         return 0;
       },

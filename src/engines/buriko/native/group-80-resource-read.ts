@@ -1,8 +1,8 @@
 import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import type {BurikoProgramResources} from './program-resources.js';
-import type {BurikoResourceDestination} from './resource-decode.js';
-import {textBytes} from './text.js';
+import {borrowedPointer, type BurikoResourceDestination} from './resource-decode.js';
+import {scanText, textBytes, textReader} from './text.js';
 import type {BurikoNativeSlotDefinition} from './types.js';
 function required(pointer: BurikoBpPointer | null): BurikoBpPointer {
   if (pointer === null) throw new RangeError('Buriko resource read consumed a null filename');
@@ -10,8 +10,8 @@ function required(pointer: BurikoBpPointer | null): BurikoBpPointer {
 }
 function output(pointer: BurikoBpPointer | null): BurikoResourceDestination | null {
   if (pointer === null) return null;
-  const view = pointerView(pointer);
-  return {bytes: new Uint8Array(view.buffer, view.byteOffset, view.byteLength)};
+  pointerView(pointer);
+  return borrowedPointer(pointer);
 }
 /** E9520/E9490 pass the resolved output pointer through the real resource decoder. */
 export function createGroup80ResourceRead(
@@ -29,7 +29,7 @@ export function createGroup80ResourceRead(
           destination = h.memory.resolve(h.thread, pop32(h.thread));
         const result = await resources.load(
           archive === null ? null : () => textBytes(archive),
-          textBytes(required(name)),
+          scanText(required(name)),
           true,
           output(destination),
           h.actor,
@@ -50,8 +50,8 @@ export function createGroup80ResourceRead(
           archive = h.memory.resolve(h.thread, pop32(h.thread)),
           destination = h.memory.resolve(h.thread, pop32(h.thread));
         const result = await resources.loadPartial(
-          archive === null ? null : () => textBytes(archive),
-          textBytes(required(name)),
+          archive === null ? null : textReader(archive),
+          scanText(required(name)),
           offset,
           length,
           output(destination),

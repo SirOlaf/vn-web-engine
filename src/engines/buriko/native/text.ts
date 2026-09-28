@@ -62,6 +62,32 @@ export function textBytes(pointer: BurikoBpPointer, includeTerminator = false): 
     .subarray(pointer.offset, pointer.offset + textLength(pointer) + Number(includeTerminator));
 }
 
+/** A native string argument: host bytes, or a reader that resolves caller storage at each use. */
+export type BurikoNativeString = Uint8Array | (() => Uint8Array);
+
+export function nativeStringBytes(value: BurikoNativeString): Uint8Array {
+  return typeof value === 'function' ? value() : value;
+}
+
+/**
+ * VM text read through its pointer at each call. The first call measures it like `textBytes`;
+ * later calls resolve that same byte range, so callers across waits keep the reader, not a view.
+ */
+export function textReader(pointer: BurikoBpPointer, includeTerminator = false): () => Uint8Array {
+  let end = -1;
+  return () => {
+    if (end < 0) end = pointer.offset + textLength(pointer) + Number(includeTerminator);
+    return pointer.view().subarray(pointer.offset, end);
+  };
+}
+
+/** A `textReader` measured now, at the caller's native read. */
+export function scanText(pointer: BurikoBpPointer, includeTerminator = false): () => Uint8Array {
+  const reader = textReader(pointer, includeTerminator);
+  reader();
+  return reader;
+}
+
 /** Native strcpy copies forward one byte at a time, including on overlapping addresses. */
 export function copyText(destination: BurikoBpPointer, source: BurikoBpPointer): void {
   const sourceBytes = source.view(),

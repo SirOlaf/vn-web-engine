@@ -199,7 +199,8 @@ export class BurikoAudioMusicResources {
     const member = this.wide(name());
     const attempt = async (root: Uint8Array): Promise<number> => {
       const combined = this.resources.loosePath(root, archive());
-      const physical = await this.resources.archives.entryPath(combined, name());
+      name();
+      const physical = await this.resources.archives.entryPath(combined, name);
       if (physical === null) return 12;
       const path = this.wide(physical);
       return this.engine(actor, () =>
@@ -264,7 +265,8 @@ export class BurikoAudioMusicResources {
     const memberB = this.wide(second());
     const attempt = async (root: Uint8Array): Promise<number> => {
       const combined = this.resources.loosePath(root, archive());
-      const physical = await this.resources.archives.entryPath(combined, first());
+      first();
+      const physical = await this.resources.archives.entryPath(combined, first);
       if (physical === null) return 12;
       const path = this.wide(physical);
       return this.engine(actor, () =>

@@ -37,6 +37,8 @@ export class BurikoBpThread {
   readonly id: number;
   /** Operand stack cells, one 32-bit word each. */
   stackRegion: BurikoBpRegion;
+  /** `stackRegion.view32()`, kept current across arena growth; see `BurikoBpRegion.view`. */
+  operandStack: Uint32Array;
   stackIndex = 0;
   /** Bank 1: code and module data. */
   moduleRegion: BurikoBpRegion;
@@ -81,16 +83,15 @@ export class BurikoBpThread {
     this.frameUsableCapacity = options.frameCapacity;
     this.regions = options.regions ?? new BurikoBpRegionTable();
     this.stackRegion = this.regions.allocate(options.operandCapacity * 4);
+    this.operandStack = this.stackRegion.view32();
+    this.stackRegion.onRebase = () => {
+      this.operandStack = this.stackRegion.view32();
+    };
     this.moduleRegion = this.regions.allocate(options.moduleCapacity);
     this.frameRegion = this.regions.allocate(options.frameCapacity);
     this.allocatedHeap = options.heapEnabled === false ? null : new BurikoBpHeap(this.regions);
     const mode = (options.mode ?? 0) >>> 0;
     this.mode = mode < 2 ? mode : 0;
-  }
-
-  /** Operand stack cells; see `BurikoBpRegion.view` for validity. */
-  get operandStack(): Uint32Array {
-    return this.stackRegion.view32();
   }
 
   /** Bank 1 bytes; see `BurikoBpRegion.view` for validity. */
@@ -131,6 +132,7 @@ export class BurikoBpThread {
   disposeStorage(): void {
     this.regions.release(this.stackRegion);
     this.stackRegion = emptyRegion();
+    this.operandStack = this.stackRegion.view32();
     this.releaseBanks();
     this.moduleRegion = emptyRegion();
     this.frameRegion = emptyRegion();
@@ -213,12 +215,13 @@ export class BurikoBpSharedThread extends BurikoBpThread {
 }
 
 export function push32(thread: BurikoBpThread, value: number): void {
-  if (thread.stackIndex >= thread.operandStack.length)
+  const cells = thread.operandStack;
+  if (thread.stackIndex >= cells.length)
     throw new RangeError('Buriko operand stack access outside storage');
-  thread.operandStack[thread.stackIndex] = value >>> 0;
+  cells[thread.stackIndex] = value >>> 0;
   indeterminateOperands.get(thread)?.delete(thread.stackIndex);
   const next = (thread.stackIndex + 1) >>> 0;
-  thread.stackIndex = next >= thread.operandStack.length ? 0 : next;
+  thread.stackIndex = next >= cells.length ? 0 : next;
 }
 
 /** Moving an unwritten native output is allowed; observing its value is not. */
@@ -231,9 +234,9 @@ export function pushIndeterminate32(thread: BurikoBpThread, reason: string): voi
 }
 
 export function popDeferred32(thread: BurikoBpThread): {value: number; reason?: string} {
-  thread.stackIndex =
-    (thread.stackIndex === 0 ? thread.operandStack.length - 1 : thread.stackIndex - 1) >>> 0;
-  const value = thread.operandStack[thread.stackIndex];
+  const cells = thread.operandStack;
+  thread.stackIndex = (thread.stackIndex === 0 ? cells.length - 1 : thread.stackIndex - 1) >>> 0;
+  const value = cells[thread.stackIndex];
   if (value === undefined) throw new RangeError('Buriko operand stack access outside storage');
   return {value, reason: indeterminateOperands.get(thread)?.get(thread.stackIndex)};
 }

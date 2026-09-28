@@ -6,7 +6,10 @@ import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 test('mounted 7F callbacks share BP indirect memory and sort complete records', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, data, memory, child, definitions, invoke} = fixture;
-  const bp = new DataView(memory.globalMemory.buffer);
+  const bp = () => {
+    const bytes = memory.globalMemory;
+    return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  };
   const call = async (secondary, args) => {
     assert.equal(await invoke(0x7f, secondary, args, 0), 1);
     assert.equal(child.process, null);
@@ -24,7 +27,7 @@ test('mounted 7F callbacks share BP indirect memory and sort complete records', 
     );
 
     assert.equal(await call(0x80, [0x100, 4]), 0);
-    const buffer = bp.getUint32(0x100, true);
+    const buffer = bp().getUint32(0x100, true);
     assert.ok(buffer >= 0x0fff0000 && buffer < 0x0fff1000);
     assert.equal(await call(0x83, [buffer]), 4);
     memory.globalMemory.set([1, 2, 3, 4, 9, 8], 0x300);
@@ -50,7 +53,7 @@ test('mounted 7F callbacks share BP indirect memory and sort complete records', 
     memory.globalMemory.set(new TextEncoder().encode('hi\0'), 0x600);
     memory.globalMemory.set(new TextEncoder().encode('A%d:%sZ\0'), 0x640);
     assert.equal(await call(0x88, [0x120, 0x600]), 0);
-    const string = bp.getUint32(0x120, true);
+    const string = bp().getUint32(0x120, true);
     assert.ok(string >= 0x0fff1000 && string < 0x0fff2000);
     const value = () => new TextDecoder().decode(memory.readCString(child.state, string));
     assert.equal(value(), 'hi');
@@ -61,14 +64,14 @@ test('mounted 7F callbacks share BP indirect memory and sort complete records', 
     assert.equal(await call(0x89, [string]), 0);
 
     for (const [index, key] of [3, -4, 2, -1].entries()) {
-      bp.setInt32(0x700 + index * 8, key, true);
-      bp.setUint32(0x704 + index * 8, index, true);
+      bp().setInt32(0x700 + index * 8, key, true);
+      bp().setUint32(0x704 + index * 8, index, true);
     }
     assert.equal(await call(0x00, [0x700, 4, 8, 0, 4]), 0);
     assert.deepEqual(
       Array.from({length: 4}, (_, index) => [
-        bp.getInt32(0x700 + index * 8, true),
-        bp.getUint32(0x704 + index * 8, true),
+        bp().getInt32(0x700 + index * 8, true),
+        bp().getUint32(0x704 + index * 8, true),
       ]),
       [
         [-4, 1],

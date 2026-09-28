@@ -1,7 +1,7 @@
 import {pop32, push32} from '../bp/state.js';
 import type {BurikoProgramResources} from './program-resources.js';
 import type {BurikoNativeSlotDefinition} from './types.js';
-import {textBytes} from './text.js';
+import {scanText, textBytes} from './text.js';
 import {loadBwefPairs} from './bwef.js';
 
 export function createGroupC0Bwef(resources: BurikoProgramResources): BurikoNativeSlotDefinition[] {
@@ -25,7 +25,7 @@ export function createGroupC0Bwef(resources: BurikoProgramResources): BurikoNati
             output,
             count,
             archive === null ? null : () => textBytes(archive),
-            textBytes(name),
+            scanText(name),
             addition,
           ),
         );

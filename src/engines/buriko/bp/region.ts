@@ -18,8 +18,8 @@ type TransferableBuffer = ArrayBuffer & {transfer?: (length: number) => ArrayBuf
 /**
  * One growable `ArrayBuffer` holding every live region of a region table. Regions are placed
  * first fit at 16-byte aligned offsets. Growth reallocates the buffer, detaching the previous
- * one where the platform supports it, and advances `generation`; region views re-derive
- * themselves on their next use.
+ * one where the platform supports it, and advances `generation`; the owning table then
+ * re-derives every live region's views.
  */
 export class BurikoBpArena {
   buffer: ArrayBuffer;
@@ -130,12 +130,12 @@ function roundUp(size: number): number {
 export class BurikoBpRegion {
   private bytes: Uint8Array;
   private words: Uint32Array | null = null;
-  private wordsSource: Uint8Array | null = null;
-  private arena: BurikoBpArena | null = null;
+  private inArena = false;
   private base = 0;
   private readonly length: number;
-  private generation = 0;
   private isRetired = false;
+  /** Called after `rebase`, for an owner that caches this region's views in its own fields. */
+  onRebase: (() => void) | null = null;
 
   /** A host region over `bytes`. */
   constructor(bytes: Uint8Array) {
@@ -146,9 +146,8 @@ export class BurikoBpRegion {
   /** @internal A region at `base` in `arena`; created by `BurikoBpRegionTable`. */
   static inArena(arena: BurikoBpArena, base: number, size: number): BurikoBpRegion {
     const region = new BurikoBpRegion(new Uint8Array(arena.buffer, base, size));
-    region.arena = arena;
+    region.inArena = true;
     region.base = base;
-    region.generation = arena.generation;
     return region;
   }
 
@@ -157,22 +156,14 @@ export class BurikoBpRegion {
    * handler returns or allocates VM storage; state kept across calls or awaits holds the region.
    */
   view(): Uint8Array {
-    const arena = this.arena;
-    if (arena !== null && this.generation !== arena.generation) {
-      this.bytes = new Uint8Array(arena.buffer, this.base, this.length);
-      this.generation = arena.generation;
-    }
     return this.bytes;
   }
 
   /** The region as little-endian 32-bit cells; same validity as `view`. */
   view32(): Uint32Array {
-    const bytes = this.view();
-    if (this.wordsSource !== bytes) {
-      this.words = new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >>> 2);
-      this.wordsSource = bytes;
-    }
-    return this.words!;
+    if (this.words === null)
+      this.words = new Uint32Array(this.bytes.buffer, this.bytes.byteOffset, this.length >>> 2);
+    return this.words;
   }
 
   get size(): number {
@@ -181,7 +172,7 @@ export class BurikoBpRegion {
 
   /** Arena offset of the first byte, or -1 for host and retired regions. */
   get arenaOffset(): number {
-    return this.arena === null ? -1 : this.base;
+    return this.inArena ? this.base : -1;
   }
 
   /** True once the owning bank has relocated or freed this allocation. */
@@ -189,17 +180,23 @@ export class BurikoBpRegion {
     return this.isRetired;
   }
 
+  /** @internal Re-derives the views after the arena reallocated its buffer. */
+  rebase(buffer: ArrayBuffer): void {
+    this.bytes = new Uint8Array(buffer, this.base, this.length);
+    if (this.words !== null) this.words = new Uint32Array(buffer, this.base, this.length >>> 2);
+    this.onRebase?.();
+  }
+
   /** @internal Moves the bytes out of the arena and returns the range to release. */
   retire(): {base: number; size: number} | null {
     this.isRetired = true;
-    const arena = this.arena;
-    if (arena === null) return null;
-    const current = this.view(),
-      copy = new Uint8Array(current.length);
-    copyMemoryBytes(copy, 0, current, 0, current.length);
+    if (!this.inArena) return null;
+    const copy = new Uint8Array(this.length);
+    copyMemoryBytes(copy, 0, this.bytes, 0, this.length);
     this.bytes = copy;
-    this.arena = null;
-    return {base: this.base, size: copy.length};
+    if (this.words !== null) this.words = new Uint32Array(copy.buffer, 0, this.length >>> 2);
+    this.inArena = false;
+    return {base: this.base, size: this.length};
   }
 }
 
@@ -238,9 +235,13 @@ export class BurikoBpRegionTable {
     this.arena = new BurikoBpArena(initialBytes);
   }
 
-  /** A zero-filled region. */
+  /** A zero-filled region. Growth re-derives every live region's views before returning. */
   allocate(size: number): BurikoBpRegion {
-    const region = BurikoBpRegion.inArena(this.arena, this.arena.allocate(size), size);
+    const generation = this.arena.generation;
+    const base = this.arena.allocate(size);
+    if (this.arena.generation !== generation)
+      for (const region of this.live) region.rebase(this.arena.buffer);
+    const region = BurikoBpRegion.inArena(this.arena, base, size);
     this.live.add(region);
     return region;
   }

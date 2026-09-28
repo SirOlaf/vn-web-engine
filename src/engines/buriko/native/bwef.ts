@@ -1,6 +1,7 @@
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {gridOutput} from './logical-grid-path.js';
 import type {BurikoProgramResources, BurikoArchiveName} from './program-resources.js';
+import type {BurikoNativeString} from './text.js';
 
 /** 140038960, the BWEF pair table: a 0x120-byte header and one DWORD per output pair. */
 export function decodeBwefPairs(
@@ -31,7 +32,7 @@ export async function loadBwefPairs(
   output: BurikoBpPointer | null,
   count: BurikoBpPointer | null,
   archive: BurikoArchiveName | null,
-  name: Uint8Array,
+  name: BurikoNativeString,
   addition: number,
 ): Promise<number> {
   if ((await resources.size(archive, name)) === 0) return 0x80000001;

@@ -1,6 +1,11 @@
 import {requireBurikoResourceRange as checkRange} from './bf-entropy.js';
 import {BurikoUndefinedResourceRead, BurikoResourceCodecException} from './resource-memory.js';
-import {randomByteGenerator, signature} from '../../../formats/buriko/binary.js';
+import {
+  borrowedBytes,
+  randomByteGenerator,
+  signature,
+  type BurikoBorrowedBytes,
+} from '../../../formats/buriko/binary.js';
 import {type BurikoBfSurface, decodeBurikoBfFrameAsync} from './bf-frame.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
 import {HostTaskBudget} from '../../../core/host-task-budget.js';
@@ -14,13 +19,15 @@ export interface BurikoDecodedImageResource {
 
 /** 0x140109bd0's image wrapper around the existing native BF_Movie codec. */
 export async function decodeBurikoCompressedBgV2(
-  input: Uint8Array,
+  stored: Uint8Array | BurikoBorrowedBytes,
   processing: BurikoDistributedProcessing,
   destination?: BurikoBfSurface,
   actor = processing.allocator.currentActor,
   beforeResume?: () => void,
 ): Promise<BurikoDecodedImageResource> {
   beforeResume?.();
+  const source = borrowedBytes(stored),
+    input = source.bytes;
   checkRange(input.length, 0, 48);
   const data = new DataView(input.buffer, input.byteOffset, input.byteLength);
   if (!signature(input, 'CompressedBG___\0') || data.getUint16(46, true) !== 2) {
@@ -56,7 +63,9 @@ export async function decodeBurikoCompressedBgV2(
     );
   const reportedChannels = depth === 24 ? 4 : copiedChannels;
   const extent = 16 + width * height * reportedChannels;
-  const result = destination?.bytes.subarray(0, extent) ?? new Uint8Array(extent);
+  const owned = destination === undefined ? new Uint8Array(extent) : null;
+  const output = (): Uint8Array => owned ?? destination!.bytes.subarray(0, extent);
+  let result = output();
   const initialized = destination?.initialized.subarray(0, extent) ?? new Uint8Array(extent);
   checkRange(result.length, 0, extent);
   checkRange(initialized.length, 0, extent);
@@ -64,7 +73,11 @@ export async function decodeBurikoCompressedBgV2(
   result.set(input.subarray(16, 32));
   initialized.fill(1, 0, 16);
   checkRange(table.length, 0, 128);
-  const frame = input.subarray(48 + tableLength);
+  const frame = {
+    get bytes() {
+      return source.bytes.subarray(48 + tableLength);
+    },
+  };
   if (width === paddedWidth && height === paddedHeight && depth === 32) {
     await decodeBurikoBfFrameAsync(
       frame,
@@ -74,7 +87,9 @@ export async function decodeBurikoCompressedBgV2(
       table.subarray(0, 128),
       processing,
       {
-        bytes: result.subarray(16),
+        get bytes() {
+          return output().subarray(16);
+        },
         initialized: initialized.subarray(16),
       },
       undefined,
@@ -82,7 +97,7 @@ export async function decodeBurikoCompressedBgV2(
       beforeResume,
     );
     beforeResume?.();
-    return {bytes: result, initializedLength: extent, initialized};
+    return {bytes: output(), initializedLength: extent, initialized};
   }
   const decodedPixels = await decodeBurikoBfFrameAsync(
     frame,
@@ -97,6 +112,7 @@ export async function decodeBurikoCompressedBgV2(
     beforeResume,
   );
   beforeResume?.();
+  result = output();
   let written = 16,
     copiedPixelCount = 0;
   const budget = new HostTaskBudget();
@@ -111,6 +127,7 @@ export async function decodeBurikoCompressedBgV2(
       if (pending !== undefined) {
         await pending;
         beforeResume?.();
+        result = output();
       }
       continue;
     }
@@ -126,6 +143,7 @@ export async function decodeBurikoCompressedBgV2(
         if (pending !== undefined) {
           await pending;
           beforeResume?.();
+          result = output();
         }
       }
     }

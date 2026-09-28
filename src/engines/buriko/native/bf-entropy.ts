@@ -31,7 +31,7 @@ export function burikoBfVarint(bytes: Uint8Array, cursor: {position: number}): n
 export class BurikoBfBits {
   position = 0;
   constructor(
-    readonly bytes: Uint8Array,
+    public bytes: Uint8Array,
     private readonly initialized?: Uint8Array,
   ) {}
   read(count: number): number {

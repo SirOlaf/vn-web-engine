@@ -8,7 +8,7 @@ import type {
 import {BurikoFontResources} from './font-resources.js';
 import type {BurikoNativeFonts} from './fonts.js';
 import {BurikoNativeLanguage} from './group-81-language.js';
-import {copyText, textBytes} from './text.js';
+import {copyText, scanText, textBytes, textReader} from './text.js';
 import {writePropertyWord} from './property-values.js';
 
 function pointer(h: BurikoBpOpcodeContext): BurikoBpPointer | null {
@@ -86,7 +86,7 @@ export function createGroupB0Fonts(
   add(0xc2, 0x1400d4130, 'LoadFontFile', async (h): Promise<0> => {
     push32(
       h.thread,
-      Number((await resources.load(null, textBytes(required(pointer(h))), h.actor)) === 0),
+      Number((await resources.load(null, scanText(required(pointer(h))), h.actor)) === 0),
     );
     return 0;
   });
@@ -94,15 +94,12 @@ export function createGroupB0Fonts(
     const name = pointer(h),
       archive = pointer(h);
     // The lower routine decodes and keys the filename before consulting the archive.
-    const filename = textBytes(required(name));
+    const filename = scanText(required(name));
     push32(
       h.thread,
       Number(
-        (await resources.load(
-          archive === null ? null : () => textBytes(archive),
-          filename,
-          h.actor,
-        )) === 0,
+        (await resources.load(archive === null ? null : textReader(archive), filename, h.actor)) ===
+          0,
       ),
     );
     return 0;

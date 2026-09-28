@@ -1,8 +1,16 @@
 import {checkRange} from '../../core/binary.js';
 import {finishTask, runCooperativeTask, type CooperativeTask} from '../../core/cooperative-task.js';
-import {randomByteGenerator, signature, unsignedVarint, view} from './binary.js';
+import {
+  borrowedBytes,
+  randomByteGenerator,
+  signature,
+  unsignedVarint,
+  view,
+  type BurikoBorrowedBytes,
+} from './binary.js';
 import {beginRuntimeSpan} from '../../platform/runtime-performance.js';
 export interface BurikoImageDestination {
+  /** Read afresh after every yield. */
   readonly bytes: Uint8Array;
   readonly initialized: Uint8Array;
 }
@@ -54,7 +62,7 @@ export function decodeCompressedBgLegacy(
 
 /** The same legacy worker, with bounded steps and borrowed-storage validation on resumption. */
 export function decodeCompressedBgLegacyAsync(
-  bytes: Uint8Array,
+  bytes: Uint8Array | BurikoBorrowedBytes,
   destination?: BurikoImageDestination,
   beforeResume?: () => void,
   accelerator?: CompressedBgLegacyAccelerator,
@@ -64,6 +72,7 @@ export function decodeCompressedBgLegacyAsync(
 
 /** Validated legacy stream state after checksum, header publication, and tree construction. */
 export interface CompressedBgLegacyPlan {
+  /** The source, and its bitstream below, are resolved at each read; read them after every yield. */
   readonly bytes: Uint8Array;
   readonly width: number;
   readonly height: number;
@@ -89,7 +98,8 @@ export type CompressedBgLegacyAccelerator = (
   plan: CompressedBgLegacyPlan,
 ) => CooperativeTask<{header: Uint8Array; pixels: Uint8Array} | null>;
 
-/** The header view the predictor stage publishes and, for 24-bit images, rewrites. */
+/** The header the predictor stage publishes and, for 24-bit images, rewrites. A destination
+ * header is resolved again when the image is published. */
 export function legacyImageHeader(plan: CompressedBgLegacyPlan): Uint8Array {
   return plan.destination === undefined
     ? plan.bytes.slice(16, 32)
@@ -106,11 +116,13 @@ function addPixelBytes(first: number, second: number): number {
 }
 
 function* decodeLegacy(
-  bytes: Uint8Array,
+  input: Uint8Array | BurikoBorrowedBytes,
   strictVersionOne: boolean,
   destination?: BurikoImageDestination,
   accelerator?: CompressedBgLegacyAccelerator,
 ): CooperativeTask<BurikoImage> {
+  const source = borrowedBytes(input);
+  let bytes = source.bytes;
   checkRange(bytes.length, 0, 48);
   if (
     !signature(bytes, 'CompressedBG___\0') ||
@@ -141,6 +153,7 @@ function* decodeLegacy(
     xor ^= value;
     if ((i & 16383) === 16383) yield;
   }
+  bytes = source.bytes;
   if (sum !== bytes[44] || xor !== bytes[45])
     throw new Error('CompressedBG table checksum mismatch');
   // BFA50 publishes the header after checksum, before frequency/entropy work.
@@ -155,10 +168,11 @@ function* decodeLegacy(
     weights = Array.from({length: 256}, () => unsignedVarint(table, cursor));
   if (strictVersionOne && cursor.position !== table.length)
     throw new Error('Trailing CompressedBG table data');
-  const tree = frequencyTree(weights),
-    bitBytes = bytes.subarray(48 + tableSize);
+  const tree = frequencyTree(weights);
   const plan: CompressedBgLegacyPlan = {
-    bytes,
+    get bytes() {
+      return source.bytes;
+    },
     width,
     height,
     depth,
@@ -167,7 +181,9 @@ function* decodeLegacy(
     outputChannels,
     intermediateSize,
     tree,
-    bitBytes,
+    get bitBytes() {
+      return source.bytes.subarray(48 + tableSize);
+    },
     destination,
   };
   const accelerated = accelerator === undefined ? null : yield* accelerator(plan);
@@ -178,7 +194,7 @@ function* decodeLegacy(
 /** Reference entropy, run, and predictor stages. */
 function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<BurikoImage> {
   const {width, height, depth, channels, size, outputChannels} = plan,
-    {intermediateSize, tree, bitBytes, destination} = plan,
+    {intermediateSize, tree, destination} = plan,
     cursor = {position: 0},
     intermediate = new Uint8Array(intermediateSize);
   let finishPhase = beginRuntimeSpan('buriko.decode.cbg.entropy');
@@ -224,7 +240,8 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
     yield;
     let bitPosition = 0;
     for (let i = 0; i < intermediate.length;) {
-      const end = Math.min(intermediate.length, i + 16384);
+      const end = Math.min(intermediate.length, i + 16384),
+        bitBytes = plan.bitBytes;
       for (; i < end;) {
         let node: number;
         const remaining = bitBytes.length * 8 - bitPosition;
@@ -264,7 +281,11 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
       }
       yield;
     }
-    finishPhase?.({sourceBytes: bitBytes.length, intermediateBytes: intermediateSize, prefixBits});
+    finishPhase?.({
+      sourceBytes: plan.bitBytes.length,
+      intermediateBytes: intermediateSize,
+      prefixBits,
+    });
     finishPhase = beginRuntimeSpan('buriko.decode.cbg.runs');
     const residuals = new Uint8Array(size);
     cursor.position = 0;
@@ -298,12 +319,15 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
     finishPhase?.({intermediateBytes: intermediateSize, residualBytes: size});
     finishPhase = beginRuntimeSpan('buriko.decode.cbg.predictor');
     const header = legacyImageHeader(plan);
-    const pixels =
+    const owned =
       destination !== undefined
-        ? destination.bytes.subarray(16, 16 + width * height * outputChannels)
+        ? null
         : depth === 24
           ? new Uint8Array(width * height * 4)
           : residuals;
+    const output = (): Uint8Array =>
+      owned ?? destination!.bytes.subarray(16, 16 + width * height * outputChannels);
+    let pixels = output();
     if (width !== 0 && height !== 0) {
       if (depth === 24) {
         // Reconstruct directly into expanded BGR0 pixels. Creating a subarray (or
@@ -313,6 +337,7 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
         for (let y = 0; y < height; y++) {
           const row = y * stride,
             end = row + stride;
+          pixels = output();
           if (y === 0) {
             pixels[row] = residuals[source++]!;
             pixels[row + 1] = residuals[source++]!;
@@ -349,11 +374,16 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
       } else if (depth === 32 && (pixels.byteOffset & 3) === 0) {
         // Lanes have independent left/up dependencies. Word access is exact for aligned
         // RGBA, including in-place residuals and masks which overlap earlier pixel rows.
-        const words = new Uint32Array(pixels.buffer, pixels.byteOffset, size / 4),
-          input = new Uint32Array(residuals.buffer, residuals.byteOffset, size / 4);
+        const input = new Uint32Array(residuals.buffer, residuals.byteOffset, size / 4);
+        const outputWords = (): Uint32Array => {
+          pixels = output();
+          return new Uint32Array(pixels.buffer, pixels.byteOffset, size / 4);
+        };
+        let words = outputWords();
         for (let y = 0; y < height; y++) {
           const row = y * width,
             end = row + width;
+          if (y !== 0) words = outputWords();
           let left = y === 0 ? input[row]! : addPixelBytes(input[row]!, words[row - width]!);
           words[row] = left;
           for (let i = row + 1; i < end;) {
@@ -373,6 +403,7 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
             }
             if (i < end) {
               yield;
+              words = outputWords();
               left = words[i - 1]!;
             }
           }
@@ -391,6 +422,7 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
           const row = y * stride,
             firstPixelEnd = row + channels,
             end = row + stride;
+          pixels = output();
           for (let i = row; i < firstPixelEnd; i++) pixels[i] = residuals[i]! + pixels[i - stride]!;
           for (let i = firstPixelEnd; i < end; i++)
             pixels[i] = residuals[i]! + ((pixels[i - stride]! + pixels[i - channels]!) >>> 1);
@@ -399,6 +431,7 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
         }
       }
     }
+    pixels = output();
     finishPhase?.({width, height, depth, outputBytes: pixels.length});
     finishPhase = undefined;
     return legacyImage(plan, header, pixels);
@@ -409,9 +442,10 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
 
 function legacyImage(
   plan: CompressedBgLegacyPlan,
-  header: Uint8Array,
+  selected: Uint8Array,
   pixels: Uint8Array,
 ): BurikoImage {
+  const header = plan.destination === undefined ? selected : plan.destination.bytes.subarray(0, 16);
   if (plan.depth === 24) {
     view(header).setUint16(4, 32, true);
     view(header).setUint16(8, 7, true);

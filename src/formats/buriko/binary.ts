@@ -2,6 +2,13 @@ import {checkRange} from '../../core/binary.js';
 export function view(bytes: Uint8Array): DataView {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
+/** Bytes read through `bytes` at each use, so borrowed caller storage is resolved after every wait. */
+export interface BurikoBorrowedBytes {
+  readonly bytes: Uint8Array;
+}
+export function borrowedBytes(value: Uint8Array | BurikoBorrowedBytes): BurikoBorrowedBytes {
+  return value instanceof Uint8Array ? {bytes: value} : value;
+}
 export function signature(bytes: Uint8Array, value: string, offset = 0): boolean {
   return (
     offset + value.length <= bytes.length &&
