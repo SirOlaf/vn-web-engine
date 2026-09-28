@@ -27,7 +27,9 @@ export function runtimeModules({allowSourceMaps = false} = {}) {
           : new URL(config.base, 'http://vite.local').pathname;
     },
     async transform(code, id) {
-      if (!(id.startsWith(sourceRoot) || id.startsWith(uiRoot)) || !/\.[cm]?[jt]s$/.test(id))
+      // Module ids use forward slashes on every platform; compare native paths.
+      const file = path.normalize(id);
+      if (!(file.startsWith(sourceRoot) || file.startsWith(uiRoot)) || !/\.[cm]?[jt]s$/.test(file))
         return;
       const references = [
         ...code.matchAll(
@@ -39,7 +41,7 @@ export function runtimeModules({allowSourceMaps = false} = {}) {
       for (const reference of references.reverse()) {
         const specifier = reference[2];
         // The decoder is built separately from its pinned npm dependency.
-        const candidate = path.resolve(path.dirname(id), specifier);
+        const candidate = path.resolve(path.dirname(file), specifier);
         const resolved = candidate.startsWith(path.join(sourceRoot, 'vendor') + path.sep)
           ? {id: path.join(root, 'dist', path.relative(sourceRoot, candidate))}
           : await this.resolve(specifier, id);
