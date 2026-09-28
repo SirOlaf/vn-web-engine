@@ -27,8 +27,8 @@ behavior by a game's display name.
 Native address comments refer to the Fairytale Requiem executable with SHA-256
 `7c5392abef0810ec2ce3ec8c6318a566fce854281bbd52c7c032a8d7477ecd66` (RScript
 1.11.0.3). They document recovered behavior, not address compatibility with other
-builds. Fairytale Symphony's executable has identical code and differs only in its
-`APINI` block and resources.
+builds. The Fairytale Symphony and Fairytale Encore executables have identical code
+and differ only in their `APINI` blocks and resources.
 
 `npm run verify:rscript -- "/path/to/game"` decodes every archive entry it
 recognizes and reports counts and failures without writing assets.
