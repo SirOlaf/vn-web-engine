@@ -1,9 +1,6 @@
 import {decodeBurikoDsc} from './dsc-wasm.js';
-import {
-  decodeCompressedBgLegacyAsync,
-  packedImage,
-  type BurikoImage,
-} from '../../../formats/buriko/compressed-bg.js';
+import {packedImage, type BurikoImage} from '../../../formats/buriko/compressed-bg.js';
+import {decodeBurikoCompressedBgLegacyAsync} from './compressed-bg-wasm.js';
 import {signature} from '../../../formats/buriko/binary.js';
 import {decodeBurikoCompressedBgV2} from './compressed-bg-v2.js';
 import {BurikoUndefinedResourceRead, BurikoResourceCodecException} from './resource-memory.js';
@@ -187,7 +184,7 @@ export async function decodeBurikoResource(
         const finishDecode = beginRuntimeSpan('buriko.decode.cbg-legacy');
         let image: BurikoImage;
         try {
-          image = await decodeCompressedBgLegacyAsync(stored, caller, beforeResume);
+          image = await decodeBurikoCompressedBgLegacyAsync(stored, caller, beforeResume);
           beforeResume?.();
         } finally {
           finishDecode?.({inputBytes: stored.length});

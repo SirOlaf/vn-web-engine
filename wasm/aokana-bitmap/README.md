@@ -78,6 +78,30 @@ end of the stream use a scalar tree walk. Literals and repeats store 16-byte
 chunks; repeats shorter than 16 bytes use shuffle tables. The host supplies
 eight zero padding bytes after the input and 16 bytes of output slack.
 
+The `cbg_*` exports (`src/cbg.rs`) implement the entropy, run, and predictor
+stages of legacy CompressedBG (0x1400bfa50) for
+`src/engines/buriko/native/compressed-bg-wasm.ts`. The TypeScript decoder
+retains the header, checksum, header publication, and frequency tree, and remains
+the reference. `cbg_tables` builds a length table, a four-symbol table, and a
+first-node table from the tree. Only the length byte lies on the decoder's
+dependency chain. `cbg_entropy` reads a 64-bit bit buffer and uses a scalar tree
+walk for codes longer than the prefix. `cbg_runs` expands the alternating
+literal and zero runs, and `cbg_predict` reconstructs whole rows. The 24- and
+32-bit predictors add sixteen-bit lanes of one 64-bit word. Every stage resumes
+from state passed by the host, so a decode yields between bounded steps. Any
+entropy or run failure returns a negative status. The host then reruns the
+TypeScript stages to raise the reference error. Both stages write only instance
+memory, so no destination pixel has been written at that point.
+
+A decode can yield to the host while its intermediate data is live, and other
+kernels use the shared instance's scratch memory during those yields. Each CBG
+decode therefore leases a private instance of this module, and one idle instance
+of at most 32 MiB is kept. Every entropy step stages the 128 KiB bitstream window
+it reads. Each predictor step restages the destination row above its first row.
+Rows publish their pixels, then their initialization. When pixel and
+initialization views overlap, each row restages its upper row after the previous
+row's initialization.
+
 Rebuild with `npm run build:wasm`. This performs locked, offline Cargo builds of
 both graphics crates and embeds their generated binaries. Normal `npm run build`
 requires neither Rust nor separately served Wasm assets. The current artifact uses

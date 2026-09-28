@@ -57,8 +57,43 @@ export function decodeCompressedBgLegacyAsync(
   bytes: Uint8Array,
   destination?: BurikoImageDestination,
   beforeResume?: () => void,
+  accelerator?: CompressedBgLegacyAccelerator,
 ): Promise<BurikoImage> {
-  return runCooperativeTask(decodeLegacy(bytes, false, destination), beforeResume);
+  return runCooperativeTask(decodeLegacy(bytes, false, destination, accelerator), beforeResume);
+}
+
+/** Validated legacy stream state after checksum, header publication, and tree construction. */
+export interface CompressedBgLegacyPlan {
+  readonly bytes: Uint8Array;
+  readonly width: number;
+  readonly height: number;
+  readonly depth: number;
+  readonly channels: number;
+  /** Residual bytes, width * height * channels. */
+  readonly size: number;
+  /** Bytes per output pixel: four for expanded 24-bit images. */
+  readonly outputChannels: number;
+  readonly intermediateSize: number;
+  readonly tree: {readonly root: number; readonly children: readonly (readonly number[])[]};
+  readonly bitBytes: Uint8Array;
+  readonly destination: BurikoImageDestination | undefined;
+}
+
+/**
+ * An alternative implementation of the entropy, run, and predictor stages. It returns null,
+ * before writing any destination pixel, to select the reference stages, which then raise any
+ * native error. Otherwise it returns the pixels and the header view selected by
+ * `legacyImageHeader` immediately before the predictor, after publishing every row.
+ */
+export type CompressedBgLegacyAccelerator = (
+  plan: CompressedBgLegacyPlan,
+) => CooperativeTask<{header: Uint8Array; pixels: Uint8Array} | null>;
+
+/** The header view the predictor stage publishes and, for 24-bit images, rewrites. */
+export function legacyImageHeader(plan: CompressedBgLegacyPlan): Uint8Array {
+  return plan.destination === undefined
+    ? plan.bytes.slice(16, 32)
+    : plan.destination.bytes.subarray(0, 16);
 }
 
 /** Add four byte lanes independently, retaining each native byte store's wraparound. */
@@ -74,6 +109,7 @@ function* decodeLegacy(
   bytes: Uint8Array,
   strictVersionOne: boolean,
   destination?: BurikoImageDestination,
+  accelerator?: CompressedBgLegacyAccelerator,
 ): CooperativeTask<BurikoImage> {
   checkRange(bytes.length, 0, 48);
   if (
@@ -120,7 +156,30 @@ function* decodeLegacy(
   if (strictVersionOne && cursor.position !== table.length)
     throw new Error('Trailing CompressedBG table data');
   const tree = frequencyTree(weights),
-    bitBytes = bytes.subarray(48 + tableSize),
+    bitBytes = bytes.subarray(48 + tableSize);
+  const plan: CompressedBgLegacyPlan = {
+    bytes,
+    width,
+    height,
+    depth,
+    channels,
+    size,
+    outputChannels,
+    intermediateSize,
+    tree,
+    bitBytes,
+    destination,
+  };
+  const accelerated = accelerator === undefined ? null : yield* accelerator(plan);
+  if (accelerated !== null) return legacyImage(plan, accelerated.header, accelerated.pixels);
+  return yield* decodeLegacyStages(plan);
+}
+
+/** Reference entropy, run, and predictor stages. */
+function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<BurikoImage> {
+  const {width, height, depth, channels, size, outputChannels} = plan,
+    {intermediateSize, tree, bitBytes, destination} = plan,
+    cursor = {position: 0},
     intermediate = new Uint8Array(intermediateSize);
   let finishPhase = beginRuntimeSpan('buriko.decode.cbg.entropy');
   try {
@@ -238,8 +297,7 @@ function* decodeLegacy(
     if (p !== size) throw new Error('CompressedBG residual size mismatch');
     finishPhase?.({intermediateBytes: intermediateSize, residualBytes: size});
     finishPhase = beginRuntimeSpan('buriko.decode.cbg.predictor');
-    const header =
-      destination === undefined ? bytes.slice(16, 32) : destination.bytes.subarray(0, 16);
+    const header = legacyImageHeader(plan);
     const pixels =
       destination !== undefined
         ? destination.bytes.subarray(16, 16 + width * height * outputChannels)
@@ -341,23 +399,31 @@ function* decodeLegacy(
         }
       }
     }
-    if (depth === 24) {
-      view(header).setUint16(4, 32, true);
-      view(header).setUint16(8, 7, true);
-    }
     finishPhase?.({width, height, depth, outputBytes: pixels.length});
     finishPhase = undefined;
-    return {
-      width,
-      height,
-      bitDepth: view(header).getUint16(4, true),
-      flags: view(header).getUint16(8, true),
-      header,
-      pixels,
-    };
+    return legacyImage(plan, header, pixels);
   } finally {
     finishPhase?.();
   }
+}
+
+function legacyImage(
+  plan: CompressedBgLegacyPlan,
+  header: Uint8Array,
+  pixels: Uint8Array,
+): BurikoImage {
+  if (plan.depth === 24) {
+    view(header).setUint16(4, 32, true);
+    view(header).setUint16(8, 7, true);
+  }
+  return {
+    width: plan.width,
+    height: plan.height,
+    bitDepth: view(header).getUint16(4, true),
+    flags: view(header).getUint16(8, true),
+    header,
+    pixels,
+  };
 }
 /** Raw BURIKO image buffers have a 16-byte header followed by packed pixels. */
 export function readBurikoImage(bytes: Uint8Array): BurikoImage {
