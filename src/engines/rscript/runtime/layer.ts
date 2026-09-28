@@ -3,7 +3,7 @@ import {LayerRecord, Scene, type RScriptMemory} from '../memory.js';
 import type {RScriptImages} from '../images.js';
 import {colorrefPixel, createSurface, type RScriptSurface} from '../graphics/pixels.js';
 import {RScriptContainer, RScriptSprite, type RScriptPoint} from '../graphics/sprite.js';
-import {FramePlayer, type FrameAnimation} from './animation.js';
+import {FramePlayer, type AnimationFrame, type FrameAnimation} from './animation.js';
 
 export interface LayerEnvironment {
   readonly memory: RScriptMemory;
@@ -38,6 +38,46 @@ const enum LayerKind {
 }
 
 /**
+ * Hover image slot 2 (0x44E0E0): every layer of a layered image as a frame at its own
+ * placement. Hovering plays the frames once and holds the last (0x40B070, sub_44F0B0);
+ * stopping returns to the first (sub_44F160).
+ */
+class OverlayFrames extends RScriptSprite {
+  private frames: readonly AnimationFrame[] = [];
+  private index = 0;
+  private baseX = 0;
+  private baseY = 0;
+
+  setFrames(frames: readonly AnimationFrame[], x: number, y: number): void {
+    this.frames = frames;
+    this.baseX = x;
+    this.baseY = y;
+    this.stop();
+  }
+  private setFrame(index: number): void {
+    this.index = index;
+    const frame = this.frames[index];
+    this.setSurface(frame?.surface ?? null);
+    this.setPosition(this.baseX + (frame?.x ?? 0), this.baseY + (frame?.y ?? 0));
+  }
+  /** sub_44F090 without looping, with the hover's one-tick frame delay. */
+  play(): void {
+    if (this.frames.length < 2) return;
+    this.frameDelay = 1;
+    this.onStep = () => {
+      if (this.index + 1 < this.frames.length) this.setFrame(this.index + 1);
+      return this.index + 1 < this.frames.length;
+    };
+    this.animating = true;
+  }
+  stop(): void {
+    this.animating = false;
+    this.onStep = null;
+    this.setFrame(0);
+  }
+}
+
+/**
  * One of the hundred script layers (0x4061E0). Its state lives in the scene record so that
  * saves and nested calls restore it (0x407480); the sprites here are the visible objects.
  * Kind 2 layers play LWG frames sequenced by an FSC script. Kind 1 adds image filters in the
@@ -48,7 +88,7 @@ export class RScriptLayer extends RScriptContainer {
   /** Crossfade source and hover images for button slots 0 and 1 (+92, +96). */
   readonly under = [new RScriptSprite(), new RScriptSprite()] as const;
   /** Hover image slot 2 (+100). */
-  readonly special = new RScriptSprite();
+  readonly special = new OverlayFrames();
   private loadGeneration = 0;
   private player: FramePlayer | null = null;
 
@@ -122,6 +162,19 @@ export class RScriptLayer extends RScriptContainer {
       if (y + sprite.height > this.env.height) y = this.env.height - sprite.height;
     }
     return {x, y};
+  }
+
+  /** sub_4070E0 slot 2: the frames of `<image>.lwg`, or a single image. */
+  private async loadSpecial(image: number, x: number, y: number): Promise<void> {
+    if (!image) return this.special.setFrames([], x, y);
+    const path = this.imagePath(image);
+    const animation = await this.env.animation(path);
+    if (animation?.frames.length) {
+      this.special.setFrames(animation.frames, x, y);
+      return;
+    }
+    const surface = await this.fetch(image);
+    this.special.setFrames(surface ? [{surface, x: 0, y: 0}] : [], x, y);
   }
 
   private async fetch(image: number): Promise<RScriptSurface | null> {
@@ -572,6 +625,7 @@ export class RScriptLayer extends RScriptContainer {
     this.main.interactive = false;
     this.hoverOut();
     for (const sprite of [...this.under, this.special]) sprite.show(false);
+    this.special.stop();
   }
   /** Enables or suspends button input while the script waits (sub_407310/sub_407360). */
   setButtonInput(enabled: boolean, onlyInterrupts: boolean): void {
@@ -591,7 +645,12 @@ export class RScriptLayer extends RScriptContainer {
     this.setDword(LayerRecord.overlayPositions + slot * 8, x);
     this.setDword(LayerRecord.overlayPositions + slot * 8 + 4, y);
     if (skipping) return;
-    const sprite = slot === 2 ? this.special : this.under[slot]!;
+    if (slot === 2) {
+      await this.loadSpecial(image, x, y);
+      this.special.show(false);
+      return;
+    }
+    const sprite = this.under[slot]!;
     sprite.setSurface(image ? await this.fetch(image) : null);
     sprite.setPosition(x, y);
     sprite.show(false);
@@ -605,13 +664,19 @@ export class RScriptLayer extends RScriptContainer {
     } else if (style === 3) this.main.setBlendMode(23);
     for (const slot of [0, 1] as const)
       if (this.uword(LayerRecord.overlays + slot * 2)) this.under[slot].show(true);
-    if (this.uword(LayerRecord.overlays + 4)) this.special.show(true);
+    if (this.uword(LayerRecord.overlays + 4)) {
+      this.special.show(true);
+      this.special.play();
+    }
   }
   private hoverOut(): void {
     this.applyBlend();
     for (const slot of [0, 1] as const)
       if (this.uword(LayerRecord.overlays + slot * 2)) this.under[slot].show(false);
-    if (this.uword(LayerRecord.overlays + 4)) this.special.show(false);
+    if (this.uword(LayerRecord.overlays + 4)) {
+      this.special.show(false);
+      this.special.stop();
+    }
   }
   private pressed(): void {
     this.applyBlend();
@@ -624,7 +689,9 @@ export class RScriptLayer extends RScriptContainer {
   }
 
   /** sub_40AC40 → sub_40AF10: advances an animated layer by one scene tick. */
+  /** sub_40AF10: the frame script and the hover image slot 2 advance each tick. */
   tick(): void {
+    if (this.visible) this.special.animate();
     const player = this.player;
     if (!player || !this.visible || !this.main.visible) return;
     const previous = player.frame;
@@ -671,12 +738,15 @@ export class RScriptLayer extends RScriptContainer {
     for (const slot of [0, 1, 2]) {
       const overlay = this.uword(LayerRecord.overlays + slot * 2);
       if (!overlay) continue;
-      const sprite = slot === 2 ? this.special : this.under[slot]!;
+      const x = this.dword(LayerRecord.overlayPositions + slot * 8),
+        y = this.dword(LayerRecord.overlayPositions + slot * 8 + 4);
+      if (slot === 2) {
+        await this.loadSpecial(overlay, x, y);
+        continue;
+      }
+      const sprite = this.under[slot]!;
       sprite.setSurface(await this.fetch(overlay));
-      sprite.setPosition(
-        this.dword(LayerRecord.overlayPositions + slot * 8),
-        this.dword(LayerRecord.overlayPositions + slot * 8 + 4),
-      );
+      sprite.setPosition(x, y);
     }
   }
 }
