@@ -99,6 +99,15 @@ export class BurikoNativeBank {
     this.handlers = handlers;
   }
 
+  /** Secondaries whose selected definition opted into clock-read batching, by primary. */
+  batchableSecondaries(primary: number): readonly boolean[] | undefined {
+    let result: boolean[] | undefined;
+    for (const [key, definition] of this.handlers)
+      if (key >>> 8 === primary && definition.batchable === true)
+        (result ??= new Array<boolean>(256).fill(false))[key & 255] = true;
+    return result && Object.freeze(result);
+  }
+
   execute(
     primary: number,
     secondary: number,

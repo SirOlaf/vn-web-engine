@@ -50,4 +50,9 @@ export interface BurikoNativeSlotDefinition {
   readonly nativeAddress: number;
   readonly name: string;
   readonly execute: BurikoBpOpcodeHandler;
+  /**
+   * Scheduling hint: the handler is synchronous, has no host effects, and its work is bounded
+   * by its operands. The BP scheduler may then amortize clock reads across it.
+   */
+  readonly batchable?: boolean;
 }

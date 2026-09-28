@@ -1,11 +1,18 @@
 import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
-import {textByte, textBytes} from './text.js';
+import {determinateTextEnd, textByte, textBytes} from './text.js';
 
 /** 09db30 hashes signed bytes with wrapping DWORD arithmetic. */
 export function burikoNamedValueHash(key: BurikoBpPointer): number {
   let hash = 0;
+  const bytes = key.bytes,
+    end = determinateTextEnd(bytes, key.offset);
+  if (end >= 0) {
+    for (let offset = key.offset; offset < end; offset++)
+      hash = (Math.imul(hash, 233) + ((bytes[offset]! << 24) >> 24)) >>> 0;
+    return hash;
+  }
   for (let offset = key.offset; ; offset++) {
-    const value = textByte(key.bytes, offset);
+    const value = textByte(bytes, offset);
     if (value === 0) return hash;
     hash = (Math.imul(hash, 233) + ((value << 24) >> 24)) >>> 0;
   }
@@ -16,9 +23,18 @@ export function burikoCompareNamedBytes(
   first: BurikoBpPointer,
   second: BurikoBpPointer,
 ): -1 | 0 | 1 {
+  const left = first.bytes,
+    right = second.bytes;
+  if (determinateTextEnd(left, first.offset) >= 0 && determinateTextEnd(right, second.offset) >= 0)
+    for (let offset = 0; ; offset++) {
+      const a = left[first.offset + offset]!,
+        b = right[second.offset + offset]!;
+      if (a !== b) return a < b ? -1 : 1;
+      if (a === 0) return 0;
+    }
   for (let offset = 0; ; offset++) {
-    const a = textByte(first.bytes, first.offset + offset),
-      b = textByte(second.bytes, second.offset + offset);
+    const a = textByte(left, first.offset + offset),
+      b = textByte(right, second.offset + offset);
     if (a !== b) return a < b ? -1 : 1;
     if (a === 0) return 0;
   }

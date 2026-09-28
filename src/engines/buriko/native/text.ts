@@ -1,6 +1,7 @@
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {
   clearIndeterminateMemory,
+  hasIndeterminateMemory,
   requireDeterminateMemory,
 } from '../../../core/indeterminate-memory.js';
 import {CP932_TO_UNICODE, UNICODE_TO_CP932} from './text-cp932-data.js';
@@ -34,9 +35,24 @@ export function textByte(bytes: Uint8Array, offset: number): number {
   return value;
 }
 
+/**
+ * Terminator index when every byte from `offset` through it is in range and determinate,
+ * else -1. Callers then read the span directly; -1 selects their exact per-byte traversal,
+ * which raises the same fault at the same byte as before.
+ */
+export function determinateTextEnd(bytes: Uint8Array, offset: number): number {
+  if (!Number.isSafeInteger(offset) || offset < 0) return -1;
+  const end = bytes.indexOf(0, offset);
+  if (end < 0 || hasIndeterminateMemory(bytes, offset, end - offset + 1)) return -1;
+  return end;
+}
+
 export function textLength(pointer: BurikoBpPointer): number {
+  const bytes = pointer.bytes,
+    end = determinateTextEnd(bytes, pointer.offset);
+  if (end >= 0) return (end - pointer.offset) >>> 0;
   let length = 0;
-  while (textByte(pointer.bytes, pointer.offset + length) !== 0) length++;
+  while (textByte(bytes, pointer.offset + length) !== 0) length++;
   return length >>> 0;
 }
 

@@ -28,9 +28,18 @@ export function readI8(thread: BurikoBpThread): number {
   return (readU8(thread) << 24) >> 24;
 }
 
+/** True when `length` bytes at `pc` are plain indexed reads with no DataView fault to preserve. */
+function inBounds(memory: Uint8Array, pc: number, length: number): boolean {
+  return typeof pc === 'number' && pc >>> 0 === pc && pc + length <= memory.length;
+}
+
 export function readU16(thread: BurikoBpThread): number {
-  const value = view(thread).getUint16(thread.pc, true);
-  thread.pc = (thread.pc + 2) >>> 0;
+  const memory = thread.moduleMemory,
+    pc = thread.pc;
+  const value = inBounds(memory, pc, 2)
+    ? memory[pc]! | (memory[pc + 1]! << 8)
+    : view(thread).getUint16(pc, true);
+  thread.pc = (pc + 2) >>> 0;
   return value;
 }
 
@@ -39,8 +48,13 @@ export function readI16(thread: BurikoBpThread): number {
 }
 
 export function readU32(thread: BurikoBpThread): number {
-  const value = view(thread).getUint32(thread.pc, true);
-  thread.pc = (thread.pc + 4) >>> 0;
+  const memory = thread.moduleMemory,
+    pc = thread.pc;
+  const value = inBounds(memory, pc, 4)
+    ? (memory[pc]! | (memory[pc + 1]! << 8) | (memory[pc + 2]! << 16) | (memory[pc + 3]! << 24)) >>>
+      0
+    : view(thread).getUint32(pc, true);
+  thread.pc = (pc + 4) >>> 0;
   return value;
 }
 

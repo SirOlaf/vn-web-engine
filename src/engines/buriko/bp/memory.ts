@@ -14,6 +14,23 @@ export interface BurikoBpPointer {
   readonly offset: number;
 }
 
+// scalarPointer has already bounds-checked these little-endian accesses.
+function u16At(bytes: Uint8Array, offset: number): number {
+  return bytes[offset]! | (bytes[offset + 1]! << 8);
+}
+function i32At(bytes: Uint8Array, offset: number): number {
+  return (
+    bytes[offset]! |
+    (bytes[offset + 1]! << 8) |
+    (bytes[offset + 2]! << 16) |
+    (bytes[offset + 3]! << 24)
+  );
+}
+/** DataView setters apply ToNumber before ToUint32; typed stores then take the low bytes. */
+function toUint32(value: number): number {
+  return Number(value) >>> 0;
+}
+
 export class BurikoBpMemoryFault extends Error {
   constructor(
     readonly address: number,
@@ -284,22 +301,22 @@ export class BurikoBpMemory {
   readU16(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 2);
     requireDeterminateMemory(p.bytes, p.offset, 2);
-    return byteDataView(p.bytes).getUint16(p.offset, true);
+    return u16At(p.bytes, p.offset);
   }
   readI16(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 2);
     requireDeterminateMemory(p.bytes, p.offset, 2);
-    return byteDataView(p.bytes).getInt16(p.offset, true);
+    return (u16At(p.bytes, p.offset) << 16) >> 16;
   }
   readU32(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 4);
     requireDeterminateMemory(p.bytes, p.offset, 4);
-    return byteDataView(p.bytes).getUint32(p.offset, true);
+    return i32At(p.bytes, p.offset) >>> 0;
   }
   readI32(t: BurikoBpThread, a: number): number {
     const p = this.scalarPointer(t, a, 4);
     requireDeterminateMemory(p.bytes, p.offset, 4);
-    return byteDataView(p.bytes).getInt32(p.offset, true);
+    return i32At(p.bytes, p.offset);
   }
   readU64(t: BurikoBpThread, a: number): bigint {
     const p = this.scalarPointer(t, a, 8);
@@ -318,12 +335,18 @@ export class BurikoBpMemory {
   }
   writeU16(t: BurikoBpThread, a: number, v: number): void {
     const p = this.scalarPointer(t, a, 2);
-    byteDataView(p.bytes).setUint16(p.offset, v, true);
+    const value = toUint32(v);
+    p.bytes[p.offset] = value;
+    p.bytes[p.offset + 1] = value >>> 8;
     clearIndeterminateMemory(p.bytes, p.offset, 2);
   }
   writeU32(t: BurikoBpThread, a: number, v: number): void {
     const p = this.scalarPointer(t, a, 4);
-    byteDataView(p.bytes).setUint32(p.offset, v, true);
+    const value = toUint32(v);
+    p.bytes[p.offset] = value;
+    p.bytes[p.offset + 1] = value >>> 8;
+    p.bytes[p.offset + 2] = value >>> 16;
+    p.bytes[p.offset + 3] = value >>> 24;
     clearIndeterminateMemory(p.bytes, p.offset, 4);
   }
   writeU64(t: BurikoBpThread, a: number, v: bigint): void {

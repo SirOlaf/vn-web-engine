@@ -125,6 +125,7 @@ export class BurikoProductionInterpreter {
     scheduler.bindInstructionExecutor(
       (thread) => this.interpreter.step(thread),
       this.interpreter.batchableOpcodes,
+      this.interpreter.batchableNativeSlots,
     );
   }
 }

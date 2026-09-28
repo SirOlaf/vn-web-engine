@@ -31,6 +31,7 @@ export function createGroup80NamedBitArrays(
     {
       primary: 0x80,
       secondary: 0x89,
+      batchable: true,
       nativeAddress: 0x1400e7d50,
       name: 'WriteNamedBit',
       execute: (h) => {
@@ -44,6 +45,7 @@ export function createGroup80NamedBitArrays(
     {
       primary: 0x80,
       secondary: 0x8a,
+      batchable: true,
       nativeAddress: 0x1400e7ca0,
       name: 'WriteNamedBitRange',
       execute: (h) => {
@@ -58,6 +60,7 @@ export function createGroup80NamedBitArrays(
     {
       primary: 0x80,
       secondary: 0x8b,
+      batchable: true,
       nativeAddress: 0x1400e7c20,
       name: 'ReadNamedBit',
       execute: (h) => {

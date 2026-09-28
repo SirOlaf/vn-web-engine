@@ -28,7 +28,10 @@ import {BurikoStructCodecScratch} from '../dist/engines/buriko/native/struct-cod
 import {encodeBurikoDcfs} from '../dist/engines/buriko/native/dcfs.js';
 import {decodeBurikoSdcInto} from '../dist/engines/buriko/native/sdc.js';
 
-test('80:C4/C5 encode and restore an embedded record table through the shared worker and scratch owners', async () => {
+test('80:C4/C5 encode and restore an embedded record table through the shared worker and scratch owners', async (t) => {
+  // Codec tasks run in 4 ms wall-clock slices; a frozen clock completes them in one host turn
+  // regardless of machine load, so one scheduler pass deterministically drains the workers.
+  t.mock.method(performance, 'now', () => 0);
   const fs = new StoredFileSystem(new MemoryStore()),
     text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),

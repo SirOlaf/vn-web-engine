@@ -26,7 +26,10 @@ import {BurikoDataCodecWorkers} from '../dist/engines/buriko/native/data-codec-w
 import {createGroup80SdcEncode} from '../dist/engines/buriko/native/group-80-sdc-encode.js';
 import {decodeBurikoSdcInto} from '../dist/engines/buriko/native/sdc.js';
 
-test('80:C0 schedules actual encoding and publishes its result through the shared wait process', async () => {
+test('80:C0 schedules actual encoding and publishes its result through the shared wait process', async (t) => {
+  // Codec tasks run in 4 ms wall-clock slices; a frozen clock completes them in one host turn
+  // regardless of machine load, so one scheduler pass deterministically drains the workers.
+  t.mock.method(performance, 'now', () => 0);
   const fs = new StoredFileSystem(new MemoryStore()),
     text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),

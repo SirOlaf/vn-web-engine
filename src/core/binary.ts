@@ -6,30 +6,17 @@ interface CachedByteView {
 
 const byteViews = new WeakMap<Uint8Array, CachedByteView>();
 
-// Scalar accesses repeat on one byte view; remember its entry ahead of the WeakMap.
-let recentBytes: Uint8Array | undefined;
-let recentView: CachedByteView | undefined;
-
 /** Reuse the wrapper, never the contents; resized and replaced byte views remain live. */
 export function byteDataView(bytes: Uint8Array): DataView {
-  const length = bytes.byteLength;
-  let cached: CachedByteView | undefined;
-  if (bytes === recentBytes) cached = recentView;
-  else {
+  const length = bytes.byteLength,
     cached = byteViews.get(bytes);
-    recentBytes = bytes;
-    recentView = cached;
-  }
   // A nonempty typed view keeps its buffer and offset through resizes. Empty
   // views also need the offset check because shrinking out of bounds resets it.
   if (cached && cached.length === length && (length !== 0 || cached.offset === bytes.byteOffset))
     return cached.view;
   const offset = bytes.byteOffset,
     view = new DataView(bytes.buffer, offset, length);
-  const entry = {offset, length, view};
-  byteViews.set(bytes, entry);
-  recentBytes = bytes;
-  recentView = entry;
+  byteViews.set(bytes, {offset, length, view});
   return view;
 }
 

@@ -434,6 +434,47 @@ test('blocking asynchronous host work preserves the burst and forbids concurrent
   assert.deepEqual(order, [1, 1, 2]);
 });
 
+test('only native slots that opt into batching amortize clock reads', async (t) => {
+  let clockReads = 0;
+  t.mock.method(performance, 'now', () => {
+    clockReads++;
+    return 0;
+  });
+  const memory = new BurikoBpMemory(new Uint8Array()),
+    diagnostics = new BurikoBpDiagnostics(noNotice);
+  const run = async (batchable) => {
+    const child = thread(1, 512);
+    let calls = 0;
+    const interpreter = new BurikoBpInterpreter(
+      {...directHandlers(), ...controlOpcodes, ...integerOpcodes},
+      new BurikoNativeBank(
+        definitions().map((definition) => {
+          if (definition.primary !== 0x80 || definition.secondary > 1) return definition;
+          return definition.secondary === 0
+            ? {...definition, batchable, execute: () => (calls++, 0)}
+            : {...definition, execute: () => 1};
+        }),
+      ),
+      new BurikoBpModuleExtensions({readModule: noNotice}),
+      (state) => ({thread: state, memory, diagnostics}),
+    );
+    const scheduler = new BurikoBpScheduler(root());
+    scheduler.bindInstructionExecutor(
+      (state) => interpreter.step(state),
+      interpreter.batchableOpcodes,
+      interpreter.batchableNativeSlots,
+    );
+    attachModule(child, 'synthetic', module([...Array(128).fill([0x80, 0]).flat(), 0x80, 1]));
+    scheduler.append(child);
+    clockReads = 0;
+    assert.equal(await scheduler.run(), 0);
+    assert.equal(calls, 128);
+    return clockReads;
+  };
+  assert.ok((await run(false)) > 128);
+  assert.ok((await run(true)) < 16);
+});
+
 for (const profile of ['native', 'browser-optimized']) {
   test(`${profile}: real bytecode amortizes small work without delaying native or replacement handlers`, async (t) => {
     setRuntimeProfile(profile);

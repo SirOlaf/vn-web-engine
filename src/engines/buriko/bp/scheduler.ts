@@ -156,6 +156,7 @@ export class BurikoBpScheduler {
   private sharedLoaderWorker: BurikoSharedLoaderWorker | null = null;
   private executeInstruction: ((thread: BurikoBpThread) => BurikoBpInstructionResult) | null;
   private batchableOpcodes: readonly boolean[] | null = null;
+  private batchableNativeSlots: readonly (readonly boolean[] | undefined)[] | null = null;
 
   constructor(
     root: BurikoBpThread,
@@ -284,6 +285,7 @@ export class BurikoBpScheduler {
   bindInstructionExecutor(
     executeInstruction: (thread: BurikoBpThread) => BurikoBpInstructionResult,
     batchableOpcodes?: readonly boolean[],
+    batchableNativeSlots?: readonly (readonly boolean[] | undefined)[],
   ): void {
     if (this.executeInstruction !== null)
       throw new Error('Buriko scheduler instruction executor is already bound');
@@ -291,6 +293,7 @@ export class BurikoBpScheduler {
       throw new TypeError('Buriko scheduler instruction executor must be a function');
     this.executeInstruction = executeInstruction;
     this.batchableOpcodes = batchableOpcodes ?? null;
+    this.batchableNativeSlots = batchableOpcodes ? (batchableNativeSlots ?? null) : null;
   }
 
   get firstThread(): BurikoBpScheduledThread | null {
@@ -445,7 +448,8 @@ export class BurikoBpScheduler {
     executeInstruction: (thread: BurikoBpThread) => BurikoBpInstructionResult,
     invocationToken: object,
   ): Promise<BurikoBpSchedulerResult> {
-    const batchableOpcodes = this.batchableOpcodes;
+    const batchableOpcodes = this.batchableOpcodes,
+      batchableNativeSlots = this.batchableNativeSlots;
     let stop = this.stopRequested;
     let condition = false;
     let node = this.root.next;
@@ -491,9 +495,16 @@ export class BurikoBpScheduler {
       try {
         for (let count = 0; count < BURIKO_BP_BURST_INSTRUCTIONS; count++) {
           let instruction: BurikoBpInstructionResult;
-          let batchable =
-            batchableOpcodes !== null &&
-            batchableOpcodes[node.state.moduleMemory[node.state.pc]!] === true;
+          let batchable = false;
+          if (batchableOpcodes !== null) {
+            const code = node.state.moduleMemory,
+              pc = node.state.pc,
+              opcode = code[pc]!;
+            // Native slots are selected by the secondary byte that follows the primary.
+            batchable =
+              batchableOpcodes[opcode] === true ||
+              batchableNativeSlots?.[opcode]?.[code[(pc + 1) >>> 0]!] === true;
+          }
           this.dispatchingInstruction = node.state;
           try {
             sliceInstructions++;

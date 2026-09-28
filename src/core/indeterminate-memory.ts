@@ -8,15 +8,8 @@ class Marks extends Map<number, string> {
  * provenance beside storage until a caller overwrites or observes them. */
 const unwritten = new WeakMap<ArrayBufferLike, Marks>();
 
-// Scalar accesses repeat on one buffer; remember its lookup until the map changes.
-let recentBuffer: ArrayBufferLike | undefined;
-let recentMarks: Marks | undefined;
 function marksFor(buffer: ArrayBufferLike): Marks | undefined {
-  if (buffer !== recentBuffer) {
-    recentBuffer = buffer;
-    recentMarks = unwritten.get(buffer);
-  }
-  return recentMarks;
+  return unwritten.get(buffer);
 }
 /** Exact rejection: no mark can lie in a range outside the widened bounds. */
 function outside(marks: Marks, start: number, length: number): boolean {
@@ -32,7 +25,6 @@ export function markIndeterminateMemory(
   let cells = marksFor(bytes.buffer);
   if (!cells) {
     unwritten.set(bytes.buffer, (cells = new Marks()));
-    recentBuffer = undefined;
   }
   const start = bytes.byteOffset + offset;
   for (let i = 0; i < length; i++) cells.set(start + i, reason);
@@ -52,7 +44,6 @@ export function clearIndeterminateMemory(bytes: Uint8Array, offset: number, leng
   else for (const at of cells.keys()) if (at >= start && at < start + length) cells.delete(at);
   if (!cells.size) {
     unwritten.delete(bytes.buffer);
-    recentBuffer = undefined;
   }
 }
 

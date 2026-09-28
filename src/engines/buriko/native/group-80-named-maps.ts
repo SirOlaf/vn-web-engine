@@ -29,6 +29,7 @@ export function createGroup80NamedMaps(maps: BurikoNamedValueMaps): BurikoNative
     {
       primary: 0x80,
       secondary: 0xd2,
+      batchable: true,
       nativeAddress: 0x1400e6fb0,
       name: 'WriteNamedValue',
       execute: (h) => {
@@ -42,6 +43,7 @@ export function createGroup80NamedMaps(maps: BurikoNamedValueMaps): BurikoNative
     {
       primary: 0x80,
       secondary: 0xd3,
+      batchable: true,
       nativeAddress: 0x1400e6f70,
       name: 'RemoveNamedValue',
       execute: (h) => {
@@ -54,6 +56,7 @@ export function createGroup80NamedMaps(maps: BurikoNamedValueMaps): BurikoNative
     {
       primary: 0x80,
       secondary: 0xd4,
+      batchable: true,
       nativeAddress: 0x1400e6ef0,
       name: 'ReadNamedValue',
       execute: (h) => {
