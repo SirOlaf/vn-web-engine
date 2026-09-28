@@ -478,7 +478,9 @@ function mixBurikoAllChannelsPixels(
 
 export const blendBurikoAlpha = withBurikoBitmapText(blendBurikoAlphaPixels);
 
-export const blendBurikoAlphaIntoRgb = withBurikoBitmapText(blendBurikoAlphaIntoRgbPixels);
+export const blendBurikoAlphaIntoRgb = withBurikoBitmapText(blendBurikoAlphaIntoRgbPixels, {
+  gpu: 'alpha-into-rgb',
+});
 
 export const blendBurikoAlphaWithTransparency = withBurikoBitmapText(
   blendBurikoAlphaWithTransparencyPixels,
@@ -487,9 +489,10 @@ export const blendBurikoAlphaWithTransparency = withBurikoBitmapText(
 
 export const blendBurikoAlphaIntoRgbWithTransparency = withBurikoBitmapText(
   blendBurikoAlphaIntoRgbWithTransparencyPixels,
-  {opacity: (args) => (256 - args[2]) / 256},
+  {opacity: (args) => (256 - args[2]) / 256, gpu: 'alpha-into-rgb-transparency'},
 );
 
 export const mixBurikoAllChannels = withBurikoBitmapText(mixBurikoAllChannelsPixels, {
   opacity: (args) => (256 - args[2]) / 256,
+  gpu: 'mix-all-channels',
 });

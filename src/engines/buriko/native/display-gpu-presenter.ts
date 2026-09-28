@@ -56,26 +56,39 @@ export interface BurikoGpuQuadCoordinates {
   rows: Float32Array;
 }
 
+/** The display texture, or a movie texture that is drawn over it. */
+export type BurikoGpuImageSlot = 'display' | 'movie';
+
+interface Image {
+  texture: WebGLTexture | null;
+  width: number;
+  height: number;
+  /** The display texture whose logical area this image currently holds. */
+  holds: BurikoDisplayTexture | null;
+}
+
 /**
  * Browser-optimized WebGL 2 presentation of the display texture. It replaces the software
  * rasterizer and putImageData with a texture upload of changed texels, one draw, and a GPU copy
- * into the shared 2D canvas. Coordinates stay those of the software path; filtering runs in the
- * GPU's binary32 arithmetic, which may contract multiply-adds, and its UNORM rounding, so pixels
- * may differ from the software device by one step. The owner falls back to software whenever
- * this returns false.
+ * into the shared 2D canvas. Coordinates are those of the software path and the shader repeats
+ * its binary32 arithmetic, so the WebGL output matches the software frame. The owner falls back
+ * to software whenever this returns false. The GPU compositor shares this context and draws
+ * directly into the display image.
  */
 export class BurikoGpuPresenter {
   private readonly surface: HTMLCanvasElement;
-  private readonly gl: WebGL2RenderingContext;
+  readonly gl: WebGL2RenderingContext;
   private readonly program: WebGLProgram;
+  private readonly vertexArray: WebGLVertexArrayObject;
   private readonly uniforms: Record<string, WebGLUniformLocation | null>;
-  private image: WebGLTexture;
+  private readonly images: Record<BurikoGpuImageSlot, Image> = {
+    display: {texture: null, width: 0, height: 0, holds: null},
+    movie: {texture: null, width: 0, height: 0, holds: null},
+  };
   private readonly columns: WebGLTexture;
   private readonly rows: WebGLTexture;
-  private readonly texture: () => WebGLTexture;
-  private imageWidth = 0;
-  private imageHeight = 0;
-  private uploaded: BurikoDisplayTexture | null = null;
+  /** A display texture whose current pixels exist only in the display image. */
+  private owned: BurikoDisplayTexture | null = null;
   private lost = false;
 
   private constructor(document: Document) {
@@ -95,46 +108,17 @@ export class BurikoGpuPresenter {
       event.preventDefault();
       this.lost = true;
     });
-    const compile = (type: number, source: string): WebGLShader => {
-      const shader = gl.createShader(type)!;
-      gl.shaderSource(shader, source);
-      gl.compileShader(shader);
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
-        throw new Error(gl.getShaderInfoLog(shader) ?? 'Shader compilation failed');
-      return shader;
-    };
-    const program = gl.createProgram()!;
-    gl.attachShader(program, compile(gl.VERTEX_SHADER, VERTEX));
-    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAGMENT));
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-      throw new Error(gl.getProgramInfoLog(program) ?? 'Program link failed');
-    this.program = program;
+    this.program = burikoGpuProgram(gl, VERTEX, FRAGMENT);
     this.uniforms = Object.fromEntries(
       ['image', 'columns', 'rows', 'first', 'outputHeight', 'size', 'linear', 'opaque'].map(
-        (name) => [name, gl.getUniformLocation(program, name)],
+        (name) => [name, gl.getUniformLocation(this.program, name)],
       ),
     );
-    const texture = (this.texture = (): WebGLTexture => {
-      const result = gl.createTexture()!;
-      gl.bindTexture(gl.TEXTURE_2D, result);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      return result;
-    });
-    this.image = texture();
-    this.columns = texture();
-    this.rows = texture();
+    this.columns = burikoGpuTexture(gl);
+    this.rows = burikoGpuTexture(gl);
+    this.vertexArray = gl.createVertexArray()!;
     gl.disable(gl.DITHER);
     gl.disable(gl.BLEND);
-    gl.useProgram(program);
-    gl.uniform1i(this.uniforms.image!, 0);
-    gl.uniform1i(this.uniforms.columns!, 1);
-    gl.uniform1i(this.uniforms.rows!, 2);
-    gl.uniform1ui(this.uniforms.opaque!, 0);
-    gl.bindVertexArray(gl.createVertexArray());
   }
 
   /** Null when WebGL 2 or a DOM canvas is unavailable; callers keep the software device. */
@@ -151,35 +135,69 @@ export class BurikoGpuPresenter {
     return !this.lost && !this.gl.isContextLost();
   }
 
-  /** The next upload must send the whole logical image, e.g. after software presentation. */
+  /** The next upload of each slot sends the whole logical image. Owned pixels are lost. */
   invalidate(): void {
-    this.uploaded = null;
+    this.images.display.holds = this.images.movie.holds = null;
+    this.owned = null;
+  }
+
+  /** The display image sized for `texture`, allocated on first use. */
+  image(slot: BurikoGpuImageSlot, texture: BurikoDisplayTexture): WebGLTexture {
+    const gl = this.gl,
+      image = this.images[slot];
+    if (
+      image.texture === null ||
+      image.width !== texture.width ||
+      image.height !== texture.height
+    ) {
+      // Immutable storage cannot be respecified; replace the texture object.
+      if (image.texture !== null) gl.deleteTexture(image.texture);
+      image.texture = burikoGpuTexture(gl);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, texture.width, texture.height);
+      image.width = texture.width;
+      image.height = texture.height;
+      image.holds = null;
+      if (this.owned === texture) this.owned = null;
+    }
+    return image.texture;
+  }
+
+  /** Whether the display image already holds `texture`'s logical area. */
+  holds(texture: BurikoDisplayTexture): boolean {
+    return this.images.display.holds === texture;
+  }
+
+  /**
+   * The GPU compositor wrote `texture`'s current pixels into the display image only. Uploads of
+   * that texture are skipped until `release` reports its software bytes current again.
+   */
+  own(texture: BurikoDisplayTexture): void {
+    this.images.display.holds = texture;
+    this.owned = texture;
+  }
+  owns(texture: BurikoDisplayTexture): boolean {
+    return this.owned === texture;
+  }
+  release(texture: BurikoDisplayTexture): void {
+    if (this.owned === texture) this.owned = null;
   }
 
   /** Upload changed texels. `changed` null means none; undefined means the whole logical area. */
   upload(
+    slot: BurikoGpuImageSlot,
     texture: BurikoDisplayTexture,
     logicalWidth: number,
     logicalHeight: number,
     changed: BurikoBitmapRectangle | null | undefined,
   ): boolean {
     if (!this.available) return false;
-    const gl = this.gl;
+    const gl = this.gl,
+      image = this.images[slot];
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.image);
-    if (this.imageWidth !== texture.width || this.imageHeight !== texture.height) {
-      // Immutable storage cannot be respecified; replace the texture object.
-      if (this.imageWidth !== 0) {
-        gl.deleteTexture(this.image);
-        this.image = this.texture();
-      }
-      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, texture.width, texture.height);
-      this.imageWidth = texture.width;
-      this.imageHeight = texture.height;
-      this.uploaded = null;
-    }
+    gl.bindTexture(gl.TEXTURE_2D, this.image(slot, texture));
+    if (this.owned === texture && image.holds === texture) return true;
     let region = changed;
-    if (this.uploaded !== texture || region === undefined)
+    if (image.holds !== texture || region === undefined)
       region = {left: 0, top: 0, right: logicalWidth - 1, bottom: logicalHeight - 1};
     if (region === null) return true;
     const left = Math.max(0, region.left),
@@ -187,7 +205,7 @@ export class BurikoGpuPresenter {
       right = Math.min(texture.width - 1, region.right),
       bottom = Math.min(texture.height - 1, region.bottom);
     if (left > right || top > bottom) {
-      this.uploaded = texture;
+      image.holds = texture;
       return true;
     }
     const width = right - left + 1,
@@ -217,7 +235,7 @@ export class BurikoGpuPresenter {
       finishUpload?.({width, height});
     }
     recordRuntimeMetric('buriko.display.gpu-upload.pixels', width * height);
-    this.uploaded = texture;
+    image.holds = texture;
     return true;
   }
 
@@ -228,6 +246,7 @@ export class BurikoGpuPresenter {
 
   /** Draw the quad, over opaque black when `clear` is set, into an output of the given size. */
   draw(
+    slot: BurikoGpuImageSlot,
     texture: BurikoDisplayTexture,
     coordinates: BurikoGpuQuadCoordinates,
     sampler: BurikoPresentationSampler,
@@ -235,7 +254,8 @@ export class BurikoGpuPresenter {
     height: number,
     clear: boolean,
   ): boolean {
-    if (!this.available || this.uploaded !== texture) return false;
+    const image = this.images[slot];
+    if (!this.available || image.holds !== texture) return false;
     const gl = this.gl;
     if (this.surface.width !== width || this.surface.height !== height) {
       if (!clear) return false;
@@ -244,6 +264,9 @@ export class BurikoGpuPresenter {
     }
     const finishDraw = beginRuntimeSpan('buriko.display.gpu-draw');
     try {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.useProgram(this.program);
+      gl.bindVertexArray(this.vertexArray);
       gl.viewport(0, 0, width, height);
       gl.disable(gl.SCISSOR_TEST);
       if (clear) {
@@ -254,6 +277,8 @@ export class BurikoGpuPresenter {
         rows = coordinates.rows.length >>> 1;
       if (columns > 0 && rows > 0) {
         gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, image.texture);
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.columns);
         gl.texImage2D(
@@ -272,6 +297,10 @@ export class BurikoGpuPresenter {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, rows, 1, 0, gl.RG, gl.FLOAT, coordinates.rows);
         gl.enable(gl.SCISSOR_TEST);
         gl.scissor(coordinates.firstX, height - coordinates.firstY - rows, columns, rows);
+        gl.uniform1i(this.uniforms.image!, 0);
+        gl.uniform1i(this.uniforms.columns!, 1);
+        gl.uniform1i(this.uniforms.rows!, 2);
+        gl.uniform1ui(this.uniforms.opaque!, 0);
         gl.uniform2i(this.uniforms.first!, coordinates.firstX, coordinates.firstY);
         gl.uniform1i(this.uniforms.outputHeight!, height);
         gl.uniform2i(this.uniforms.size!, texture.width, texture.height);
@@ -286,14 +315,55 @@ export class BurikoGpuPresenter {
 
   dispose(): void {
     const gl = this.gl;
-    gl.deleteTexture(this.image);
+    for (const image of Object.values(this.images)) {
+      if (image.texture !== null) gl.deleteTexture(image.texture);
+      image.texture = null;
+      image.holds = null;
+    }
     gl.deleteTexture(this.columns);
     gl.deleteTexture(this.rows);
     gl.deleteProgram(this.program);
     gl.getExtension('WEBGL_lose_context')?.loseContext();
-    this.uploaded = null;
+    this.owned = null;
   }
 }
+
+/** Compile and link one program; errors throw so construction can fall back to software. */
+export function burikoGpuProgram(
+  gl: WebGL2RenderingContext,
+  vertex: string,
+  fragment: string,
+): WebGLProgram {
+  const compile = (type: number, source: string): WebGLShader => {
+    const shader = gl.createShader(type)!;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+      throw new Error(gl.getShaderInfoLog(shader) ?? 'Shader compilation failed');
+    return shader;
+  };
+  const program = gl.createProgram()!;
+  gl.attachShader(program, compile(gl.VERTEX_SHADER, vertex));
+  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragment));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(program) ?? 'Program link failed');
+  return program;
+}
+
+/** A nearest-sampled, edge-clamped texture, left bound to the active unit. */
+export function burikoGpuTexture(gl: WebGL2RenderingContext): WebGLTexture {
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return texture;
+}
+
+/** Full-viewport triangle; fragment shaders address texels through gl_FragCoord. */
+export const BURIKO_GPU_VERTEX = VERTEX;
 
 /**
  * The software rasterizer's column and row split for one quad (see display-device.ts

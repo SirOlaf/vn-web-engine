@@ -25,6 +25,8 @@ import {burikoDisplayViewport} from './display-geometry.js';
 import {BurikoDisplayManager} from './display-manager.js';
 import type {BurikoNativeDisplayState} from './display-state.js';
 import {BurikoDisplayTexture, burikoDisplayTextureSize} from './display-texture.js';
+import {BurikoGpuCompositor, burikoGpuCompositingMode} from './display-gpu-compositor.js';
+import type {BurikoGpuFrames} from './object-manager.js';
 import {
   BurikoGpuPresenter,
   burikoGpuPresentationEnabled,
@@ -136,6 +138,28 @@ export class BurikoDisplayDevice {
     coordinates: BurikoGpuQuadCoordinates | null;
   } | null = null;
   private gpuDrawn: BurikoGpuQuadCoordinates | null = null;
+  private gpuCompositor: BurikoGpuCompositor | null = null;
+  /** Installed on the display manager while GPU presentation succeeds. */
+  private readonly gpuFrames: BurikoGpuFrames = {
+    begin: (context, bounds) =>
+      this.gpuCompositor !== null &&
+      this.source !== null &&
+      this.gpuCompositor.begin(
+        context,
+        this.source,
+        this.display.logicalWidth,
+        this.display.logicalHeight,
+        bounds,
+      ),
+    end: (context) => this.gpuCompositor!.end(context),
+    prepareSoftware: () => this.syncSoftware(),
+  };
+  private readonly verifiedGpuFrames: BurikoGpuFrames = {
+    ...this.gpuFrames,
+    verify: (bounds) => {
+      if (this.source !== null) this.gpuCompositor?.verify(this.source, bounds);
+    },
+  };
   private canvasPresenter: CanvasFramePresenter | null = null;
   private frameRevision = {};
   private frameDamage: Rect | null | undefined; // Undefined: full upload; null: no pending writes.
@@ -435,6 +459,7 @@ export class BurikoDisplayDevice {
     if (mode === 3 || mode === 4) mode = this.fullscreen === 0 ? 2 : mode === 3 ? 0 : 1;
     // GPU presentation reads the source's dirty texels directly and defers the sampled copy.
     const gpu = this.frame !== null && mode !== 1 ? this.gpuPresenter() : null;
+    if (gpu === null) this.leaveGpuCompositing();
     const changed = gpu === null ? sampled.updateFrom(source) : false;
     if (mode === 0 || mode === 2) this.sampler = mode === 0 ? 'linear' : 'point';
     if (mode === 1 && this.shader === null)
@@ -451,8 +476,12 @@ export class BurikoDisplayDevice {
     }
     if (this.frame !== null) {
       const cubic = mode === 1;
-      if (gpu !== null && this.prepareGpu(gpu, source)) return;
+      if (gpu !== null && this.prepareGpu(gpu, source)) {
+        this.enterGpuCompositing(gpu);
+        return;
+      }
       if (gpu !== null) {
+        this.leaveGpuCompositing();
         sampled.updateFrom(source);
         this.rasterValid = false;
       }
@@ -613,8 +642,16 @@ export class BurikoDisplayDevice {
     if (resumed && changed === null && this.gpuDrawn === coordinates) return true;
     const {logicalWidth, logicalHeight} = this.display;
     if (
-      !gpu.upload(source, logicalWidth, logicalHeight, changed) ||
-      !gpu.draw(source, coordinates, this.sampler, this.frame!.width, this.frame!.height, true)
+      !gpu.upload('display', source, logicalWidth, logicalHeight, changed) ||
+      !gpu.draw(
+        'display',
+        source,
+        coordinates,
+        this.sampler,
+        this.frame!.width,
+        this.frame!.height,
+        true,
+      )
     ) {
       this.leaveGpu();
       return false;
@@ -625,6 +662,39 @@ export class BurikoDisplayDevice {
     this.frameRevision = {};
     return true;
   }
+  /** Later display draws may composite on the GPU once it presents. */
+  private enterGpuCompositing(gpu: BurikoGpuPresenter): void {
+    const mode = burikoGpuCompositingMode();
+    if (mode === 'off') {
+      this.leaveGpuCompositing();
+      return;
+    }
+    if (this.gpuCompositor?.presenter !== gpu) {
+      this.gpuCompositor?.dispose();
+      this.gpuCompositor = new BurikoGpuCompositor(gpu);
+    }
+    this.manager.gpuFrames = mode === 'verify' ? this.verifiedGpuFrames : this.gpuFrames;
+  }
+  /** Software presentation and every later draw need current software pixels. */
+  private leaveGpuCompositing(): void {
+    if (
+      this.manager.gpuFrames === this.gpuFrames ||
+      this.manager.gpuFrames === this.verifiedGpuFrames
+    )
+      this.manager.gpuFrames = null;
+    this.syncSoftware();
+  }
+  private syncSoftware(): void {
+    const source = this.source,
+      compositor = this.gpuCompositor;
+    if (source === null || compositor === null || !compositor.presenter.owns(source)) return;
+    compositor.syncSoftware(source);
+    // GPU frames skip the display's raster-text plane, which DOM text reads.
+    if ((this.textPresentation?.textMode ?? 'native') !== 'native') {
+      this.manager.damage.force();
+      this.manager.redraw.request(0);
+    }
+  }
   /** Movies draw over the current output; that output must already be the GPU's. */
   private drawMovieGpu(texture: BurikoDisplayTexture): boolean {
     if (!this.gpuFrame) return false;
@@ -634,8 +704,16 @@ export class BurikoDisplayDevice {
     if (coordinates === null) return false;
     const {logicalWidth, logicalHeight} = this.display;
     if (
-      !gpu.upload(texture, logicalWidth, logicalHeight, undefined) ||
-      !gpu.draw(texture, coordinates, this.sampler, this.frame!.width, this.frame!.height, false)
+      !gpu.upload('movie', texture, logicalWidth, logicalHeight, undefined) ||
+      !gpu.draw(
+        'movie',
+        texture,
+        coordinates,
+        this.sampler,
+        this.frame!.width,
+        this.frame!.height,
+        false,
+      )
     )
       return false;
     this.gpuDrawn = null;
@@ -1022,6 +1100,13 @@ export class BurikoDisplayDevice {
     this.ordinaryTextDraw = this.movieTextDraw = null;
     this.canvasPresenter = null;
     this.linearRasterizer = undefined;
+    if (
+      this.manager.gpuFrames === this.gpuFrames ||
+      this.manager.gpuFrames === this.verifiedGpuFrames
+    )
+      this.manager.gpuFrames = null;
+    this.gpuCompositor?.dispose();
+    this.gpuCompositor = null;
     this.gpu?.dispose();
     this.gpu = undefined;
     this.gpuFrame = false;

@@ -7,16 +7,23 @@ const residentFinalizer = new FinalizationRegistry<Uint8Array>(releaseBurikoResi
 
 /** Native bitmap backing identity is shared by cropped descriptors and copied slot records. */
 export class BurikoBitmapStorage {
-  readonly bytes: Uint8Array;
-  readonly view: DataView;
+  private readonly pixels: Uint8Array;
+  private readonly pixelView: DataView;
+  /**
+   * Advances on every access that could write pixels: `bytes`, `view`, `written`, a write
+   * range check and release. Cached copies, such as GPU textures, stay valid only while it is
+   * unchanged, which holds however the pixels are later written. Reads through `bytes` or
+   * `view` count too, so this is conservative.
+   */
+  generation = 0;
   // A contiguous initialized prefix needs no byte map. Allocate one only for holes.
   private defined: Uint8Array | null = null;
   private initializedPrefix = 0;
   private disposed = false;
   private nativeHeapReads = false;
   constructor(bytes: Uint8Array, initialized: boolean) {
-    this.bytes = bytes;
-    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    this.pixels = bytes;
+    this.pixelView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     this.initializedPrefix = initialized ? bytes.length : 0;
   }
   /**
@@ -24,6 +31,36 @@ export class BurikoBitmapStorage {
    * on it in place. Its bytes start zero either way. Resident bytes must not be retained past
    * the storage: they return to the heap on release() or when the storage is collected.
    */
+  get bytes(): Uint8Array {
+    this.generation++;
+    return this.pixels;
+  }
+  get view(): DataView {
+    this.generation++;
+    return this.pixelView;
+  }
+  get byteLength(): number {
+    return this.pixels.length;
+  }
+  /**
+   * Pixel bytes for a caller that only reads them and records `generation` first, such as a
+   * GPU upload. Writing through this array would leave caches stale.
+   */
+  readOnlyBytes(): Uint8Array {
+    return this.pixels;
+  }
+  /** Whether a span is initialized, without counting as an access. */
+  isInitialized(offset: number, length: number): boolean {
+    return (
+      !this.disposed &&
+      Number.isSafeInteger(offset) &&
+      Number.isSafeInteger(length) &&
+      offset >= 0 &&
+      length >= 0 &&
+      offset + length <= this.pixels.length &&
+      offset + length <= this.initializedPrefix
+    );
+  }
   static allocate(length: number, initialized: boolean): BurikoBitmapStorage {
     const resident = allocateBurikoResidentBytes(length);
     const storage = new BurikoBitmapStorage(resident ?? new Uint8Array(length), initialized);
@@ -59,9 +96,10 @@ export class BurikoBitmapStorage {
       !Number.isSafeInteger(length) ||
       offset < 0 ||
       length < 0 ||
-      offset + length > this.bytes.length
+      offset + length > this.pixels.length
     )
       throw new RangeError('Buriko bitmap accesses outside native allocation');
+    if (!read) this.generation++;
     if (
       read &&
       !this.nativeHeapReads &&
@@ -75,14 +113,14 @@ export class BurikoBitmapStorage {
   written(offset: number, length: number): void {
     this.range(offset, length, false);
     if (length === 0) return;
-    if (offset === 0 && length === this.bytes.length) {
+    if (offset === 0 && length === this.pixels.length) {
       this.defined = null;
-      this.initializedPrefix = this.bytes.length;
+      this.initializedPrefix = this.pixels.length;
     } else if (this.defined === null) {
       if (offset <= this.initializedPrefix)
         this.initializedPrefix = Math.max(this.initializedPrefix, offset + length);
       else {
-        this.defined = new Uint8Array(this.bytes.length);
+        this.defined = new Uint8Array(this.pixels.length);
         this.defined.fill(1, 0, this.initializedPrefix);
         this.defined.fill(1, offset, offset + length);
       }
@@ -93,7 +131,7 @@ export class BurikoBitmapStorage {
       if (offset <= this.initializedPrefix && offset + length > this.initializedPrefix) {
         this.initializedPrefix = offset + length;
         while (this.defined[this.initializedPrefix] === 1) this.initializedPrefix++;
-        if (this.initializedPrefix === this.bytes.length) this.defined = null;
+        if (this.initializedPrefix === this.pixels.length) this.defined = null;
       }
     }
   }
@@ -105,7 +143,7 @@ export class BurikoBitmapStorage {
       !Number.isSafeInteger(length) ||
       offset < 0 ||
       length < 0 ||
-      offset + length > this.bytes.length ||
+      offset + length > this.pixels.length ||
       offset + length > this.initializedPrefix
     )
       return null;
@@ -132,7 +170,7 @@ export class BurikoBitmapStorage {
    */
   cloneRange(offset: number, length: number): BurikoBitmapStorage {
     this.range(offset, length, false);
-    const source = this.bytes.subarray(offset, offset + length),
+    const source = this.pixels.subarray(offset, offset + length),
       resident = allocateBurikoResidentBytes(length);
     resident?.set(source);
     const clone = new BurikoBitmapStorage(resident ?? source.slice(), true);
@@ -148,7 +186,8 @@ export class BurikoBitmapStorage {
   release(): void {
     releaseRasterText(this);
     if (!this.disposed && residentFinalizer.unregister(this))
-      releaseBurikoResidentBytes(this.bytes);
+      releaseBurikoResidentBytes(this.pixels);
+    this.generation++;
     this.disposed = true;
   }
 }

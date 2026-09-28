@@ -103,8 +103,16 @@ async function pageMain(_fixture, options) {
     );
     presenter.invalidate();
     const started = performance.now();
-    presenter.upload(texture, test.logicalWidth, test.logicalHeight, undefined);
-    presenter.draw(texture, coordinates, test.sampler, test.outputWidth, test.outputHeight, true);
+    presenter.upload('display', texture, test.logicalWidth, test.logicalHeight, undefined);
+    presenter.draw(
+      'display',
+      texture,
+      coordinates,
+      test.sampler,
+      test.outputWidth,
+      test.outputHeight,
+      true,
+    );
     canvas.width = test.outputWidth;
     canvas.height = test.outputHeight;
     const context = canvas.getContext('2d', {alpha: false});

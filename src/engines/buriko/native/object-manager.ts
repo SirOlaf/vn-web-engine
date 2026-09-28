@@ -1,3 +1,4 @@
+import type {BurikoBitmapRectangle} from './bitmap.js';
 import {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import {BurikoDisplayCriticalSection} from './display-critical-section.js';
 import {BurikoDisplayDamage} from './display-damage.js';
@@ -7,6 +8,18 @@ import {BurikoDisplayObjectLists} from './display-object-lists.js';
 import {BurikoDisplayRenderer} from './display-renderer.js';
 import {BurikoDistributedAllocator} from './distributed-processing.js';
 import {BurikoSurfaces} from './surfaces.js';
+
+/** Browser-optimized GPU frames for the display renderer; see display-gpu-compositor.ts. */
+export interface BurikoGpuFrames {
+  /** Start drawing `bounds` of the display on the GPU, or return false for software. */
+  begin(context: BurikoDisplayContext, bounds: BurikoBitmapRectangle): boolean;
+  /** False when the frame failed; the same jobs must then be drawn in software. */
+  end(context: BurikoDisplayContext): boolean;
+  /** Make the software display pixels current before software reads or draws them. */
+  prepareSoftware(): void;
+  /** Set to compare a successful GPU frame with the same jobs drawn in software afterwards. */
+  verify?(bounds: BurikoBitmapRectangle): void;
+}
 
 /** The concrete CObjectManager state, shared by the global and window-local classes.
  * Its descriptor is a referenced record. Object pools, surfaces and CDspObj globals
@@ -19,6 +32,8 @@ export class BurikoObjectManager {
   private cachedBackdropType = 0;
   private objectManagerDisposed = false;
   minimumKey = 0;
+  /** Set by the display device while GPU compositing is available; null draws in software. */
+  gpuFrames: BurikoGpuFrames | null = null;
 
   constructor(
     readonly compositor: BurikoBitmapCompositor,

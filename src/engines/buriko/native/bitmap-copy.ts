@@ -23,7 +23,10 @@ function clearBurikoBitmapPixels(target: BurikoBitmap): void {
   }
 }
 
-const clearBurikoBitmapRegion = withBurikoBitmapText(clearBurikoBitmapPixels, {clear: true});
+const clearBurikoBitmapRegion = withBurikoBitmapText(clearBurikoBitmapPixels, {
+  clear: true,
+  gpu: 'clear',
+});
 
 export function clearBurikoBitmap(
   bitmap: BurikoBitmap,
@@ -294,6 +297,7 @@ function blendBurikoRgbIntoAlphaWithTransparencyPixels(
 
 export const copyBurikoBitmapRows = withBurikoBitmapText(copyBurikoBitmapRowsPixels, {
   replace: true,
+  gpu: 'copy-rows',
 });
 
 export const copyBurikoRgbToAlpha = withBurikoBitmapText(copyBurikoRgbToAlphaPixels, {

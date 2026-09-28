@@ -201,6 +201,7 @@ export class BurikoDisplayManager extends BurikoObjectManager {
     const destination = this.surfaces.snapshot(surface);
     if (destination === null)
       throw new Error('Buriko display capture has no allocated surface descriptor');
+    this.gpuFrames?.prepareSoftware();
     if (this.lockDisplay() === 0) clearBurikoBitmap(destination);
     else {
       copyBurikoBitmapRows(destination, this.displayContext().bitmap);

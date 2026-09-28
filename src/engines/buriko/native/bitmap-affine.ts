@@ -725,6 +725,7 @@ export const blendTransformedBurikoBitmap = withBurikoBitmapText(
     },
     destination: 1,
     source: 2,
+    gpu: 'affine-blend',
     applied: (result, args) =>
       result === 0 &&
       args[1].format === 1 &&

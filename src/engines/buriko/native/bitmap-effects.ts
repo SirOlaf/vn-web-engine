@@ -294,4 +294,5 @@ export const tintBurikoBitmap32 = withBurikoBitmapText(tintBurikoBitmap32Pixels,
 export const dimBurikoRgb = withBurikoBitmapText(dimBurikoRgbPixels, {
   replace: true,
   opacity: (args) => (256 - args[2]) / 256,
+  gpu: 'dim-rgb',
 });

@@ -25,6 +25,7 @@ import {BurikoBpMemory} from '../../src/engines/buriko/bp/memory.js';
 import {setBurikoBpWasmEnabled} from '../../src/engines/buriko/bp/wasm-core.js';
 import {setBurikoBitmapResidencyEnabled} from '../../src/engines/buriko/native/bitmap-resident.js';
 import {setBurikoGpuPresentationEnabled} from '../../src/engines/buriko/native/display-gpu-presenter.js';
+import {setBurikoGpuCompositingMode} from '../../src/engines/buriko/native/display-gpu-compositor.js';
 import {
   BurikoBrowserSpeakerBackend,
   BurikoMemorySpeakerBackend,
@@ -372,6 +373,9 @@ async function launch(
       setBurikoBitmapResidencyEnabled(false);
     // `?gpu=0` keeps software presentation under the browser-optimized runtime profile.
     setBurikoGpuPresentationEnabled(new URLSearchParams(location.search).get('gpu') !== '0');
+    // `?gpu-compose=0` keeps software compositing while WebGL still presents.
+    const compose = new URLSearchParams(location.search).get('gpu-compose');
+    setBurikoGpuCompositingMode(compose === '0' ? 'off' : compose === 'verify' ? 'verify' : 'on');
     const memory = new BurikoBpMemory(new Uint8Array(0x10000), graph.engineVersion.bpAbi);
     const data = new BurikoProductionDataOwners(graph, memory);
     const diagnostics = new BurikoBpDiagnostics((notice) => {

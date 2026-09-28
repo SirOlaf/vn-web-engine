@@ -17,6 +17,8 @@ import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
 import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
 
 const BROWSER_RENDER_PIXEL_BUDGET = 65536;
+/** GPU frames draw each damage rectangle as one job; strips only multiply draw calls. */
+const GPU_RENDER_PIXEL_BUDGET = 0x40000000;
 
 export interface BurikoDisplayDamageResult {
   /** An all-ones DWORD means full redraw; otherwise this is the output rectangle count. */
@@ -56,7 +58,48 @@ export class BurikoDisplayRenderer {
       !Object.values(rectangle).every((value) => value === (value | 0))
     )
       return budget;
-    return Math.max(budget, BROWSER_RENDER_PIXEL_BUDGET);
+    return Math.max(
+      budget,
+      this.manager.gpuFrames === null ? BROWSER_RENDER_PIXEL_BUDGET : GPU_RENDER_PIXEL_BUDGET,
+    );
+  }
+  /**
+   * Browser-optimized display draws first try the GPU. A failed GPU frame has changed neither
+   * software pixels nor object state that a draw does not also change, so the same jobs then
+   * run in software before the shared notifications.
+   */
+  private runJobs(
+    context: BurikoDisplayContext,
+    jobs: readonly BurikoDisplayRenderJob[],
+    flag: number,
+  ): void {
+    const gpu = this.manager.gpuFrames;
+    if (gpu !== null && jobs.length !== 0) {
+      const bounds = {...jobs[0]!.rectangle};
+      for (const {rectangle} of jobs) {
+        bounds.left = Math.min(bounds.left, rectangle.left);
+        bounds.top = Math.min(bounds.top, rectangle.top);
+        bounds.right = Math.max(bounds.right, rectangle.right);
+        bounds.bottom = Math.max(bounds.bottom, rectangle.bottom);
+      }
+      if (gpu.verify !== undefined) gpu.prepareSoftware();
+      if (gpu.begin(context, bounds)) {
+        let drawn = false;
+        try {
+          this.jobs(context).run(jobs, flag);
+        } finally {
+          drawn = gpu.end(context);
+        }
+        if (drawn && gpu.verify === undefined) return;
+        if (drawn) {
+          this.jobs(context).run(jobs, flag);
+          gpu.verify!(bounds);
+          return;
+        }
+      }
+      gpu.prepareSoftware();
+    }
+    this.jobs(context).run(jobs, flag);
   }
   private jobs(context = this.context()): BurikoDisplayRenderJobs {
     return new BurikoDisplayRenderJobs(
@@ -102,7 +145,8 @@ export class BurikoDisplayRenderer {
       count < 2 ? [{...context.bounds}] : burikoDisplayStrips(budget, context.bounds);
     recordRuntimeMetric('buriko.display.render-jobs', count);
     if (flag !== 0) recordRuntimeMetric('buriko.display.render-job-budget', budget);
-    this.jobs(context).run(
+    this.runJobs(
+      context,
       rectangles.map((rectangle) => ({rectangle, key: 0})),
       flag,
     );
@@ -146,7 +190,7 @@ export class BurikoDisplayRenderer {
     }
     recordRuntimeMetric('buriko.display.render-jobs', jobCount);
     for (const budget of budgets) recordRuntimeMetric('buriko.display.render-job-budget', budget);
-    this.jobs().run(jobs, 1);
+    this.runJobs(this.context(), jobs, 1);
     this.finishDraw();
     return {count: damage.length >>> 0, rectangles: damage.map((entry) => entry.rectangle)};
   }
