@@ -127,5 +127,14 @@ export class BurikoProductionInterpreter {
       this.interpreter.batchableOpcodes,
       this.interpreter.batchableNativeSlots,
     );
+    const wasm = core.memory.wasm;
+    if (wasm !== null) {
+      wasm.configure(
+        this.interpreter.directOpcodes,
+        this.interpreter.batchableOpcodes,
+        core.diagnostics,
+      );
+      scheduler.bindBurstAccelerator(wasm);
+    }
   }
 }

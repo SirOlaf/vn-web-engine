@@ -7,6 +7,7 @@ import {
   requireDeterminateMemory,
 } from '../../../core/indeterminate-memory.js';
 import {BURIKO_BP_ABI_172, type BurikoBpAbi} from './abi.js';
+import {BurikoBpWasmCore} from './wasm-core.js';
 import {
   BurikoBpPointer,
   BurikoBpRegion,
@@ -205,6 +206,8 @@ export function pointerView(pointer: BurikoBpPointer, length?: number): DataView
  */
 export class BurikoBpMemory {
   readonly regions: BurikoBpRegionTable;
+  /** The WebAssembly interpreter core over this memory's arena, when available. */
+  readonly wasm: BurikoBpWasmCore | null;
   readonly pools: (BurikoBpRegion | null)[][];
   private readonly poolLayout: typeof BURIKO_BP_POOL_LAYOUT | typeof BURIKO_BP_POOL_LAYOUT_1665;
   readonly indirectBanks: (IndirectRecord | null)[][] = [
@@ -226,7 +229,10 @@ export class BurikoBpMemory {
     readonly abi: BurikoBpAbi = BURIKO_BP_ABI_172,
     arenaBytes = BURIKO_BP_ARENA_BYTES,
   ) {
-    this.regions = new BurikoBpRegionTable(arenaBytes);
+    const wasm = BurikoBpWasmCore.create(arenaBytes);
+    this.regions = new BurikoBpRegionTable(arenaBytes, wasm ?? undefined);
+    this.wasm = wasm?.core ?? null;
+    this.wasm?.attach(this);
     this.globalRegionValue = this.regions.adopt(globalMemory);
     this.poolLayout = abi.revision === '1.665' ? BURIKO_BP_POOL_LAYOUT_1665 : BURIKO_BP_POOL_LAYOUT;
     // 00463800 assigns one complete 26-bit-offset bank per allocation, in first-free order.

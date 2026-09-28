@@ -3,7 +3,16 @@ import {reportWasmGraphicsFallback} from '../platform/runtime-advisories.js';
 /** Optional embedded kernels do not require fetch, a server MIME setting, or WASI. */
 const modules = new Map<string, WebAssembly.Module | null>();
 
-export function instantiateEmbeddedWasm(binary: string): WebAssembly.Instance | null {
+/**
+ * Instantiates an embedded base64 module, or returns null when WebAssembly, the module's
+ * features (such as SIMD) or its allocation are unavailable. Callers then keep their JavaScript
+ * implementation; `reportFallback` tells the user once which capability was lost.
+ */
+export function instantiateEmbeddedWasm(
+  binary: string,
+  imports?: WebAssembly.Imports,
+  reportFallback: () => void = reportWasmGraphicsFallback,
+): WebAssembly.Instance | null {
   try {
     let module = modules.get(binary);
     if (module === undefined) {
@@ -11,12 +20,13 @@ export function instantiateEmbeddedWasm(binary: string): WebAssembly.Instance | 
       module = new WebAssembly.Module(bytes);
       modules.set(binary, module);
     }
-    return module === null ? null : new WebAssembly.Instance(module);
+    if (module === null) return null;
+    return imports === undefined
+      ? new WebAssembly.Instance(module)
+      : new WebAssembly.Instance(module, imports);
   } catch {
-    // Unsupported SIMD, unavailable WebAssembly, CSP, or allocation failure:
-    // callers retain their ordinary JavaScript implementation.
     modules.set(binary, null);
-    reportWasmGraphicsFallback();
+    reportFallback();
     return null;
   }
 }

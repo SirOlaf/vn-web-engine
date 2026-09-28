@@ -45,3 +45,13 @@ export function reportWasmGraphicsFallback(): void {
       'Some graphics are using JavaScript instead of WebAssembly. Scenes may run very slowly or stall. Check that your browser supports WebAssembly SIMD; large images may also exceed the acceleration limit.',
   });
 }
+
+/** The bytecode interpreter reports once when its WebAssembly core is unavailable. */
+export function reportWasmInterpreterFallback(): void {
+  reportRuntimeAdvisory({
+    id: 'wasm-interpreter-fallback',
+    title: 'WebAssembly interpreter fallback',
+    message:
+      'The game script interpreter is running in JavaScript instead of WebAssembly. Loading and scene changes may be noticeably slower.',
+  });
+}

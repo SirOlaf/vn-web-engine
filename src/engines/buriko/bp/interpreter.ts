@@ -36,6 +36,14 @@ const batchableHandlers: Readonly<Record<number, BurikoBpOpcodeHandler>> = Objec
   ]),
 );
 
+/** The pure primary handlers an accelerated core may execute in their place. */
+const directHandlers: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
+  ...controlOpcodes,
+  ...integerOpcodes,
+  ...memoryOpcodes,
+  ...localOpcodes,
+};
+
 export type BurikoBpDispatchResult =
   | {readonly defined: false; readonly opcode: number}
   | {
@@ -49,6 +57,8 @@ export class BurikoBpInterpreter {
   private readonly primary: readonly (BurikoBpOpcodeHandler | undefined)[];
   /** Scheduling hint only; the selected handlers and instruction results stay native. */
   readonly batchableOpcodes: readonly boolean[];
+  /** Opcodes whose selected handler is the canonical pure handler, never a replacement. */
+  readonly directOpcodes: readonly boolean[];
   private validatedContext: BurikoBpOpcodeContext | null = null;
   /** Per native primary, the secondaries whose bank definitions opted into batching. */
   readonly batchableNativeSlots: readonly (readonly boolean[] | undefined)[];
@@ -93,6 +103,13 @@ export class BurikoBpInterpreter {
     this.batchableNativeSlots = Object.freeze(
       Array.from({length: 256}, (_, opcode) =>
         nativeSlots[opcode] !== undefined ? nativeBank.batchableSecondaries(opcode) : undefined,
+      ),
+    );
+    this.directOpcodes = Object.freeze(
+      Array.from(
+        {length: 256},
+        (_, opcode) =>
+          handlers[opcode] !== undefined && handlers[opcode] === directHandlers[opcode],
       ),
     );
     this.batchableOpcodes = Object.freeze(

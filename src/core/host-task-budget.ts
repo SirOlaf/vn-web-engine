@@ -45,6 +45,18 @@ export class HostTaskBudget {
     return this.checkpoint();
   }
 
+  /** Batched checkpoints left before the next one reads the clock (at least 1). */
+  batchedRemaining(): number {
+    return this.checkpointInterval - this.checkpointsSinceClock;
+  }
+
+  /** `count` batched checkpoints that the caller proved stay below `batchedRemaining()`. */
+  countBatched(count: number): void {
+    if (count >= this.batchedRemaining())
+      throw new RangeError('Batched checkpoints would pass a clock read');
+    this.checkpointsSinceClock += count;
+  }
+
   /** Avoid allocating or awaiting a Promise while the current slice has time left. */
   checkpoint(): Promise<void> | undefined {
     if (this.checkpointsSinceClock !== 0) this.checkpointsSinceClock = 0;

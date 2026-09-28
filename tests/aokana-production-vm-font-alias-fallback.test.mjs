@@ -49,8 +49,8 @@ test('mounted font alias mismatch selects the bound fallback for shared text mea
   };
   const fixture = await createMountedVmFixture({fontProvider});
   const {graph, memory, child, definitions, invoke} = fixture;
-  const bytes = memory.globalMemory;
-  const view = new DataView(bytes.buffer);
+  const bytes = () => memory.globalMemory;
+  const view = () => new DataView(bytes().buffer, bytes().byteOffset, bytes().byteLength);
   const call = async (primary, secondary, args, pushed = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushed);
     assert.equal(child.process, null);
@@ -68,10 +68,10 @@ test('mounted font alias mismatch selects the bound fallback for shared text mea
     );
     assert.equal(graph.device.isPresent(), false);
 
-    bytes.set(new TextEncoder().encode('Primary\0'), 0x100);
-    bytes.set(new TextEncoder().encode('Expected A\0'), 0x140);
-    bytes.set(new TextEncoder().encode('Secondary\0'), 0x180);
-    bytes.set(new TextEncoder().encode('A\0'), 0x1c0);
+    bytes().set(new TextEncoder().encode('Primary\0'), 0x100);
+    bytes().set(new TextEncoder().encode('Expected A\0'), 0x140);
+    bytes().set(new TextEncoder().encode('Secondary\0'), 0x180);
+    bytes().set(new TextEncoder().encode('A\0'), 0x1c0);
     await call(0xb0, 0xc8, [0x100, 0x140]);
     await call(0xb0, 0xc7, [0x100, 0x180]);
     await call(0xb0, 0xc0, [0x100], 1);
@@ -86,7 +86,7 @@ test('mounted font alias mismatch selects the bound fallback for shared text mea
     await call(0x91, 0x9b, [0x240, 0x1c0, 2, 8, 100, 0, 1], 1);
     assert.equal(pop32(child.state), 0);
     assert.deepEqual(created, ['Primary', 'Secondary']);
-    assert.equal(view.getInt32(0x240, true), 7);
+    assert.equal(view().getInt32(0x240, true), 7);
     assert.equal(child.state.stackIndex, 0);
     assert.equal(child.process, null);
     assert.equal(graph.device.isPresent(), false);

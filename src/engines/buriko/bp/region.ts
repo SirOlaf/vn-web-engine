@@ -39,14 +39,33 @@ export class BurikoBpArena {
   private readonly free: FreeBlock[];
   private readonly provenance: IndeterminateBitmap;
   private wholeViews: BurikoBpArenaViews;
+  private readonly memory: WebAssembly.Memory | null;
 
-  constructor(initialBytes: number) {
-    const capacity = Math.max(ALIGNMENT, roundUp(initialBytes));
-    this.dataBytes = capacity;
-    this.buffer = new ArrayBuffer(capacity + capacity / 8);
-    this.free = [{offset: 0, size: capacity}];
-    this.provenance = new IndeterminateBitmap(this.buffer, this.bitmap(), capacity);
+  /**
+   * Without `wasm`, the arena is a plain `ArrayBuffer`. With it, the arena is that
+   * `WebAssembly.Memory` (sized by `wasmPages`), and its first `reserved` bytes belong to the
+   * module's own data and stack.
+   */
+  constructor(initialBytes: number, wasm?: {memory: WebAssembly.Memory; reserved: number}) {
+    this.memory = wasm?.memory ?? null;
+    if (this.memory !== null) {
+      this.buffer = this.memory.buffer;
+      this.dataBytes = layoutCapacity(this.buffer.byteLength);
+    } else {
+      this.dataBytes = Math.max(ALIGNMENT, roundUp(initialBytes));
+      this.buffer = new ArrayBuffer(this.dataBytes + this.dataBytes / 8);
+    }
+    const reserved = roundUp(wasm?.reserved ?? 0);
+    if (reserved >= this.dataBytes)
+      throw new RangeError('Buriko arena has no room after its reservation');
+    this.free = [{offset: reserved, size: this.dataBytes - reserved}];
+    this.provenance = new IndeterminateBitmap(this.buffer, this.bitmap(), this.dataBytes);
     this.wholeViews = this.createViews();
+  }
+
+  /** Initial `WebAssembly.Memory` pages for an arena of at least `initialBytes` regions. */
+  static wasmPages(initialBytes: number): number {
+    return Math.ceil((roundUp(initialBytes) * 9) / 8 / WASM_PAGE);
   }
 
   /** Bytes available to regions. */
@@ -124,13 +143,20 @@ export class BurikoBpArena {
     const tail = last && last.offset + last.size === oldCapacity ? last.size : 0;
     let capacity = oldCapacity * 2;
     while (capacity - oldCapacity + tail < reserved) capacity *= 2;
-    const length = capacity + capacity / 8;
-    const transfer = (previous as TransferableBuffer).transfer;
     let next: ArrayBuffer;
-    if (typeof transfer === 'function') next = transfer.call(previous, length);
-    else {
-      next = new ArrayBuffer(length);
-      new Uint8Array(next).set(new Uint8Array(previous));
+    if (this.memory !== null) {
+      const pages = Math.ceil((capacity * 9) / 8 / WASM_PAGE);
+      this.memory.grow(pages - previous.byteLength / WASM_PAGE);
+      next = this.memory.buffer;
+      capacity = layoutCapacity(next.byteLength);
+    } else {
+      const length = capacity + capacity / 8;
+      const transfer = (previous as TransferableBuffer).transfer;
+      if (typeof transfer === 'function') next = transfer.call(previous, length);
+      else {
+        next = new ArrayBuffer(length);
+        new Uint8Array(next).set(new Uint8Array(previous));
+      }
     }
     // The old bitmap now lies in free data space; it moves to the new data end, and the bits
     // for the added bytes are the zeroed tail of the new buffer.
@@ -145,6 +171,13 @@ export class BurikoBpArena {
     else this.free.push({offset: oldCapacity, size: capacity - oldCapacity});
     return this.free.length - 1;
   }
+}
+
+const WASM_PAGE = 0x10000;
+
+/** Data bytes of a `length`-byte arena buffer: the largest 16-byte multiple whose bitmap fits after it. */
+function layoutCapacity(length: number): number {
+  return Math.floor((length * 8) / 9 / ALIGNMENT) * ALIGNMENT;
 }
 
 function roundUp(size: number): number {
@@ -265,8 +298,8 @@ export class BurikoBpRegionTable {
   readonly arena: BurikoBpArena;
   private readonly live = new Set<BurikoBpRegion>();
 
-  constructor(initialBytes = 0x1000) {
-    this.arena = new BurikoBpArena(initialBytes);
+  constructor(initialBytes = 0x1000, wasm?: {memory: WebAssembly.Memory; reserved: number}) {
+    this.arena = new BurikoBpArena(initialBytes, wasm);
   }
 
   /** A zero-filled region. Growth re-derives every live region's views before returning. */

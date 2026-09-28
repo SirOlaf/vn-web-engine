@@ -7,12 +7,29 @@ import {fileURLToPath} from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const target = await mkdtemp(join(tmpdir(), 'vn-web-wasm-'));
 try {
-  for (const [name, exported, destination] of [
-    ['linear-rgb', 'LINEAR_RGB_WASM_BINARY', 'src/graphics/linear-rgb-wasm-binary.ts'],
+  const kernel = ['-C', 'target-feature=+simd128', '-C', 'link-arg=--export=__heap_base'];
+  for (const [name, exported, destination, flags] of [
+    ['linear-rgb', 'LINEAR_RGB_WASM_BINARY', 'src/graphics/linear-rgb-wasm-binary.ts', kernel],
     [
       'aokana-bitmap',
       'BURIKO_BITMAP_WASM_BINARY',
       'src/engines/buriko/native/bitmap-alpha-wasm-binary.ts',
+      kernel,
+    ],
+    // The interpreter shares the VM arena: it imports its memory, keeps a small stack in the
+    // arena's reserved prefix, and runs without SIMD.
+    [
+      'buriko-bp',
+      'BURIKO_BP_WASM_BINARY',
+      'src/engines/buriko/bp/wasm-binary.ts',
+      [
+        '-C',
+        'link-arg=--import-memory',
+        '-C',
+        'link-arg=-zstack-size=65536',
+        '-C',
+        'link-arg=--export=__heap_base',
+      ],
     ],
   ]) {
     const result = spawnSync(
@@ -29,10 +46,7 @@ try {
         target,
         '--release',
         '--',
-        '-C',
-        'target-feature=+simd128',
-        '-C',
-        'link-arg=--export=__heap_base',
+        ...flags,
       ],
       {cwd: root, stdio: 'inherit'},
     );

@@ -147,6 +147,9 @@ async function pageMain({profile}, options) {
       bytes: branchToStart([0x80, 1, 0, 63, 0x25, 0x73], false),
     },
   ];
+  // Runtimes with the WebAssembly core also run the scheduled workloads through it.
+  const wasm = memory.wasm ?? null;
+  wasm?.configure(interpreter.directOpcodes, interpreter.batchableOpcodes, diagnostics);
   const workloads = [
     ...programs.map((program) => ({...program, scheduled: false})),
     ...programs
@@ -158,6 +161,9 @@ async function pageMain({profile}, options) {
           program.name === 'native-random-branch',
       )
       .map((program) => ({...program, scheduled: true})),
+    ...(wasm === null
+      ? []
+      : programs.map((program) => ({...program, scheduled: true, accelerated: true}))),
   ];
   setRuntimeProfile(profile);
   const cycles = options.smoke ? 1000 : 100000;
@@ -178,6 +184,7 @@ async function pageMain({profile}, options) {
       moduleCapacity: 256,
       frameCapacity: 64,
       heapEnabled: false,
+      regions: memory.regions,
     });
     const bytes = new Uint8Array(16 + program.bytes.length);
     const header = new DataView(bytes.buffer);
@@ -207,6 +214,25 @@ async function pageMain({profile}, options) {
       // loop, native burst limit, host budget, or scheduler traversal.
       return ++executed === instructions ? 1 : result;
     }, interpreter.batchableOpcodes);
+    if (program.accelerated) {
+      // Stops at the same exact instruction count as the executor above.
+      scheduler.bindBurstAccelerator({
+        opcodes: wasm.opcodes,
+        result: 0,
+        get batchable() {
+          return wasm.batchable;
+        },
+        get blocked() {
+          return wasm.blocked;
+        },
+        run(current, limit) {
+          const count = wasm.run(current, Math.min(limit, instructions - executed));
+          executed += count;
+          this.result = count !== 0 && executed === instructions ? 1 : wasm.result;
+          return count;
+        },
+      });
+    }
     scheduler?.append(thread);
     let coldMs;
     let checksum;
@@ -265,7 +291,7 @@ async function pageMain({profile}, options) {
     }
     samples.sort((a, b) => a - b);
     cases.push({
-      name: (program.scheduled ? 'scheduled-' : '') + program.name,
+      name: (program.accelerated ? 'wasm-' : program.scheduled ? 'scheduled-' : '') + program.name,
       scheduled: program.scheduled,
       instructions,
       hash: checksum,

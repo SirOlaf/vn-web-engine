@@ -16,6 +16,24 @@ import {
 import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
 
 export const BURIKO_BP_BURST_INSTRUCTIONS = 0x400000;
+
+/**
+ * Executes runs of pure instructions in place of the instruction executor, with identical
+ * results. `run` stops before an instruction it cannot execute, after a nonzero handler result,
+ * and after an instruction that is not batchable.
+ */
+export interface BurikoBpBurstAccelerator {
+  /** Opcodes `run` may start with. */
+  readonly opcodes: readonly boolean[];
+  /** Runs up to `limit` instructions of `thread`; returns how many completed. */
+  run(thread: BurikoBpThread, limit: number): number;
+  /** Handler result of the last completed instruction. */
+  readonly result: number;
+  /** Whether the last completed instruction is batchable. */
+  readonly batchable: boolean;
+  /** Whether the run stopped before an instruction only the executor can run. */
+  readonly blocked: boolean;
+}
 export type BurikoBpSchedulerResult = 0 | 1 | 2;
 
 /** Boundary samples locate instruction-heavy loops without per-instruction tracing. */
@@ -156,6 +174,7 @@ export class BurikoBpScheduler {
   private sharedLoaderWorker: BurikoSharedLoaderWorker | null = null;
   private executeInstruction: ((thread: BurikoBpThread) => BurikoBpInstructionResult) | null;
   private batchableOpcodes: readonly boolean[] | null = null;
+  private accelerator: BurikoBpBurstAccelerator | null = null;
   private batchableNativeSlots: readonly (readonly boolean[] | undefined)[] | null = null;
 
   constructor(
@@ -307,6 +326,13 @@ export class BurikoBpScheduler {
     this.gridEvaluationWorkers = workers;
   }
 
+  /** Pure instruction runs go to `accelerator`; the bound executor handles everything else. */
+  bindBurstAccelerator(accelerator: BurikoBpBurstAccelerator): void {
+    if (this.executeInstruction === null)
+      throw new Error('Buriko scheduler accelerator requires a bound instruction executor');
+    this.accelerator = accelerator;
+  }
+
   private checkpointHostBudget(batchable = false): Promise<void> | undefined {
     const pending = batchable ? this.hostBudget.checkpointBatched() : this.hostBudget.checkpoint();
     if (pending !== undefined) this.budgetYields++;
@@ -449,7 +475,8 @@ export class BurikoBpScheduler {
     invocationToken: object,
   ): Promise<BurikoBpSchedulerResult> {
     const batchableOpcodes = this.batchableOpcodes,
-      batchableNativeSlots = this.batchableNativeSlots;
+      batchableNativeSlots = this.batchableNativeSlots,
+      accelerator = this.accelerator;
     let stop = this.stopRequested;
     let condition = false;
     let node = this.root.next;
@@ -498,7 +525,38 @@ export class BurikoBpScheduler {
       let sliceInstructions = 0;
       let sliceStartPc = node.state.pc;
       try {
+        // After a run stops before an instruction it cannot execute, that one instruction goes
+        // to the executor without another accelerator attempt.
+        let accelerate = accelerator !== null;
         for (let count = 0; count < BURIKO_BP_BURST_INSTRUCTIONS; count++) {
+          if (accelerate && accelerator!.opcodes[node.state.moduleMemory[node.state.pc]!]) {
+            // Every instruction but the last is batchable and returns 0, so its checkpoint is
+            // counted without a clock read; the last checkpoint below is the executor's own.
+            const limit = Math.min(
+              BURIKO_BP_BURST_INSTRUCTIONS - count,
+              this.hostBudget.batchedRemaining(),
+            );
+            const executed = accelerator!.run(node.state, limit);
+            if (executed !== 0) {
+              count += executed - 1;
+              sliceInstructions += executed;
+              this.hostBudget.countBatched(executed - 1);
+              result = accelerator!.result as BurikoBpHandlerResult;
+              if (result !== 0) break;
+              accelerate = !accelerator!.blocked;
+              const pending = this.checkpointHostBudget(accelerator!.batchable);
+              if (pending !== undefined) {
+                finishInstructionSlice(finishSlice, sliceInstructions, sliceStartPc, node.state);
+                finishSlice = undefined;
+                await pending;
+                sliceInstructions = 0;
+                sliceStartPc = node.state.pc;
+                finishSlice = beginRuntimeSpan('buriko.vm.sync-slice');
+              }
+              continue;
+            }
+          }
+          accelerate = accelerator !== null;
           let instruction: BurikoBpInstructionResult;
           let batchable = false;
           if (batchableOpcodes !== null) {

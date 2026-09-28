@@ -20,6 +20,9 @@ import {pathToFileURL} from 'node:url';
 //     --compare FILE      compare the candidate against recorded digests
 //     --break GROUP       corrupt one opcode of GROUP in the candidate
 //     --self-test         --break every group in turn; fail unless each is detected
+//     --candidate-engine E   ts (default) or wasm: the candidate runs each instruction through
+//                         the WebAssembly core, falling back to its TypeScript handler when
+//                         the core hands the instruction back
 //     --verbose           print every mismatching case, not only the first per opcode
 
 const args = process.argv.slice(2);
@@ -41,6 +44,9 @@ const seed = Number(option('--seed', '1')) >>> 0;
 const recordPath = option('--record', null);
 const comparePath = option('--compare', null);
 const verbose = flag('--verbose');
+const candidateEngine = option('--candidate-engine', 'ts');
+if (candidateEngine !== 'ts' && candidateEngine !== 'wasm')
+  throw new Error('--candidate-engine requires ts or wasm');
 
 const GROUPS = [
   'control',
@@ -256,6 +262,8 @@ function provenanceMarks(provenance, bytes) {
  * stop before the instruction in both runners.
  */
 const WORK_LIMIT = 1 << 16;
+/** Candidate instructions the WebAssembly core attempted, and those it completed. */
+const engineCounts = {attempted: 0, wasm: 0};
 const stackWord = (thread, depth) =>
   thread.operandStack[
     (thread.stackIndex - depth + thread.operandStack.length) % thread.operandStack.length
@@ -266,7 +274,7 @@ const UNBOUNDED_WORK = {
 };
 
 class Materialized {
-  constructor(runtime, testCase, corrupt) {
+  constructor(runtime, testCase, corrupt, engine = 'ts') {
     const {state, memory, provenance, diagnostics} = runtime;
     const abi = runtime.abis[testCase.abi];
     this.runtime = runtime;
@@ -328,12 +336,36 @@ class Materialized {
       this.diagnostics.writeWatchEnabled = testCase.watch.enabled;
     }
     this.context = {thread, memory: this.memory, diagnostics: this.diagnostics, actor: {}};
+    this.wasm = null;
+    if (engine === 'wasm') {
+      if (!this.memory.wasm) throw new Error('The candidate runtime has no WebAssembly core');
+      // Direct opcodes are the canonical pure handlers; legacy and write-watch replacements
+      // stay in TypeScript, as in the interpreter's identity check.
+      const direct = Array.from({length: 256}, (_, op) =>
+        ['control', 'integer', 'memory', 'locals'].includes(this.table.get(op)?.group),
+      );
+      this.wasm = this.memory.wasm;
+      this.wasm.configure(direct, [], this.diagnostics);
+    }
   }
 
   /** Runs one instruction. The status matches the planned wasm `run` statuses. */
   step() {
     const thread = this.thread;
     let opcode = -1;
+    if (this.wasm) {
+      const next = thread.moduleMemory[thread.pc];
+      const entry = next === undefined ? undefined : this.table.get(next);
+      const bound = entry && UNBOUNDED_WORK[next];
+      if (entry && !(bound && entry.group === 'memory' && bound(thread) > WORK_LIMIT)) {
+        engineCounts.attempted++;
+        if (this.wasm.run(thread, 1) === 1) {
+          engineCounts.wasm++;
+          const result = this.wasm.result;
+          return {status: result === 0 ? 'ok' : `result ${result}`, opcode: next};
+        }
+      }
+    }
     try {
       opcode = this.runtime.decode.fetchOpcode(thread);
       const entry = this.table.get(opcode);
@@ -442,7 +474,7 @@ async function differential(reference, candidate, corrupt, recorded) {
   let total = 0;
   for (const {id, testCase, steps} of cases(reference)) {
     total++;
-    const actual = new Materialized(candidate, testCase, corrupt).run(steps);
+    const actual = new Materialized(candidate, testCase, corrupt, candidateEngine).run(steps);
     const hash = hashBytes(new TextEncoder().encode(actual.join('\n\n')));
     if (recordPath) record[id] = hash;
     let difference = null;
@@ -517,6 +549,7 @@ console.log(
     seed,
     cases: total,
     mismatches: mismatches.length,
+    ...(candidateEngine === 'wasm' ? {wasmInstructions: engineCounts} : {}),
   }),
 );
 process.exit(mismatches.length === 0 ? 0 : 1);

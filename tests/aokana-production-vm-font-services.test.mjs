@@ -50,8 +50,8 @@ test('mounted font enumeration registers the selected face for measurement and p
   };
   const fixture = await createMountedVmFixture({fontProvider});
   const {graph, memory, child, definitions, invoke} = fixture;
-  const bytes = memory.globalMemory;
-  const view = new DataView(bytes.buffer);
+  const bytes = () => memory.globalMemory;
+  const view = () => new DataView(bytes().buffer, bytes().byteOffset, bytes().byteLength);
   const call = async (primary, secondary, args) => {
     assert.equal(await invoke(primary, secondary, args, 0), 1);
     const result = pop32(child.state);
@@ -76,7 +76,7 @@ test('mounted font enumeration registers the selected face for measurement and p
 
     assert.equal(await call(0xb0, 0xc5, [0x100, 1]), 1);
     assert.deepEqual(
-      [...bytes.subarray(0x100, 0x10a)],
+      [...bytes().subarray(0x100, 0x10a)],
       [...new TextEncoder().encode('Synthetic\0')],
     );
     assert.deepEqual(enumerationCalls, [[1, false]]);
@@ -89,15 +89,15 @@ test('mounted font enumeration registers the selected face for measurement and p
 
     assert.equal(await invoke(0x90, 0x0d, [0xffffffff], 0), 0);
     assert.equal(child.process, null);
-    bytes.set(new TextEncoder().encode('A\0'), 0x180);
+    bytes().set(new TextEncoder().encode('A\0'), 0x180);
     assert.equal(await call(0x91, 0x9b, [0x240, 0x180, 2, 8, 100, 0, 0]), 0);
-    assert.equal(view.getInt32(0x240, true), 4);
+    assert.equal(view().getInt32(0x240, true), 4);
     assert.equal(created.length, 1);
     assert.equal(created[0].face, 'Synthetic');
     assert.equal(Math.abs(created[0].height), 8);
 
     assert.equal(await call(0xb0, 0xc6, [0x300, 0x100]), 1);
-    assert.equal(view.getInt32(0x300, true), 2);
+    assert.equal(view().getInt32(0x300, true), 2);
     assert.deepEqual(pitchCalls, ['Synthetic']);
 
     assert.equal(await call(0xb0, 0xc4, [0x400]), 3);
@@ -106,7 +106,7 @@ test('mounted font enumeration registers the selected face for measurement and p
       [128, false],
     ]);
     assert.deepEqual(
-      [...bytes.subarray(0x400, 0x41e)],
+      [...bytes().subarray(0x400, 0x41e)],
       [...new TextEncoder().encode('Synthetic\0MS Gothic\0MS Mincho\0')],
     );
     assert.equal(child.state.stackIndex, 0);

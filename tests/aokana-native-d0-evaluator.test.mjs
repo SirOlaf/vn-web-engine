@@ -293,13 +293,13 @@ test('all nine evaluator VM wrappers preserve pop order, independent progress an
     frameCapacity: 0,
   });
   const context = {thread, memory},
-    bytes = memory.globalMemory,
-    pointer = (offset) => hostPointer(bytes, offset),
-    view = new DataView(bytes.buffer);
+    bytes = () => memory.globalMemory,
+    pointer = (offset) => hostPointer(bytes(), offset),
+    view = () => new DataView(bytes().buffer, bytes().byteOffset, bytes().byteLength);
   grids.create(pointer(4), 0, 1);
-  const gridId = view.getUint32(4, true),
+  const gridId = view().getUint32(4, true),
     {input} = actorsFixture([0, 4], grids.get(gridId));
-  bytes.set(input.bytes, 1024);
+  bytes().set(input.bytes, 1024);
   const workers = new BurikoGridEvaluationWorkers(allocator, main, grids),
     slots = new Map(createGroupD0Evaluator(workers).map((slot) => [slot.secondary, slot.execute]));
   assert.equal(slots.size, 9);
@@ -311,35 +311,35 @@ test('all nine evaluator VM wrappers preserve pop order, independent progress an
     return result;
   };
   await invoke(0x80, [32], false);
-  const id = view.getUint32(32, true);
+  const id = view().getUint32(32, true);
   assert.equal(id, 1);
   assert.equal(await invoke(0x87, [64, id]), 0);
-  assert.equal(view.getUint32(64, true), 0);
+  assert.equal(view().getUint32(64, true), 0);
   assert.equal(await invoke(0x87, [64, id]), 0);
-  assert.equal(view.getUint32(64, true), 0xffff0000);
+  assert.equal(view().getUint32(64, true), 0xffff0000);
   assert.equal(await invoke(0x84, [id, 3]), 0);
   assert.equal(await invoke(0x88, [id, gridId, 2, 1024, 1]), 0);
   assert.equal(workers.hasPendingWork(), true);
   assert.equal(await invoke(0x87, [64, id]), 14);
   assert.equal(await invoke(0x8e, [8192, id, 0]), 14);
-  bytes.fill(0, 1024, 1024 + input.bytes.length); // Queue owns the copied actor payload.
+  bytes().fill(0, 1024, 1024 + input.bytes.length); // Queue owns the copied actor payload.
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(workers.hasPendingWork(), false);
   assert.equal(await invoke(0x87, [64, id]), 0);
-  assert.equal(view.getUint32(64, true), 0);
+  assert.equal(view().getUint32(64, true), 0);
   assert.equal(await invoke(0x8e, [8192, id, 0]), 0);
-  assert.equal(view.getUint32(8192, true), input.view.getUint32(0, true));
+  assert.equal(view().getUint32(8192, true), input.view.getUint32(0, true));
   assert.equal(await invoke(0x8c, [id, gridId]), 0);
-  bytes.set(input.bytes.subarray(0, 0x834), 1024);
+  bytes().set(input.bytes.subarray(0, 0x834), 1024);
   assert.equal(await invoke(0x8d, [id, 0, 1024, 0, 0]), 0);
   assert.equal(await invoke(0x8a, [5120, 64, id, 0, 2]), 0);
   assert.equal(workers.hasPendingWork(), true);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(view.getUint32(64, true), 2);
+  assert.equal(view().getUint32(64, true), 2);
   assert.equal(await invoke(0x8d, [id, 99, 1024, 0, 1]), 0);
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(await invoke(0x87, [64, id]), 0);
-  assert.equal(view.getUint32(64, true), 17);
+  assert.equal(view().getUint32(64, true), 17);
   assert.equal(await invoke(0x81, [id]), 0);
   assert.equal(await invoke(0x81, [id]), 1);
   main.dispose();
