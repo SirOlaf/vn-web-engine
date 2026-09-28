@@ -46,15 +46,21 @@ export class ScreenImage {
     sprite.show(true);
     return sprite;
   }
-  /** A button from `name` and whichever of `name_f`, `name_c`, `name_l` exist (0x449C00). */
+  /**
+   * A button from `name` and whichever of `name_f`, `name_c`, `name_l` exist (0x449C00).
+   * Each frame keeps its own placement relative to the first, so a focus image may add a
+   * caption beside the button.
+   */
   async button(name: string, press: () => void): Promise<ImageButton | null> {
     const at = this.position(name);
-    const frames: RScriptSurface[] = [];
+    if (!at) return null;
+    const frames: ButtonFrame[] = [];
     for (const suffix of ['', '_f', '_c', '_l']) {
+      const place = this.position(name + suffix);
       const surface = await this.surface(name + suffix);
-      if (surface) frames.push(surface);
+      if (place && surface) frames.push({surface, dx: place.x - at.x, dy: place.y - at.y});
     }
-    if (!at || !frames.length) return null;
+    if (!frames.length) return null;
     const button = new ImageButton(frames);
     button.setPosition(at.x, at.y);
     button.onPress = press;
@@ -62,6 +68,13 @@ export class ScreenImage {
     button.show(true);
     return button;
   }
+}
+
+/** A button image and its offset from the button's first frame. */
+interface ButtonFrame {
+  readonly surface: RScriptSurface;
+  readonly dx: number;
+  readonly dy: number;
 }
 
 /**
@@ -72,9 +85,14 @@ export class ScreenImage {
 export class ImageButton extends RScriptSprite {
   private inside = false;
   private chosen = false;
-  constructor(private readonly frames: readonly RScriptSurface[]) {
+  /** Placement of the first frame; others are drawn at their offsets from it. */
+  private baseX = 0;
+  private baseY = 0;
+  private frame: ButtonFrame;
+  constructor(private readonly frames: readonly ButtonFrame[]) {
     super();
-    this.setSurface(frames[0]!);
+    this.frame = frames[0]!;
+    this.setSurface(this.frame.surface);
     this.onHover = (_, inside) => {
       this.inside = inside;
       this.redraw();
@@ -87,6 +105,14 @@ export class ImageButton extends RScriptSprite {
     this.chosen = selected;
     this.redraw();
   }
+  override setPosition(x: number, y: number): void {
+    this.baseX = x | 0;
+    this.baseY = y | 0;
+    super.setPosition(this.baseX + this.frame.dx, this.baseY + this.frame.dy);
+  }
+  override move(dx: number, dy: number): void {
+    this.setPosition(this.baseX + dx, this.baseY + dy);
+  }
   private redraw(): void {
     const {frames} = this;
     const lit = this.inside || this.chosen;
@@ -94,7 +120,9 @@ export class ImageButton extends RScriptSprite {
       this.setBlendMode(lit ? 13 : 0);
       return;
     }
-    this.setSurface(this.chosen ? frames.at(-1)! : this.inside ? frames[1]! : frames[0]!);
+    this.frame = this.chosen ? frames.at(-1)! : this.inside ? frames[1]! : frames[0]!;
+    this.setSurface(this.frame.surface);
+    this.setPosition(this.baseX, this.baseY);
   }
   /** Leaves the focus image when input stops (vtable +148). */
   unfocus(): void {
