@@ -29,10 +29,6 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
     handlers.set(opcode, async (vm, raw) => {
       await handler(values(vm, raw), vm, raw);
     });
-  const unsupported = (opcode: number, what: string) =>
-    handlers.set(opcode, () =>
-      game.diagnostic(`Opcode 0x${opcode.toString(16)} (${what}) is not supported yet`),
-    );
 
   const skipping = (): boolean => flags.fastSkip;
   /** Effects are dropped while skipping or when disabled in the configuration. */
@@ -507,7 +503,9 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
       to = Math.min(u16(last!), memory.variables.length - 1);
     if (from <= to) memory.variables.fill(value!, from, to + 1);
   });
-  unsupported(0xe1, 'pointer position wait');
+  on(0xe1, ([x, y, variable, hideTimer, cancel]) =>
+    pointerWait(game, u16(x!), u16(y!), u16(variable!), hideTimer!, !!cancel),
+  );
 
   /** sub_427FE0: shows the choice window and waits for an answer. */
   async function choose(
@@ -585,14 +583,7 @@ async function buttonWait(
   flags.buttonCancel = cancel;
   for (;;) {
     flags.interrupt = false;
-    await game.flushBatch();
-    if (flags.fastSkip) {
-      flags.fastSkip = false;
-      await game.rebuild();
-      game.display.refresh();
-    }
-    game.stopAuto();
-    if (memory.sceneDword(Scene.messageSnapshots) && !game.nesting) memory.captureMessageSnapshot();
+    await prepareInputWait(game);
     flags.buttonWait = 1;
     game.setButtonInput(true, false);
     if (timerVariable) {
@@ -611,6 +602,55 @@ async function buttonWait(
   }
   if (memory.sceneDword(Scene.layerAnimationReset))
     for (const layer of game.layers.slice(1)) layer.stopButton(false, false);
+  if (memory.sceneDword(Scene.autoRebuild) && !game.nesting) memory.promoteMessageSnapshot();
+}
+
+/** Pending batch, fast skip, auto mode and message snapshot before an input wait. */
+async function prepareInputWait(game: RScriptGame): Promise<void> {
+  const {flags, memory} = game;
+  await game.flushBatch();
+  if (flags.fastSkip) {
+    flags.fastSkip = false;
+    await game.rebuild();
+    game.display.refresh();
+  }
+  game.stopAuto();
+  if (memory.sceneDword(Scene.messageSnapshots) && !game.nesting) memory.captureMessageSnapshot();
+}
+
+/**
+ * sub_428840: waits for a click anywhere (variable 0 = 1) or, with `cancel`, the right
+ * button (0), then stores the pointer position and the remaining time in variables.
+ */
+async function pointerWait(
+  game: RScriptGame,
+  xVariable: number,
+  yVariable: number,
+  timerVariable: number,
+  hideTimer: number,
+  cancel: boolean,
+): Promise<void> {
+  const {flags, memory} = game;
+  flags.buttonCancel = cancel;
+  for (;;) {
+    flags.interrupt = false;
+    await prepareInputWait(game);
+    flags.buttonWait = 3;
+    if (timerVariable) {
+      if (!hideTimer) game.diagnostic('Timed pointer waits do not show their gauge yet');
+      game.startButtonTimer(memory.variables[timerVariable]!);
+    } else game.message.setInput(true);
+    flags.waitInput = true;
+    await game.suspend();
+    flags.waitInput = false;
+    if (xVariable) memory.variables[xVariable] = game.pointer.x;
+    if (yVariable) memory.variables[yVariable] = game.pointer.y;
+    game.message.setInput(false);
+    const remaining = game.stopButtonTimer();
+    if (timerVariable) memory.variables[timerVariable] = remaining;
+    if (!flags.interrupt) break;
+    await game.systemCall(memory.variables[0]!);
+  }
   if (memory.sceneDword(Scene.autoRebuild) && !game.nesting) memory.promoteMessageSnapshot();
 }
 

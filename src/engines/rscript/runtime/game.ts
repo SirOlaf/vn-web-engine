@@ -180,6 +180,8 @@ export class RScriptGame {
   private readonly handlers: ReadonlyMap<number, RScriptNativeHandler>;
   private hovered: RScriptNode | null = null;
   private pressed: RScriptNode | null = null;
+  /** Last pointer position in game coordinates (GetCursorPos for pointer waits). */
+  readonly pointer = {x: 0, y: 0};
   /** Input-wait ticks since the last input, and whether auto-hide is in effect. */
   private idleTicks = 0;
   private idleHidden = false;
@@ -623,6 +625,7 @@ export class RScriptGame {
   }
   pointerMove(x: number, y: number): void {
     this.wake();
+    Object.assign(this.pointer, {x, y});
     const pressed = this.pressed;
     if (pressed instanceof RScriptSprite && pressed.onDrag) {
       const origin = pressed.screenPosition();
@@ -645,6 +648,7 @@ export class RScriptGame {
   }
   pointerDown(x: number, y: number): void {
     this.wake();
+    Object.assign(this.pointer, {x, y});
     const node = this.hit(x, y);
     this.pressed = node;
     if (node instanceof RScriptSprite && node.onDrag) {
@@ -659,6 +663,9 @@ export class RScriptGame {
    */
   pointerUp(x: number, y: number): void {
     this.wake();
+    Object.assign(this.pointer, {x, y});
+    // A pointer wait takes the click before buttons and the scene (WM_LBUTTONUP).
+    if (this.flags.buttonWait === 3) return this.buttonPressed(0, 1);
     const node = this.hit(x, y);
     const pressed = this.pressed;
     this.pressed = null;
@@ -858,6 +865,7 @@ export class RScriptGame {
     if (mode === 0) {
       if (!flags.buttonWait) return;
       flags.buttonWait = 0;
+      if (flags.windowHidden) this.showWindow();
       this.memory.variables[0] = id;
       this.resume();
     } else if (mode === 1) {
