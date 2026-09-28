@@ -65,7 +65,7 @@ Run these before trusting any timing:
 Profile the same reproducible interactions with `?bp-wasm=0` and without it, on the profile build. `docs/performance-profiling.md` describes both capture methods.
 
 - **Performance diagnostics** (in-game, **Game options → Performance diagnostics**): download the timings JSON. Instruction mix, VM slices and arena growth are all in it; see "Runtime metrics" in `docs/buriko-bp-vm.md`.
-- **DevTools CPU trace with 6× throttling**, summarized by `node --max-old-space-size=8192 tools/summarize-cpu-trace.mjs trace.json`. This attributes time to functions. Sampling can crash the tab; `tools/capture-browser-trace.mjs` records timeline events without sampling.
+- **DevTools CPU trace with 6× throttling**, summarized by `node --max-old-space-size=8192 tools/summarize-cpu-trace.mjs trace.json`. This attributes time to functions. Sampling can crash the tab; `tools/capture-browser-trace.mjs` records timeline events without sampling. **Open DevTools slows the WebAssembly core 4–5×** (the `Debugger` domain switches wasm to debug code), so a Performance-panel trace understates the core; see "Summarizing a DevTools CPU trace" in `docs/performance-profiling.md`.
 
 Capture at least:
 

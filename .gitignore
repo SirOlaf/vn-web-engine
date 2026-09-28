@@ -36,3 +36,6 @@ docs/reconstruction/
 docs/tooling/boundaries/
 docs/tooling/evidence/
 tools/native-audit/workspace/
+
+# Local performance captures (timings JSON, CPU profiles)
+docs/performance/captures/

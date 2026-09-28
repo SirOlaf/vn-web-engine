@@ -299,6 +299,8 @@ node --max-old-space-size=8192 tools/summarize-cpu-trace.mjs trace.json \
 
 Locations name the served chunk and line (`buriko-<hash>.js:<line>`). For a trace of the profiling build, open that line in `site-profile/assets/`. Each rebuild changes the chunk hashes, so keep the matching `site-profile/` build alongside a trace. Starting the CPU profiler costs about a second of main-thread time (`CpuProfiler::StartProfiling`). The samples charge that second as self time to whatever function was running at the start of the trace, usually at its first line. Discount self time that sits only at the start of a trace. Under DevTools CPU throttling, every per-call cost is multiplied, including `performance.now()` and typed-array allocation.
 
+An open DevTools window, or any client that enables the CDP `Debugger` domain, switches WebAssembly to unoptimized debug code. The BP interpreter core then runs about 4–5× slower, which makes it slower than the TypeScript interpreter. Traces recorded from the DevTools Performance panel therefore misstate every WebAssembly cost, including `?bp-wasm=0` A/B comparisons. Profiler-only sampling (`Profiler.start` without `Debugger.enable`) does not change WebAssembly speed. For WebAssembly measurements, close DevTools and use the in-game timings, or collect samples over a CDP connection that never enables `Debugger`.
+
 ## Sampling-free Chromium trace
 
 Use this when timings alone cannot explain a pause, or when renderer termination evidence is needed. The standalone recorder controls an isolated Chromium-family browser through its browser-level DevTools connection. It does not evaluate page scripts, simulate player input, or request screenshots. The user operates the game normally.
