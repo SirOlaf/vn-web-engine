@@ -11,6 +11,7 @@ import {
   BurikoMainTouchInput,
 } from '../dist/engines/buriko/native/main-touch-input.js';
 import {BurikoMainMouseInput} from '../dist/engines/buriko/native/main-mouse-input.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 class Element {
   constructor() {
@@ -243,8 +244,8 @@ test('registration change invalidates queued contact and preserves existing hist
   s.canvas.fire('pointermove', {clientX: 20});
   s.messages.dispatchNext();
   s.messages.dispatchNext();
-  const positions = {bytes: new Uint8Array(16), offset: 0},
-    angles = {bytes: new Uint8Array(8), offset: 0};
+  const positions = hostPointer(new Uint8Array(16), 0),
+    angles = hostPointer(new Uint8Array(8), 0);
   assert.equal(s.touch.copyHistory(positions, angles, 0, 1), 1);
   s.canvas.fire('pointermove', {clientX: 25});
   assert.equal(s.touch.setRegistration(0), 1);

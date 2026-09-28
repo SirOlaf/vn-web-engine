@@ -7,12 +7,13 @@ import {releaseBurikoHorizontalTextLayout} from '../dist/engines/buriko/native/t
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function pointer(value) {
   const encoded = new TextEncoder().encode(value);
   const bytes = new Uint8Array(encoded.length + 1);
   bytes.set(encoded);
-  return {bytes, offset: 0};
+  return hostPointer(bytes, 0);
 }
 
 async function setup(size = 8) {
@@ -138,7 +139,7 @@ test('horizontal preparation handles carriage reset, paired ruby, and one escape
         [60, 12, 100],
       ],
     );
-    assert.equal(state.text.decodeAuto({bytes: result.nodes[2].annotationKey, offset: 0}), 'cd');
+    assert.equal(state.text.decodeAuto(hostPointer(result.nodes[2].annotationKey, 0)), 'cd');
     assert.equal(result.nodes[3].annotationKey, null);
     assert.deepEqual(result.cursor, {x: 16, y: 0});
   } finally {
@@ -202,7 +203,7 @@ test('horizontal preparation preserves newline indentation, one-use ruby, and li
       {lineCount: result.lineCount, outputCount: result.outputCount, cursor: result.cursor},
       {lineCount: 2, outputCount: 2, cursor: {x: 18, y: 8}},
     );
-    assert.equal(state.text.decodeAuto({bytes: result.nodes[1].annotationKey, offset: 0}), 'bc');
+    assert.equal(state.text.decodeAuto(hostPointer(result.nodes[1].annotationKey, 0)), 'bc');
     assert.equal(result.nodes[1].annotationBaseExtent, 8);
     assert.equal(result.nodes[2].annotationKey, null);
     assert.deepEqual(

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
@@ -152,7 +152,7 @@ test('92 F1 uses full loading or two staged FIFO reads with real partial-resourc
       });
       const frame = new Uint8Array(100);
       const read = await state.loading.ranges.read(
-        {bytes: frame, offset: 0},
+        hostPointer(frame, 0),
         resource.provenance.archive,
         resource.provenance.name,
         new DataView(resource.bytes.buffer).getUint32(0xc4, true),

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readRasterText} from '../dist/text/raster-text.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
 import {allocateBurikoBitmap, BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
@@ -163,7 +163,7 @@ test('mask-color dispatcher preserves RGB pair/tail coefficients and RGBA recipr
 test('the shared ordered glyph map owns atlas slices and keeps exact marked lookup keys', () => {
   const {surfaces, state} = setup();
   const values = [0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15];
-  assert.equal(surfaces.importRaw(7, 6, 2, 3, {bytes: Uint8Array.from(values), offset: 0}), 1);
+  assert.equal(surfaces.importRaw(7, 6, 2, 3, hostPointer(Uint8Array.from(values), 0)), 1);
   assert.equal(state.customGlyphs.configureAtlas(3, 7), 0);
   assert.equal(state.customGlyphs.count, 3);
   assert.deepEqual(pixels(state.customGlyphs.snapshot(0x8000f001)), [0, 1, 10, 11]);
@@ -183,7 +183,7 @@ test('the shared ordered glyph map owns atlas slices and keeps exact marked look
 test('custom glyph fitting colorizes a mask, reduces once and reports native fitted metrics', () => {
   const {surfaces, state} = setup();
   assert.equal(
-    surfaces.importRaw(4, 16, 16, 3, {bytes: new Uint8Array(16 * 16).fill(255), offset: 0}),
+    surfaces.importRaw(4, 16, 16, 3, hostPointer(new Uint8Array(16 * 16).fill(255), 0)),
     1,
   );
   assert.equal(state.customGlyphs.register(0xff01, 4, 0, 0, 16, 16), 0);
@@ -241,10 +241,10 @@ test('embedded decoding retains CP932 pairs and substitutes all three numeric ch
     0x5a,
     0,
   );
-  assert.equal(state.customGlyphs.decode({bytes: source, offset: 0}), 'Aあ\uef40\uf012\u1234☃Z');
+  assert.equal(state.customGlyphs.decode(hostPointer(source, 0)), 'Aあ\uef40\uf012\u1234☃Z');
   const control = Uint8Array.of(3, 0xc2, 0xa2, 0);
   assert.equal(text.detectEncoding(control, 0, true), 0);
-  assert.equal(decodeBurikoEmbeddedText(text, {bytes: control, offset: 0}), '\u0003¢');
+  assert.equal(decodeBurikoEmbeddedText(text, hostPointer(control, 0)), '\u0003¢');
 });
 
 test('90 9E and 92 98 consume their native stack shapes without pushing results', async () => {
@@ -263,7 +263,7 @@ test('90 9E and 92 98 consume their native stack shapes without pushing results'
   );
   for (const slot of definitions)
     assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
-  assert.equal(surfaces.importRaw(9, 4, 1, 3, {bytes: Uint8Array.of(1, 2, 3, 4), offset: 0}), 1);
+  assert.equal(surfaces.importRaw(9, 4, 1, 3, hostPointer(Uint8Array.of(1, 2, 3, 4), 0)), 1);
   const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 16,

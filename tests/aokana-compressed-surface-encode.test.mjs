@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
@@ -67,7 +67,7 @@ test('90:CE exports both real surface formats through complete encoders and impo
       assert.equal(decoded.initializedLength, 16 + 64 * height * 4);
       pixels = decoded.bytes.subarray(16);
     }
-    assert.equal(surfaces.importRaw(2, 64, height, 2, {bytes: pixels, offset: 0}), 1);
+    assert.equal(surfaces.importRaw(2, 64, height, 2, hostPointer(pixels, 0)), 1);
     const restored = surfaces.snapshot(2);
     assert.deepEqual(
       expected.map((_, i) =>

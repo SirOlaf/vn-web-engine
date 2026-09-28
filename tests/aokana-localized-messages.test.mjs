@@ -9,30 +9,31 @@ import {BurikoLocalizedMessages} from '../dist/engines/buriko/native/localized-m
 import {BurikoNativeLanguage} from '../dist/engines/buriko/native/group-81-language.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoImportedTextMaps} from '../dist/engines/buriko/native/imported-text-maps.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
-const pointer = (value) => ({bytes: new TextEncoder().encode(value + '\0'), offset: 0});
-const output = (width) => ({bytes: new Uint8Array(width), offset: 0});
+const pointer = (value) => hostPointer(new TextEncoder().encode(value + '\0'), 0);
+const output = (width) => hostPointer(new Uint8Array(width), 0);
 const decode = (value) =>
-  new TextDecoder().decode(value.bytes.subarray(value.offset)).replace(/\0$/, '');
+  new TextDecoder().decode(value.view().subarray(value.offset)).replace(/\0$/, '');
 
 test('shared named map preserves copied keys, insertion order and fixed-width value updates', () => {
   const map = new BurikoNamedValueMap(4),
     first = pointer('First'),
     second = pointer('Second');
-  map.insert(first, {bytes: Uint8Array.of(1, 2, 3, 4), offset: 0});
-  map.insert(second, {bytes: Uint8Array.of(5, 6, 7, 8), offset: 0});
-  first.bytes[0] = 88;
+  map.insert(first, hostPointer(Uint8Array.of(1, 2, 3, 4), 0));
+  map.insert(second, hostPointer(Uint8Array.of(5, 6, 7, 8), 0));
+  first.view()[0] = 88;
   const retained = map.findValue(pointer('First'));
-  map.insert(pointer('First'), {bytes: Uint8Array.of(8, 7, 6, 5), offset: 0});
+  map.insert(pointer('First'), hostPointer(Uint8Array.of(8, 7, 6, 5), 0));
   assert.equal(map.findValue(pointer('First')), retained);
   const result = output(4);
   assert.equal(map.readByIndex(result, 0), 0);
-  assert.deepEqual([...result.bytes], [8, 7, 6, 5]);
+  assert.deepEqual([...result.view()], [8, 7, 6, 5]);
   assert.equal(map.readByName(result, second), 0);
-  assert.deepEqual([...result.bytes], [5, 6, 7, 8]);
+  assert.deepEqual([...result.view()], [5, 6, 7, 8]);
   assert.equal(map.readByIndex(null, 1), 0);
-  assert.equal(burikoNamedValueHash({bytes: Uint8Array.of(0x80, 65, 0), offset: 0}), 0xffff8bc1);
-  assert.equal(burikoCompareNamedBytes({bytes: Uint8Array.of(255, 0), offset: 0}, pointer('a')), 1);
+  assert.equal(burikoNamedValueHash(hostPointer(Uint8Array.of(0x80, 65, 0), 0)), 0xffff8bc1);
+  assert.equal(burikoCompareNamedBytes(hostPointer(Uint8Array.of(255, 0), 0), pointer('a')), 1);
 });
 
 test('string-width named maps retain complete terminated strings through ordinary updates and removal', () => {

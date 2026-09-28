@@ -8,14 +8,15 @@ import {
   BurikoDistributedProcessing,
 } from '../dist/engines/buriko/native/distributed-processing.js';
 import {legacyCbg, modernCbg} from './aokana-resource-direct-fixtures.mjs';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('codec worker joins completed valid encodes before their source storage retires', async () => {
   const workers = new BurikoDataCodecWorkers(() => new Date(Date.UTC(2026, 8, 19, 12, 34, 56)));
   const source = new TextEncoder().encode('AB'.repeat(20));
   const firstBytes = new Uint8Array(128);
   const first = workers.startEncode(
-    {bytes: firstBytes, offset: 0},
-    {bytes: source, offset: 0},
+    hostPointer(firstBytes, 0),
+    hostPointer(source, 0),
     source.length,
   );
   assert.ok(first);
@@ -24,15 +25,15 @@ test('codec worker joins completed valid encodes before their source storage ret
   assert.equal(workers.hasPendingWork(), false);
   const firstDecoded = new Uint8Array(source.length);
   assert.equal(
-    decodeBurikoSdcInto({bytes: firstDecoded, offset: 0}, {bytes: firstBytes, offset: 0}),
+    decodeBurikoSdcInto(hostPointer(firstDecoded, 0), hostPointer(firstBytes, 0)),
     source.length,
   );
   assert.deepEqual(firstDecoded, source);
 
   const secondBytes = new Uint8Array(128);
   const second = workers.startEncode(
-    {bytes: secondBytes, offset: 0},
-    {bytes: source, offset: 0},
+    hostPointer(secondBytes, 0),
+    hostPointer(source, 0),
     source.length,
   );
   assert.ok(second);
@@ -43,7 +44,7 @@ test('codec worker joins completed valid encodes before their source storage ret
   assert.equal(workers.hasPendingWork(), false);
   const secondDecoded = new Uint8Array(source.length);
   assert.equal(
-    decodeBurikoSdcInto({bytes: secondDecoded, offset: 0}, {bytes: secondBytes, offset: 0}),
+    decodeBurikoSdcInto(hostPointer(secondDecoded, 0), hostPointer(secondBytes, 0)),
     source.length,
   );
   assert.deepEqual(secondDecoded, source);
@@ -57,8 +58,8 @@ test('large record-table encoding services host tasks before publishing completi
   const source = new Uint8Array(size * count).fill(0x41);
   const output = new Uint8Array(16384);
   const worker = workers.startStructEncode(
-    {bytes: output, offset: 0},
-    {bytes: source, offset: 0},
+    hostPointer(output, 0),
+    hostPointer(source, 0),
     size,
     count,
     scratch,
@@ -98,7 +99,7 @@ test('large record-table encoding services host tasks before publishing completi
     for (let i = 24 + size; i < expected.length; i += 2) expected.set([0x80, 0x20], i);
     const decoded = new Uint8Array(expected.length);
     assert.equal(
-      decodeBurikoSdcInto({bytes: decoded, offset: 0}, {bytes: output, offset: 0}),
+      decodeBurikoSdcInto(hostPointer(decoded, 0), hostPointer(output, 0)),
       expected.length,
     );
     assert.deepEqual(decoded, expected);
@@ -117,7 +118,7 @@ test('a released image-codec worker cannot resume writes through borrowed BP sto
   let released = false;
   worker = workers.startDecode(
     {
-      get bytes() {
+      view() {
         // Release at the first async continuation after the destination is borrowed.
         queueMicrotask(() => {
           if (!released) {
@@ -129,7 +130,7 @@ test('a released image-codec worker cannot resume writes through borrowed BP sto
       },
       offset: 0,
     },
-    {bytes: source, offset: 0},
+    hostPointer(source, 0),
     source.length,
     processing,
   );
@@ -152,8 +153,8 @@ test('legacy image workers service host tasks before completion and validate res
       const workers = new BurikoDataCodecWorkers();
       const output = new Uint8Array(24).fill(0x55);
       const worker = workers.startDecode(
-        {bytes: output, offset: 0},
-        {bytes: source, offset: 0},
+        hostPointer(output, 0),
+        hostPointer(source, 0),
         source.length,
         processing,
       );

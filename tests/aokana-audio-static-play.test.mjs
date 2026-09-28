@@ -17,6 +17,7 @@ import {BurikoSpeakerContext} from '../dist/engines/buriko/native/audio/speaker.
 import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
 import {BurikoAudioStaticResources} from '../dist/engines/buriko/native/audio/resource-static.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('A0:24 starts registered initialized PCM and pushes its actual duration through the BP stack', async () => {
   const bytes = new Uint8Array(72),
@@ -73,7 +74,7 @@ test('A0:24 starts registered initialized PCM and pushes its actual duration thr
   try {
     await channels.initializeMasters();
     assert.equal(
-      await resources.register(0, {bytes, offset: 0}, 0, 1, 1, new Uint8Array(72).fill(1)),
+      await resources.register(0, hostPointer(bytes, 0), 0, 1, 1, new Uint8Array(72).fill(1)),
       0,
     );
     //4 source frames /1000Hz *1000ms, with the persistent speed1 coefficient65536.

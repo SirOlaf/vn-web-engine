@@ -16,6 +16,7 @@ import {
   BurikoDistributedAllocator,
   BurikoDistributedProcessing,
 } from '../dist/engines/buriko/native/distributed-processing.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function frame(version, color, alpha) {
   // Single-symbol DC/AC trees yield zero coefficients: neutral BGR128.
@@ -63,12 +64,7 @@ test('registered modern BMV versions decode into actual retained bitmap storage'
       handle = new Uint8Array(4),
       metadata = new Uint8Array(20);
     assert.equal(
-      registry.register(
-        {bytes: handle, offset: 0},
-        {bytes: metadata, offset: 0},
-        encoded,
-        encoded.length,
-      ),
+      registry.register(hostPointer(handle, 0), hostPointer(metadata, 0), encoded, encoded.length),
       0,
     );
     const id = new DataView(handle.buffer).getUint32(0, true),

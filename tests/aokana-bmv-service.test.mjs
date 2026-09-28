@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
@@ -160,8 +160,8 @@ test('90 F6 uses actual surface bytes, range reads and serialized movie admissio
       metadata = new Uint8Array(20);
     assert.equal(
       state.registry.register(
-        {bytes: output, offset: 0},
-        {bytes: metadata, offset: 0},
+        hostPointer(output, 0),
+        hostPointer(metadata, 0),
         content,
         content.length,
         provenance,

@@ -16,6 +16,7 @@ import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/sp
 import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
 import {BurikoAudioArchiveCache} from '../dist/engines/buriko/native/audio/archive-cache.js';
 import {BurikoArchiveFileStorage} from '../dist/engines/buriko/native/audio/archive-storage.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function arc(sample) {
   const bytes = new Uint8Array(144 + 72),
@@ -106,7 +107,7 @@ test('distinct audio archive cache reuses actual identities under shared section
         storages.push(storage);
         assert.equal(await storage.open(entry.archive, 'voice.bw', actor), true);
         const bytes = new Uint8Array(storage.size);
-        assert.equal(await storage.readInto({bytes, offset: 0}, bytes.length, actor), 72);
+        assert.equal(await storage.readInto(hostPointer(bytes, 0), bytes.length, actor), 72);
         assert.equal(await channels.attachStatic(channel, bytes, 0, 1, 1), 0);
         assert.equal(await channels.startStatic(channel, 128, 64, actor), 0);
       }

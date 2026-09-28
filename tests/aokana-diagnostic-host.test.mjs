@@ -12,7 +12,7 @@ import {formatBurikoMemoryDump} from '../dist/engines/buriko/native/memory-dump.
 import {createDiagnosticHostOpcodes} from '../dist/engines/buriko/bp/opcodes/diagnostic-host.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 const encode = (s) => new TextEncoder().encode(s);
 
 test('engine modal freezes title clock, updates native cursor, and restores input/device in native order', async () => {
@@ -69,10 +69,7 @@ test('memory dump copies characters across row edges, then starts the next row w
   const data = new Uint8Array(32);
   data.fill(65, 0, 15);
   data.set([0x82, 0xa0], 15);
-  const dump = formatBurikoMemoryDump({bytes: data, offset: 0}, 17, {
-    bytes: encode('label\0'),
-    offset: 0,
-  });
+  const dump = formatBurikoMemoryDump(hostPointer(data, 0), 17, hostPointer(encode('label\0'), 0));
   const expected = new Uint8Array([
     ...encode('label\n\n\n0x0000 : ' + '41 '.repeat(15) + '82  ' + 'A'.repeat(15)),
     0x82,
@@ -81,7 +78,7 @@ test('memory dump copies characters across row edges, then starts the next row w
   ]);
   assert.deepEqual(dump, expected);
   assert.throws(
-    () => formatBurikoMemoryDump({bytes: Uint8Array.of(0x82), offset: 0}, 1, null),
+    () => formatBurikoMemoryDump(hostPointer(Uint8Array.of(0x82), 0), 1, null),
     /outside/,
   );
 });

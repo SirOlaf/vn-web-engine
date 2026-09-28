@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
@@ -80,7 +80,7 @@ test('92 font transforms feed cached glyph layout, measured bearings, and actual
   const selected = await fonts.get(text.encodeWide('Synthetic', 0), 8, 100, 0);
   assert.equal(selected.result, 0);
   const font = fonts.find(selected.id);
-  const source = {bytes: memory.globalMemory, offset: 128};
+  const source = hostPointer(memory.globalMemory, 128);
   const wide = state.customGlyphs.decode(source);
   assert.equal(wide, '\uef40\uef41');
   const layout = async (proportional, positions, cursor) => {

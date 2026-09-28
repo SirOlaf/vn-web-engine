@@ -18,6 +18,7 @@ import {
   BurikoStaticSpeaker,
 } from '../dist/engines/buriko/native/audio/speaker.js';
 import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('real DCArchive member cursor feeds initialized WaveBox bytes to the actual static PCM speaker', async () => {
   const wave = new Uint8Array(72),
@@ -83,15 +84,15 @@ test('real DCArchive member cursor feeds initialized WaveBox bytes to the actual
     assert.equal(storage.size, 72);
     const actual = new Uint8Array(72),
       initialized = new Uint8Array(72);
-    assert.equal(await storage.readInto({bytes: actual, offset: 0}, 64, actor, initialized), 64);
+    assert.equal(await storage.readInto(hostPointer(actual, 0), 64, actor, initialized), 64);
     assert.equal(storage.position, 64);
-    assert.equal(await storage.readInto({bytes: actual, offset: 64}, 8, actor, initialized), 8);
+    assert.equal(await storage.readInto(hostPointer(actual, 64), 8, actor, initialized), 8);
     assert.equal(storage.position, 72);
     assert.deepEqual(actual, wave);
     assert.ok(initialized.every((value) => value === 1));
     assert.equal(storage.seek(66), 66);
     const continuation = new Uint8Array(6);
-    assert.equal(await storage.readInto({bytes: continuation, offset: 0}, 6, actor), 6);
+    assert.equal(await storage.readInto(hostPointer(continuation, 0), 6, actor), 6);
     assert.deepEqual([...continuation], [0, 64, 0, 0, 0, 192]);
     // Detached bytes are intentionally the fixture's final consumer, not a live-stream claim.
     const decoded = await createBurikoWaveStatic(actual, {gain: 1, prefer24Bit: false});

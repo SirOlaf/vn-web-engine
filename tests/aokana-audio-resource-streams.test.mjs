@@ -22,6 +22,7 @@ import {
   BURIKO_BP_ABI_1665,
   BURIKO_BP_ABI_172,
 } from '../dist/engines/buriko/bp/abi.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function arc(sample, pack) {
   const payload = pack ? 48 : 144,
@@ -190,7 +191,7 @@ test('BGI 1.665 archive storage retains its first duplicate index while reading 
   try {
     assert.equal(await storage.open('second.arc', 'VOICE'), true);
     assert.equal(storage.size, 4);
-    assert.equal(await storage.readInto({bytes: output, offset: 0}, 4, actor), 4);
+    assert.equal(await storage.readInto(hostPointer(output, 0), 4, actor), 4);
     assert.deepEqual([...output], [1, 2, 3, 4]);
     await backing.commit([
       {
@@ -201,11 +202,11 @@ test('BGI 1.665 archive storage retains its first duplicate index while reading 
     ]);
     assert.equal(await storage.open('SECOND.ARC', 'voice'), true);
     assert.equal(storage.size, 4);
-    assert.equal(await storage.readInto({bytes: output, offset: 0}, 4, actor), 4);
+    assert.equal(await storage.readInto(hostPointer(output, 0), 4, actor), 4);
     assert.deepEqual([...output], [9, 10, 11, 12]);
     assert.equal(await nextOwner.open('second.arc', 'voice'), true);
     assert.equal(nextOwner.size, 2);
-    assert.equal(await nextOwner.readInto({bytes: output, offset: 0}, 4, actor), 2);
+    assert.equal(await nextOwner.readInto(hostPointer(output, 0), 4, actor), 2);
     assert.deepEqual([...output.subarray(0, 2)], [13, 14]);
     await backing.commit([
       {
@@ -215,11 +216,11 @@ test('BGI 1.665 archive storage retains its first duplicate index while reading 
       },
     ]);
     storage.seek(0);
-    assert.equal(await storage.readInto({bytes: output, offset: 0}, 4, actor), 1);
+    assert.equal(await storage.readInto(hostPointer(output, 0), 4, actor), 1);
     assert.equal(storage.position, 1);
     assert.equal(output[0], 17);
     await backing.commit([{kind: 'delete', path: '/game/second.arc'}]);
-    assert.equal(await storage.readInto({bytes: output, offset: 0}, 1, actor), 0x80000010);
+    assert.equal(await storage.readInto(hostPointer(output, 0), 1, actor), 0x80000010);
     assert.equal(storage.position, 0x80000011);
   } finally {
     storage.dispose();

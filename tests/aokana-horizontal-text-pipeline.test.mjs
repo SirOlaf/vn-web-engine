@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
 import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
@@ -32,7 +32,7 @@ function pointer(value) {
   const encoded = new TextEncoder().encode(value);
   const bytes = new Uint8Array(encoded.length + 1);
   bytes.set(encoded);
-  return {bytes, offset: 0};
+  return hostPointer(bytes, 0);
 }
 
 async function setup(size = 8) {

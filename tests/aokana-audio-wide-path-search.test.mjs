@@ -16,6 +16,7 @@ import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/sp
 import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
 import {BurikoAudioArchiveCache} from '../dist/engines/buriko/native/audio/archive-cache.js';
 import {BurikoFileStorage} from '../dist/engines/buriko/native/audio/file-storage.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function wave(sample) {
   const bytes = new Uint8Array(72),
@@ -91,7 +92,7 @@ test('shared audio wide path search resolves mounted PCM and real directories in
       const bytes = new Uint8Array(storage.size),
         initialized = new Uint8Array(storage.size);
       assert.equal(
-        await storage.readInto({bytes, offset: 0}, bytes.length, actor, initialized),
+        await storage.readInto(hostPointer(bytes, 0), bytes.length, actor, initialized),
         72,
       );
       assert.ok(initialized.every((value) => value === 1));

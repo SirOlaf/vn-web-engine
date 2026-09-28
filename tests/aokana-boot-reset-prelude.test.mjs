@@ -12,6 +12,7 @@ import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
 import {BurikoBootTerminationGate} from '../dist/engines/buriko/native/boot-termination-gate.js';
 import {BurikoBootResetPrelude} from '../dist/engines/buriko/native/boot-reset-prelude.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 class Element {
   constructor(tag) {
@@ -160,7 +161,7 @@ test('ECB90 initial reset prefix and audio continuation use one live graph', asy
     await graph.start({automatic: false});
     graph.host.setClosePolicy(0);
     assert.equal(graph.host.closeMenuEnabled, false);
-    assert.equal(graph.controller.configureModeToggle(1, {bytes: keyList, offset: 0}), 1);
+    assert.equal(graph.controller.configureModeToggle(1, hostPointer(keyList, 0)), 1);
     assert.equal(graph.controller.containsModeToggleKey(0x41), true);
     graph.display.presentationEnabled = 0;
     graph.frames.setFrameFrequency(100);

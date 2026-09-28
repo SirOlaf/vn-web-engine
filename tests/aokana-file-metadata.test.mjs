@@ -139,7 +139,7 @@ test('both timestamp wrappers preserve file bytes and convert the three UTC reco
     access = 0x10000040,
     write = 0x10000060;
   const pointer = memory.resolve(thread, path);
-  pointer.bytes.set(bytes('existing\0'), pointer.offset);
+  pointer.view().set(bytes('existing\0'), pointer.offset);
   const records = [
     [2025, 2, 6, 3, 4, 5, 6, 7],
     [2026, 8, 0, 10, 11, 12, 13, 14],

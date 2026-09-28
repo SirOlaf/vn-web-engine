@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 import {
@@ -84,7 +84,7 @@ test('installer queries share installation registry and mounted Windows marker p
     memory = new BurikoBpMemory(new Uint8Array(2048)),
     thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
     slots = createGroup80InstallerQueries(new BurikoInstallerQueries(registry, folders, files)),
-    pointer = (offset) => ({bytes: memory.globalMemory, offset}),
+    pointer = (offset) => hostPointer(memory.globalMemory, offset),
     call = async (secondary, args, result = 1) => {
       const slot = slots.find((s) => s.secondary === secondary);
       assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x80][secondary]);
@@ -117,7 +117,7 @@ test('installer queries share installation registry and mounted Windows marker p
     assert.equal(text.decodeAuto(pointer(512)), 'C:\\Windows');
     await call(0xfa, [768, 96]);
     assert.equal(text.decodeAuto(pointer(768)), 'C:\\installed');
-    folders.combine(pointer(1024), pointer(768), 1, {bytes: encode('content.txt'), offset: 0});
+    folders.combine(pointer(1024), pointer(768), 1, hostPointer(encode('content.txt'), 0));
     const opened = await files.open(memory.globalMemory.subarray(1024));
     assert.notEqual(opened.source, null);
     assert.deepEqual(

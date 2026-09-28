@@ -5,11 +5,12 @@ import {
   burikoFileTimeToSystemTime,
   writeBurikoSystemTime,
 } from '../dist/engines/buriko/native/file-time.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 function systemTime(fields) {
   const bytes = new Uint8Array(16),
     view = new DataView(bytes.buffer);
   fields.forEach((field, index) => view.setUint16(index * 2, field, true));
-  return {bytes, offset: 0};
+  return hostPointer(bytes, 0);
 }
 test('UTC file-time conversion retains known epochs, Gregorian leap days and independent weekday calculation', () => {
   assert.equal(burikoSystemTimeToFileTime(systemTime([1601, 1, 6, 1, 0, 0, 0, 0])), 0n);
@@ -31,10 +32,10 @@ test('UTC file-time conversion retains known epochs, Gregorian leap days and ind
           10000n +
         116444736000000000n;
     assert.equal(value, expected);
-    const output = {bytes: new Uint8Array(20), offset: 2};
+    const output = hostPointer(new Uint8Array(20), 2);
     assert.equal(writeBurikoSystemTime(output, value + 9999n), true);
     const actual = Array.from({length: 8}, (_, index) =>
-      new DataView(output.bytes.buffer).getUint16(index * 2 + 2, true),
+      new DataView(output.view().buffer).getUint16(index * 2 + 2, true),
     );
     const expectedFields = [...fields];
     expectedFields[2] = new Date(Number((value - 116444736000000000n) / 10000n)).getUTCDay();

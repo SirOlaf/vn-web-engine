@@ -27,6 +27,7 @@ import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/sp
 import {BurikoAudioChannels} from '../dist/engines/buriko/native/audio/channel-registry.js';
 import {BurikoAudioArchiveCache} from '../dist/engines/buriko/native/audio/archive-cache.js';
 import {BurikoAudioResourceStreams} from '../dist/engines/buriko/native/audio/resource-streams.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function arc(sample) {
   const bytes = new Uint8Array(144 + 64 + 5000 * 2),
@@ -128,7 +129,7 @@ test('shared loader metadata admits real resource, music and static PCM consumer
     queues.enqueueStatic(
       staticResult,
       0,
-      {bytes: staticBytes, offset: 0},
+      hostPointer(staticBytes, 0),
       0,
       1,
       1,

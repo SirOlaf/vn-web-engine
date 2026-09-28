@@ -21,7 +21,7 @@ import {createGroup80Launch} from '../dist/engines/buriko/native/group-80-launch
 import {BurikoBootProgramLoader} from '../dist/engines/buriko/native/boot-program-loader.js';
 import {BurikoVmControlState} from '../dist/engines/buriko/native/group-80-threads.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {singleArchive} from './aokana-resource-direct-fixtures.mjs';
@@ -114,16 +114,13 @@ test('launch selection shares roots and boot names with mounted ED170 resource a
     assert.equal(launch.mutexEnabled, 1);
     assert.equal(resources.configuration.nativeFileRoot, 'C:\\game\\startup dir\\');
     assert.equal(
-      text.decodeAuto({bytes: resources.configuration.primaryRoot, offset: 0}),
+      text.decodeAuto(hostPointer(resources.configuration.primaryRoot, 0)),
       'C:\\game\\startup dir\\',
     );
-    assert.equal(
-      text.decodeAuto({bytes: errors.saveRoot.bytes, offset: 0}),
-      'C:\\game\\startup dir\\',
-    );
+    assert.equal(text.decodeAuto(hostPointer(errors.saveRoot.bytes, 0)), 'C:\\game\\startup dir\\');
     assert.notEqual(errors.saveRoot.bytes, resources.configuration.primaryRoot);
     assert.equal(
-      text.decodeAuto({bytes: errors.workingDirectory, offset: 0}),
+      text.decodeAuto(hostPointer(errors.workingDirectory, 0)),
       resources.configuration.nativeFileRoot,
     );
     assert.equal(paths.currentDirectory, 'C:\\game\\startup dir');
@@ -132,8 +129,8 @@ test('launch selection shares roots and boot names with mounted ED170 resource a
     const archive = new Uint8Array(784),
       module = new Uint8Array(784);
     launch.copyBootNames(archive, module);
-    assert.equal(text.decodeAuto({bytes: archive, offset: 0}), 'system.arc');
-    assert.equal(text.decodeAuto({bytes: module, offset: 0}), 'ipl._bp');
+    assert.equal(text.decodeAuto(hostPointer(archive, 0)), 'system.arc');
+    assert.equal(text.decodeAuto(hostPointer(module, 0)), 'ipl._bp');
 
     const bpBytes = new Uint8Array(512),
       memory = new BurikoBpMemory(bpBytes),
@@ -157,12 +154,12 @@ test('launch selection shares roots and boot names with mounted ED170 resource a
     assert.equal(await restartSlot.execute({thread: vmThread, memory}), 5);
     assert.equal(vmThread.stackIndex, 0);
     launch.copyBootNames(archive, module);
-    assert.equal(text.decodeAuto({bytes: archive, offset: 0}), 'next.arc');
-    assert.equal(text.decodeAuto({bytes: module, offset: 0}), 'next._bp');
+    assert.equal(text.decodeAuto(hostPointer(archive, 0)), 'next.arc');
+    assert.equal(text.decodeAuto(hostPointer(module, 0)), 'next._bp');
     assert.equal(resources.configuration.nativeFileRoot, 'C:\\game\\restart\\');
     assert.equal(paths.currentDirectory, 'C:\\game\\restart');
     assert.equal(
-      text.decodeAuto({bytes: errors.workingDirectory, offset: 0}),
+      text.decodeAuto(hostPointer(errors.workingDirectory, 0)),
       resources.configuration.nativeFileRoot,
     );
     assert.equal(launch.launcherFlag, 1); // Restart selection leaves startup policy alone.
@@ -210,8 +207,8 @@ test('launch tail alone controls the independent mutex flag and zero-token defau
     const archive = new Uint8Array(784),
       module = new Uint8Array(784);
     defaultLaunch.launch.copyBootNames(archive, module);
-    assert.equal(defaultLaunch.text.decodeAuto({bytes: archive, offset: 0}), 'system.arc');
-    assert.equal(defaultLaunch.text.decodeAuto({bytes: module, offset: 0}), 'ipl._bp');
+    assert.equal(defaultLaunch.text.decodeAuto(hostPointer(archive, 0)), 'system.arc');
+    assert.equal(defaultLaunch.text.decodeAuto(hostPointer(module, 0)), 'ipl._bp');
     assert.equal(defaultLaunch.launch.launcherFlag, 0);
     assert.equal(defaultLaunch.launch.mutexEnabled, 1);
   } finally {
@@ -231,8 +228,8 @@ test('restart selection holds caller names across mounted directory work', async
       copiedModule = new Uint8Array(784);
     graph.launch.copyBootNames(archive, copiedModule);
     assert.equal(graph.resources.configuration.nativeFileRoot, 'C:\\game\\startup dir\\');
-    assert.equal(graph.text.decodeAuto({bytes: archive, offset: 0}), 'system.arc');
-    assert.equal(graph.text.decodeAuto({bytes: copiedModule, offset: 0}), 'ipl._bp');
+    assert.equal(graph.text.decodeAuto(hostPointer(archive, 0)), 'system.arc');
+    assert.equal(graph.text.decodeAuto(hostPointer(copiedModule, 0)), 'ipl._bp');
   } finally {
     graph.processing.dispose();
   }

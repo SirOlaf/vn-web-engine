@@ -20,7 +20,7 @@ import {
 } from '../dist/engines/buriko/native/inventory.js';
 import {BurikoBpModuleExtensions} from '../dist/engines/buriko/bp/module-extensions.js';
 import {BurikoBpInterpreter} from '../dist/engines/buriko/bp/interpreter.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {controlOpcodes} from '../dist/engines/buriko/bp/opcodes/control.js';
 import {integerOpcodes} from '../dist/engines/buriko/bp/opcodes/integer.js';
 import {attachModule} from '../dist/engines/buriko/bp/modules.js';
@@ -46,8 +46,8 @@ test('native evaluator tasks progress between immediate VM bursts without status
   const allocator = new BurikoDistributedAllocator(1),
     pool = new BurikoDistributedProcessing(allocator, 1);
   const workers = new BurikoGridEvaluationWorkers(allocator, pool, new BurikoLogicalGridManagers());
-  const out = {bytes: new Uint8Array(4), offset: 0},
-    view = new DataView(out.bytes.buffer);
+  const out = hostPointer(new Uint8Array(4), 0),
+    view = new DataView(out.view().buffer);
   assert.equal(workers.create(out), 0);
   const id = view.getUint32(0, true);
   assert.equal(workers.evaluate(null, null, id, 0, 0), 0);

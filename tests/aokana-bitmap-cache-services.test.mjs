@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoProgramFiles,
@@ -86,7 +86,7 @@ test('90:C0/C1/C6/C7 allocate headers and consume shared resource/preload caches
     slots = createGroup90BitmapCacheServices(
       new BurikoBitmapCacheServices(bitmapLoading, registration),
     ),
-    pointer = (offset) => ({bytes: memory.globalMemory, offset}),
+    pointer = (offset) => hostPointer(memory.globalMemory, offset),
     packed = Uint8Array.from([
       2, 0, 1, 0, 32, 0, 0, 0, 0, 0, 1, 0, 7, 0, 9, 0, 51, 34, 17, 255, 102, 85, 68, 255,
     ]),

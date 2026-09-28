@@ -10,6 +10,7 @@ import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoSystemTicks} from '../dist/engines/buriko/native/system-ticks.js';
 import {BurikoLegacyBgEncoder} from '../dist/engines/buriko/native/compressed-bg-legacy-encode.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('legacy BG encoder emits independently specified entropy for exported RGB and imports its decoded pixels', () => {
   const surfaces = new BurikoSurfaces(
@@ -36,8 +37,8 @@ test('legacy BG encoder emits independently specified entropy for exported RGB a
   header.setUint16(8, 1, true);
   assert.equal(
     new BurikoRawSurfaceExport(surfaces).export(
-      {bytes: packed, offset: 16},
-      {bytes: count, offset: 0},
+      hostPointer(packed, 16),
+      hostPointer(count, 0),
       192,
       0,
     ),
@@ -46,9 +47,9 @@ test('legacy BG encoder emits independently specified entropy for exported RGB a
   assert.equal(new DataView(count.buffer).getUint32(0, true), 192);
   assert.equal(
     new BurikoLegacyBgEncoder(ticks).encode(
-      {bytes: output, offset: 0},
-      {bytes: count, offset: 0},
-      {bytes: packed, offset: 0},
+      hostPointer(output, 0),
+      hostPointer(count, 0),
+      hostPointer(packed, 0),
     ),
     0,
   );
@@ -94,7 +95,7 @@ test('legacy BG encoder emits independently specified entropy for exported RGB a
     destinationInitialized.subarray(0, 16 + decoded.pixels.length).every((value) => value === 1),
   );
   assert.equal(
-    surfaces.importRaw(1, decoded.width, decoded.height, 2, {bytes: decoded.pixels, offset: 0}),
+    surfaces.importRaw(1, decoded.width, decoded.height, 2, hostPointer(decoded.pixels, 0)),
     1,
   );
   const imported = surfaces.snapshot(1);

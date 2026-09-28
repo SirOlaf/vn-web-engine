@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoProgramFiles,
@@ -91,13 +91,13 @@ test('immediate BMP opcode loads a qualified mounted file and copies its bottom-
   const pixels = (surface) =>
     [0, 1, 2, 3].map((index) => {
       assert.equal(
-        surfaces.readPixel({bytes: memory.globalMemory, offset: 8}, surface, index % 2, index >> 1),
+        surfaces.readPixel(hostPointer(memory.globalMemory, 8), surface, index % 2, index >> 1),
         0,
       );
       return new DataView(memory.globalMemory.buffer).getUint32(8, true);
     });
   assert.deepEqual(pixels(1), [0xff0000, 0x00ff00, 0x0000ff, 0xffffff]);
-  assert.equal(surfaces.importRaw(2, 2, 2, 1, {bytes: new Uint8Array(12), offset: 0}), 1);
+  assert.equal(surfaces.importRaw(2, 2, 2, 1, hostPointer(new Uint8Array(12), 0)), 1);
   assert.equal(surfaces.drawSurface(2, 0, 0, 1, 0x80, 0), 0);
   assert.deepEqual(pixels(2), [0xff0000, 0x00ff00, 0x0000ff, 0xffffff]);
 });

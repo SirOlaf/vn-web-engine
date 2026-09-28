@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
@@ -139,7 +139,7 @@ test('load-sound process owns the resource until static registration completes t
       1,
       1,
       null,
-      {bytes: encode('VOICE.BW'), offset: 0},
+      hostPointer(encode('VOICE.BW'), 0),
     );
     assert.equal(loading.activeProcedures, 1);
     assert.equal(loading.hasPending, true);

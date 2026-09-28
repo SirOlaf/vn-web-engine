@@ -13,12 +13,12 @@ import {
 import {formatVmText} from '../dist/engines/buriko/native/text-format.js';
 import {createTextOpcodes} from '../dist/engines/buriko/bp/opcodes/text.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 
 const bytes = (value) =>
   typeof value === 'string' ? new TextEncoder().encode(value + '\0') : Uint8Array.from(value);
-const pointer = (value) => ({bytes: bytes(value), offset: 0});
+const pointer = (value) => hostPointer(bytes(value), 0);
 function context(notice = () => {}) {
   return {
     thread: new BurikoBpThread({
@@ -126,12 +126,9 @@ test('Buriko search preserves multibyte mismatch reset and forward-copy aliasing
   assert.equal(text.find(pointer('AあB'), pointer('あ')), 1);
   assert.equal(text.find(pointer('abc'), pointer('')), 0);
   assert.throws(() => text.find(pointer('あ'), pointer('')), /empty native allocation/);
-  const input = bytes('abc');
-  assert.throws(
-    () => copyText({bytes: input, offset: 1}, {bytes: input, offset: 0}),
-    /outside backing/,
-  );
-  assert.deepEqual(input, Uint8Array.of(97, 97, 97, 97));
+  const input = hostPointer(bytes('abc'), 0);
+  assert.throws(() => copyText(input.add(1), input), /outside backing/);
+  assert.deepEqual(input.view(), Uint8Array.of(97, 97, 97, 97));
 });
 
 test('Buriko VM formatting implements native decimal, hex, precision, padding, and legacy rounding', () => {

@@ -1,5 +1,5 @@
 import test from 'node:test';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
 import {createGroup91FontRasterSettings} from '../dist/engines/buriko/native/group-91-font-raster-settings.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
@@ -16,7 +16,7 @@ function pointer(value) {
   const encoded = new TextEncoder().encode(value);
   const bytes = new Uint8Array(encoded.length + 1);
   bytes.set(encoded);
-  return {bytes, offset: 0};
+  return hostPointer(bytes, 0);
 }
 
 async function setup(size = 8) {
