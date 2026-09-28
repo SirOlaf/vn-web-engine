@@ -84,6 +84,10 @@ export function rscriptFontFamilies(nativeName: string): string {
   );
 }
 
+/** Glyphs are drawn at up to 8 times their size, and at most 512 pixels high. */
+const SUPERSAMPLE = 8;
+const SUPERSAMPLE_LIMIT = 512;
+
 /**
  * GetGlyphOutline(GGO_GRAY8) replacement: draws one Shift-JIS character with the browser's
  * font rasterizer into a `size`-high cell (half width for single-byte codes) and returns
@@ -122,31 +126,49 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
     return glyph;
   }
 
+  /**
+   * GetGlyphOutline rasterizes the outline, but browsers draw small sizes of fonts such as
+   * MS Gothic from their embedded bitmaps, which are thin and aliased. Drawing at a
+   * multiple of the size, where no bitmap strike exists, and averaging the blocks gives
+   * coverage close to GGO_GRAY8.
+   */
   private draw(code: number, size: number, bold: boolean, italic: boolean): GlyphCoverage {
     const width = code > 0xff ? size : size >> 1,
       height = size;
     const levels = new Uint8Array(width * height);
     if (!width || !height) return {width, height, levels};
+    const scale = Math.max(1, Math.min(SUPERSAMPLE, Math.floor(SUPERSAMPLE_LIMIT / size)));
     const bytes = code > 0xff ? Uint8Array.of(code >>> 8, code & 0xff) : Uint8Array.of(code);
     const text = this.decoder.decode(bytes);
     const context = this.context;
     const canvas = context.canvas;
-    if (canvas.width < width || canvas.height < height) {
-      canvas.width = Math.max(canvas.width, width);
-      canvas.height = Math.max(canvas.height, height);
+    const w = width * scale,
+      h = height * scale;
+    if (canvas.width < w || canvas.height < h) {
+      canvas.width = Math.max(canvas.width, w);
+      canvas.height = Math.max(canvas.height, h);
     }
     context.setTransform(1, 0, 0, 1, 0, 0);
-    context.clearRect(0, 0, width, height);
-    context.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size}px ${this.families}`;
+    context.clearRect(0, 0, w, h);
+    context.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size * scale}px ${this.families}`;
     context.textBaseline = 'alphabetic';
     context.fillStyle = '#fff';
-    const measured = context.measureText(text).width;
+    const measured = context.measureText(text).width / scale;
     // Keep proportional fallback fonts inside the fixed native cell.
     if (measured > width) context.setTransform(width / measured, 0, 0, 1, 0, 0);
-    else context.translate(Math.round((width - measured) / 2), 0);
-    context.fillText(text, 0, Math.round(size * 0.86));
-    const pixels = context.getImageData(0, 0, width, height).data;
-    for (let i = 0; i < levels.length; i++) levels[i] = Math.round((pixels[i * 4 + 3]! * 64) / 255);
+    else context.translate(Math.round((width - measured) / 2) * scale, 0);
+    context.fillText(text, 0, Math.round(size * 0.86) * scale);
+    const pixels = context.getImageData(0, 0, w, h).data;
+    const full = 255 * scale * scale;
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        let sum = 0;
+        for (let j = 0; j < scale; j++) {
+          const row = ((y * scale + j) * w + x * scale) * 4 + 3;
+          for (let i = 0; i < scale; i++) sum += pixels[row + i * 4]!;
+        }
+        levels[y * width + x] = Math.round((sum * 64) / full);
+      }
     return {width, height, levels};
   }
 }
