@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {
   WindowsFileDialogHost,
   WindowsFileDialogRequest,
@@ -77,8 +77,8 @@ export class BurikoFileSelectionService {
     return this.select(
       output,
       1,
-      [{bytes: combined, offset: 0}],
-      [{bytes: pattern, offset: 0}],
+      [hostPointer(combined)],
+      [hostPointer(pattern)],
       title,
       initialDirectory,
       mode,

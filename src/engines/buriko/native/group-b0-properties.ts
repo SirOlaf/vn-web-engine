@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import type {
   BurikoBpOpcodeContext,
@@ -14,7 +14,7 @@ function local(...words: number[]): BurikoBpPointer {
   const bytes = new Uint8Array(words.length * 4),
     view = new DataView(bytes.buffer);
   words.forEach((word, index) => view.setUint32(index * 4, word, true));
-  return {bytes, offset: 0};
+  return hostPointer(bytes);
 }
 function status(result: number, accepted: readonly (readonly [number, number])[]): number {
   return result === 0 ? 0 : (accepted.find(([native]) => native === result)?.[1] ?? 0xffffffff);

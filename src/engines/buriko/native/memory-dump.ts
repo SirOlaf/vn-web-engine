@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {classifyUtf8, textByte, textBytes} from './text.js';
 
 /** 1400ccef0's mixed-encoding dump, including multibyte characters crossing a16-byte row. */
@@ -9,7 +9,8 @@ export function formatBurikoMemoryDump(
 ): Uint8Array {
   if (((count >>> 0) - 1) >>> 0 > 0x3ff) throw new RangeError('Buriko dump count must be1..1024');
   if (pointer === null) throw new Error('Buriko memory dump dereferences null');
-  const encoder = new TextEncoder(),
+  const bytes = pointer.view(),
+    encoder = new TextEncoder(),
     parts: Uint8Array[] = [];
   let remaining = count >>> 0,
     offset = 0,
@@ -19,7 +20,7 @@ export function formatBurikoMemoryDump(
     let hexadecimal = '';
     for (let index = 0; index < rowLength; index++)
       hexadecimal +=
-        textByte(pointer.bytes, pointer.offset + offset + index)
+        textByte(bytes, pointer.offset + offset + index)
           .toString(16)
           .toUpperCase()
           .padStart(2, '0') + ' ';
@@ -28,15 +29,15 @@ export function formatBurikoMemoryDump(
     let index = carry;
     while (index < rowLength) {
       const position = pointer.offset + offset + index;
-      const sequence = classifyUtf8(pointer.bytes, position);
+      const sequence = classifyUtf8(bytes, position);
       let length: number;
       if (sequence.result === 0x80000000) {
         length = 1;
-        characters[index] = Math.max(32, textByte(pointer.bytes, position));
+        characters[index] = Math.max(32, textByte(bytes, position));
       } else {
         length = sequence.result === 0 ? 2 : sequence.length!;
         for (let byte = 0; byte < length; byte++)
-          characters[index + byte] = textByte(pointer.bytes, position + byte);
+          characters[index + byte] = textByte(bytes, position + byte);
       }
       index += length;
       carry = (carry + length) & 15;
@@ -44,7 +45,7 @@ export function formatBurikoMemoryDump(
     characters[index] = 0;
     parts.push(
       encoder.encode(`\n0x${offset.toString(16).toUpperCase().padStart(4, '0')} : ${hexadecimal} `),
-      textBytes({bytes: characters, offset: 0}),
+      textBytes(hostPointer(characters)),
     );
     remaining = Math.max(0, remaining - 16);
     offset += 16;

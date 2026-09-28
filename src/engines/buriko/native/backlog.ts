@@ -40,12 +40,9 @@ export class BurikoBacklog {
   import(source: BurikoBpPointer | null): number {
     const pointer = required(source),
       values = new Array<number>(9);
-    const word = (offset: number): number =>
-      pointerView({bytes: pointer.bytes, offset: pointer.offset + offset}, 4).getUint32(0, true);
+    const word = (offset: number): number => pointerView(pointer.add(offset), 4).getUint32(0, true);
     const optional = (offset: number): BurikoBpPointer | null =>
-      textByte(pointer.bytes, pointer.offset + offset) === 0
-        ? null
-        : {bytes: pointer.bytes, offset: pointer.offset + offset};
+      textByte(pointer.view(), pointer.offset + offset) === 0 ? null : pointer.add(offset);
     values[8] = word(0x5c);
     values[7] = word(0x58);
     values[6] = word(0x54);
@@ -59,13 +56,7 @@ export class BurikoBacklog {
       archive = optional(0xa0);
     values[1] = word(0x40);
     values[0] = word(0);
-    return this.append(values, [
-      archive,
-      file,
-      name,
-      {bytes: pointer.bytes, offset: pointer.offset + 0x100},
-      reading,
-    ]);
+    return this.append(values, [archive, file, name, pointer.add(0x100), reading]);
   }
   read(destination: BurikoBpPointer | null, index: number, extended: boolean): 0 | 1 {
     index >>>= 0;
@@ -80,13 +71,7 @@ export class BurikoBacklog {
       if (i === 4 && !extended) break;
       const bytes = entry.strings[i];
       if (bytes !== null && bytes !== undefined)
-        writeText(
-          {
-            bytes: pointer.bytes,
-            offset: pointer.offset + (i < 3 ? 0xa0 + i * 32 : i === 3 ? 0x100 : 0x200),
-          },
-          bytes,
-        );
+        writeText(pointer.add(i < 3 ? 0xa0 + i * 32 : i === 3 ? 0x100 : 0x200), bytes);
     }
     return 1;
   }

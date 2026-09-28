@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import {decodeBurikoBfFrame, decodeBurikoBfFrameAsync} from './bf-frame.js';
 import {bitmapStorage, type BurikoBitmap} from './bitmap.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
@@ -14,7 +14,7 @@ export function validateBurikoBmvHeader(movie: Uint8Array): 0 | 8 | 9 {
     requireBurikoResourceRange(movie.length, index, 1);
     if (movie[index] !== signature[index]) return 8;
   }
-  const version = pointerView({bytes: movie, offset: 0x10}, 4).getUint32(0, true);
+  const version = pointerView(hostPointer(movie, 0x10), 4).getUint32(0, true);
   return (version - 0x10000) >>> 0 <= 1 ? 0 : 9;
 }
 
@@ -25,7 +25,7 @@ export function decodeBurikoBmvFrameData(
   destination: BurikoBitmap,
   processing: BurikoDistributedProcessing,
 ): 0 {
-  const data = pointerView({bytes: header, offset: 0}, 0x40),
+  const data = pointerView(hostPointer(header), 0x40),
     width = data.getUint32(0x14, true),
     height = data.getUint32(0x18, true),
     depth = data.getUint32(0x1c, true),
@@ -70,7 +70,7 @@ export async function decodeBurikoBmvFrameDataAsync(
   processing: BurikoDistributedProcessing,
   actor = processing.allocator.currentActor,
 ): Promise<0> {
-  const data = pointerView({bytes: header, offset: 0}, 0x40),
+  const data = pointerView(hostPointer(header), 0x40),
     width = data.getUint32(0x14, true),
     height = data.getUint32(0x18, true),
     depth = data.getUint32(0x1c, true),
@@ -138,8 +138,8 @@ export function decodeBurikoBmvIndexedFrame(
   const status = validateBurikoBmvHeader(movie);
   if (status !== 0) return status;
   frameIndex >>>= 0;
-  if (frameIndex >= pointerView({bytes: movie, offset: 0x28}, 4).getUint32(0, true)) return 10;
-  const offset = pointerView({bytes: movie, offset: 0xc0 + frameIndex * 4}, 4).getUint32(0, true);
+  if (frameIndex >= pointerView(hostPointer(movie, 0x28), 4).getUint32(0, true)) return 10;
+  const offset = pointerView(hostPointer(movie, 0xc0 + frameIndex * 4), 4).getUint32(0, true);
   requireBurikoResourceRange(movie.length, offset, 0);
   return decodeBurikoBmvFrameData(movie, movie.subarray(offset), destination, processing);
 }
@@ -155,8 +155,8 @@ export async function decodeBurikoBmvIndexedFrameAsync(
   const status = validateBurikoBmvHeader(movie);
   if (status !== 0) return status;
   frameIndex >>>= 0;
-  if (frameIndex >= pointerView({bytes: movie, offset: 0x28}, 4).getUint32(0, true)) return 10;
-  const offset = pointerView({bytes: movie, offset: 0xc0 + frameIndex * 4}, 4).getUint32(0, true);
+  if (frameIndex >= pointerView(hostPointer(movie, 0x28), 4).getUint32(0, true)) return 10;
+  const offset = pointerView(hostPointer(movie, 0xc0 + frameIndex * 4), 4).getUint32(0, true);
   requireBurikoResourceRange(movie.length, offset, 0);
   return decodeBurikoBmvFrameDataAsync(
     movie,

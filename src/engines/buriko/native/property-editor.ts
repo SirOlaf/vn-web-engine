@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoNativeText, copyText, textBytes} from './text.js';
 import {parseBurikoPropertyNumber} from './crt-numbers.js';
 import {
@@ -61,7 +61,7 @@ type Notification =
   | {kind: 'edit'; row: number | null};
 
 function offset(pointer: BurikoBpPointer | null, bytes: number): BurikoBpPointer | null {
-  return pointer === null ? null : {bytes: pointer.bytes, offset: pointer.offset + bytes};
+  return pointer === null ? null : pointer.add(bytes);
 }
 
 /** Concrete Buriko property windows, their native live-value records and queued control messages. */
@@ -92,7 +92,7 @@ export class BurikoPropertyEditors {
     panel.style.cssText =
       'position:fixed;z-index:30;background:Canvas;color:CanvasText;border:1px solid;padding:1rem;max-height:90vh;overflow:auto';
     this.parent.append(panel);
-    const caption = this.text.decodeAuto(title ?? {bytes: this.nativeWindowTitle, offset: 0});
+    const caption = this.text.decodeAuto(title ?? hostPointer(this.nativeWindowTitle));
     const description = subtitle === null ? '' : this.text.decodeAuto(subtitle);
     const x = position === null ? 0 : readPropertyWord(position);
     const y = position === null ? 0 : readPropertyWord(offset(position, 4));
@@ -300,7 +300,7 @@ export class BurikoPropertyEditors {
     if (row.kind === 5) {
       if (output === null)
         throw new Error('Buriko property string retrieval dereferences null output');
-      copyText(output, {bytes: this.text.encodeWide(row.formatted), offset: 0});
+      copyText(output, hostPointer(this.text.encodeWide(row.formatted)));
     } else writePropertyWord(output, row.value);
     if (typeOutput !== null) writePropertyWord(typeOutput, row.kind);
     return 0;
@@ -352,13 +352,14 @@ export class BurikoPropertyEditors {
     const event = record.events[0];
     if (!event) return 0x8000001f;
     if (output === null) throw new Error('Buriko property event store dereferences null output');
-    if (output.offset < 0 || output.offset + 16 > output.bytes.length)
+    const bytes = output.view();
+    if (output.offset < 0 || output.offset + 16 > bytes.length)
       throw new RangeError('Buriko property event MOVUPS exceeds output storage');
     const values = new Uint8Array(16),
       view = new DataView(values.buffer);
     view.setInt32(0, event.kind, true);
     view.setInt32(4, event.value, true);
-    output.bytes.set(values, output.offset);
+    bytes.set(values, output.offset);
     record.events.shift();
     return 0;
   }

@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {BurikoDisplayObject} from './display-object.js';
 import type {BurikoInputCaptureView, BurikoNativeInput} from './input.js';
 import type {BurikoSelectionDialog} from './selection-dialog.js';
@@ -59,7 +60,7 @@ export function formatBurikoInputCaptures(input: BurikoNativeInput): Uint8Array 
     line.set(head);
     if (suffix !== undefined) line.set(suffix, head.length);
     line[line.length - 2] = 10;
-    writeText({bytes, offset}, line);
+    writeText(hostPointer(bytes, offset), line);
     offset += line.length - 1;
   };
   const hex = (token: number): string =>
@@ -116,13 +117,8 @@ export function createGroupE0InputCaptures(
       nativeAddress: 0x1400ab3c0,
       name: 'ShowInputCaptureList',
       execute: async (): Promise<0> => {
-        const list = {bytes: formatBurikoInputCaptures(input), offset: 0};
-        await selection.select(
-          list,
-          {bytes: engineCaption, offset: 0},
-          {bytes: prompt, offset: 0},
-          list,
-        );
+        const list = hostPointer(formatBurikoInputCaptures(input));
+        await selection.select(list, hostPointer(engineCaption), hostPointer(prompt), list);
         return 0;
       },
     },

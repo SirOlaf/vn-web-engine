@@ -1,4 +1,5 @@
 import {BurikoBpHeap} from './memory.js';
+import {BurikoBpRegion, BurikoBpRegionTable} from './region.js';
 import {
   clearIndeterminateMemory,
   requireDeterminateMemory,
@@ -25,15 +26,23 @@ export interface BurikoBpThreadOptions {
   frameCapacity: number;
   heapEnabled?: boolean;
   mode?: number;
+  /** The allocator of the memory the thread runs against; standalone threads own a private one. */
+  regions?: BurikoBpRegionTable;
 }
+
+const emptyRegion = (): BurikoBpRegion => new BurikoBpRegion(new Uint8Array());
 
 /** Storage of the verified Buriko CThread, independent of scheduler list ownership. */
 export class BurikoBpThread {
   readonly id: number;
   operandStack: Uint32Array;
   stackIndex = 0;
-  moduleMemory: Uint8Array;
-  frameMemory: Uint8Array;
+  /** Bank 1: code and module data. */
+  moduleRegion: BurikoBpRegion;
+  /** Bank 2: frames and locals. */
+  frameRegion: BurikoBpRegion;
+  /** The allocator of every region this thread creates. */
+  readonly regions: BurikoBpRegionTable;
   moduleCapacity: number;
   frameCapacity: number;
   moduleFloor = 0;
@@ -70,11 +79,22 @@ export class BurikoBpThread {
     this.frameCapacity = options.frameCapacity;
     this.moduleUsableCapacity = options.moduleCapacity;
     this.frameUsableCapacity = options.frameCapacity;
-    this.moduleMemory = new Uint8Array(options.moduleCapacity);
-    this.frameMemory = new Uint8Array(options.frameCapacity);
-    this.allocatedHeap = options.heapEnabled === false ? null : new BurikoBpHeap();
+    this.regions = options.regions ?? new BurikoBpRegionTable();
+    this.moduleRegion = this.regions.allocate(options.moduleCapacity);
+    this.frameRegion = this.regions.allocate(options.frameCapacity);
+    this.allocatedHeap = options.heapEnabled === false ? null : new BurikoBpHeap(this.regions);
     const mode = (options.mode ?? 0) >>> 0;
     this.mode = mode < 2 ? mode : 0;
+  }
+
+  /** Bank 1 bytes; see `BurikoBpRegion.view` for validity. */
+  get moduleMemory(): Uint8Array {
+    return this.moduleRegion.view();
+  }
+
+  /** Bank 2 bytes; see `BurikoBpRegion.view` for validity. */
+  get frameMemory(): Uint8Array {
+    return this.frameRegion.view();
   }
 
   get storageOwner(): BurikoBpThread {
@@ -104,13 +124,20 @@ export class BurikoBpThread {
   /** Native destruction releases storage before deleting its pending process and borrowers. */
   disposeStorage(): void {
     this.operandStack = new Uint32Array();
-    this.moduleMemory = new Uint8Array();
-    this.frameMemory = new Uint8Array();
+    this.releaseBanks();
+    this.moduleRegion = emptyRegion();
+    this.frameRegion = emptyRegion();
     this.allocatedHeap?.dispose();
     this.modules.length = 0;
     this.moduleSize = 0;
     this.callSites.length = 0;
     this.disposed = true;
+  }
+
+  /** Retires the module and frame regions this thread allocated. */
+  protected releaseBanks(): void {
+    this.regions.release(this.moduleRegion);
+    this.regions.release(this.frameRegion);
   }
 }
 
@@ -148,13 +175,15 @@ export class BurikoBpSharedThread extends BurikoBpThread {
     if (this.initialized) return 0x80000004;
     const reserved = reserveThreadRegions(parent, this, moduleSize, frameSize);
     if (reserved.result !== 0) return reserved.result;
+    // The child's own empty banks give way to the parent's regions, which it never releases.
+    super.releaseBanks();
     this.moduleFloor = this.moduleSize = reserved.moduleOffset!;
     this.moduleCapacity = this.moduleUsableCapacity = moduleSize >>> 0;
-    this.moduleMemory = parent.moduleMemory;
+    this.moduleRegion = parent.moduleRegion;
     setPc(this, entry);
     this.frameFloor = this.frameCursor = reserved.frameOffset!;
     this.frameCapacity = this.frameUsableCapacity = frameSize >>> 0;
-    this.frameMemory = parent.frameMemory;
+    this.frameRegion = parent.frameRegion;
     this.owner = parent.storageOwner;
     if (this.mode === 0) appendToRoot(this);
     this.initialized = true;
@@ -164,6 +193,10 @@ export class BurikoBpSharedThread extends BurikoBpThread {
   override disposeStorage(): void {
     if (this.initialized) releaseThreadRegions(this.storageOwner, this);
     super.disposeStorage();
+  }
+
+  protected override releaseBanks(): void {
+    if (!this.initialized) super.releaseBanks();
   }
 }
 

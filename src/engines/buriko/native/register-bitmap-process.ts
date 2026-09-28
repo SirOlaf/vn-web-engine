@@ -1,4 +1,5 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
+import {BurikoCodecPrivatePointer} from './codec-storage.js';
 import type {BurikoNativeClock} from './clock.js';
 import type {BurikoDataCodecWorkers} from './data-codec-workers.js';
 import {BurikoDataDecodeProcess} from './data-decode-process.js';
@@ -39,7 +40,15 @@ export class BurikoRegisterBitmapProcess extends BurikoDataDecodeProcess {
     else {
       if (worker.destination === null)
         throw new Error('Buriko registered bitmap has no decoded output');
-      const source = {...worker.destination, initialized: worker.initialized};
+      const destination = worker.destination;
+      const source =
+        worker.initialized === undefined
+          ? destination
+          : new BurikoCodecPrivatePointer(
+              destination.region,
+              destination.offset,
+              worker.initialized,
+            );
       const finishImport = beginRuntimeSpan('buriko.bitmap.register-import');
       let imported: number;
       try {
@@ -55,8 +64,8 @@ export class BurikoRegisterBitmapProcess extends BurikoDataDecodeProcess {
               this.registration.preload(this.archive, this.name, source, worker.result);
             else
               this.registration.cache(
-                this.archive === null ? null : {bytes: this.archive, offset: 0},
-                {bytes: this.name, offset: 0},
+                this.archive === null ? null : hostPointer(this.archive),
+                hostPointer(this.name),
                 source,
                 worker.result,
               );

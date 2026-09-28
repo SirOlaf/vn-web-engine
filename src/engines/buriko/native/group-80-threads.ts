@@ -72,7 +72,7 @@ export function createGroup80InputWait(
 
 function offsetPointer(pointer: BurikoBpPointer | null, offset: number): BurikoBpPointer {
   if (pointer === null) throw new Error('Buriko native thread message dereferenced null');
-  return {bytes: pointer.bytes, offset: pointer.offset + offset};
+  return pointer.add(offset);
 }
 
 /** Fully local lifecycle/message/deadline slots. Resource and input-dependent slots join separately. */

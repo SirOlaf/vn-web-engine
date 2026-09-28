@@ -1,20 +1,16 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer, pointerView} from '../bp/memory.js';
 import {BurikoNativeText, copyText, textByte} from './text.js';
 
-const pointer = (text: string): BurikoBpPointer => ({
-  bytes: Uint8Array.from([...text].map((unit) => unit.charCodeAt(0)).concat(0)),
-  offset: 0,
-});
+const pointer = (text: string): BurikoBpPointer =>
+  hostPointer(Uint8Array.from([...text].map((unit) => unit.charCodeAt(0)).concat(0)));
 const lowerOpen = pointer('<l>'),
   upperOpen = pointer('<L>'),
   lowerClose = pointer('</l>'),
   upperClose = pointer('</L>'),
   open = pointer('<'),
   close = pointer('>');
-const at = (source: BurikoBpPointer, offset: number): BurikoBpPointer => ({
-  bytes: source.bytes,
-  offset,
-});
+const at = (source: BurikoBpPointer, offset: number): BurikoBpPointer =>
+  new BurikoBpPointer(source.region, offset);
 function move(destination: BurikoBpPointer, source: BurikoBpPointer, length: number): void {
   if (length === 0) return;
   const input = pointerView(source, length),
@@ -32,7 +28,7 @@ export function collectBurikoRawLinks(
   source: BurikoBpPointer | null,
 ): number {
   if (source === null) throw new Error('Buriko raw link encoding detection reads null source');
-  const mode = text.detectEncoding(source.bytes, source.offset, false);
+  const mode = text.detectEncoding(source.view(), source.offset, false);
   let cursor = source.offset,
     count = 0;
   const find = (start: number, needle: BurikoBpPointer): number | null => {
@@ -66,7 +62,8 @@ export function stripBurikoTextTags(
   source: BurikoBpPointer | null,
 ): void {
   if (source === null) throw new Error('Buriko tag-strip encoding detection reads null source');
-  const mode = text.detectEncoding(source.bytes, source.offset, false);
+  const bytes = source.view(),
+    mode = text.detectEncoding(bytes, source.offset, false);
   let cursor = source.offset,
     destination = output?.offset ?? 0;
   const target = (): BurikoBpPointer => {
@@ -76,7 +73,7 @@ export function stripBurikoTextTags(
   for (;;) {
     const found = text.find(at(source, cursor), open, mode);
     if (found === null) break;
-    const next = textByte(source.bytes, cursor + found + 1);
+    const next = textByte(bytes, cursor + found + 1);
     if ((next >= 65 && next <= 90) || (next >= 97 && next <= 122) || next === 47) {
       const end = text.find(at(source, cursor + 2), close, mode);
       if (end === null) break;
@@ -84,7 +81,7 @@ export function stripBurikoTextTags(
       destination += found;
       cursor = cursor + 2 + end + 1;
     } else {
-      const byte = textByte(source.bytes, cursor);
+      const byte = textByte(bytes, cursor);
       pointerView(target(), 1).setUint8(0, byte);
       destination++;
       cursor++;

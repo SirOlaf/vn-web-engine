@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {BurikoLoadProcedure} from './load-procedure.js';
 import {BurikoProcedureState} from './procedure.js';
 import {BurikoNativeClock} from './clock.js';
@@ -32,7 +33,7 @@ export function burikoBitmapMessage(
   for (let index = 0; index < parts.length; index++) {
     pieces.push(text.encodeWide(parts[index]!, 0).subarray(0, -1));
     if (index < values.length)
-      pieces.push(textBytes({bytes: terminatedNativeBytes(values[index]!), offset: 0}));
+      pieces.push(textBytes(hostPointer(terminatedNativeBytes(values[index]!))));
   }
   const size = pieces.reduce((sum, piece) => sum + piece.length, 1),
     result = new Uint8Array(size);

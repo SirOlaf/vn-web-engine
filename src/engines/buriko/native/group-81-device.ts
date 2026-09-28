@@ -31,11 +31,7 @@ export function createGroup81Device(
         controller.adapters.queryDesktopMode();
         const [width, height] = controller.display.adjustedDesktopSize();
         pointerView(output!, 4).setUint32(0, width, true);
-        pointerView({bytes: output!.bytes, offset: output!.offset + 4}, 4).setUint32(
-          0,
-          height,
-          true,
-        );
+        pointerView(output!.add(4), 4).setUint32(0, height, true);
         return 0;
       },
     },

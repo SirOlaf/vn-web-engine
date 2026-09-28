@@ -1,5 +1,5 @@
 import {recolorBurikoBitmapAlpha as recolorAlpha} from './bitmap-recolor.js';
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {
   allocateBurikoBitmap,
   burikoBitmapRectangle,
@@ -301,7 +301,7 @@ export async function addBurikoHorizontalReadings(
   const originalNodes = [...nodes];
   for (const node of originalNodes) {
     if (node.annotationKey === null) continue;
-    const annotation = annotations.query({bytes: node.annotationKey, offset: 0});
+    const annotation = annotations.query(hostPointer(node.annotationKey));
     if (annotation === null)
       throw new Error('Buriko prepared reading key is absent from its per-call registry');
     const y = (node.annotationY - size + state.readingYOffset) | 0,
@@ -322,7 +322,7 @@ export async function addBurikoHorizontalReadings(
       throw new Error('Buriko horizontal reading parent left its prepared-node chain');
     if (readings.length !== 0) nodes.splice(parentIndex + 1, 0, ...readings);
     relink(nodes);
-    annotations.remove({bytes: annotation.key, offset: 0}, 1);
+    annotations.remove(hostPointer(annotation.key), 1);
   }
   annotations.clearInline();
   return 1;
@@ -670,8 +670,7 @@ export async function drawBurikoHorizontalTextToWindow(
     beforeY = cursor.y | 0,
     rectangle = runAsActor(() => window.getTextRectangle()),
     annotationBytes = new Uint8Array(1024);
-  if ((readingEnabled | 0) !== 0)
-    state.annotations.extract({bytes: annotationBytes, offset: 0}, source);
+  if ((readingEnabled | 0) !== 0) state.annotations.extract(hostPointer(annotationBytes), source);
   const fontId = window.fontId,
     proportional = window.characterSpacing,
     alignment = window.alignment,
@@ -692,7 +691,7 @@ export async function drawBurikoHorizontalTextToWindow(
         rectangle,
         source,
         readingEnabled,
-        annotations: {bytes: annotationBytes, offset: 0},
+        annotations: hostPointer(annotationBytes),
         fontId,
         proportional,
         wrapping,

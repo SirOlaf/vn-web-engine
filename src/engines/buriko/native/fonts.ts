@@ -8,6 +8,7 @@ import {
   type BurikoFontTransform,
 } from './font-raster.js';
 import {BurikoNativeText} from './text.js';
+import {hostPointer} from '../bp/memory.js';
 
 export interface BurikoFontRecord {
   readonly id: number;
@@ -83,7 +84,7 @@ export class BurikoNativeFonts {
   private decode(bytes: Uint8Array): string {
     const terminated = new Uint8Array(bytes.length + 1);
     terminated.set(bytes);
-    return this.text.decodeAuto({bytes: terminated, offset: 0});
+    return this.text.decodeAuto(hostPointer(terminated));
   }
   private mapping(name: Uint8Array): FontMapping | undefined {
     return this.mappings.find((mapping) => equal(mapping.name, name));

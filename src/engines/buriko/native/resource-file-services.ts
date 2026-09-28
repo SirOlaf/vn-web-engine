@@ -46,7 +46,7 @@ export class BurikoResourceFileServices {
     try {
       if (length === 0) return await output.write(new Uint8Array());
       const view = pointerView(required(data), length);
-      requireDeterminateMemory(data!.bytes, data!.offset, length);
+      requireDeterminateMemory(data!.view(), data!.offset, length);
       return await output.write(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
     } finally {
       output.close();

@@ -48,7 +48,7 @@ export function divideFixed(numerator: number, denominator: number): number {
 }
 
 function view(p: BurikoBpPointer, size: number, offset = 0): DataView {
-  return pointerView({bytes: p.bytes, offset: p.offset + offset}, size);
+  return pointerView(p.add(offset), size);
 }
 
 function readVector(p: BurikoBpPointer): number[] {

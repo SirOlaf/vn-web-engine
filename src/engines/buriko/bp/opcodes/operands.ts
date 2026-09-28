@@ -45,7 +45,7 @@ export function writeDeferredScalar(
   if (word.reason === undefined) writeScalar(h, address, type, word.value);
   else {
     const target = h.memory.pointer(h.thread, address >>> 0, accessSize(type));
-    markIndeterminateMemory(target.bytes, target.offset, accessSize(type), word.reason);
+    markIndeterminateMemory(target.view(), target.offset, accessSize(type), word.reason);
   }
 }
 
@@ -66,13 +66,14 @@ export function pointerBytes(
   displacement = 0,
   access: 'read' | 'write' | 'transport' = 'read',
 ): Uint8Array {
-  const offset = p.offset + displacement;
-  if (!Number.isSafeInteger(size) || size < 0 || offset < 0 || offset + size > p.bytes.length) {
+  const offset = p.offset + displacement,
+    bytes = p.view();
+  if (!Number.isSafeInteger(size) || size < 0 || offset < 0 || offset + size > bytes.length) {
     throw new Error('Buriko ._bp native memory access outside backing storage');
   }
-  if (access === 'read') requireDeterminateMemory(p.bytes, offset, size);
-  else if (access === 'write') clearIndeterminateMemory(p.bytes, offset, size);
-  return p.bytes.subarray(offset, offset + size);
+  if (access === 'read') requireDeterminateMemory(bytes, offset, size);
+  else if (access === 'write') clearIndeterminateMemory(bytes, offset, size);
+  return bytes.subarray(offset, offset + size);
 }
 
 /** 1400135a0 is overlap-safe, including its short-copy cases. */

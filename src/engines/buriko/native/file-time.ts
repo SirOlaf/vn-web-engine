@@ -95,10 +95,6 @@ export function writeBurikoSystemTime(output: BurikoBpPointer, time: bigint): bo
   const fields = burikoFileTimeToSystemTime(time);
   if (fields === null) return false;
   for (let index = 0; index < 8; index++)
-    pointerView({bytes: output.bytes, offset: output.offset + index * 2}, 2).setUint16(
-      0,
-      fields[index]!,
-      true,
-    );
+    pointerView(output.add(index * 2), 2).setUint16(0, fields[index]!, true);
   return true;
 }

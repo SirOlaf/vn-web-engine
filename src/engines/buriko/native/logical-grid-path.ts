@@ -1,10 +1,10 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {nativeQuickSort} from './record-sort.js';
 
 export function gridOutput(output: BurikoBpPointer | null, value: number, offset = 0): void {
   if (output === null) throw new Error('Buriko logical-grid null output');
-  pointerView({bytes: output.bytes, offset: output.offset + offset}, 4).setInt32(0, value, true);
+  pointerView(output.add(offset), 4).setInt32(0, value, true);
 }
 
 export function gridAllocation(
@@ -22,14 +22,14 @@ export function gridCopy(output: BurikoBpPointer | null, bytes: Uint8Array): voi
   if (bytes.length === 0) return;
   if (output === null) throw new Error('Buriko logical-grid null copy destination');
   pointerView(output, bytes.length);
-  output.bytes.set(bytes, output.offset);
+  output.view().set(bytes, output.offset);
 }
 
 export function gridRead(source: BurikoBpPointer | null, size: number): Uint8Array {
   if (size === 0) return new Uint8Array();
   if (source === null) throw new Error('Buriko logical-grid null copy source');
   pointerView(source, size);
-  return source.bytes.slice(source.offset, source.offset + size);
+  return source.view().slice(source.offset, source.offset + size);
 }
 
 export function gridAbsolute(value: number): number {
@@ -97,12 +97,12 @@ export class BurikoLogicalGridPath {
 
   private cell(index: number): DataView {
     if (this.cells === null) throw new Error('Buriko logical-grid path null cell allocation');
-    return pointerView({bytes: this.cells, offset: index * 16}, 16);
+    return pointerView(hostPointer(this.cells, index * 16), 16);
   }
 
   private result(index: number): DataView {
     if (this.results === null) throw new Error('Buriko logical-grid path null result allocation');
-    return pointerView({bytes: this.results, offset: index * 24}, 24);
+    return pointerView(hostPointer(this.results, index * 24), 24);
   }
 
   private enqueue(job: PathJob): number {
@@ -354,10 +354,7 @@ export class BurikoLogicalGridPath {
   ): number {
     for (let i = 0; i < (count | 0); i++) {
       if (directions === null) throw new Error('Buriko logical-grid null directions input');
-      const direction = pointerView(
-        {bytes: directions.bytes, offset: directions.offset + i * 4},
-        4,
-      ).getInt32(0, true);
+      const direction = pointerView(directions.add(i * 4), 4).getInt32(0, true);
       if (direction === 2) y = (y - 1) | 0;
       else if (direction === 3) y = (y + 1) | 0;
       else if (direction === 4) x = (x - 1) | 0;
@@ -389,8 +386,8 @@ export class BurikoLogicalGridPath {
           (this.cell(index).getUint32(8, true) & 13) === 0
         ) {
           if (sort) {
-            gridOutput({bytes: records, offset: length * 32}, x);
-            gridOutput({bytes: records, offset: length * 32}, y, 4);
+            gridOutput(hostPointer(records, length * 32), x);
+            gridOutput(hostPointer(records, length * 32), y, 4);
             records.set(this.results.subarray(index * 24, index * 24 + 24), length * 32 + 8);
             indices.push(length);
           } else {

@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import type {BurikoDisplayFrames} from './display-frames.js';
 import type {BurikoEngineErrors} from './engine-errors.js';
@@ -34,12 +35,11 @@ export function createTraditionalMovieSlots(
       archive = withArchive ? pointer(h) : null;
     if ((height | 0) <= 0 || (width | 0) <= 0) return invalidSize(h, width, height);
     if (name === null) throw new Error('Buriko traditional movie consumes a null filename');
-    const ownedName = {bytes: textBytes(name, true).slice(), offset: 0};
-    const ownedArchive =
-      archive === null ? null : {bytes: textBytes(archive, true).slice(), offset: 0};
+    const ownedName = hostPointer(textBytes(name, true).slice());
+    const ownedArchive = archive === null ? null : hostPointer(textBytes(archive, true).slice());
     if (!withArchive) {
-      const bytes = ownedName.bytes;
-      const source = {bytes, offset: 0};
+      const bytes = ownedName.view();
+      const source = hostPointer(bytes);
       const prefix = errors.files.text.encodeWide('指定された動画ファイル [ ', 0),
         suffix = errors.files.text.encodeWide(' ] は存在しません', 0),
         diagnostic = new Uint8Array(prefix.length - 1 + bytes.length - 1 + suffix.length);

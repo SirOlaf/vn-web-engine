@@ -118,6 +118,7 @@ export function createGroup80Resources(
           frameCapacity,
           heapEnabled: true,
           mode: 0,
+          regions: memory.regions,
         });
         scheduler.append(child);
         if (attachModule(child, resource, bytes) === BURIKO_BP_MODULE_NO_SPACE) {

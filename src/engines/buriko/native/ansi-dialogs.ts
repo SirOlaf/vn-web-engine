@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoAnsiUi} from './ansi-ui.js';
 import type {BurikoEngineDialogs} from './engine-dialogs.js';
 import type {BurikoNativeLanguage} from './group-81-language.js';
@@ -213,7 +213,7 @@ export class BurikoAnsiDialogs {
       const byte = bytes[index]!;
       if (byte === 0) {
         if (output === null) throw new Error('Buriko name validation copies through a null output');
-        copyText(output, {bytes, offset: 0});
+        copyText(output, hostPointer(bytes));
         return true;
       }
       if (!isNativeCp932Lead(byte)) return false;

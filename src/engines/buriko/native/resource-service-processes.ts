@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {push32} from '../bp/state.js';
 import type {BurikoNativeClock} from './clock.js';
 import {updateNativeChecksum} from './group-81-hash.js';
@@ -80,7 +80,7 @@ export class BurikoReadBinaryProcess extends BurikoLoadProcedure {
     if (this.destination === null)
       throw new Error('Buriko asynchronous binary read dereferences a null destination');
     const count = this.result.value >>> 0;
-    this.destination.bytes.set(bytes.subarray(0, count), this.destination.offset);
+    this.destination.view().set(bytes.subarray(0, count), this.destination.offset);
     this.failure = 0;
     return 1;
   }
@@ -136,7 +136,7 @@ export class BurikoExamineFileHealthProcess extends BurikoLoadProcedure {
     if (bytes === null)
       throw new Error('Buriko file-health process has no successful stored resource bytes');
     const checksum = new Uint8Array(8);
-    updateNativeChecksum({bytes: checksum, offset: 0}, {bytes, offset: 0}, this.result.value);
+    updateNativeChecksum(hostPointer(checksum), hostPointer(bytes), this.result.value);
     const expected = new Uint8Array(8);
     new DataView(expected.buffer).setBigUint64(0, BigInt.asUintN(64, this.metadata.value), true);
     this.failure = checksum.every((value, index) => value === expected[index]) ? 0 : 11;

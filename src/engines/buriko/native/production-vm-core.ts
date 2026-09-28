@@ -86,6 +86,7 @@ export class BurikoProductionVmCore {
       operandCapacity: 0,
       moduleCapacity: 0,
       frameCapacity: 0,
+      regions: this.memory.regions,
     });
     this.scheduler = new BurikoBpScheduler(this.root);
     this.scheduler.attachSharedLoaderWorker(this.worker);

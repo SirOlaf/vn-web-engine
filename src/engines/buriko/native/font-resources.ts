@@ -3,6 +3,7 @@ import {BurikoProgramResources} from './program-resources.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {burikoCrtWideLower, burikoCrtWidePrefixEqual} from './crt-case.js';
 import {FileError} from '../../../platform/filesystem.js';
+import {hostPointer} from '../bp/memory.js';
 
 const englishDefaults = [
   new TextEncoder().encode('MS Gothic'),
@@ -41,7 +42,7 @@ export class BurikoFontResources {
       operationAllocator.withActor(operationActor, operation);
 
     const key = burikoCrtWideLower(
-      this.fonts.text.decodeAuto({bytes: terminatedNativeBytes(filename), offset: 0}),
+      this.fonts.text.decodeAuto(hostPointer(terminatedNativeBytes(filename))),
     );
     if (this.loaded.has(key)) return 0;
     let bytes: Uint8Array;
@@ -100,7 +101,7 @@ export class BurikoFontResources {
     charset |= 0;
     const defaults = japanese ? japaneseDefaults : englishDefaults;
     const wideDefaults = defaults.map((name) =>
-      this.fonts.text.decodeAuto({bytes: terminatedNativeBytes(name), offset: 0}),
+      this.fonts.text.decodeAuto(hostPointer(terminatedNativeBytes(name))),
     );
     const seen = [false, false];
     const names: Uint8Array[] = [];

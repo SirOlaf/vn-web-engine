@@ -54,6 +54,7 @@ export class BurikoBootProgramLoader {
       frameCapacity: this.version.bootFrameBytes,
       heapEnabled: true,
       mode: 0,
+      regions: root.regions,
     });
     this.scheduler.append(child);
     if (attachModule(child, module, bytes) === BURIKO_BP_MODULE_NO_SPACE)

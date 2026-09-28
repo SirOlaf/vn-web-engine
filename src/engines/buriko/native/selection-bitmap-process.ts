@@ -16,7 +16,7 @@ import type {BurikoBpProcessMessage} from './types.js';
 
 function read(source: BurikoBpPointer | null, offset: number): number {
   if (source === null) throw new Error('Buriko bitmap selection dereferences null records');
-  return pointerView({bytes: source.bytes, offset: source.offset + offset}, 4).getInt32(0, true);
+  return pointerView(source.add(offset), 4).getInt32(0, true);
 }
 /** C4F50 maps already-collected input bits independently from ConsumeKey. */
 function keyBit(key: number, bits: number): number {

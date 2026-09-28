@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {push32, type BurikoBpThread} from '../bp/state.js';
 import {allocateBurikoBitmap, type BurikoBitmapRectangle} from './bitmap.js';
 import {clearBurikoBitmap} from './bitmap-copy.js';
@@ -69,7 +69,7 @@ export class BurikoSelectionProcess extends BurikoProcedure {
     this.columns = columns | 0;
     this.items = items.map((source) => {
       if (source === null) throw new Error('Buriko selection copies a null item');
-      const owned = {bytes: new Uint8Array(textLength(source) + 1), offset: 0};
+      const owned = hostPointer(new Uint8Array(textLength(source) + 1));
       copyText(owned, source);
       return owned;
     });

@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import type {
   BurikoBpOpcodeContext,
@@ -43,7 +43,7 @@ export function createGroupB0Children(
       y = pop32(h.thread),
       x = pop32(h.thread),
       title = pointer(h);
-    const output = {bytes: new Uint8Array(4), offset: 0};
+    const output = hostPointer(new Uint8Array(4));
     const result = children.create(output, title, x, y, width, height, flags);
     if (result === 0x80000001)
       return fatal(h, `無効なウィンドウサイズ [ ${width | 0} , ${height | 0} ] が指定されました`);
@@ -77,10 +77,10 @@ export function createGroupB0Children(
   });
   add(0x17, 0x1400d59f0, 'GetChildWindowPosition', (h) => {
     const id = pop32(h.thread),
-      output = {bytes: new Uint8Array(8), offset: 0};
+      output = hostPointer(new Uint8Array(8));
     if (children.getPosition(output, id) === 0) return fatal(h, invalidHandle);
     push32(h.thread, readPropertyWord(output));
-    push32(h.thread, readPropertyWord({bytes: output.bytes, offset: 4}));
+    push32(h.thread, readPropertyWord(new BurikoBpPointer(output.region, 4)));
     return 0;
   });
   add(0x18, 0x1400d59a0, 'FillChildWindow', (h) => {

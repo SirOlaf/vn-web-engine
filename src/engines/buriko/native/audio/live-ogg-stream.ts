@@ -1,3 +1,4 @@
+import {hostPointer} from '../../bp/memory.js';
 import type {BurikoLockActors} from '../exclusion-locks.js';
 import type {BurikoLiveAudioStorage} from './live-storage.js';
 import {BurikoWaveBoxError, requireBurikoWaveHeaderBytes} from './wavebox-header.js';
@@ -68,7 +69,7 @@ export async function materializeBurikoLiveOgg(
     throw new BurikoWaveBoxError(0x10000003, 'Buriko Ogg input is shorter than model header');
   const header = new Uint8Array(64),
     headerMask = new Uint8Array(64).fill(1);
-  await input.readInto({bytes: header, offset: 0}, 64, actor, headerMask);
+  await input.readInto(hostPointer(header), 64, actor, headerMask);
   const view = new DataView(header.buffer);
   requireBurikoWaveHeaderBytes(headerMask, 4, 4);
   if (view.getUint32(4, true) !== 0x20207762)
@@ -82,8 +83,7 @@ export async function materializeBurikoLiveOgg(
   const length = (input.size - 64) >>> 0;
   const payload = new Uint8Array(length),
     mask = new Uint8Array(length);
-  const transferred =
-    (await input.readInto({bytes: payload, offset: 0}, length, actor, mask)) >>> 0;
+  const transferred = (await input.readInto(hostPointer(payload), length, actor, mask)) >>> 0;
   if (transferred > length)
     throw new RangeError('Buriko browser Vorbis read count exceeds actual payload storage');
   for (let index = 0; index < transferred; index++)

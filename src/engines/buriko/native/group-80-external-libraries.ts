@@ -43,10 +43,14 @@ export function createGroup80ExternalLibraries(
       name: 'CallExternalLibrary',
       execute: (h) => {
         const flags = pop32(h.thread);
-        const argument = (pointer: boolean): WindowsDynamicArgument =>
-          pointer
-            ? {kind: 'memory', pointer: h.memory.resolve(h.thread, pop32(h.thread))}
-            : {kind: 'signed', value: signed32(pop32(h.thread))};
+        const argument = (pointer: boolean): WindowsDynamicArgument => {
+          if (!pointer) return {kind: 'signed', value: signed32(pop32(h.thread))};
+          const resolved = h.memory.resolve(h.thread, pop32(h.thread));
+          return {
+            kind: 'memory',
+            pointer: resolved === null ? null : {bytes: resolved.view(), offset: resolved.offset},
+          };
+        };
         const third = argument((flags & 0xffff0000) !== 0),
           second = argument((flags & 0xffff) !== 0),
           first = signed32(pop32(h.thread)),

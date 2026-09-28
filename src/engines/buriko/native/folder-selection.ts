@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {
   WindowsFolderDialogHost,
   WindowsFolderDialogRequest,
@@ -6,10 +6,9 @@ import type {
 import type {BurikoLocalizedMessages} from './localized-messages.js';
 import {writeText} from './text.js';
 
-const selectFolderMessageKey: BurikoBpPointer = {
-  bytes: new TextEncoder().encode('PLEASESELECTTHEFOLDER\0'),
-  offset: 0,
-};
+const selectFolderMessageKey: BurikoBpPointer = hostPointer(
+  new TextEncoder().encode('PLEASESELECTTHEFOLDER\0'),
+);
 
 /** Semantic BROWSEINFOW fields retained by the explicit browser/platform boundary. */
 export type BurikoFolderDialogRequest = WindowsFolderDialogRequest;
@@ -29,14 +28,12 @@ export class BurikoFolderSelectionService {
     initialPath: Uint8Array | null,
   ): Promise<0 | 1> {
     const titlePointer =
-      title === null ? this.localized.lookup(selectFolderMessageKey) : {bytes: title, offset: 0};
+      title === null ? this.localized.lookup(selectFolderMessageKey) : hostPointer(title);
     if (titlePointer === null)
       throw new Error('Buriko folder selection cannot resolve its localized prompt');
     const prompt = this.localized.text.decodeAuto(titlePointer),
       initialFolder =
-        initialPath === null
-          ? null
-          : this.localized.text.decodeAuto({bytes: initialPath, offset: 0});
+        initialPath === null ? null : this.localized.text.decodeAuto(hostPointer(initialPath));
 
     const selected = await this.host.selectFolder({
       owner: this.mainWindowIdentity,

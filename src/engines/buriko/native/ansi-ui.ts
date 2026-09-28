@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoNativeText, copyText, textBytes} from './text.js';
 
 /** Japanese Windows host ACP, independent of BGI_Text_SelectEncodingMode. */
@@ -27,7 +27,7 @@ export class BurikoAnsiUi {
   writeText(output: BurikoBpPointer | null, value: string, capacity: number): void {
     if (capacity <= 0) return;
     if (output === null) throw new Error('Buriko ANSI control writes text through a null output');
-    copyText(output, {bytes: this.getText(value, capacity), offset: 0});
+    copyText(output, hostPointer(this.getText(value, capacity)));
   }
 
   /** b01d0/afcb0 copy a byte-limited initial value into a zeroed 1024-byte local. */

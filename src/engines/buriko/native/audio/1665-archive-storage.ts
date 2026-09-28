@@ -1,5 +1,5 @@
 import {markIndeterminateMemory} from '../../../../core/indeterminate-memory.js';
-import {pointerView, type BurikoBpPointer} from '../../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../../bp/memory.js';
 import {BurikoNativeFile} from '../native-file.js';
 import type {BurikoProgramFiles} from '../program-files.js';
 import {textByte, writeText} from '../text.js';
@@ -26,7 +26,7 @@ class Buriko1665Archive {
     return new Uint8Array(size);
   }
   private async readIndex(file: BurikoNativeFile, bytes: Uint8Array): Promise<void> {
-    const written = await file.read({bytes, offset: 0}, bytes.length);
+    const written = await file.read(hostPointer(bytes), bytes.length);
     // 004c9100 ignores short index transfers; retain the untouched allocation tail.
     markIndeterminateMemory(
       bytes,
@@ -40,7 +40,7 @@ class Buriko1665Archive {
     if (!(await file.openReadWide(this.path))) return false;
     try {
       const header = new Uint8Array(16);
-      if ((await file.read({bytes: header, offset: 0}, 16)) !== 16) return false;
+      if ((await file.read(hostPointer(header), 16)) !== 16) return false;
       const pack = packSignature.every((byte, offset) => header[offset] === byte);
       if (!pack && !arcSignature.every((byte, offset) => header[offset] === byte)) return false;
       this.count = new DataView(header.buffer).getUint32(12, true);
@@ -50,8 +50,8 @@ class Buriko1665Archive {
         const packed = this.allocation(this.count, 32);
         await this.readIndex(file, packed);
         for (let entry = 0; entry < (this.count | 0); entry++) {
-          const source = {bytes: packed, offset: entry * 32},
-            destination = {bytes: this.index, offset: entry * 128};
+          const source = hostPointer(packed, entry * 32),
+            destination = hostPointer(this.index, entry * 128);
           // Each expanded record is zeroed before the name and metadata are copied.
           this.index.fill(0, destination.offset, destination.offset + 128);
           writeText(destination, this.files.text.convertEncoding(source, 1));
@@ -64,7 +64,7 @@ class Buriko1665Archive {
       } else {
         await this.readIndex(file, this.index);
         for (let entry = 0; entry < (this.count | 0); entry++) {
-          const name = {bytes: this.index, offset: entry * 128};
+          const name = hostPointer(this.index, entry * 128);
           if (this.files.text.detectEncoding(this.index, name.offset) === 0)
             writeText(name, this.files.text.convertEncoding(name, 1));
           this.files.text.lowercase(name);
@@ -88,7 +88,7 @@ class Buriko1665Archive {
     return undefined;
   }
   size(entry: number): number {
-    return pointerView({bytes: this.index, offset: entry}, 104).getUint32(100, true);
+    return pointerView(hostPointer(this.index, entry), 104).getUint32(100, true);
   }
   async read(
     destination: BurikoBpPointer,
@@ -106,7 +106,7 @@ class Buriko1665Archive {
       if (count === 0) count = size;
       if (size < count) return 0x80000040;
       if (size < (offset + count) >>> 0) return 0x80000030;
-      const memberOffset = pointerView({bytes: this.index, offset: entry}, 100).getUint32(96, true);
+      const memberOffset = pointerView(hostPointer(this.index, entry), 100).getUint32(96, true);
       // 00432b70 uses a signed LONG without a high-distance pointer; its failure is ignored.
       file.seekAbsolute(BigInt((memberOffset + this.payloadBase + offset) | 0));
       return await file.read(destination, count, initialized);
@@ -147,8 +147,8 @@ export class Buriko1665ArchiveFileStorage implements BurikoLiveAudioStorage {
     if (pathBytes.length > 780 || name.length > 96)
       throw new RangeError('Buriko 1.665 audio name exceeds its native stack record');
     // 004c9690 compares lowercased UTF-8 paths and never observes a file timestamp.
-    this.files.text.lowercase({bytes: pathBytes, offset: 0});
-    this.files.text.lowercase({bytes: name, offset: 0});
+    this.files.text.lowercase(hostPointer(pathBytes));
+    this.files.text.lowercase(hostPointer(name));
     const lowerPath = this.files.text.decodeBytes(pathBytes.subarray(0, -1), 1);
     let archive = this.archives.get(lowerPath);
     if (archive === undefined) {

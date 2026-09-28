@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import type {
   BurikoBpOpcodeContext,
@@ -73,7 +73,7 @@ export function createGroupB0Fonts(
     else {
       let offset = output.offset;
       for (const name of result.names) {
-        copyText({bytes: output.bytes, offset}, {bytes: name, offset: 0});
+        copyText(new BurikoBpPointer(output.region, offset), hostPointer(name));
         offset += name.length;
       }
       push32(h.thread, result.names.length);

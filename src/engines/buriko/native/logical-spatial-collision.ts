@@ -46,11 +46,7 @@ function squaredDistance(a: readonly number[], b: readonly number[]): number {
 }
 
 function write(output: BurikoBpPointer, index: number, value: number): void {
-  pointerView({bytes: output.bytes, offset: output.offset + index * 4}, 4).setUint32(
-    0,
-    value,
-    true,
-  );
+  pointerView(output.add(index * 4), 4).setUint32(0, value, true);
 }
 
 /** The four stack scratch values are not initialized before the candidate loop. */

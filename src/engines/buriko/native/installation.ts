@@ -1,4 +1,5 @@
 import {FileError} from '../../../platform/filesystem.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {pop32, push32, type BurikoBpThread} from '../bp/state.js';
 import type {BurikoNativeClock} from './clock.js';
 import {BurikoDirectoryTree} from './directory-tree.js';
@@ -89,8 +90,8 @@ function nativeString(value: Uint8Array): Uint8Array {
   return terminatedNativeBytes(value).slice();
 }
 
-function messageKey(name: string): {bytes: Uint8Array; offset: number} {
-  return {bytes: new TextEncoder().encode(name + '\0'), offset: 0};
+function messageKey(name: string): BurikoBpPointer {
+  return hostPointer(new TextEncoder().encode(name + '\0'));
 }
 
 function isExpectedFileError(error: unknown): boolean {
@@ -260,10 +261,7 @@ export class BurikoInstallationService {
     return this.resources.files.mountedPath(this.resources.files.path(path));
   }
 
-  private localizedMessage(
-    name: string,
-    fallback: string,
-  ): Uint8Array | {bytes: Uint8Array; offset: number} {
+  private localizedMessage(name: string, fallback: string): Uint8Array | BurikoBpPointer {
     return (
       this.localized.lookup(messageKey(name)) ?? this.resources.files.text.encodeWide(fallback, 1)
     );
@@ -306,8 +304,8 @@ export class BurikoInstallationService {
       records: HvlRecord[] = [];
     for (let index = 0; index < count; index++) {
       const offset = index * recordSize,
-        raw = textBytes({bytes: stored, offset}, true).slice(),
-        name = this.resources.files.text.convertEncoding({bytes: raw, offset: 0}, 1),
+        raw = textBytes(hostPointer(stored, offset), true).slice(),
+        name = this.resources.files.text.convertEncoding(hostPointer(raw), 1),
         checksum = view.getBigUint64(offset + (legacy ? 0x38 : 0xf8), true);
       records.push({name, checksum});
     }
@@ -317,11 +315,11 @@ export class BurikoInstallationService {
 
   private expectedChecksum(name: Uint8Array): bigint | null {
     const query = this.resources.files.text
-      .decodeAuto({bytes: nativeString(name), offset: 0})
+      .decodeAuto(hostPointer(nativeString(name)))
       .toLowerCase();
     for (const record of this.hvl) {
       const candidate = this.resources.files.text
-        .decodeAuto({bytes: nativeString(record.name), offset: 0})
+        .decodeAuto(hostPointer(nativeString(record.name)))
         .toLowerCase();
       if (candidate === query) return record.checksum;
     }
@@ -426,10 +424,8 @@ export class BurikoInstallationService {
       };
     });
     if (
-      textLength({
-        bytes: terminatedNativeBytes(this.resources.configuration.secondaryRoot),
-        offset: 0,
-      }) !== 0
+      textLength(hostPointer(terminatedNativeBytes(this.resources.configuration.secondaryRoot))) !==
+      0
     ) {
       const base = this.resources.configuration.secondaryMediaPath.replace(/[\\/]*$/, '\\'),
         source = base + this.resources.files.path(sourceRelative),
@@ -578,7 +574,7 @@ export class BurikoInstallationService {
         await this.showFileError('FILESAVINGFAILED', 'File saving failed.');
         return 'failure';
       }
-      updateNativeChecksum({bytes: checksum, offset: 0}, {bytes, offset: 0}, bytes.length);
+      updateNativeChecksum(hostPointer(checksum), hostPointer(bytes), bytes.length);
       const completedBlock = block + 1;
       this.enqueueWorkerMessage(process, 4, completedBlock);
       await this.progress?.update(
@@ -666,7 +662,7 @@ export class BurikoInstallationService {
         ),
         decoded =
           template instanceof Uint8Array
-            ? this.resources.files.text.decodeMixed({bytes: template, offset: 0})
+            ? this.resources.files.text.decodeMixed(hostPointer(template))
             : this.resources.files.text.decodeMixed(template),
         filename = this.resources.files.path(record.fileName),
         message = this.resources.files.text.encodeWide(decoded.replace(/%s/g, filename), 1);
@@ -683,17 +679,15 @@ export class BurikoInstallationService {
     if (offset >= value.length || value[offset] === 0) return null;
     const source = new Uint8Array(value.length - offset + 1);
     source.set(value.subarray(offset));
-    const converted = this.resources.files.text.convertEncoding({bytes: source, offset: 0}, 1);
-    this.resources.files.text.lowercase({bytes: converted, offset: 0});
+    const converted = this.resources.files.text.convertEncoding(hostPointer(source), 1);
+    this.resources.files.text.lowercase(hostPointer(converted));
     return converted;
   }
 
   private addManifestEntry(list: Uint8Array[], keys: Set<string>, value: Uint8Array): void {
-    const normalized = this.normalizeManifestEntry(
-      textBytes({bytes: nativeString(value), offset: 0}),
-    );
+    const normalized = this.normalizeManifestEntry(textBytes(hostPointer(nativeString(value))));
     if (normalized === null) return;
-    const key = Array.from(textBytes({bytes: normalized, offset: 0})).join(',');
+    const key = Array.from(textBytes(hostPointer(normalized))).join(',');
     if (keys.has(key)) return;
     keys.add(key);
     list.push(normalized);
@@ -752,9 +746,8 @@ export class BurikoInstallationService {
       this.addManifestEntry(normal, normalKeys, installed.relative);
 
     const outputBytes: number[] = [];
-    for (const entry of normal) outputBytes.push(...textBytes({bytes: entry, offset: 0}), 10);
-    for (const entry of directories)
-      outputBytes.push(36, ...textBytes({bytes: entry, offset: 0}), 10);
+    for (const entry of normal) outputBytes.push(...textBytes(hostPointer(entry)), 10);
+    for (const entry of directories) outputBytes.push(36, ...textBytes(hostPointer(entry)), 10);
     outputBytes.push(0);
     let success = false;
     try {
@@ -951,7 +944,7 @@ export class BurikoInstallationProcess extends BurikoProcedure {
   }
 
   private derivedSourceFolder(primaryRoot: Uint8Array): Uint8Array {
-    const source = textBytes({bytes: terminatedNativeBytes(primaryRoot), offset: 0});
+    const source = textBytes(hostPointer(terminatedNativeBytes(primaryRoot)));
     if (source.length < 4) return Uint8Array.of(0);
     const output = new Uint8Array(source.length - 3);
     output.set(source.subarray(3, source.length - 1));

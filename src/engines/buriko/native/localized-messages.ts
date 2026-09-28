@@ -1,7 +1,7 @@
 import type {PeResource} from '../../../formats/pe/resources.js';
 import {decodeBurikoDsc} from './dsc-wasm.js';
 import {signature} from '../../../formats/buriko/binary.js';
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoNativeText, textByte} from './text.js';
 import {BurikoNativeLanguage} from './group-81-language.js';
 import {BurikoImportedTextMaps} from './imported-text-maps.js';
@@ -13,10 +13,7 @@ interface LanguageSection {
   readonly next: LanguageSection | null;
 }
 
-const languageIdKey: BurikoBpPointer = {
-  bytes: new TextEncoder().encode('languageid\0'),
-  offset: 0,
-};
+const languageIdKey: BurikoBpPointer = hostPointer(new TextEncoder().encode('languageid\0'));
 const whitespace = (byte: number): boolean =>
   byte === 9 || byte === 10 || byte === 13 || byte === 32;
 const separator = (byte: number): boolean =>
@@ -25,12 +22,13 @@ const separator = (byte: number): boolean =>
 /** 01df80 -> 01cd38, signed strtol(base16), over this file's ASCII language-ID fields.
  * The title's initial narrow C locale classifies TAB..CR and space as whitespace. */
 function languageId(source: BurikoBpPointer): number {
+  const bytes = source.view();
   let offset = source.offset;
-  const read = (): number => textByte(source.bytes, offset);
+  const read = (): number => textByte(bytes, offset);
   while ((read() >= 9 && read() <= 13) || read() === 32) offset++;
   const negative = read() === 45;
   if (negative || read() === 43) offset++;
-  if (read() === 48 && (textByte(source.bytes, offset + 1) | 32) === 120) offset += 2;
+  if (read() === 48 && (textByte(bytes, offset + 1) | 32) === 120) offset += 2;
   let magnitude = 0n;
   for (;;) {
     const byte = read(),
@@ -104,7 +102,7 @@ export class BurikoLocalizedMessages {
       }
       const directive = bytes[offset] === 64;
       if (directive) offset++;
-      const key = {bytes, offset};
+      const key = hostPointer(bytes, offset);
       while (!separator(textByte(bytes, offset))) {
         if (bytes[offset] === 0)
           throw new Error('Buriko localized message has no key/value separator');
@@ -112,7 +110,7 @@ export class BurikoLocalizedMessages {
       }
       bytes[offset++] = 0;
       while (separator(textByte(bytes, offset))) offset++;
-      const value = {bytes, offset};
+      const value = hostPointer(bytes, offset);
       while (textByte(bytes, offset) !== 0 && bytes[offset] !== 10 && bytes[offset] !== 13)
         advance();
       if (bytes[offset] !== 0) bytes[offset++] = 0;
@@ -126,11 +124,11 @@ export class BurikoLocalizedMessages {
       if (textByte(bytes, value.offset) !== 0) {
         let item = value.offset;
         for (;;) {
-          const next = this.text.findCharacter({bytes, offset: item}, 44);
+          const next = this.text.findCharacter(hostPointer(bytes, item), 44);
           if (next !== null) bytes[next] = 0;
           if (languages.length === 1022)
             throw new RangeError('Buriko localized language IDs exceed native scratch capacity');
-          languages.push(languageId({bytes, offset: item}));
+          languages.push(languageId(hostPointer(bytes, item)));
           if (next === null) break;
           item = next + 1;
           while (textByte(bytes, item) === 32 || bytes[item] === 9) item++;

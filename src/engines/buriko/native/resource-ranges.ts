@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoProgramResources} from './program-resources.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {textLength} from './text.js';
@@ -26,7 +26,7 @@ export class BurikoResourceRanges {
     if (destination === null) return {result: 0, size};
     if (size <= offset >>> 0) return {result: 2, size: null};
     const bytes = await files.read(opened.source, offset >>> 0, length >>> 0);
-    destination.bytes.set(bytes, destination.offset);
+    destination.view().set(bytes, destination.offset);
     return {result: bytes.length === length >>> 0 ? 0 : 3, size: bytes.length >>> 0};
   }
 
@@ -68,7 +68,7 @@ export class BurikoResourceRanges {
     offset: number,
     length: number,
   ): Promise<number> {
-    if (textLength({bytes: terminatedNativeBytes(name), offset: 0}) >= 96) {
+    if (textLength(hostPointer(terminatedNativeBytes(name))) >= 96) {
       return this.resources.errors.fatal(
         this.resources.files.text.encodeWide(
           `指定されたファイル名 [ ${this.resources.files.path(name)} ] は95文字を超えています`,
@@ -80,17 +80,14 @@ export class BurikoResourceRanges {
     const size = await this.resources.archives.size(path, name);
     if (size >= 0x80000000 || destination === null) return size;
     const read = await this.resources.archives.read(path, name, offset, length);
-    if (read.bytes !== null) destination.bytes.set(read.bytes, destination.offset);
+    if (read.bytes !== null) destination.view().set(read.bytes, destination.offset);
     return read.result;
   }
 
   /** BD950 is shared with native80:34 through the canonical resource owner. */
   async isAvailable(archive: Uint8Array | null, name: Uint8Array): Promise<boolean> {
     return (
-      (await this.resources.isAvailable(archive, {
-        bytes: terminatedNativeBytes(name),
-        offset: 0,
-      })) !== 0
+      (await this.resources.isAvailable(archive, hostPointer(terminatedNativeBytes(name)))) !== 0
     );
   }
 

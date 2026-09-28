@@ -144,10 +144,7 @@ export class BurikoNativeTouch {
     for (let index = 0; index < this.contacts.length; index++) {
       if (destination !== null) {
         const contact = this.contacts[index]!;
-        const view = pointerView(
-          {bytes: destination.bytes, offset: destination.offset + index * 24},
-          24,
-        );
+        const view = pointerView(destination.add(index * 24), 24);
         const words = [
           contact.sequence,
           contact.x,
@@ -181,7 +178,7 @@ export class BurikoNativeTouch {
       const point = this.history[source]!,
         next = this.history[source + 1];
       if (positions === null) throw new Error('Buriko native touch-history null position output');
-      const view = pointerView({bytes: positions.bytes, offset: positions.offset + copied * 8}, 8);
+      const view = pointerView(positions.add(copied * 8), 8);
       view.setInt32(0, point.x, true);
       view.setInt32(4, point.y, true);
       const angle =
@@ -192,11 +189,7 @@ export class BurikoNativeTouch {
               (point.y - next.y) | 0,
             );
       if (angles === null) throw new Error('Buriko native touch-history null angle output');
-      pointerView({bytes: angles.bytes, offset: angles.offset + copied * 4}, 4).setUint32(
-        0,
-        angle,
-        true,
-      );
+      pointerView(angles.add(copied * 4), 4).setUint32(0, angle, true);
     }
     return copied;
   }

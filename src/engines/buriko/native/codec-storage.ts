@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, BurikoBpRegion, pointerView, hostPointer} from '../bp/memory.js';
 import {byteDataView, indexOfZeroByte} from '../../../core/binary.js';
 import {
   clearIndeterminateMemory,
@@ -10,6 +10,29 @@ import {
 export interface BurikoCodecPointer extends BurikoBpPointer {
   readonly initialized?: Uint8Array;
 }
+
+/** Host-owned codec storage whose validity bitmap tracks which bytes the codec has written. */
+export class BurikoCodecPrivatePointer extends BurikoBpPointer implements BurikoCodecPointer {
+  constructor(
+    region: BurikoBpRegion,
+    offset: number,
+    readonly initialized: Uint8Array,
+  ) {
+    super(region, offset);
+  }
+
+  override add(displacement: number): BurikoCodecPrivatePointer {
+    return new BurikoCodecPrivatePointer(this.region, this.offset + displacement, this.initialized);
+  }
+}
+
+export function codecPrivatePointer(
+  bytes: Uint8Array,
+  initialized: Uint8Array,
+  offset = 0,
+): BurikoCodecPrivatePointer {
+  return new BurikoCodecPrivatePointer(new BurikoBpRegion(bytes), offset, initialized);
+}
 export function codecView(
   pointer: BurikoCodecPointer | null,
   offset: number,
@@ -18,9 +41,9 @@ export function codecView(
 ): DataView {
   if (pointer === null) throw new Error('Buriko codec accesses a null pointer');
   const at = pointer.offset + offset,
-    view = pointerView({bytes: pointer.bytes, offset: at}, length);
+    view = pointerView(new BurikoBpPointer(pointer.region, at), length);
   if (pointer.initialized !== undefined) {
-    pointerView({bytes: pointer.initialized, offset: at}, length);
+    pointerView(hostPointer(pointer.initialized, at), length);
     if (read) {
       if (length >= 64) {
         if (indexOfZeroByte(pointer.initialized.subarray(at, at + length)) >= 0)
@@ -45,14 +68,15 @@ export function codecReadableSpan(
   length: number,
 ): Uint8Array | null {
   if (pointer === null) return null;
-  const at = pointer.offset + offset;
+  const at = pointer.offset + offset,
+    bytes = pointer.view();
   if (
     !Number.isInteger(at) ||
     !Number.isInteger(length) ||
     at < 0 ||
     length < 0 ||
-    at > pointer.bytes.byteLength ||
-    at + length > pointer.bytes.byteLength
+    at > bytes.byteLength ||
+    at + length > bytes.byteLength
   )
     return null;
   if (pointer.initialized !== undefined) {
@@ -60,11 +84,11 @@ export function codecReadableSpan(
       return null;
     if (indexOfZeroByte(pointer.initialized.subarray(at, at + length)) >= 0) return null;
   }
-  if (hasIndeterminateMemory(pointer.bytes, at, length)) return null;
+  if (hasIndeterminateMemory(bytes, at, length)) return null;
   try {
     // Zero-length bounds checks alone cannot identify a detached validity bitmap.
     if (length === 0 && pointer.initialized !== undefined) byteDataView(pointer.initialized);
-    return pointer.bytes.subarray(at, at + length);
+    return bytes.subarray(at, at + length);
   } catch {
     return null;
   }
@@ -78,7 +102,7 @@ function codecByteOffset(
 ): number {
   if (pointer === null) throw new Error('Buriko codec accesses a null pointer');
   const at = pointer.offset + offset;
-  if (!Number.isInteger(at) || at < 0 || at >= pointer.bytes.byteLength)
+  if (!Number.isInteger(at) || at < 0 || at >= pointer.region.size)
     throw new RangeError('Buriko pointer exceeds its byte view');
   if (pointer.initialized !== undefined) {
     if (at >= pointer.initialized.byteLength)
@@ -91,8 +115,9 @@ function codecByteOffset(
 
 export function codecRead(pointer: BurikoCodecPointer | null, offset: number): number {
   const at = codecByteOffset(pointer, offset, true),
-    value = byteDataView(pointer!.bytes).getUint8(at);
-  requireDeterminateMemory(pointer!.bytes, at, 1);
+    bytes = pointer!.view(),
+    value = byteDataView(bytes).getUint8(at);
+  requireDeterminateMemory(bytes, at, 1);
   return value;
 }
 
@@ -101,9 +126,10 @@ export function codecWrite(
   offset: number,
   value: number,
 ): void {
-  const at = codecByteOffset(pointer, offset, false);
-  byteDataView(pointer!.bytes).setUint8(at, value);
-  clearIndeterminateMemory(pointer!.bytes, at, 1);
+  const at = codecByteOffset(pointer, offset, false),
+    bytes = pointer!.view();
+  byteDataView(bytes).setUint8(at, value);
+  clearIndeterminateMemory(bytes, at, 1);
   if (pointer!.initialized !== undefined) pointer!.initialized[at] = 1;
 }
 export function codecCopy(
@@ -116,9 +142,11 @@ export function codecCopy(
   if (count === 0) return;
   codecView(source, input, count);
   codecView(destination, output, count, false);
-  destination!.bytes.set(
-    source!.bytes.subarray(source!.offset + input, source!.offset + input + count),
-    destination!.offset + output,
-  );
+  destination!
+    .view()
+    .set(
+      source!.view().subarray(source!.offset + input, source!.offset + input + count),
+      destination!.offset + output,
+    );
   codecMark(destination!, output, count);
 }

@@ -1,12 +1,13 @@
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import {findBurikoMatchingRecord, writeBurikoMatchingRecordIndices} from './record-search.js';
 import type {BurikoNativeSlotDefinition} from './types.js';
 
 /** Native wrappers initialize exactly one scalar DWORD, with no invented upper bytes for width8. */
-function scalar(value: number): {bytes: Uint8Array; offset: number} {
+function scalar(value: number): BurikoBpPointer {
   const bytes = new Uint8Array(4);
   new DataView(bytes.buffer).setUint32(0, value, true);
-  return {bytes, offset: 0};
+  return hostPointer(bytes);
 }
 
 export function createGroup81RecordSearch(): BurikoNativeSlotDefinition[] {

@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 
 /** 0011E0 initializes DCString 1CC518; EDA00 exposes this shared product identifier. */
 export class BurikoProductIdentity {
@@ -11,6 +11,6 @@ export class BurikoProductIdentity {
   }
 
   pointer(): BurikoBpPointer {
-    return {bytes: this.bytes, offset: 0};
+    return hostPointer(this.bytes);
   }
 }

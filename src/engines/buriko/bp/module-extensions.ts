@@ -25,9 +25,10 @@ function readName(pointer: BurikoBpPointer | null, nullable = false): Uint8Array
     if (nullable) return null;
     throw new Error('Buriko module extension dereferenced a null resource name');
   }
-  const end = pointer.bytes.indexOf(0, pointer.offset);
+  const bytes = pointer.view();
+  const end = bytes.indexOf(0, pointer.offset);
   if (end < 0) throw new RangeError('Unterminated Buriko module extension resource name');
-  return pointer.bytes.subarray(pointer.offset, end);
+  return bytes.subarray(pointer.offset, end);
 }
 
 /** The FF registry is shared across threads, distinct from fixed secondary opcode tables. */

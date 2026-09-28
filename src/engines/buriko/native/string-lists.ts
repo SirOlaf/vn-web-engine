@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer, pointerView} from '../bp/memory.js';
 import {burikoCompareNamedBytes, burikoNamedValueHash} from './named-value-map.js';
 import {textLength} from './text.js';
 
@@ -41,7 +41,7 @@ export class BurikoStringLists {
     const length = (textLength(source) + 1) >>> 0,
       view = pointerView(source, length),
       bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice();
-    return {hash, length, value: {bytes, offset: 0}};
+    return {hash, length, value: hostPointer(bytes)};
   }
 
   /** F90C0 removes the first matching list before releasing its stored strings. */
@@ -111,7 +111,7 @@ export class BurikoStringLists {
     this.prepend(list);
     let offset = source.offset;
     for (let index = 0; index < count; index++) {
-      const input = {bytes: source.bytes, offset},
+      const input = new BurikoBpPointer(source.region, offset),
         entry = this.copyEntry(input, burikoNamedValueHash(input));
       list.entries[index] = entry;
       offset += entry.length;
@@ -154,9 +154,9 @@ export class BurikoStringLists {
     for (let index = 0; index < (list.count | 0); index++) {
       const entry = list.entry(index);
       if (output !== null) {
-        const destination = pointerView({bytes: output.bytes, offset}, entry.length);
+        const destination = pointerView(new BurikoBpPointer(output.region, offset), entry.length);
         new Uint8Array(destination.buffer, destination.byteOffset, destination.byteLength).set(
-          entry.value.bytes,
+          entry.value.view(),
         );
         offset += entry.length;
       }
@@ -180,7 +180,7 @@ export class BurikoStringLists {
     if (output !== null) {
       const destination = pointerView(output, entry.length);
       new Uint8Array(destination.buffer, destination.byteOffset, destination.byteLength).set(
-        entry.value.bytes,
+        entry.value.view(),
       );
     }
     if (lengthOutput !== null)

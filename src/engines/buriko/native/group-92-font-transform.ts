@@ -35,11 +35,7 @@ export function createGroup92FontTransform(
         if ((count - 4) >>> 0 >= 2)
           return fatal(context, `無効なパラメータ数 [ ${count | 0} ] が指定されました`);
         if (vector === null) throw new Error('Buriko font transform reads a null vector');
-        const word = (index: number) =>
-          pointerView({bytes: vector.bytes, offset: vector.offset + index * 4}, 4).getInt32(
-            0,
-            true,
-          );
+        const word = (index: number) => pointerView(vector.add(index * 4), 4).getInt32(0, true);
         // B61C0's explicit load order is extra, offsetX, scaleX, offsetY, scaleY.
         const extra = count === 5 ? word(4) : 0,
           offsetX = word(2),

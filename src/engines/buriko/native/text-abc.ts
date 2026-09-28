@@ -44,19 +44,11 @@ export async function collectBurikoRegisteredTextAbc(
       if (font.raster === null)
         throw new Error('Buriko ABC query reads undefined native glyph cache');
       const abc = font.raster.glyph(code).abc;
-      const address = {bytes: output.bytes, offset: output.offset + written * 12};
+      const address = output.add(written * 12);
       // Native publishes A before B/C; preserve access/write ordering.
       pointerView(address, 4).setInt32(0, roundedMetric(abc[0], false), true);
-      pointerView({bytes: output.bytes, offset: address.offset + 4}, 4).setUint32(
-        0,
-        roundedMetric(abc[1], true),
-        true,
-      );
-      pointerView({bytes: output.bytes, offset: address.offset + 8}, 4).setInt32(
-        0,
-        roundedMetric(abc[2], false),
-        true,
-      );
+      pointerView(address.add(4), 4).setUint32(0, roundedMetric(abc[1], true), true);
+      pointerView(address.add(8), 4).setInt32(0, roundedMetric(abc[2], false), true);
       written = (written + 1) >>> 0;
     }
   }

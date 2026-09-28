@@ -1,6 +1,6 @@
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 import {recolorBurikoBitmapAlpha as recolorAlpha} from './bitmap-recolor.js';
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {
   allocateBurikoBitmap,
   cropBurikoBitmap,
@@ -1026,7 +1026,7 @@ export async function buildBurikoHorizontalTextLayout(
         let match: ReturnType<BurikoRubyAnnotations['matchPrefix']>;
         try {
           const remaining = state.text.encodeWide(text.slice(index), 1);
-          match = options.annotations.matchPrefix({bytes: remaining, offset: 0}, true);
+          match = options.annotations.matchPrefix(hostPointer(remaining), true);
         } finally {
           finishTiming?.({utf16Units: text.length - index});
         }

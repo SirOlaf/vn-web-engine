@@ -1,3 +1,4 @@
+import {BurikoBpPointer, hostPointer} from '../bp/memory.js';
 import {allocateBurikoBitmap, type BurikoBitmap, type BurikoBitmapRectangle} from './bitmap.js';
 import {clearBurikoBitmap, copyBurikoBitmapRows} from './bitmap-copy.js';
 import {rasterBurikoGlyph} from './font-bitmap.js';
@@ -220,7 +221,7 @@ export function buildBurikoVerticalTextLayout(
   const font = state.surfaces.fonts.find(options.fontId),
     nodes: BurikoHorizontalTextLayoutNode[] = [];
   if (font === null) return {result: 0, nodes, outputCount: 0};
-  const bytes = options.source.bytes,
+  const bytes = options.source.view(),
     size = font.size | 0,
     half = (size + 1) >> 1,
     reading = (options.readingEnabled | 0) !== 0,
@@ -292,14 +293,16 @@ export function buildBurikoVerticalTextLayout(
       matchedRemaining = 0;
     if (reading) {
       if (rubyLeft < 1) {
-        const key = options.annotations.matchEncodedPrefix({bytes, offset});
+        const key = options.annotations.matchEncodedPrefix(
+          new BurikoBpPointer(options.source.region, offset),
+        );
         if (key !== null) {
           const length = key.indexOf(0) < 0 ? key.length : key.indexOf(0),
             extent = Math.imul(length >>> 1, cell);
           lookahead = Math.max(lookahead, extent);
           entry.annotationKey = key.slice();
           entry.annotationBaseExtent = extent;
-          matchedRemaining = (burikoTextCodes(state.text, {bytes: key, offset: 0}) - 1) | 0;
+          matchedRemaining = (burikoTextCodes(state.text, hostPointer(key)) - 1) | 0;
           rubyLeft = matchedRemaining;
           afterKey = offset + length;
         }
@@ -370,7 +373,7 @@ export async function addBurikoVerticalReadings(
   for (let index = 0; index < nodes.length; index++) {
     const parent = nodes[index]!;
     if (parent.annotationKey === null) continue;
-    const annotation = annotations.query({bytes: parent.annotationKey, offset: 0});
+    const annotation = annotations.query(hostPointer(parent.annotationKey));
     if (annotation === null)
       throw new Error('Buriko vertical reading key is absent from its registry');
     const count = annotation.readingLength | 0,

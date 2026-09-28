@@ -1,6 +1,6 @@
 import {BurikoNativeText, copyText, textLength} from './text.js';
 import {BurikoRubyAnnotations} from './text-annotations.js';
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoSurfaces} from './surfaces.js';
 import {allocateBurikoBitmap, type BurikoBitmap} from './bitmap.js';
 import {terminatedNativeBytes} from './program-files.js';
@@ -220,7 +220,7 @@ export class BurikoTextLayoutState {
     if (name === null) this.readingFontName.fill(0);
     else {
       if (textLength(name) > 255) return 0x80000003;
-      copyText({bytes: this.readingFontName, offset: 0}, name);
+      copyText(hostPointer(this.readingFontName), name);
     }
     this.readingYOffset = y | 0;
     this.readingValue1C90F8 = value6 >>> 0;
@@ -243,7 +243,7 @@ export class BurikoTextLayoutState {
   ): number {
     const name = this.surfaces.fonts.name(index);
     return this.setReadingFont(
-      name === null ? null : {bytes: terminatedNativeBytes(name), offset: 0},
+      name === null ? null : hostPointer(terminatedNativeBytes(name)),
       size,
       width,
       x,
@@ -334,10 +334,7 @@ export class BurikoTextLayoutState {
     if (status !== 0) return status === 0x80000004 ? status : 0xffffffff;
     this.alternateFontName.fill(0, 0, 120);
     if (name !== null)
-      copyText(
-        {bytes: this.alternateFontName, offset: 0},
-        {bytes: terminatedNativeBytes(name), offset: 0},
-      );
+      copyText(hostPointer(this.alternateFontName), hostPointer(terminatedNativeBytes(name)));
     this.alternateFontItalic = italic | 0;
     this.alternateFontSize = size | 0;
     this.alternateFontWidth = width | 0;

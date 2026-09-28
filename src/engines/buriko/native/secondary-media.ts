@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {WindowsLogicalDriveHost} from '../../../platform/windows-drives.js';
 import type {BurikoProgramResources} from './program-resources.js';
 import type {
@@ -27,7 +27,8 @@ function componentPrefix(
   source: BurikoBpPointer,
   index: number,
 ): number {
-  const mode = text.detectEncoding(source.bytes, source.offset);
+  const bytes = source.view();
+  const mode = text.detectEncoding(bytes, source.offset);
   let cursor = source.offset,
     target = 0,
     remaining = index >>> 0;
@@ -37,19 +38,19 @@ function componentPrefix(
     output[offset] = value;
   };
   if ((remaining | 0) >= 0) {
-    while (textByte(source.bytes, cursor) !== 0) {
-      if (textByte(source.bytes, cursor) === 92 && textByte(source.bytes, cursor + 1) !== 0)
+    while (textByte(bytes, cursor) !== 0) {
+      if (textByte(bytes, cursor) === 92 && textByte(bytes, cursor + 1) !== 0)
         remaining = (remaining - 1) >>> 0;
-      const length = text.readCharacter(source.bytes, cursor, mode).length;
+      const length = text.readCharacter(bytes, cursor, mode).length;
       if (length === 0)
         throw new RangeError('Buriko media prefix character has no native advancement');
-      for (let i = 0; i < length; i++) write(target++, textByte(source.bytes, cursor++));
-      if (textByte(source.bytes, cursor) === 0) remaining = (remaining - 1) >>> 0;
+      for (let i = 0; i < length; i++) write(target++, textByte(bytes, cursor++));
+      if (textByte(bytes, cursor) === 0) remaining = (remaining - 1) >>> 0;
       if ((remaining | 0) < 0) break;
     }
   }
   if ((remaining | 0) < 0)
-    write((index | 0) < 1 || textByte(source.bytes, cursor) === 0 ? target : target - 1, 0);
+    write((index | 0) < 1 || textByte(bytes, cursor) === 0 ? target : target - 1, 0);
   return remaining >>> 31;
 }
 /** BC680 selects successful component count minus two, without normalizing its separator. */
@@ -61,9 +62,9 @@ export function burikoMediaDirectoryPrefix(
   let count = 0;
   while (componentPrefix(text, scratch, source, count) !== 0) count = (count + 1) >>> 0;
   componentPrefix(text, scratch, source, (count - 2) >>> 0);
-  return textBytes({bytes: scratch, offset: 0}, true).slice();
+  return textBytes(hostPointer(scratch), true).slice();
 }
-const quitKey = {bytes: new TextEncoder().encode('AREYOUSUREYOUWANTTOQUIT\0'), offset: 0};
+const quitKey = hostPointer(new TextEncoder().encode('AREYOUSUREYOUWANTTOQUIT\0'));
 /** BC440/BC3C0 shares secondary configuration with real resource fallback and retry. */
 export class BurikoSecondaryMediaDiscovery {
   private closed = false;
@@ -84,7 +85,7 @@ export class BurikoSecondaryMediaDiscovery {
   ): Promise<string | null> {
     const files = this.resources.files,
       text = files.text,
-      prefix = text.decodeAuto({bytes: burikoMediaDirectoryPrefix(text, marker), offset: 0});
+      prefix = text.decodeAuto(hostPointer(burikoMediaDirectoryPrefix(text, marker)));
     // Caller forms outside the existing selected path domain are explicit composition boundaries.
     assertBurikoPathDomain(text.decodeAuto(marker));
     for (;;) {

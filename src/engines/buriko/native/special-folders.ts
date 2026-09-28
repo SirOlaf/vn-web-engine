@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoProgramResourceConfiguration} from './program-resources.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {BurikoNativeText, copyText, textBytes, writeText} from './text.js';
@@ -51,7 +51,7 @@ export class BurikoSpecialFolders {
       selector === 0 ? this.roots.primaryRoot : selector === 1 ? this.roots.secondaryRoot : null;
     if (source === null || (selector === 1 && (source.length === 0 || source[0] === 0))) return 0;
     if (output === null) throw new Error('Buriko resource root dereferences a null output');
-    copyText(output, {bytes: terminatedNativeBytes(source), offset: 0});
+    copyText(output, hostPointer(terminatedNativeBytes(source)));
     return 1;
   }
 
@@ -110,7 +110,7 @@ export class BurikoSpecialFolders {
           const prefixBytes = this.encode(prefix);
           if (prefixBytes.length > 784)
             throw new RangeError('Buriko special folder overwrites native encoded profile scratch');
-          const base = textBytes({bytes: prefixBytes, offset: 0});
+          const base = textBytes(hostPointer(prefixBytes));
           // Native strncmp is byte-sensitive, and deliberately does not require a separator.
           if (
             base.every((byte, index) => encoded![index] === byte) &&
@@ -157,9 +157,9 @@ export class BurikoSpecialFolders {
     const b = this.text.convertEncoding(second, 1);
     const bytes = new Uint8Array(784),
       position = a.length - 1;
-    writeText({bytes, offset: 0}, a);
-    if (separator !== 0) writeText({bytes, offset: position}, Uint8Array.of(92));
-    writeText({bytes, offset: position + Number(separator !== 0)}, b);
-    copyText(output, {bytes, offset: 0});
+    writeText(hostPointer(bytes), a);
+    if (separator !== 0) writeText(hostPointer(bytes, position), Uint8Array.of(92));
+    writeText(hostPointer(bytes, position + Number(separator !== 0)), b);
+    copyText(output, hostPointer(bytes));
   }
 }

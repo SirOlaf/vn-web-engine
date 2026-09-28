@@ -1,4 +1,5 @@
 import {FileError} from '../../../platform/filesystem.js';
+import {hostPointer} from '../bp/memory.js';
 import type {BurikoProgramResources} from './program-resources.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {textBytes} from './text.js';
@@ -10,7 +11,7 @@ function nativeString(bytes: Uint8Array): Uint8Array {
 }
 
 function key(bytes: Uint8Array): string {
-  return Array.from(textBytes({bytes, offset: 0})).join(',');
+  return Array.from(textBytes(hostPointer(bytes))).join(',');
 }
 
 function appendUnique(entries: Uint8Array[], keys: Set<string>, entry: Uint8Array): void {
@@ -76,8 +77,8 @@ export class BurikoInstallerManifestActions {
         while (start < finish && (contents[start] === 32 || contents[start] === 9)) start++;
         if (start < finish) {
           const raw = nativeString(contents.subarray(start, finish));
-          const converted = this.resources.files.text.convertEncoding({bytes: raw, offset: 0}, 1);
-          this.resources.files.text.lowercase({bytes: converted, offset: 0});
+          const converted = this.resources.files.text.convertEncoding(hostPointer(raw), 1);
+          this.resources.files.text.lowercase(hostPointer(converted));
           if (converted[0] === 36) appendUnique(directories, directoryKeys, converted);
           else appendUnique(normal, normalKeys, converted);
         }
@@ -86,12 +87,12 @@ export class BurikoInstallerManifestActions {
       }
     }
     for (const copied of appended) {
-      this.resources.files.text.lowercase({bytes: copied, offset: 0});
+      this.resources.files.text.lowercase(hostPointer(copied));
       appendUnique(normal, normalKeys, copied);
     }
     const output: number[] = [];
     for (const entry of [...normal, ...directories])
-      output.push(...textBytes({bytes: entry, offset: 0}), 10);
+      output.push(...textBytes(hostPointer(entry)), 10);
     output.push(0);
     const file = await this.resources.files.createOutput(path);
     if (file === null) return false;

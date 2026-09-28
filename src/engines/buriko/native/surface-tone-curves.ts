@@ -20,8 +20,7 @@ export class BurikoSurfaceToneCurves {
     return 0;
   }
   set(key: number, pointer: BurikoBpPointer): 0 | 0x16 {
-    const read = (offset: number) =>
-      pointerView({bytes: pointer.bytes, offset: pointer.offset + offset}, 4).getUint32(0, true);
+    const read = (offset: number) => pointerView(pointer.add(offset), 4).getUint32(0, true);
     for (let channel = 0; channel < 3; channel++)
       if ((read(channel * 8) - 1) >>> 0 > 253 || read(channel * 8 + 4) > 255) return 0x16;
     let entry = this.find(key);

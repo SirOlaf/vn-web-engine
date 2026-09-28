@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import type {BurikoBitmap} from './bitmap.js';
 import {
   decodeBurikoBmvFrameDataAsync,
@@ -24,7 +24,7 @@ export interface BurikoBmvWorker {
   success: boolean;
 }
 const word = (bytes: Uint8Array, offset: number): number =>
-  pointerView({bytes, offset}, 4).getUint32(0, true);
+  pointerView(hostPointer(bytes, offset), 4).getUint32(0, true);
 
 /** 038190/037C00/037D80. Host awaits pump slices; arbitrary native lock blocking is unsupported. */
 export class BurikoBmvService {
@@ -175,7 +175,7 @@ export class BurikoBmvService {
         encoded = new Uint8Array(length);
       // Raw range I/O does not access allocator actors. Restore caller identity while awaiting it.
       const read = await this.ranges.read(
-        {bytes: encoded, offset: 0},
+        hostPointer(encoded),
         provenance.archive,
         provenance.name,
         offset,

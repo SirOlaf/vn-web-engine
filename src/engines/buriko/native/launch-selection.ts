@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {BurikoPathFileDirectory} from './path-file-directory.js';
 import {terminatedNativeBytes, type BurikoProgramFiles} from './program-files.js';
 import type {BurikoMountedProgramPaths} from './program-paths.js';
@@ -24,15 +25,15 @@ function equalText(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 function copyNativeText(destination: Uint8Array, source: Uint8Array): void {
-  const value = textBytes({bytes: source, offset: 0}, true);
+  const value = textBytes(hostPointer(source), true);
   if (value.length > destination.length)
     throw new RangeError('Buriko launch text exceeds its 784-byte native buffer');
-  copyText({bytes: destination, offset: 0}, {bytes: source, offset: 0});
+  copyText(hostPointer(destination), hostPointer(source));
 }
 
 function combined(first: Uint8Array, second: Uint8Array): Uint8Array {
-  const left = textBytes({bytes: first, offset: 0}),
-    right = textBytes({bytes: second, offset: 0}),
+  const left = textBytes(hostPointer(first)),
+    right = textBytes(hostPointer(second)),
     result = new Uint8Array(left.length + right.length + 1);
   if (result.length > CAPACITY)
     throw new RangeError('Buriko launch path exceeds its 784-byte native buffer');
@@ -131,7 +132,7 @@ export class BurikoLaunchSelection {
     await this.resetRoot(null);
     this.selectNames(SYSTEM_ARCHIVE, selectedModule);
     if (equalText(selectedPath, DOT)) return;
-    const widePath = this.text.decodeAuto({bytes: selectedPath, offset: 0});
+    const widePath = this.text.decodeAuto(hostPointer(selectedPath));
     const kind = await this.files.pathKindWide(widePath);
     if (kind === null) {
       const [drive, directory, filename, extension] = this.split(selectedPath);
@@ -170,11 +171,11 @@ export class BurikoLaunchSelection {
       filename = new Uint8Array(CAPACITY),
       extension = new Uint8Array(CAPACITY);
     this.pathService.splitPath(
-      {bytes: drive, offset: 0},
-      {bytes: directory, offset: 0},
-      {bytes: filename, offset: 0},
-      {bytes: extension, offset: 0},
-      {bytes: path, offset: 0},
+      hostPointer(drive),
+      hostPointer(directory),
+      hostPointer(filename),
+      hostPointer(extension),
+      hostPointer(path),
     );
     return [drive, directory, filename, extension];
   }
@@ -200,11 +201,11 @@ export class BurikoLaunchSelection {
       root = combined(drive, directory);
       // The null branch constructs a wide drive+directory before UTF-8 encoding.
       this.resources.configuration.nativeFileRoot = this.text.decodeBytes(
-        textBytes({bytes: root, offset: 0}),
+        textBytes(hostPointer(root)),
         1,
       );
     } else {
-      const original = textBytes({bytes: path, offset: 0});
+      const original = textBytes(hostPointer(path));
       if (original.length === 0)
         throw new RangeError('Buriko root reset reads before an empty native path');
       root = new Uint8Array(original.length + (original.at(-1) === 92 ? 1 : 2));
@@ -212,7 +213,7 @@ export class BurikoLaunchSelection {
         throw new RangeError('Buriko root exceeds its 784-byte native buffer');
       root.set(original);
       if (original.at(-1) !== 92) root[original.length] = 92;
-      this.resources.configuration.nativeFileRoot = this.text.decodeAuto({bytes: root, offset: 0});
+      this.resources.configuration.nativeFileRoot = this.text.decodeAuto(hostPointer(root));
     }
     if (this.primaryStorage === null) this.primaryStorage = new Uint8Array(CAPACITY);
     copyNativeText(this.primaryStorage, root);

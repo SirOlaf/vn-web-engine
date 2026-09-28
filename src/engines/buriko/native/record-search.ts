@@ -16,7 +16,7 @@ function required(pointer: BurikoBpPointer | null): BurikoBpPointer {
   return pointer;
 }
 function at(pointer: BurikoBpPointer | null, bytes: number): BurikoBpPointer | null {
-  return pointer === null ? null : {bytes: pointer.bytes, offset: pointer.offset + bytes};
+  return pointer === null ? null : pointer.add(bytes);
 }
 function copiedScalar(pointer: BurikoBpPointer | null, size: number): bigint {
   const input = pointerView(required(pointer), size);

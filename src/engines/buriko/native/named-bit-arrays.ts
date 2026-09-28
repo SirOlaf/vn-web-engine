@@ -1,5 +1,5 @@
 import type {BurikoBpPointer} from '../bp/memory.js';
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import {burikoCompareNamedBytes, burikoNamedValueHash} from './named-value-map.js';
 import {textBytes, textLength} from './text.js';
 
@@ -64,7 +64,7 @@ export class BurikoNamedBitArrays {
       const copiedName = textBytes(name, true).slice();
       this.first = {
         hash: burikoNamedValueHash(name),
-        name: {bytes: copiedName, offset: 0},
+        name: hostPointer(copiedName),
         bitCount,
         data: new Uint8Array(byteCount),
         next: this.first,
@@ -143,14 +143,11 @@ export class BurikoNamedBitArrays {
       }> = [];
     let offset = 4;
     for (let index = 0; index < count; index++) {
-      const name = {bytes: source.bytes, offset: source.offset + offset};
+      const name = source.add(offset);
       offset += textLength(name) + 1;
-      const bitCount = pointerView(
-        {bytes: source.bytes, offset: source.offset + offset},
-        4,
-      ).getUint32(0, true);
+      const bitCount = pointerView(source.add(offset), 4).getUint32(0, true);
       offset += 4;
-      const data = {bytes: source.bytes, offset: source.offset + offset};
+      const data = source.add(offset);
       offset += burikoNamedBitByteCount(bitCount);
       records.push({name, bitCount, data});
     }
@@ -175,10 +172,7 @@ export class BurikoNamedBitArrays {
       const name = textBytes(entry.name, true),
         length = burikoNamedBitByteCount(entry.bitCount);
       if (output !== null) {
-        const target = pointerView(
-          {bytes: output.bytes, offset: output.offset + size},
-          name.length + 4 + length,
-        );
+        const target = pointerView(output.add(size), name.length + 4 + length);
         new Uint8Array(target.buffer, target.byteOffset, name.length).set(name);
         target.setUint32(name.length, entry.bitCount, true);
         new Uint8Array(target.buffer, target.byteOffset + name.length + 4, length).set(entry.data);

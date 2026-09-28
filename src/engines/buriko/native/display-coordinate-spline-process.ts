@@ -27,7 +27,7 @@ export class BurikoCoordinateSplineControlProcess extends BurikoDisplayControlPr
     count |= 0;
     if (count <= 0) return 0x80000001;
     if (points === null) throw new Error('Buriko coordinate control dereferences null points');
-    const endpoint = {bytes: points.bytes, offset: points.offset + (count - 1) * 16},
+    const endpoint = points.add((count - 1) * 16),
       xy = pointerView(endpoint, 8);
     this.initializeFull(
       xy.getInt32(0, true),
@@ -44,7 +44,7 @@ export class BurikoCoordinateSplineControlProcess extends BurikoDisplayControlPr
     this.spline.clear();
     this.spline.append(start.x, start.y, start.z);
     for (let index = 0; index < count; index++) {
-      const point = pointerView({bytes: points.bytes, offset: points.offset + index * 16}, 12);
+      const point = pointerView(points.add(index * 16), 12);
       const z = point.getInt32(8, true),
         y = point.getInt32(4, true),
         x = point.getInt32(0, true);

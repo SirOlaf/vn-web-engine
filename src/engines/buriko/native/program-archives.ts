@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {FileError} from '../../../platform/filesystem.js';
 import {signature} from '../../../formats/buriko/binary.js';
 import {BurikoProgramFiles, terminatedNativeBytes} from './program-files.js';
@@ -69,13 +69,10 @@ export class BurikoProgramArchives {
   }
 
   private normalize(bytes: Uint8Array, capacity: number | null = 784): Uint8Array {
-    const result = this.files.text.convertEncoding(
-      {bytes: terminatedNativeBytes(bytes), offset: 0},
-      1,
-    );
+    const result = this.files.text.convertEncoding(hostPointer(terminatedNativeBytes(bytes)), 1);
     if (capacity !== null && result.length > capacity)
       throw new RangeError('Buriko archive path exceeds native scratch storage');
-    this.files.text.lowercase({bytes: result, offset: 0});
+    this.files.text.lowercase(hostPointer(result));
     return result;
   }
 
@@ -104,14 +101,11 @@ export class BurikoProgramArchives {
     const records = new DataView(target.index.buffer);
     for (let index = 0; index < target.count; index++) {
       const offset = index * 128;
-      const destination = {bytes: target.index, offset};
+      const destination = hostPointer(target.index, offset);
       if (packed) {
         // Each destination record is cleared immediately before converting that record.
         target.index.fill(0, offset, offset + 128);
-        writeText(
-          destination,
-          this.files.text.convertEncoding({bytes: stored, offset: index * 32}, 1),
-        );
+        writeText(destination, this.files.text.convertEncoding(hostPointer(stored, index * 32), 1));
         this.files.text.lowercase(destination);
         records.setUint32(offset + 96, source.getUint32(index * 32 + 16, true), true);
         records.setUint32(offset + 100, source.getUint32(index * 32 + 20, true), true);
@@ -120,7 +114,7 @@ export class BurikoProgramArchives {
           const original = textBytes(destination, true).slice();
           if (original.length > 96)
             throw new RangeError('Buriko ARC20 name overflows native conversion scratch');
-          writeText(destination, this.files.text.convertEncoding({bytes: original, offset: 0}, 1));
+          writeText(destination, this.files.text.convertEncoding(hostPointer(original), 1));
         }
         this.files.text.lowercase(destination);
       }
@@ -293,7 +287,7 @@ export class BurikoProgramArchives {
     const query = this.normalize(name);
     for (let index = 0; index < archive.count; index++) {
       const offset = index * 128;
-      if (equal(textBytes({bytes: archive.index, offset}, true), query)) return offset;
+      if (equal(textBytes(hostPointer(archive.index, offset), true), query)) return offset;
     }
     return null;
   }
@@ -310,7 +304,7 @@ export class BurikoProgramArchives {
       );
     const names: Uint8Array[] = [];
     for (let index = 0; index < archive.count; index++)
-      names.push(textBytes({bytes: archive.index, offset: index * 128}, true).slice());
+      names.push(textBytes(hostPointer(archive.index, index * 128), true).slice());
     return names;
   }
 
@@ -369,7 +363,7 @@ export class BurikoProgramArchives {
 
   /** BB350 tests record identity directly, so a present zero-byte entry remains available. */
   async contains(path: Uint8Array, name: Uint8Array): Promise<boolean> {
-    if (textLength({bytes: terminatedNativeBytes(name), offset: 0}) >= 96) {
+    if (textLength(hostPointer(terminatedNativeBytes(name))) >= 96) {
       return this.errors.fatal(
         this.files.text.encodeWide(
           `指定されたファイル名 [ ${this.files.path(name)} ] は95文字を超えています`,
@@ -499,7 +493,7 @@ export class BurikoProgramArchives {
     destination?: BurikoResourceDestination | null,
     actor = this.mainProcessing.allocator.currentActor,
   ): Promise<BurikoArchiveResource> {
-    if (textLength({bytes: terminatedNativeBytes(name), offset: 0}) > 95) {
+    if (textLength(hostPointer(terminatedNativeBytes(name))) > 95) {
       return this.errors.fatal(
         this.files.text.encodeWide(
           `指定されたファイル名 [ ${this.files.path(name)} ] は95文字を超えています`,

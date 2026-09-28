@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoBitmapStorage} from './bitmap.js';
 import {BurikoLegacyBgEncoder} from './compressed-bg-legacy-encode.js';
 import {encodeBurikoCompressedBgV2} from './compressed-bg-modern-encode.js';
@@ -36,8 +36,8 @@ export class BurikoCompressedSurfaceEncoder {
       payload = Math.imul(pixels, channels) >>> 0,
       packed = new Uint8Array(payload + 16),
       header = new DataView(packed.buffer),
-      length = {bytes: new Uint8Array(4), offset: 0},
-      lengthView = new DataView(length.bytes.buffer);
+      length = hostPointer(new Uint8Array(4)),
+      lengthView = new DataView(length.view().buffer);
     header.setUint32(12, 0, true);
     header.setUint16(0, bitmap.width, true);
     header.setUint16(2, bitmap.height, true);
@@ -46,19 +46,14 @@ export class BurikoCompressedSurfaceEncoder {
     header.setUint16(8, format, true);
     header.setUint16(10, 0, true);
     lengthView.setUint32(0, payload, true);
-    this.raw.export({bytes: packed, offset: 16}, length, payload, index);
+    this.raw.export(hostPointer(packed, 16), length, payload, index);
     const encoded = new BurikoBitmapStorage(
       new Uint8Array((Math.imul(payload, 4) >>> 0) + 48),
       false,
     );
     let status = 0xffffffff;
     if (mode >>> 0 === 0) {
-      if (
-        this.legacy.encode({bytes: encoded.bytes, offset: 0}, length, {
-          bytes: packed,
-          offset: 0,
-        }) === 0
-      ) {
+      if (this.legacy.encode(hostPointer(encoded.bytes), length, hostPointer(packed)) === 0) {
         encoded.written(0, lengthView.getUint32(0, true));
         status = 0;
       }

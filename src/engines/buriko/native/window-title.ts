@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoBrowserMainWindow} from './browser-main-window.js';
 import type {BurikoEngineDialogs} from './engine-dialogs.js';
 import type {BurikoChildWindows} from './child-windows.js';
@@ -10,7 +10,7 @@ export class BurikoWindowTitle {
   readonly bytes = new Uint8Array(256);
 
   constructor(initial: Uint8Array = Uint8Array.of(0)) {
-    this.copy({bytes: initial, offset: 0});
+    this.copy(hostPointer(initial));
   }
 
   validateConsumers(
@@ -34,8 +34,7 @@ export class BurikoWindowTitle {
 
   /** C1110 scans first, then copies forward, retaining bytes beyond the new terminator. */
   private copy(source: BurikoBpPointer): void {
-    const read = (index: number) =>
-      pointerView({bytes: source.bytes, offset: source.offset + index}, 1).getUint8(0);
+    const read = (index: number) => pointerView(source.add(index), 1).getUint8(0);
     let length = 0;
     while (read(length) !== 0) length++;
     if (length >>> 0 < 256) {

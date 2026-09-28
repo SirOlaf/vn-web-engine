@@ -405,16 +405,17 @@ export class BurikoSurfaces {
     if (x < 0 || x >= bitmap.width || y < 0 || y >= bitmap.height) return 3;
     if (output === null) throw new Error('Buriko surface pixel query dereferences a null output');
     pointerView(output, 4).setUint32(0, 0, true);
-    const backing = bitmap.storage;
-    if (backing !== null && backing.bytes.buffer === output.bytes.buffer) {
-      const start = output.bytes.byteOffset + output.offset - backing.bytes.byteOffset;
+    const backing = bitmap.storage,
+      outputBytes = output.view();
+    if (backing !== null && backing.bytes.buffer === outputBytes.buffer) {
+      const start = outputBytes.byteOffset + output.offset - backing.bytes.byteOffset;
       const first = Math.max(0, start),
         last = Math.min(backing.bytes.length, start + 4);
       if (first < last) backing.written(first, last - first);
     }
     const offset = bitmap.offset + Math.imul(bitmap.stride, y) + (Math.imul(count, x) >>> 0);
     const storage = bitmapStorage(bitmap, offset, count, true);
-    output.bytes.set(storage.bytes.subarray(offset, offset + count), output.offset);
+    outputBytes.set(storage.bytes.subarray(offset, offset + count), output.offset);
     return 0;
   }
   /** 140040500 returns the actual mutable descriptor inside a live slot. */
@@ -593,7 +594,7 @@ export class BurikoSurfaces {
     let stride = Math.imul(bytesPerPixel, width);
     if (alignedRows !== 0) stride = (stride + 3) & ~3;
     const source: BurikoBitmap = {
-      storage: BurikoBitmapStorage.tracked(data.bytes, initialized),
+      storage: BurikoBitmapStorage.tracked(data.view(), initialized),
       offset: data.offset,
       stride,
       width: width | 0,

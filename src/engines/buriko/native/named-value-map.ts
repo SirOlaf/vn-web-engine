@@ -1,10 +1,10 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, BurikoBpRegion, hostPointer, pointerView} from '../bp/memory.js';
 import {determinateTextEnd, textByte, textBytes} from './text.js';
 
 /** 09db30 hashes signed bytes with wrapping DWORD arithmetic. */
 export function burikoNamedValueHash(key: BurikoBpPointer): number {
   let hash = 0;
-  const bytes = key.bytes,
+  const bytes = key.view(),
     end = determinateTextEnd(bytes, key.offset);
   if (end >= 0) {
     for (let offset = key.offset; offset < end; offset++)
@@ -23,8 +23,8 @@ export function burikoCompareNamedBytes(
   first: BurikoBpPointer,
   second: BurikoBpPointer,
 ): -1 | 0 | 1 {
-  const left = first.bytes,
-    right = second.bytes;
+  const left = first.view(),
+    right = second.view();
   if (determinateTextEnd(left, first.offset) >= 0 && determinateTextEnd(right, second.offset) >= 0)
     for (let offset = 0; ; offset++) {
       const a = left[first.offset + offset]!,
@@ -45,12 +45,21 @@ class NamedValue implements BurikoBpPointer {
   readonly offset = 0;
   private available = true;
   private objectValue: object | null = null;
-  constructor(private contents: Uint8Array | null) {}
-  get bytes(): Uint8Array {
+  private contents: BurikoBpRegion | null;
+  constructor(contents: Uint8Array | null) {
+    this.contents = contents === null ? null : new BurikoBpRegion(contents);
+  }
+  get region(): BurikoBpRegion {
     if (!this.available) throw new Error('Buriko named value is no longer available');
     if (this.contents === null)
       throw new Error('Buriko native object pointer has no scalar byte encoding');
     return this.contents;
+  }
+  view(): Uint8Array {
+    return this.region.view();
+  }
+  add(displacement: number): BurikoBpPointer {
+    return new BurikoBpPointer(this.region, this.offset + displacement);
   }
   get reference(): object | null {
     if (!this.available) throw new Error('Buriko named value is no longer available');
@@ -62,8 +71,8 @@ class NamedValue implements BurikoBpPointer {
   }
   write(source: BurikoBpPointer, width: number): void {
     const input = pointerView(source, width);
-    this.contents ??= new Uint8Array(width);
-    this.contents.set(new Uint8Array(input.buffer, input.byteOffset, input.byteLength));
+    this.contents ??= new BurikoBpRegion(new Uint8Array(width));
+    this.contents.view().set(new Uint8Array(input.buffer, input.byteOffset, input.byteLength));
     this.objectValue = null;
   }
   release(): void {
@@ -108,7 +117,7 @@ export class BurikoNamedValueMap {
     if (entry === null) {
       entry = {
         hash,
-        key: {bytes: textBytes(key, true).slice(), offset: 0},
+        key: hostPointer(textBytes(key, true).slice()),
         value: new NamedValue(this.valueWidth === 0 ? null : new Uint8Array(this.valueWidth)),
         next: null,
       };
@@ -159,7 +168,7 @@ export class BurikoNamedValueMap {
 
   private copy(entry: NamedEntry, output: BurikoBpPointer | null): void {
     if (output === null) return;
-    const bytes = entry.value.bytes,
+    const bytes = entry.value.view(),
       destination = pointerView(output, bytes.length);
     new Uint8Array(destination.buffer, destination.byteOffset, destination.byteLength).set(bytes);
   }

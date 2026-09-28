@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoDirectoryTree} from './directory-tree.js';
 import type {BurikoProgramFiles} from './program-files.js';
 import type {BurikoSpecialFolders} from './special-folders.js';
@@ -28,7 +28,7 @@ export interface BurikoShellShortcutHost {
   createShellLink(): {hresult: number; link: BurikoShellShortcutLink | null};
 }
 
-const pointer = (bytes: Uint8Array): BurikoBpPointer => ({bytes, offset: 0});
+const pointer = (bytes: Uint8Array): BurikoBpPointer => hostPointer(bytes);
 
 /** C8650/C8790: special-folder destination selection and strict-S_OK ShellLink writer. */
 export class BurikoShellShortcuts {

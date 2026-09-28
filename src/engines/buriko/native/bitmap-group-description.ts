@@ -1,4 +1,4 @@
-import type {BurikoBpMemory, BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpMemory, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoBpThread} from '../bp/state.js';
 import {pointerBytes} from '../bp/opcodes/operands.js';
 import {BurikoNativeText, writeText} from './text.js';
@@ -35,7 +35,7 @@ export function copyBurikoBitmapGroupDescription(
   if (groupPointer === null || (words[0]! - 1) >>> 0 > 255) return {result: 2};
   const groups: BurikoBitmapUnitGroup[] = [];
   for (let group = 0; group < words[0]!; group++) {
-    const pointer = {bytes: groupPointer.bytes, offset: groupPointer.offset + group * 0x40};
+    const pointer = groupPointer.add(group * 0x40);
     const fields = new Uint32Array(16);
     fields[0] = read(pointer, 0);
     fields[1] = read(pointer, 1);
@@ -66,7 +66,7 @@ export function formatBurikoBitmapGroups(
     const current = description.groups[group];
     if (!current) throw new Error('Buriko bitmap formatter reads an unwritten native group record');
     for (let unit = 0; unit < (current.words[0]! | 0); unit++) {
-      const bytes = pointerBytes({bytes: current.units, offset: unit * 0xc4}, 0xc4);
+      const bytes = pointerBytes(hostPointer(current.units, unit * 0xc4), 0xc4);
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       const n = (word: number): number => view.getInt32(word * 4, true);
       wide += `\tUnit [ ${signed(unit, 3, true)} ] / Validity : ${n(0) === 0 ? 'FALSE' : 'TRUE '} / Visibility : ${n(1) === 0 ? 'FALSE' : 'TRUE '} / `;

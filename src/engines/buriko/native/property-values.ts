@@ -16,22 +16,23 @@ export function propertyTextPointer(source: BurikoPropertySource | null): Buriko
 export function readPropertyWord(pointer: BurikoPropertySource | null): number {
   if (pointer === null) throw new Error('Buriko property editor dereferences a null value');
   if ('readPropertyWord' in pointer) return pointer.readPropertyWord() | 0;
-  if (pointer.offset < 0 || pointer.offset + 4 > pointer.bytes.length)
+  const bytes = pointer.view();
+  if (pointer.offset < 0 || pointer.offset + 4 > bytes.length)
     throw new RangeError('Buriko property DWORD read exceeds native storage');
-  return new DataView(
-    pointer.bytes.buffer,
-    pointer.bytes.byteOffset,
-    pointer.bytes.byteLength,
-  ).getInt32(pointer.offset, true);
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt32(
+    pointer.offset,
+    true,
+  );
 }
 
 export function writePropertyWord(pointer: BurikoPropertySource | null, value: number): void {
   if (pointer === null) throw new Error('Buriko property editor dereferences a null output');
   if ('readPropertyWord' in pointer)
     throw new Error('Buriko borrowed object property requires its native edit callback');
-  if (pointer.offset < 0 || pointer.offset + 4 > pointer.bytes.length)
+  const bytes = pointer.view();
+  if (pointer.offset < 0 || pointer.offset + 4 > bytes.length)
     throw new RangeError('Buriko property DWORD write exceeds native storage');
-  new DataView(pointer.bytes.buffer, pointer.bytes.byteOffset, pointer.bytes.byteLength).setInt32(
+  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setInt32(
     pointer.offset,
     value,
     true,

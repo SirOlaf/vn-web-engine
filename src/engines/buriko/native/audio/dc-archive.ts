@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../../bp/memory.js';
 import {BurikoAsyncCriticalSection} from '../async-critical-section.js';
 import {BurikoNativeFile} from '../native-file.js';
 import type {BurikoProgramFiles} from '../program-files.js';
@@ -64,14 +64,13 @@ export class BurikoDcArchive {
       const lower = burikoAudioWideLower(path);
       if (lower === this.path && time === this.writeTime) return 0;
       const header = new Uint8Array(16),
-        pointer = {bytes: header, offset: 0};
+        pointer = hostPointer(header);
       if ((await file.read(pointer, 16)) !== 16) return 0x80000002;
       const status = validateBurikoDcArchiveHeader(pointer);
       if (status !== 0) return status;
       const count = new DataView(header.buffer).getUint32(12, true),
         index = new Uint8Array(count * 128);
-      if ((await file.read({bytes: index, offset: 0}, count << 7)) !== count * 128)
-        return 0x80000003;
+      if ((await file.read(hostPointer(index), count << 7)) !== count * 128) return 0x80000003;
       // Native publishes path/time/base before clearing and rebuilding the name tree.
       this.path = lower;
       this.writeTime = time;
@@ -80,7 +79,7 @@ export class BurikoDcArchive {
       const view = new DataView(index.buffer);
       for (let i = 0; i < count; i++) {
         const offset = i * 128;
-        const name = burikoAudioWideLower(this.files.text.decodeAuto({bytes: index, offset}));
+        const name = burikoAudioWideLower(this.files.text.decodeAuto(hostPointer(index, offset)));
         const previous = this.entries.get(name);
         if (previous !== undefined) previous.live = false;
         this.entries.set(name, {

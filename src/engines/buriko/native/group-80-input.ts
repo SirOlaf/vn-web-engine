@@ -1,6 +1,5 @@
 import {pop32, push32} from '../bp/state.js';
-import {pointerView} from '../bp/memory.js';
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, pointerView} from '../bp/memory.js';
 import type {BurikoNativeInput} from './input.js';
 import type {BurikoNativeSlotDefinition} from './types.js';
 
@@ -11,7 +10,7 @@ function keyList(pointer: BurikoBpPointer | null): number[] {
   if (pointer === null) throw new Error('Buriko native key-list null source');
   const keys: number[] = [];
   for (let offset = pointer.offset; ; offset += 4) {
-    const key = pointerView({bytes: pointer.bytes, offset}, 4).getUint32(0, true);
+    const key = pointerView(new BurikoBpPointer(pointer.region, offset), 4).getUint32(0, true);
     if (key === 0) return keys;
     keys.push(key);
   }
@@ -83,7 +82,10 @@ export function createGroup80Input(input: BurikoNativeInput): BurikoNativeSlotDe
         if (pointer === null) throw new Error('Buriko native key-count null source');
         let sum = 0;
         for (let offset = pointer.offset; ; offset += 4) {
-          const key = pointerView({bytes: pointer.bytes, offset}, 4).getUint32(0, true);
+          const key = pointerView(new BurikoBpPointer(pointer.region, offset), 4).getUint32(
+            0,
+            true,
+          );
           if (key === 0) break;
           sum = (sum + input.totalPresses(key)) | 0;
         }
@@ -288,7 +290,7 @@ export function createGroup81Input(input: BurikoNativeInput): BurikoNativeSlotDe
         // A null pointer violates the required 256-byte Win32 destination contract.
         if (destination === null) throw new Error('Buriko native keyboard-state null destination');
         pointerView(destination, 256);
-        destination.bytes.set(input.keyboardState, destination.offset);
+        destination.view().set(input.keyboardState, destination.offset);
         return 0;
       },
     },

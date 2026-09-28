@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import {pointerBytes} from '../bp/opcodes/operands.js';
 import {BurikoDiagnosticCounts, BurikoPooledAllocationDiagnostics} from './diagnostic-records.js';
@@ -21,13 +21,14 @@ export function createGroupE0Files(
   ): Promise<number> => {
     if (selector !== 0 && selector !== 1) return 1;
     const bytes = new Uint8Array(784),
-      root = {bytes, offset: 0};
+      root = hostPointer(bytes);
     const initialized =
       selector === 0 ? folders.resourceRoot(root, 0) : await folders.query(root, 1);
     if (initialized === 0)
       throw new Error('Buriko diagnostic writer reads unwritten native folder scratch');
     const size = textLength(root);
-    if (size > 0 && bytes[size - 1] !== 92) writeText({bytes, offset: size}, Uint8Array.of(92, 0));
+    if (size > 0 && bytes[size - 1] !== 92)
+      writeText(new BurikoBpPointer(root.region, size), Uint8Array.of(92, 0));
     if (name === null) throw new Error('Buriko diagnostic writer dereferences a null filename');
     folders.combine(root, root, 0, name);
     const output = await files.createOutput(textBytes(root));

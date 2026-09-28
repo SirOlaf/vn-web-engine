@@ -77,7 +77,7 @@ export class BurikoNativeRecordBuffers {
     set.records.set(index, bytes);
     if (source === null) throw new Error('Buriko native record-copy null source');
     pointerView(source, size);
-    bytes.set(source.bytes.subarray(source.offset, source.offset + size));
+    bytes.set(source.view().subarray(source.offset, source.offset + size));
     if (indexOutput !== null) outputWord(indexOutput, index);
     return 0;
   }
@@ -104,7 +104,7 @@ export class BurikoNativeRecordBuffers {
       if (bytes.length >= 0x80000000)
         throw new Error('Buriko native record-copy signed length exceeds addressable memory');
       pointerView(destination, bytes.length);
-      destination.bytes.set(bytes, destination.offset);
+      destination.view().set(bytes, destination.offset);
     }
     outputWord(sizeOutput, bytes.length);
     return 0;
@@ -127,7 +127,7 @@ export class BurikoNativeRecordBuffers {
         view.setUint32(record * 8 + 4, bytes.length, true);
       }
       pointerView(destination, temporary.length);
-      destination.bytes.set(temporary, destination.offset);
+      destination.view().set(temporary, destination.offset);
     }
     outputWord(countOutput, records.length);
     return 0;

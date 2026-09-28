@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoLocalizedMessages} from './localized-messages.js';
 import type {BurikoProgramResources} from './program-resources.js';
 import type {BurikoSystemProfile} from './system-profile.js';
@@ -184,7 +184,7 @@ export class BurikoExternalProcesses {
     argumentsBytes: Uint8Array | null;
   } {
     const text = this.resources.files.text,
-      match = text.find({bytes: command, offset: 0}, {bytes: exeSeparator, offset: 0});
+      match = text.find(hostPointer(command), hostPointer(exeSeparator));
     if (match === null)
       return {executable: terminatedNativeBytes(command).slice(), argumentsBytes: null};
     const executable = new Uint8Array(match + 5);
@@ -196,9 +196,8 @@ export class BurikoExternalProcesses {
   }
 
   private buildCommand(executable: Uint8Array, argumentsBytes: Uint8Array | null): Uint8Array {
-    const path = textBytes({bytes: executable, offset: 0}),
-      argumentsText =
-        argumentsBytes === null ? null : textBytes({bytes: argumentsBytes, offset: 0}),
+    const path = textBytes(hostPointer(executable)),
+      argumentsText = argumentsBytes === null ? null : textBytes(hostPointer(argumentsBytes)),
       result = new Uint8Array(
         path.length + (argumentsText === null ? 3 : argumentsText.length + 4),
       );
@@ -230,13 +229,12 @@ export class BurikoExternalProcesses {
       directory[directory.length - 2] = 0;
       directory = directory.subarray(0, directory.length - 1);
     }
-    const commandLine = this.resources.files.text.decodeAuto({
-      bytes: this.buildCommand(resolved, split.argumentsBytes),
-      offset: 0,
-    });
+    const commandLine = this.resources.files.text.decodeAuto(
+      hostPointer(this.buildCommand(resolved, split.argumentsBytes)),
+    );
     return processRequest(
       commandLine,
-      this.resources.files.text.decodeAuto({bytes: directory, offset: 0}),
+      this.resources.files.text.decodeAuto(hostPointer(directory)),
       call.childShow,
     );
   }
@@ -271,12 +269,9 @@ export class BurikoExternalProcesses {
         request.failureMessage === null
           ? null
           : {
-              title: text.decodeAuto({bytes: terminatedNativeBytes(titleBytes), offset: 0}),
+              title: text.decodeAuto(hostPointer(terminatedNativeBytes(titleBytes))),
               text: text
-                .decodeMixed({
-                  bytes: terminatedNativeBytes(request.failureMessage),
-                  offset: 0,
-                })
+                .decodeMixed(hostPointer(terminatedNativeBytes(request.failureMessage)))
                 .replace(/\\\\n/g, '\n'),
             },
       flags,
@@ -325,7 +320,7 @@ export class BurikoExternalProcesses {
   openShellPath(pathBytes: Uint8Array): Promise<0 | 1> {
     if (this.closed) throw new Error('Buriko external-process admission is closed');
     if (this.shellHost === null) throw new Error('Buriko shell-execute host is not selected');
-    const path = this.resources.files.text.decodeAuto({bytes: pathBytes, offset: 0});
+    const path = this.resources.files.text.decodeAuto(hostPointer(pathBytes));
     if (path.length >= 784)
       throw new RangeError('Buriko ShellExecute path exceeds native wide local');
     return this.track(this.openShellPathAccepted(path, this.shellHost));
@@ -391,7 +386,7 @@ export class BurikoExternalProcesses {
           return 0;
         }
         if ((await this.resources.dialogs.show(call.failureMessage, null, 0x41)) === 1) continue;
-        const confirmation = this.localized.lookup({bytes: quitConfirmationKey, offset: 0});
+        const confirmation = this.localized.lookup(hostPointer(quitConfirmationKey));
         if ((await this.resources.dialogs.show(confirmation, null, 0x124)) === 6) return 0;
       }
       let handlesClosed = false;

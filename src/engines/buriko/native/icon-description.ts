@@ -27,7 +27,7 @@ export interface BurikoIconDescription {
 }
 export function iconPointerWord(pointer: BurikoBpPointer | null, index: number): DataView {
   if (pointer === null) throw new Error('Buriko icon dereferences a null VM record');
-  return pointerView({bytes: pointer.bytes, offset: pointer.offset + index * 4}, 4);
+  return pointerView(pointer.add(index * 4), 4);
 }
 /** C34E0 copies VM header32/row52/icon60 into native header40/row64/icon72. */
 export function copyBurikoIconDescription(
@@ -47,7 +47,7 @@ export function copyBurikoIconDescription(
   let status: 0 | 3 = 0;
   for (let i = 0; i < read(source, 0); i++) {
     if (status !== 0) continue;
-    const p = {bytes: rowPointer.bytes, offset: rowPointer.offset + i * 52};
+    const p = rowPointer.add(i * 52);
     const data = new BurikoIconWords(Array(16));
     data.write(0, read(p, 0));
     for (let j = 2; j < 13; j++) data.write(j + 2, read(p, j));
@@ -59,7 +59,7 @@ export function copyBurikoIconDescription(
     }
     const icons: BurikoIconWords[] = [];
     for (let j = 0; j < n; j++) {
-      const q = {bytes: iconPointer.bytes, offset: iconPointer.offset + j * 60};
+      const q = iconPointer.add(j * 60);
       const words = new BurikoIconWords(Array(18));
       for (let k = 0; k < 13; k++) words.write(k, read(q, k));
       words.write(14, 0);

@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {
   BurikoBitmapStorage,
   allocateBurikoBitmap,
@@ -6,8 +7,11 @@ import {
 } from './bitmap.js';
 import {bitmapWrite32} from './bitmap-scalar.js';
 import {BurikoSurfaces} from './surfaces.js';
-import {codecView} from './codec-storage.js';
+import {codecPrivatePointer, codecView, type BurikoCodecPointer} from './codec-storage.js';
 
+function codecSource(bytes: Uint8Array, initialized?: Uint8Array): BurikoCodecPointer {
+  return initialized === undefined ? hostPointer(bytes) : codecPrivatePointer(bytes, initialized);
+}
 function view(bytes: Uint8Array): DataView {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
@@ -20,7 +24,8 @@ function byte(bytes: Uint8Array, offset: number): number {
 
 /** 037730 identifies the engine's sixteen-byte bitmap header, independently of compression. */
 export function burikoPackedBitmapFormat(bytes: Uint8Array, initialized?: Uint8Array): number {
-  const word = (at: number) => codecView({bytes, offset: 0, initialized}, at, 2).getUint16(0, true);
+  const source = codecSource(bytes, initialized),
+    word = (at: number) => codecView(source, at, 2).getUint16(0, true);
   switch (word(4)) {
     case 8:
       return 3;
@@ -51,7 +56,7 @@ function decodePackedStorage(
   bytes: Uint8Array;
   initialized?: Uint8Array;
 } {
-  const source = {bytes, offset: 0, initialized},
+  const source = codecSource(bytes, initialized),
     word = (at: number) => codecView(source, at, 2).getUint16(0, true),
     compression = word(6);
   if (compression !== 1) return {bytes, initialized};
@@ -136,11 +141,11 @@ export function importBurikoPackedBitmap(
 ): 0 | 1 | 2 {
   const format = burikoPackedBitmapFormat(bytes, initialized);
   if (format === -1) return 1;
-  const compression = codecView({bytes, offset: 0, initialized}, 6, 2).getUint16(0, true);
+  const compression = codecView(codecSource(bytes, initialized), 6, 2).getUint16(0, true);
   if (compression !== 0 && compression !== 1) return 1;
   let allocated: Uint8Array | undefined;
   if (compression === 1) {
-    const source = {bytes, offset: 0, initialized},
+    const source = codecSource(bytes, initialized),
       channels = codecView(source, 4, 2).getUint16(0, true) >>> 3,
       height = codecView(source, 2, 2).getUint16(0, true),
       width = codecView(source, 0, 2).getUint16(0, true);
@@ -148,7 +153,7 @@ export function importBurikoPackedBitmap(
   }
   const decoded =
       compression === 1 ? decodePackedStorage(bytes, initialized, allocated) : {bytes, initialized},
-    source = {bytes: decoded.bytes, offset: 0, initialized: decoded.initialized},
+    source = codecSource(decoded.bytes, decoded.initialized),
     word = (at: number) => codecView(source, at, 2).getUint16(0, true);
   const metadata: [number, number] | null = word(10) === 1 ? [word(12), word(14)] : null;
   const height = word(2),
@@ -158,7 +163,7 @@ export function importBurikoPackedBitmap(
     width,
     height,
     format,
-    {bytes: decoded.bytes, offset: 16},
+    hostPointer(decoded.bytes, 16),
     metadata,
     0,
     decoded.initialized,
@@ -205,7 +210,7 @@ export function importBurikoWindowsBitmap(
     }
     inputOffset = (inputOffset + 3) & 0xfffffffc;
   }
-  return surfaces.importRaw(index, width, height, format, {bytes: output, offset: 0}, null, 0) === 0
+  return surfaces.importRaw(index, width, height, format, hostPointer(output), null, 0) === 0
     ? 0x80000007
     : 0;
 }

@@ -112,7 +112,7 @@ export class BurikoGridEvaluator extends BurikoGridEvaluatorRecords {
       );
       for (let i = 0; i < total && i < maximum; i++) {
         gridCopy(
-          output === null ? null : {bytes: output.bytes, offset: output.offset + i * 28},
+          output === null ? null : output.add(i * 28),
           bytes.subarray(order[i]! * 28, order[i]! * 28 + 28),
         );
       }

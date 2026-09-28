@@ -2,6 +2,7 @@ import {finishTask, type CooperativeTask} from '../../../core/cooperative-task.j
 import {
   codecCopy,
   codecMark,
+  codecPrivatePointer,
   codecRead,
   codecReadableSpan,
   codecView,
@@ -94,7 +95,7 @@ export function* encodeBurikoDcfsSteps(
   if (count === 0) return 0x80000001;
   if (size === 0) return 0x80000002;
   codecView(destination, 0, 16, false);
-  destination!.bytes.set(magic, destination!.offset);
+  destination!.view().set(magic, destination!.offset);
   codecMark(destination!, 0, 16);
   codecView(destination, 16, 4, false).setUint32(0, size, true);
   codecMark(destination!, 16, 4);
@@ -154,11 +155,10 @@ export function* encodeBurikoDcfsSteps(
     }
   }
   const extent = Math.imul(size, count) >>> 0,
-    verification: BurikoCodecPointer = {
-      bytes: new Uint8Array(extent),
-      offset: 0,
-      initialized: new Uint8Array(extent),
-    };
+    verification: BurikoCodecPointer = codecPrivatePointer(
+      new Uint8Array(extent),
+      new Uint8Array(extent),
+    );
   yield* decodeBurikoDcfsSteps(verification, destination);
   for (let start = 0; start < extent; start += 4096) {
     const count = Math.min(4096, extent - start),

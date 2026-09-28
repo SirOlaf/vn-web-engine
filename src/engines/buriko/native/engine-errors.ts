@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoBpThread} from '../bp/state.js';
 import type {BurikoBpDiagnostics} from './diagnostics.js';
 import {BurikoEngineDialogs, BurikoNativeExit} from './engine-dialogs.js';
@@ -54,7 +54,7 @@ export class BurikoEngineErrors {
   /** B8FE0 optionally copies the first captured message and includes NUL in its length. */
   readCaptured(output: BurikoBpPointer | null): number {
     if (this.captured === null) return 0;
-    const source = {bytes: this.captured, offset: 0},
+    const source = hostPointer(this.captured),
       length = (textLength(source) + 1) >>> 0;
     if (output !== null) copyText(output, source);
     return length;
@@ -78,7 +78,7 @@ export class BurikoEngineErrors {
   ): Promise<never> {
     const formatted = diagnostics.formatThreadMessage(
       thread,
-      textBytes({bytes: terminatedNativeBytes(message), offset: 0}),
+      textBytes(hostPointer(terminatedNativeBytes(message))),
     );
     const name = new TextEncoder().encode('BGIError.txt\0');
     let path = this.saveRoot.path(name);

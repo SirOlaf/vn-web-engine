@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import {gridAllocation} from './logical-grid-path.js';
 import {BurikoLogicalGridVisibility} from './logical-grid-visibility.js';
 import {buildGridAbilityMaps} from './logical-grid-derived.js';
@@ -41,7 +41,7 @@ export function simulateGridEvaluation(
     setJ = (word: number, value: number): void => job.setInt32(word * 4, value, true),
     scratch = new Uint8Array(128),
     values = new DataView(scratch.buffer),
-    pointer = (offset = 0) => ({bytes: scratch, offset}),
+    pointer = (offset = 0) => hostPointer(scratch, offset),
     visibility = new BurikoLogicalGridVisibility(grid),
     order = new Int32Array(128),
     orderAt = (index: number): number => {
@@ -139,7 +139,7 @@ export function simulateGridEvaluation(
         count = 1;
       } else {
         visibility.collect(
-          {bytes: positions, offset: 0},
+          hostPointer(positions),
           null,
           pointer(16),
           j(4),
@@ -154,7 +154,7 @@ export function simulateGridEvaluation(
         count = values.getUint32(16, true);
       }
       for (let i = 0; i < count; i++) {
-        const position = pointerView({bytes: positions, offset: i * 8}, 8),
+        const position = pointerView(hostPointer(positions, i * 8), 8),
           x = position.getInt32(0, true),
           y = position.getInt32(4, true),
           target = find(x, y),
@@ -265,7 +265,7 @@ export function simulateGridEvaluation(
   ): number => {
     const map = entry.map(ability, extended);
     if (map === null) throw new Error('Buriko grid simulation dereferences null precomputed map');
-    return pointerView({bytes: map, offset: cell * 28 + lane * 4}, 4).getInt32(0, true);
+    return pointerView(hostPointer(map, cell * 28 + lane * 4), 4).getInt32(0, true);
   };
   const recompute = (entry: BurikoGridEvaluatorRecord, ability: number): void => {
     gridEvaluatorAbilityRequest(abilityRequest, entry.pointer(), ability);
@@ -279,7 +279,7 @@ export function simulateGridEvaluation(
       1,
       0,
     );
-    grid.copyAbilityMap({bytes: computed, offset: 0}, entry.id, abilityRequest, 0);
+    grid.copyAbilityMap(hostPointer(computed), entry.id, abilityRequest, 0);
   };
   const adjacentFacing = (target: BurikoGridEvaluatorRecord, direction: number): number => {
     if (grid.copyAdjacentPosition(pointer(64), target.id, direction, true) !== 0)
@@ -328,7 +328,7 @@ export function simulateGridEvaluation(
               ),
             );
           else if (current.word(0xae + offset) === 4)
-            active[ability] = pointerView({bytes: computed, offset: cellIndex * 28}, 4).getInt32(
+            active[ability] = pointerView(hostPointer(computed, cellIndex * 28), 4).getInt32(
               0,
               true,
             );
@@ -481,17 +481,11 @@ export function simulateGridEvaluation(
     grid.search(actor.id, actor.word(0x8d), actor.word(0x8e), -1, -1, true);
     const steps = pointer(64),
       coordinates = new Uint8Array(48);
-    grid.copyNeighborPaths(
-      steps,
-      {bytes: coordinates, offset: 0},
-      actor.id,
-      opponent.x,
-      opponent.y,
-    );
+    grid.copyNeighborPaths(steps, hostPointer(coordinates), actor.id, opponent.x, opponent.y);
     let maximum = -0x80000000;
     for (let direction = 0; direction < 4; direction++) {
       if (values.getInt32(64 + direction * 4, true) < 0) continue;
-      const position = pointerView({bytes: coordinates, offset: direction * 8}, 8),
+      const position = pointerView(hostPointer(coordinates, direction * 8), 8),
         oldHealth = opponent.word(7);
       let damage = ordinaryAttack(
         actor,
@@ -524,14 +518,14 @@ function selectGridThreatDirections(
   cell: number,
   selected: number,
 ): boolean {
-  const view = pointerView({bytes: map, offset: cell * 28}, 28);
+  const view = pointerView(hostPointer(map, cell * 28), 28);
   if (view.getInt32(0, true) === 0) return false;
   const bytes = new Uint8Array(32),
     order = new DataView(bytes.buffer),
     grid = state.requireGrid();
   for (let direction = 0; direction < 4; direction++) {
     if (selected >= 0 && selected !== direction) continue;
-    grid.directionOrder({bytes, offset: 0}, direction, true);
+    grid.directionOrder(hostPointer(bytes), direction, true);
     for (let i = 0; i < 4; i++) {
       const candidate = order.getUint32(i * 4, true);
       if (view.getInt32((candidate + 1) * 4, true) !== 0) {

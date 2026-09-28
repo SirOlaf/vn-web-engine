@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoAudioLoaderQueues} from './audio/loader-queues.js';
 import type {BurikoNativeClock} from './clock.js';
 import {BurikoProcedure, type BurikoProcedureState} from './procedure.js';
@@ -44,7 +44,7 @@ export class BurikoRegisterSoundProcess extends BurikoProcedure {
     if (queues.loading !== loading)
       throw new Error('Buriko register-sound process must share the actual loading count');
     this.actor = context.actor ?? queues.metadata.allocator.currentActor;
-    this.source = source === null ? null : {bytes: source.bytes, offset: source.offset};
+    this.source = source === null ? null : new BurikoBpPointer(source.region, source.offset);
     loading.enterProcedure();
   }
 

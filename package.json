@@ -15,13 +15,12 @@
     "start": "node tools/serve-static.mjs",
     "start:profile": "vite preview --mode profile --host 127.0.0.1 --port 8001 --strictPort",
     "start:debug": "node tools/serve.mjs",
-    "differential": "npm run build && node tools/differential.mjs",
+    "differential": "npm run build:runtime && node tools/differential-buriko-vm.mjs",
     "verify:audio": "npm run build && node tools/verify-audio.mjs",
     "verify:movies": "npm run build && node tools/verify-movies.mjs",
     "sample:movies": "npm run build && node tools/sample-movies.mjs",
     "verify:movie-audio": "npm run build && node tools/verify-movie-audio.mjs",
     "verify:characters": "npm run build && node tools/verify-characters.mjs",
-    "verify:vm": "npm run build && node tools/verify-vm.mjs",
     "verify:initialization": "npm run build && node tools/verify-initialization.mjs",
     "verify:title-audio": "npm run build && node tools/verify-title-audio.mjs",
     "verify:menu": "npm run build && node tools/verify-menu.mjs",
@@ -29,8 +28,7 @@
     "compare:tips-draw": "npm run build && NOAH_COMPARE_TIPS=1 node tools/verify-extras.mjs",
     "prepare:mask-benchmark": "npm run build && NOAH_MASK_BENCH=1 node tools/verify-extras.mjs",
     "verify:config": "npm run build && node tools/verify-config.mjs",
-    "verify:scene": "npm run build && NOAH_TRACE_STORY=1 node tools/verify-menu.mjs",
-    "sweep:opcodes": "npm run build && node tools/sweep-opcodes.mjs"
+    "verify:scene": "npm run build && NOAH_TRACE_STORY=1 node tools/verify-menu.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

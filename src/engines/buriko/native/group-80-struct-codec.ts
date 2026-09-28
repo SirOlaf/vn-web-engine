@@ -6,7 +6,7 @@ import type {BurikoProcedureState} from './procedure.js';
 import type {BurikoResourceLoadingState} from './resource-loading.js';
 import type {BurikoStructCodecScratch} from './struct-codec-scratch.js';
 import {BurikoStructEncodeProcess} from './struct-encode-process.js';
-import {codecView, type BurikoCodecPointer} from './codec-storage.js';
+import {codecPrivatePointer, codecView, type BurikoCodecPointer} from './codec-storage.js';
 import {decodeBurikoDcfs} from './dcfs.js';
 import {decodeBurikoSdcInto} from './sdc.js';
 import type {BurikoNativeSlotDefinition} from './types.js';
@@ -77,11 +77,10 @@ export function createGroup80StructCodec(
           }
         }
         const extent = codecView(source, 24, 4).getUint32(0, true),
-          storage: BurikoCodecPointer = {
-            bytes: new Uint8Array(extent),
-            offset: 0,
-            initialized: new Uint8Array(extent),
-          };
+          storage: BurikoCodecPointer = codecPrivatePointer(
+            new Uint8Array(extent),
+            new Uint8Array(extent),
+          );
         decodeBurikoSdcInto(storage, source);
         const status = decodeBurikoDcfs(destination, storage);
         push32(context.thread, status === 0 ? codecView(storage, 20, 4).getUint32(0, true) : 0);

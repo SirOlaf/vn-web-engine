@@ -1,14 +1,12 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoDisplayObject} from './display-object.js';
 import {BurikoDisplaySprite} from './display-sprite.js';
 import type {BurikoDisplayManager} from './display-manager.js';
 import type {BurikoPropertyEditors, BurikoPropertyCallback} from './property-editor.js';
 import {readPropertyWord, writePropertyWord} from './property-values.js';
 
-const literal = (value: string): BurikoBpPointer => ({
-  bytes: new TextEncoder().encode(value + '\0'),
-  offset: 0,
-});
+const literal = (value: string): BurikoBpPointer =>
+  hostPointer(new TextEncoder().encode(value + '\0'));
 
 /** ABB40. Rows borrow the original object; callbacks resolve its handle anew. */
 export function createBurikoObjectPropertyTab(
@@ -24,12 +22,12 @@ export function createBurikoObjectPropertyTab(
   if (object === null) return 0x80000014;
   const category = object.category >>> 0;
   if (category !== 2 && category !== 3) return 0x80000010;
-  const tabOutput = {bytes: new Uint8Array(4), offset: 0};
+  const tabOutput = hostPointer(new Uint8Array(4));
   const status = editors.addTab(tabOutput, editorId, label);
   if (status !== 0) return status;
   const tab = readPropertyWord(tabOutput);
   writePropertyWord(output, tab);
-  const handleSource = {bytes: new Uint8Array(4), offset: 0};
+  const handleSource = hostPointer(new Uint8Array(4));
   writePropertyWord(handleSource, handle);
   editors.addRow(null, editorId, tab, literal('Handle'), 2, handleSource, 0, 0);
   editors.addRow(

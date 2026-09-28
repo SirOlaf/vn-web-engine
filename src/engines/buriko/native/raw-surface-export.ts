@@ -56,12 +56,13 @@ export class BurikoRawSurfaceExport {
   ): void {
     if (pointer === null) throw new Error('Buriko raw export writes through a null pointer');
     const offset = pointer.offset + relative,
-      view = pointerView({bytes: pointer.bytes, offset}, length);
+      view = pointerView(pointer.add(relative), length);
     if (length === 1) view.setUint8(0, value);
     else if (length === 2) view.setUint16(0, value, true);
     else view.setUint32(0, value, true);
-    if (backing !== null && backing.bytes.buffer === pointer.bytes.buffer) {
-      const start = pointer.bytes.byteOffset + offset - backing.bytes.byteOffset,
+    const bytes = pointer.view();
+    if (backing !== null && backing.bytes.buffer === bytes.buffer) {
+      const start = bytes.byteOffset + offset - backing.bytes.byteOffset,
         first = Math.max(0, start),
         last = Math.min(backing.bytes.length, start + length);
       if (first < last) backing.written(first, last - first);

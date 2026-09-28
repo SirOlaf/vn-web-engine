@@ -1,4 +1,5 @@
 import {FileError} from '../../../platform/filesystem.js';
+import {hostPointer} from '../bp/memory.js';
 import type {BurikoProgramFiles} from './program-files.js';
 import {textByte, textBytes} from './text.js';
 
@@ -11,7 +12,7 @@ export function copyBurikoPathComponentPrefix(
   index |= 0;
   let remaining = index;
   if (remaining < 0) return null;
-  const source = textBytes({bytes: path, offset: 0}, true);
+  const source = textBytes(hostPointer(path), true);
   const mode = files.text.detectEncoding(source);
   const output: number[] = [];
   let offset = 0;

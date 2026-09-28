@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {gridAllocation, gridCopy, gridRead} from './logical-grid-path.js';
 import {buildGridAbilityMaps} from './logical-grid-derived.js';
@@ -12,7 +12,7 @@ export class BurikoGridEvaluatorRecord {
   private readonly view = new DataView(this.bytes.buffer);
 
   pointer(offset = 0): BurikoBpPointer {
-    return {bytes: this.bytes, offset};
+    return hostPointer(this.bytes, offset);
   }
   word(index: number): number {
     const offset = index * 4;
@@ -102,12 +102,7 @@ export class BurikoGridEvaluatorRecords {
     this.clear();
     this.replaceGrid(grid);
     for (let i = 0; i < count; i++) this.records.push(new BurikoGridEvaluatorRecord());
-    for (let i = 0; i < count; i++)
-      this.update(
-        i,
-        input === null ? null : {bytes: input.bytes, offset: input.offset + i * 0x834},
-        1,
-      );
+    for (let i = 0; i < count; i++) this.update(i, input === null ? null : input.add(i * 0x834), 1);
     return 0;
   }
   copyRecord(output: BurikoBpPointer | null, index: number): number {
@@ -129,7 +124,7 @@ export class BurikoGridEvaluatorRecords {
     }
     const grid = this.requireGrid(),
       temporary = new Uint8Array(32),
-      pointer = {bytes: temporary, offset: 0};
+      pointer = hostPointer(temporary);
     grid.copyPosition(record.pointer(0x834), id);
     if (grid.copyDirection(pointer, id) !== 0)
       throw new Error('Buriko grid evaluator reads uninitialized agent direction');
@@ -140,14 +135,10 @@ export class BurikoGridEvaluatorRecords {
     const {width, height} = grid.dimensions(),
       requests = new Uint8Array(352);
     let requestCount = 1;
-    gridEvaluatorAbilityRequest({bytes: requests, offset: 0}, input, 0);
+    gridEvaluatorAbilityRequest(hostPointer(requests), input, 0);
     for (let ability = 1; ability <= 16; ability++) {
       if (
-        gridEvaluatorAbilityRequest(
-          {bytes: requests, offset: requestCount * 20},
-          input,
-          ability,
-        ) === 0
+        gridEvaluatorAbilityRequest(hostPointer(requests, requestCount * 20), input, ability) === 0
       )
         requestCount++;
     }
@@ -157,32 +148,25 @@ export class BurikoGridEvaluatorRecords {
       record.word(0x8d),
       record.word(0x8e),
       requestCount,
-      {bytes: requests, offset: 0},
+      hostPointer(requests),
       0,
       1,
     );
     record.maps[0] = null;
     record.maps[0] = gridAllocation(width, height, 28);
     record.maps[1] = null;
-    if (
-      grid.copyAbilityMap(
-        {bytes: record.maps[0], offset: 0},
-        id,
-        {bytes: requests, offset: 0},
-        0,
-      ) === 0
-    ) {
+    if (grid.copyAbilityMap(hostPointer(record.maps[0]), id, hostPointer(requests), 0) === 0) {
       record.maps[1] = gridAllocation(width, height, 28);
-      grid.copyAbilityMap({bytes: record.maps[1], offset: 0}, id, {bytes: requests, offset: 0}, 1);
+      grid.copyAbilityMap(hostPointer(record.maps[1]), id, hostPointer(requests), 1);
     } else record.maps[0] = null;
     for (let ability = 1; ability <= 16; ability++) {
       record.maps[ability * 2] = record.maps[ability * 2 + 1] = null;
       if (gridEvaluatorAbilityRequest(pointer, input, ability) !== 0) continue;
       const ordinary = gridAllocation(width, height, 28);
-      if (grid.copyAbilityMap({bytes: ordinary, offset: 0}, id, pointer, 0) !== 0) continue;
+      if (grid.copyAbilityMap(hostPointer(ordinary), id, pointer, 0) !== 0) continue;
       record.maps[ability * 2] = ordinary;
       const extended = gridAllocation(width, height, 28);
-      if (grid.copyAbilityMap({bytes: extended, offset: 0}, id, pointer, 1) === 0)
+      if (grid.copyAbilityMap(hostPointer(extended), id, pointer, 1) === 0)
         record.maps[ability * 2 + 1] = extended;
     }
     return 0;

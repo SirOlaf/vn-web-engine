@@ -125,10 +125,7 @@ export class BurikoNativeWorldMaps {
     // fb480 constructs and fills the temporary map before any node/weight validation.
     for (let i = 0; i < (overrideCount | 0); i++) {
       if (packedOverrides === null) throw new Error('Buriko world-map null edge overrides');
-      const packed = pointerView(
-        {bytes: packedOverrides.bytes, offset: packedOverrides.offset + i * 4},
-        4,
-      ).getUint32(0, true);
+      const packed = pointerView(packedOverrides.add(i * 4), 4).getUint32(0, true);
       overrides.set(packed & 255, f32(f32(packed >>> 8) / 65536));
     }
     const weight = f32(f32(fixedWeight | 0) / 65536);

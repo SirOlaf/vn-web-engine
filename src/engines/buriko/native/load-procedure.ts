@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {BurikoProcedure, BurikoProcedureState} from './procedure.js';
 import {BurikoNativeClock} from './clock.js';
 import {
@@ -58,7 +59,7 @@ export abstract class BurikoLoadProcedure extends BurikoProcedure {
     const copy = terminatedNativeBytes(bytes).slice();
     if (copy.length > 0x30c)
       throw new RangeError('Buriko load procedure name exceeds its native field');
-    this.loading.resources.files.text.lowercase({bytes: copy, offset: 0});
+    this.loading.resources.files.text.lowercase(hostPointer(copy));
     return copy;
   }
 

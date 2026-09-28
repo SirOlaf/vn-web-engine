@@ -13,12 +13,11 @@ import {BurikoFullscreenMovieState} from './movie-fullscreen-state.js';
 import {BurikoInlineTextControl} from './inline-text-control.js';
 import {BurikoNativeNotifications} from './notification-queue.js';
 import {BurikoDisplayCapabilities} from './display-capabilities.js';
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 
-const retryKey = {
-  bytes: new TextEncoder().encode('DIRECT3DINITIALIZINGFAILEDDOYOUWANTTOTRYAGAIN\0'),
-  offset: 0,
-};
+const retryKey = hostPointer(
+  new TextEncoder().encode('DIRECT3DINITIALIZINGFAILEDDOYOUWANTTOTRYAGAIN\0'),
+);
 
 /** Native B6EC0/B6A90 mode policy over the actual shared display, device and HWND owners. */
 export class BurikoDisplayController {
@@ -56,7 +55,7 @@ export class BurikoDisplayController {
 
   private async initializationError(key: string): Promise<0> {
     await this.mouseTrails.dialogs.show(
-      this.localized.lookup({bytes: new TextEncoder().encode(key + '\0'), offset: 0}),
+      this.localized.lookup(hostPointer(new TextEncoder().encode(key + '\0'))),
       new TextEncoder().encode('Error!!\0'),
       0x1010,
     );
@@ -231,19 +230,10 @@ export class BurikoDisplayController {
       return 1;
     }
     let count = 0;
-    while (
-      pointerView({bytes: source.bytes, offset: source.offset + count * 4}, 4).getUint32(
-        0,
-        true,
-      ) !== 0
-    )
-      count++;
+    while (pointerView(source.add(count * 4), 4).getUint32(0, true) !== 0) count++;
     if (count > 15) return 0;
     for (let index = 0; index <= count; index++)
-      this.modeToggleKeys[index] = pointerView(
-        {bytes: source.bytes, offset: source.offset + index * 4},
-        4,
-      ).getUint32(0, true);
+      this.modeToggleKeys[index] = pointerView(source.add(index * 4), 4).getUint32(0, true);
     return 1;
   }
 

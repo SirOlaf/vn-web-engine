@@ -1,6 +1,6 @@
 import type {WindowsInstallerDialogHost} from '../../../platform/windows-installer-dialogs.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import {BurikoDirectoryTree} from './directory-tree.js';
 import type {BurikoEngineDialogs} from './engine-dialogs.js';
 import type {BurikoFolderSelectionService} from './folder-selection.js';
@@ -21,15 +21,14 @@ export class BurikoInstallerDialogs {
   ) {}
 
   private decode(bytes: Uint8Array | null): string | null {
-    return bytes === null ? null : this.files.text.decodeAuto({bytes, offset: 0});
+    return bytes === null ? null : this.files.text.decodeAuto(hostPointer(bytes));
   }
 
   private async browse(): Promise<string | null> {
     if (this.folderSelection === null) return null;
     const output = new Uint8Array(784);
-    if ((await this.folderSelection.select({bytes: output, offset: 0}, null, null)) === 0)
-      return null;
-    return this.files.text.decodeAuto({bytes: output, offset: 0});
+    if ((await this.folderSelection.select(hostPointer(output), null, null)) === 0) return null;
+    return this.files.text.decodeAuto(hostPointer(output));
   }
 
   /** CAE90 accepts the modal result after warning on an invalid path. */

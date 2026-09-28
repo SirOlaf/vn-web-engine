@@ -1,5 +1,5 @@
 import {FileError} from '../../../platform/filesystem.js';
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoDirectoryTree} from './directory-tree.js';
 import type {BurikoShellShortcuts} from './shell-shortcuts.js';
 
@@ -14,7 +14,7 @@ export interface BurikoInstallerShortcutCall {
   readonly createDesktop: number;
 }
 
-const pointer = (bytes: Uint8Array): BurikoBpPointer => ({bytes, offset: 0});
+const pointer = (bytes: Uint8Array): BurikoBpPointer => hostPointer(bytes);
 
 /** C82E0 shares the selected ShellLink and folder owners with F7 and F6. */
 export class BurikoInstallerShortcutTransaction {

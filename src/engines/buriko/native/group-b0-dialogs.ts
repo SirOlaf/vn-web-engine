@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import type {
   BurikoBpOpcodeContext,
@@ -198,15 +198,15 @@ export function createGroupB0ModelessSettings(
   add(0xa3, 0x1400d4200, 'PollSettingsWindow', (h) => {
     const id = pop32(h.thread),
       output = pointer(h),
-      local = {bytes: new Uint8Array(16), offset: 0};
+      local = hostPointer(new Uint8Array(16));
     const result = settings.poll(id, local);
     let status = 0xfffffffe;
     if (result === 0) {
       // The native queue entry is already unlinked before these two independent VM stores.
       writePropertyWord(output, readPropertyWord(local));
       writePropertyWord(
-        output === null ? null : {bytes: output.bytes, offset: output.offset + 4},
-        readPropertyWord({bytes: local.bytes, offset: 4}),
+        output === null ? null : output.add(4),
+        readPropertyWord(new BurikoBpPointer(local.region, 4)),
       );
       status = 0;
     } else if (result === 1) status = 1;

@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {
   WindowsDynamicArgument,
   WindowsDynamicLibrary,
@@ -42,8 +42,8 @@ export class BurikoExternalLibraries {
 
   /** Resource-root bytes and caller name are concatenated without a separator. */
   private path(name: Uint8Array): Uint8Array {
-    const root = textBytes({bytes: this.resources.configuration.primaryRoot, offset: 0});
-    const file = textBytes({bytes: name, offset: 0}, true);
+    const root = textBytes(hostPointer(this.resources.configuration.primaryRoot));
+    const file = textBytes(hostPointer(name), true);
     if (root.length + file.length > 784)
       throw new RangeError('Buriko LoadLibraryA path exceeds native ANSI local');
     const result = new Uint8Array(root.length + file.length);

@@ -1,5 +1,5 @@
 import {FileError} from '../../../platform/filesystem.js';
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoProgramFiles} from './program-files.js';
 import type {BurikoSpecialFolders} from './special-folders.js';
 import {writeText} from './text.js';
@@ -10,7 +10,7 @@ class RegistryScratch {
   readonly bytes = new Uint8Array(8192);
   private readonly initialized = new Uint8Array(8192);
   write(offset: number, bytes: Uint8Array): void {
-    pointerView({bytes: this.bytes, offset}, bytes.length);
+    pointerView(hostPointer(this.bytes, offset), bytes.length);
     this.bytes.set(bytes, offset);
     this.initialized.fill(1, offset, offset + bytes.length);
   }
@@ -23,7 +23,7 @@ class RegistryScratch {
   string(): string {
     let value = '';
     for (let offset = 0; ; offset += 2) {
-      const view = pointerView({bytes: this.bytes, offset}, 2);
+      const view = pointerView(hostPointer(this.bytes, offset), 2);
       if (!this.initialized[offset] || !this.initialized[offset + 1])
         throw new Error('Buriko installer query reads unwritten wide stack scratch');
       const unit = view.getUint16(0, true);
@@ -90,12 +90,12 @@ export class BurikoInstallerQueries {
     filename: BurikoBpPointer | null,
   ): Promise<0 | 1> {
     if (filename === null) return 0;
-    const base = {bytes: new Uint8Array(784), offset: 0},
-      path = {bytes: new Uint8Array(784), offset: 0};
+    const base = hostPointer(new Uint8Array(784)),
+      path = hostPointer(new Uint8Array(784));
     if ((await this.folders.query(base, 0)) === 0)
       throw new Error('Buriko legacy folder consumes unwritten special-folder scratch');
     this.folders.combine(path, base, 1, filename);
-    const opened = await this.files.open(path.bytes);
+    const opened = await this.files.open(path.view());
     if (opened.source === null) return 0;
     const size = opened.source.size >>> 0;
     let bytes: Uint8Array;
@@ -108,12 +108,12 @@ export class BurikoInstallerQueries {
     if (bytes.length !== 0) {
       if (output === null) throw new Error('Buriko legacy folder reads a file into null');
       pointerView(output, bytes.length);
-      output.bytes.set(bytes, output.offset);
+      output.view().set(bytes, output.offset);
     }
     // CFileDX closes before these reads; ByteSource is the existing opened-file snapshot.
     const at = (relative: number): DataView => {
       if (output === null) throw new Error('Buriko legacy folder reads through null');
-      return pointerView({bytes: output.bytes, offset: output.offset + relative}, 1);
+      return pointerView(output.add(relative), 1);
     };
     const tail = (size - 2) >>> 0;
     if (at(tail).getUint8(0) !== 92) return 0;

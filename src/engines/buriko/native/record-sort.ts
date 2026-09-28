@@ -19,7 +19,8 @@ export function sortNativeRecords(
   if (base === null || stride === 0) {
     throw new Error('Buriko native qsort invalid parameter');
   }
-  const view = new DataView(base.bytes.buffer, base.bytes.byteOffset, base.bytes.byteLength);
+  const bytes = base.view();
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const read = (index: number): number => {
     const displacement = index * stride + keyOffset;
     pointerBytes(base, width, displacement);

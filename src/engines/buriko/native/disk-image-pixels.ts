@@ -1,5 +1,6 @@
 import type {BurikoBitmap, BurikoBitmapStorage} from './bitmap.js';
 import {BurikoSurfaces} from './surfaces.js';
+import {hostPointer} from '../bp/memory.js';
 
 export type BurikoGdiInputPixelFormat = 0x21808 | 0x26200a | 0x30803;
 export type BurikoGdiLockPixelFormat = 0x26200a | 0x30803;
@@ -108,7 +109,7 @@ export class BurikoDiskImagePixels {
       frame.width,
       frame.height,
       selection.surfaceFormat,
-      {bytes: source, offset: scan0Offset},
+      hostPointer(source, scan0Offset),
       null,
       Math.abs(frame.stride) === alignedStride ? 1 : 0,
     );

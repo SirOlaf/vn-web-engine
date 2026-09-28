@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {nativeVectorAngle} from '../bp/opcodes/native-math.js';
 import {native1665VectorAngle} from '../bp/opcodes/legacy-1665.js';
@@ -27,17 +27,12 @@ export function sameGridAbilityRequest(
   const stored = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   for (const offset of [0, 8]) {
     if (
-      pointerView({bytes: request.bytes, offset: request.offset + offset}, 8).getBigUint64(
-        0,
-        true,
-      ) !== stored.getBigUint64(offset, true)
+      pointerView(request.add(offset), 8).getBigUint64(0, true) !==
+      stored.getBigUint64(offset, true)
     )
       return false;
   }
-  return (
-    pointerView({bytes: request.bytes, offset: request.offset + 16}, 4).getUint32(0, true) ===
-    stored.getUint32(16, true)
-  );
+  return pointerView(request.add(16), 4).getUint32(0, true) === stored.getUint32(16, true);
 }
 
 export class BurikoLogicalGridAgent {
@@ -113,7 +108,7 @@ export class BurikoLogicalGridManager {
 
   cell(x: number, y: number, cells = this.cells): DataView {
     if (cells === null) throw new Error('Buriko logical-grid null cells');
-    return pointerView({bytes: cells, offset: this.index(x, y) * 16}, 16);
+    return pointerView(hostPointer(cells, this.index(x, y) * 16), 16);
   }
 
   agent(id: number): BurikoLogicalGridAgent | undefined {
@@ -130,7 +125,7 @@ export class BurikoLogicalGridManager {
     if (this.cells === null) return null;
     const result = new BurikoLogicalGridManager(this.verticalDivisor, this.revision);
     const {width, height} = this.dimensions();
-    result.setCells(width, height, {bytes: this.cells, offset: 0});
+    result.setCells(width, height, hostPointer(this.cells));
     let maximumPlane = 0;
     for (const plane of this.costPlanes) {
       const bytes = gridAllocation(width, height, 4, true);
@@ -502,7 +497,7 @@ export class BurikoLogicalGridManager {
     if (length > 0) {
       const agent = this.agent(id)!;
       const bytes = gridAllocation(length, 1, 4),
-        directions = {bytes, offset: 0};
+        directions = hostPointer(bytes);
       agent.path!.copyRoute(directions, count, x, y);
       agent.path!.directionsToCoordinates(output, directions, length, agent.x, agent.y);
     }

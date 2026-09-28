@@ -1,6 +1,6 @@
 import type {ByteSource} from '../../../core/source.js';
 import {FileError, type FileSystem} from '../../../platform/filesystem.js';
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoNativeText} from './text.js';
 import type {BurikoMountedProgramPaths} from './program-paths.js';
 import type {BurikoSpecialFolders} from './special-folders.js';
@@ -269,7 +269,7 @@ export class BurikoProgramFiles {
   }
 
   path(bytes: Uint8Array): string {
-    return this.text.decodeAuto({bytes: terminatedNativeBytes(bytes), offset: 0});
+    return this.text.decodeAuto(hostPointer(terminatedNativeBytes(bytes)));
   }
 
   /** B99D0 normalizes one trailing slash and stores caller-available bytes in truncated MiB. */
@@ -297,7 +297,7 @@ export class BurikoProgramFiles {
   ): Promise<0 | 1 | 8 | 0xffffffff> {
     const originalPath = terminatedNativeBytes(path).slice(),
       lowercasePath = originalPath.slice();
-    this.text.lowercase({bytes: lowercasePath, offset: 0});
+    this.text.lowercase(hostPointer(lowercasePath));
     const drive = lowercasePath[0];
     if (drive === undefined || drive < 97 || drive > 122 || lowercasePath[1] !== 58) return 8;
 

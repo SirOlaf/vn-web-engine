@@ -168,7 +168,7 @@ export class BurikoTextDisplayProcess extends BurikoProcedure {
         else {
           if (this.source === null)
             throw new Error('Buriko animated text reads a null borrowed source');
-          const byte = textByte(this.source.bytes, this.sourceOffset);
+          const byte = textByte(this.source.view(), this.sourceOffset);
           if (byte === 0) return this.endWait();
           if (byte === 1) this.sourceOffset += this.page();
           else if (byte === 10) {
@@ -186,7 +186,7 @@ export class BurikoTextDisplayProcess extends BurikoProcedure {
   }
   /** 071640, two phases over the same borrowed CP932 character. */
   private glyph(): number {
-    const bytes = this.source!.bytes;
+    const bytes = this.source!.view();
     const first = textByte(bytes, this.sourceOffset);
     const full = isNativeCp932Lead(first);
     const encoded = full ? (first << 8) | textByte(bytes, this.sourceOffset + 1) : first;

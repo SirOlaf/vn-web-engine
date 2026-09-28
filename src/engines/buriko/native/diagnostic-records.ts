@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoBpThread} from '../bp/state.js';
 import {listThreadModules} from '../bp/modules.js';
 import {pointerBytes} from '../bp/opcodes/operands.js';
@@ -16,11 +16,12 @@ function word(pointer: BurikoBpPointer | null, offset: number): DataView {
   return new DataView(bytes.buffer, bytes.byteOffset, 4);
 }
 function zero(pointer: BurikoBpPointer, length: number): void {
+  const bytes = pointer.view();
   for (let offset = 0; offset < length; offset++) {
     const at = pointer.offset + offset;
-    if (at < 0 || at >= pointer.bytes.length)
+    if (at < 0 || at >= bytes.length)
       throw new Error('Buriko diagnostic clear writes beyond native counter storage');
-    pointer.bytes[at] = 0;
+    bytes[at] = 0;
   }
 }
 
@@ -32,8 +33,8 @@ export class BurikoDiagnosticCounts {
       this.register(
         bank,
         256,
-        {bytes: new Uint8Array(1024), offset: 0},
-        {bytes: new Uint8Array(1024), offset: 0},
+        hostPointer(new Uint8Array(1024)),
+        hostPointer(new Uint8Array(1024)),
       );
   }
 

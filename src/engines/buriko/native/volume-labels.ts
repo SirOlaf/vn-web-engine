@@ -42,7 +42,7 @@ export class BurikoVolumeLabels {
 
   /** B9A70 uses only the first input byte and formats exactly "%c:\\". */
   read(output: BurikoBpPointer | null, drive: BurikoBpPointer): number {
-    const first = textByte(drive.bytes, drive.offset);
+    const first = textByte(drive.view(), drive.offset);
     return this.host.readVolumeLabel(Uint8Array.of(first, 58, 92, 0), output, 0x30c) >>> 0;
   }
 }

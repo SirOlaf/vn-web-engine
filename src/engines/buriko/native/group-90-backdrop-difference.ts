@@ -21,10 +21,7 @@ export function createGroup90BackdropDifference(
         const read = (index: number): number => {
           if (address === null)
             throw new RangeError('Buriko difference backdrop reads a null surface array');
-          return pointerView(
-            {bytes: address.bytes, offset: address.offset + index * 4},
-            4,
-          ).getUint32(0, true);
+          return pointerView(address.add(index * 4), 4).getUint32(0, true);
         };
         const surfaces: number[] = [];
         for (let index = 0; index < Math.min(count, 32); index++) surfaces.push(read(index));

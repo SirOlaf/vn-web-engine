@@ -1,9 +1,9 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {textByte} from './text.js';
 function bytesAt(pointer: BurikoBpPointer | null, offset: number, length: number): Uint8Array {
   if (pointer === null)
     throw new RangeError('Buriko record history consumed a null native pointer');
-  const view = pointerView({bytes: pointer.bytes, offset: pointer.offset + offset}, length);
+  const view = pointerView(pointer.add(offset), length);
   return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
 }
 /** C2350/C24B0: zero runs alternate with literals containing isolated zero bytes. */
@@ -69,7 +69,7 @@ export function decodeBurikoRecord(destination: BurikoBpPointer | null, input: U
     if (produced >= total) break;
     count = integer();
     if (count !== 0) {
-      const sourceBytes = bytesAt({bytes: input, offset: 0}, source, count);
+      const sourceBytes = bytesAt(hostPointer(input), source, count);
       bytesAt(destination, produced, count).set(sourceBytes);
       produced = (produced + count) >>> 0;
       source = (source + count) >>> 0;
@@ -142,10 +142,7 @@ export class BurikoRecordHistories {
     if (entry === undefined) return 2;
     // C1EC0 deliberately uses the current history mode, not entry.mode.
     if (history.mode === 1) decodeBurikoRecord(output, entry.bytes);
-    else
-      bytesAt(output, 0, history.size).set(
-        bytesAt({bytes: entry.bytes, offset: 0}, 0, history.size),
-      );
+    else bytesAt(output, 0, history.size).set(bytesAt(hostPointer(entry.bytes), 0, history.size));
     return 0;
   }
   removeRange(id: number, index: number, count: number): number {

@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {
   allocateBurikoBitmap,
   cropBurikoBitmap,
@@ -347,10 +347,7 @@ export class BurikoChildWindows {
     const bounds = record.window.panel.getBoundingClientRect(),
       position = this.coordinates?.readPosition(record.window.panel) ?? [bounds.left, bounds.top];
     writePropertyWord(output, Math.trunc(position[0]!));
-    writePropertyWord(
-      output === null ? null : {bytes: output.bytes, offset: output.offset + 4},
-      Math.trunc(position[1]!),
-    );
+    writePropertyWord(output === null ? null : output.add(4), Math.trunc(position[1]!));
     return 1;
   }
   show(handle: number, visible: number): 0 | 1 {
@@ -388,7 +385,7 @@ export class BurikoChildWindows {
   setTitle(handle: number, title: BurikoBpPointer | null): 0 | 1 {
     const record = this.record(handle);
     if (record === null) return 0;
-    const value = this.text.decodeAuto(title ?? {bytes: this.nativeWindowTitle, offset: 0});
+    const value = this.text.decodeAuto(title ?? hostPointer(this.nativeWindowTitle));
     if (record.window !== null) record.window.heading.textContent = value;
     return 1;
   }
@@ -572,10 +569,7 @@ export class BurikoChildWindows {
       ) {
         const clipboard = required().clipboard;
         if (clipboard !== null)
-          await writeBurikoClipboard(
-            this.navigator,
-            this.text.decodeAuto({bytes: clipboard, offset: 0}),
-          );
+          await writeBurikoClipboard(this.navigator, this.text.decodeAuto(hostPointer(clipboard)));
       } else if (this.messages.hasTarget('main')) this.messages.post({...message, target: 'main'});
     } else if (message.message === 0x114 || message.message === 0x115) {
       const value = required();

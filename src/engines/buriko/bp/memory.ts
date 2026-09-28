@@ -7,14 +7,11 @@ import {
   requireDeterminateMemory,
 } from '../../../core/indeterminate-memory.js';
 import {BURIKO_BP_ABI_172, type BurikoBpAbi} from './abi.js';
+import {BurikoBpPointer, BurikoBpRegion, BurikoBpRegionTable} from './region.js';
 
-/** A native byte pointer: views of one backing buffer continue to overlap. */
-export interface BurikoBpPointer {
-  readonly bytes: Uint8Array;
-  readonly offset: number;
-}
+export {BurikoBpPointer, BurikoBpRegion, BurikoBpRegionTable, hostPointer} from './region.js';
 
-// scalarPointer has already bounds-checked these little-endian accesses.
+// scalarBytes has already bounds-checked these little-endian accesses.
 function u16At(bytes: Uint8Array, offset: number): number {
   return bytes[offset]! | (bytes[offset + 1]! << 8);
 }
@@ -48,9 +45,13 @@ interface HeapBlock {
 
 /** 14006e110..3d0 and1.66500436010..260: byte-granular first fit, ascending free list, newest-first allocations. */
 export class BurikoBpHeap {
-  bytes = new Uint8Array(0x8000);
+  region: BurikoBpRegion;
   readonly freeBlocks: HeapBlock[] = [{offset: 0, size: 0x8000}];
   readonly allocations: HeapBlock[] = [];
+
+  constructor(private readonly regions: BurikoBpRegionTable) {
+    this.region = regions.allocate(0x8000);
+  }
 
   allocate(size: number): number {
     size >>>= 0;
@@ -66,15 +67,13 @@ export class BurikoBpHeap {
         } else this.freeBlocks.splice(index, 1);
         return offset;
       }
-      const previous = this.bytes.byteLength;
+      const previous = this.region.size;
       if (previous === 0) throw new Error('Buriko heap has been destroyed');
       let capacity = previous * 2;
       while (capacity - previous < size) capacity *= 2;
       if (capacity > 0xffffffff)
         throw new RangeError('Buriko heap growth overflows its 32-bit size');
-      const bytes = new Uint8Array(capacity);
-      copyMemoryBytes(bytes, 0, this.bytes, 0, previous);
-      this.bytes = bytes;
+      this.region = this.regions.relocate(this.region, capacity);
       this.freeBlocks.push({offset: previous, size: capacity - previous});
       this.coalesce();
     }
@@ -104,7 +103,8 @@ export class BurikoBpHeap {
 
   dispose(): void {
     this.freeBlocks.length = this.allocations.length = 0;
-    this.bytes = new Uint8Array();
+    this.regions.release(this.region);
+    this.region = new BurikoBpRegion(new Uint8Array());
   }
 }
 
@@ -163,7 +163,8 @@ export const BURIKO_BP_POOL_LAYOUT_1665 = [
 ] as const;
 
 interface IndirectRecord {
-  bytes: Uint8Array | null;
+  /** Null while the handle's size is zero. */
+  region: BurikoBpRegion | null;
   size: number;
 }
 export interface BurikoBpAllocationResult {
@@ -176,7 +177,8 @@ const INVALID_OFFSET = 0x80000010;
 const ALLOCATION_FAILED = 0x80000005;
 
 export function pointerView(pointer: BurikoBpPointer, length?: number): DataView {
-  const {bytes, offset} = pointer;
+  const bytes = pointer.view(),
+    offset = pointer.offset;
   if (
     !Number.isInteger(offset) ||
     offset < 0 ||
@@ -189,9 +191,13 @@ export function pointerView(pointer: BurikoBpPointer, length?: number): DataView
   return provenanceDataView(bytes, offset, length ?? bytes.byteLength - offset);
 }
 
-/** The exact title-local resolver and native allocation tables; no host pointer objects in VM cells. */
+/**
+ * The exact title-local resolver and native allocation tables; no host pointer objects in VM
+ * cells. Every bank resolves to a region from `regions`; addresses stay bank-relative.
+ */
 export class BurikoBpMemory {
-  readonly pools: (BurikoBpPointer | null)[][];
+  readonly regions = new BurikoBpRegionTable();
+  readonly pools: (BurikoBpRegion | null)[][];
   private readonly poolLayout: typeof BURIKO_BP_POOL_LAYOUT | typeof BURIKO_BP_POOL_LAYOUT_1665;
   readonly indirectBanks: (IndirectRecord | null)[][] = [
     Array<IndirectRecord | null>(256).fill(null),
@@ -199,64 +205,77 @@ export class BurikoBpMemory {
   ];
   private indirectNext = [0, 0];
 
-  private globalBytes: Uint8Array;
+  private globalRegionValue: BurikoBpRegion;
+  /** Offset written by the last `locate`; read immediately by its caller. */
+  private located = 0;
 
   constructor(
     globalMemory: Uint8Array,
     readonly abi: BurikoBpAbi = BURIKO_BP_ABI_172,
   ) {
-    this.globalBytes = globalMemory;
+    this.globalRegionValue = this.regions.adopt(globalMemory);
     this.poolLayout = abi.revision === '1.665' ? BURIKO_BP_POOL_LAYOUT_1665 : BURIKO_BP_POOL_LAYOUT;
     // 00463800 assigns one complete 26-bit-offset bank per allocation, in first-free order.
     this.pools =
       abi.revision === '1.520.6'
-        ? [Array<BurikoBpPointer | null>(48).fill(null)]
-        : this.poolLayout.map((group) => Array<BurikoBpPointer | null>(group.slots).fill(null));
+        ? [Array<BurikoBpRegion | null>(48).fill(null)]
+        : this.poolLayout.map((group) => Array<BurikoBpRegion | null>(group.slots).fill(null));
   }
 
   /** Live DAT1E9080; existing pointers retain their own native allocation identity. */
+  get globalRegion(): BurikoBpRegion {
+    return this.globalRegionValue;
+  }
+
+  /** The current global arena's bytes; see `BurikoBpRegion.view` for validity. */
   get globalMemory(): Uint8Array {
-    return this.globalBytes;
+    return this.globalRegionValue.view();
   }
 
   /** C1200 replaces and zeroes the actual BP arena; no other memory bank is reset. */
   resizeGlobal(exponent: number): 0 | 1 {
     exponent >>>= 0;
     if (exponent >= 13) return 0;
-    this.globalBytes = new Uint8Array(0x1000 << exponent);
+    const previous = this.globalRegionValue;
+    this.globalRegionValue = this.regions.allocate(0x1000 << exponent);
+    this.regions.release(previous);
     return 1;
   }
 
   /** E82F0 clears the current configured global arena. */
   clearGlobal(): void {
-    this.globalBytes.fill(0);
-    clearIndeterminateMemory(this.globalBytes, 0, this.globalBytes.length);
+    const bytes = this.globalMemory;
+    bytes.fill(0);
+    clearIndeterminateMemory(bytes, 0, bytes.length);
   }
 
-  resolve(thread: BurikoBpThread, address: number): BurikoBpPointer | null {
-    address >>>= 0;
-    if (address === 0) return null;
+  /** Bank resolution without a pointer object; the region offset is left in `located`. */
+  private locate(thread: BurikoBpThread, address: number): BurikoBpRegion | null {
     const bank = address >>> this.abi.addressBits;
     const offset = address & this.abi.addressMask;
     if (bank === 0) {
-      if (!this.abi.indirectHandles || (address & 0x0fff0000) !== 0x0fff0000)
-        return {bytes: this.globalMemory, offset};
+      if (!this.abi.indirectHandles || (address & 0x0fff0000) !== 0x0fff0000) {
+        this.located = offset;
+        return this.globalRegionValue;
+      }
       const selector = (address >>> 12) & 15;
       if (selector > 1) return null;
-      const bytes = this.indirectBanks[selector]![address & 255]?.bytes;
-      return bytes ? {bytes, offset: 0} : null;
+      this.located = 0;
+      return this.indirectBanks[selector]![address & 255]?.region ?? null;
     }
-    if (bank === 1) return {bytes: thread.moduleMemory, offset};
-    if (bank === 2) return {bytes: thread.frameMemory, offset};
+    this.located = offset;
+    if (bank === 1) return thread.moduleRegion;
+    if (bank === 2) return thread.frameRegion;
     if (bank === 3) {
-      if (!thread.heap) throw new BurikoBpMemoryFault(address, 'Thread has no allocator');
-      return {bytes: thread.heap.bytes, offset};
+      const heap = thread.heap;
+      if (!heap) throw new BurikoBpMemoryFault(address, 'Thread has no allocator');
+      return heap.region;
     }
     if (this.abi.revision === '1.520.6') {
       if (bank < 16) throw new BurikoBpMemoryFault(address, 'Invalid memory bank');
       const base = this.pools[0]![bank - 16];
       if (!base) throw new BurikoBpMemoryFault(address, 'Unresolved pooled allocation');
-      return {bytes: base.bytes, offset: base.offset + offset};
+      return base;
     }
     const index = this.poolLayout.findIndex(
       (group) => bank >= group.firstBank && bank < group.endBank,
@@ -268,95 +287,121 @@ export class BurikoBpMemory {
       (offset >>> group.offsetBits);
     const base = this.pools[index]![slot];
     if (!base) throw new BurikoBpMemoryFault(address, 'Unresolved pooled allocation');
-    return {bytes: base.bytes, offset: base.offset + (address & group.offsetMask)};
+    this.located = address & group.offsetMask;
+    return base;
+  }
+
+  resolve(thread: BurikoBpThread, address: number): BurikoBpPointer | null {
+    address >>>= 0;
+    if (address === 0) return null;
+    const region = this.locate(thread, address);
+    return region ? new BurikoBpPointer(region, this.located) : null;
   }
 
   pointer(thread: BurikoBpThread, address: number, size = 0): BurikoBpPointer {
     const pointer = this.resolve(thread, address);
     if (!pointer) throw new BurikoBpMemoryFault(address, 'Null memory access');
-    if (pointer.offset < 0 || size < 0 || pointer.offset + size > pointer.bytes.byteLength) {
+    if (pointer.offset < 0 || size < 0 || pointer.offset + size > pointer.region.size) {
       throw new BurikoBpMemoryFault(address, 'Memory access outside backing allocation');
     }
     return pointer;
   }
 
-  private scalarPointer(thread: BurikoBpThread, address: number, size: number): BurikoBpPointer {
-    const pointer = this.pointer(thread, address, size);
-    // pointer() preserves native address faults; pointerView's integer guard follows it.
-    if (!Number.isInteger(pointer.offset))
-      throw new RangeError('Buriko pointer exceeds its byte view');
-    return pointer;
+  /** `pointer()` without the pointer object; the checked offset is left in `located`. */
+  private scalarBytes(thread: BurikoBpThread, address: number, size: number): Uint8Array {
+    const unsigned = address >>> 0;
+    const region = unsigned === 0 ? null : this.locate(thread, unsigned);
+    if (!region) throw new BurikoBpMemoryFault(address, 'Null memory access');
+    const bytes = region.view();
+    if (this.located + size > bytes.byteLength) {
+      throw new BurikoBpMemoryFault(address, 'Memory access outside backing allocation');
+    }
+    return bytes;
   }
 
   readU8(t: BurikoBpThread, a: number): number {
-    const p = this.scalarPointer(t, a, 1);
-    requireDeterminateMemory(p.bytes, p.offset, 1);
-    return byteDataView(p.bytes).getUint8(p.offset);
+    const bytes = this.scalarBytes(t, a, 1),
+      offset = this.located;
+    requireDeterminateMemory(bytes, offset, 1);
+    return bytes[offset]!;
   }
   readI8(t: BurikoBpThread, a: number): number {
-    const p = this.scalarPointer(t, a, 1);
-    requireDeterminateMemory(p.bytes, p.offset, 1);
-    return byteDataView(p.bytes).getInt8(p.offset);
+    const bytes = this.scalarBytes(t, a, 1),
+      offset = this.located;
+    requireDeterminateMemory(bytes, offset, 1);
+    return (bytes[offset]! << 24) >> 24;
   }
   readU16(t: BurikoBpThread, a: number): number {
-    const p = this.scalarPointer(t, a, 2);
-    requireDeterminateMemory(p.bytes, p.offset, 2);
-    return u16At(p.bytes, p.offset);
+    const bytes = this.scalarBytes(t, a, 2),
+      offset = this.located;
+    requireDeterminateMemory(bytes, offset, 2);
+    return u16At(bytes, offset);
   }
   readI16(t: BurikoBpThread, a: number): number {
-    const p = this.scalarPointer(t, a, 2);
-    requireDeterminateMemory(p.bytes, p.offset, 2);
-    return (u16At(p.bytes, p.offset) << 16) >> 16;
+    const bytes = this.scalarBytes(t, a, 2),
+      offset = this.located;
+    requireDeterminateMemory(bytes, offset, 2);
+    return (u16At(bytes, offset) << 16) >> 16;
   }
   readU32(t: BurikoBpThread, a: number): number {
-    const p = this.scalarPointer(t, a, 4);
-    requireDeterminateMemory(p.bytes, p.offset, 4);
-    return i32At(p.bytes, p.offset) >>> 0;
+    const bytes = this.scalarBytes(t, a, 4),
+      offset = this.located;
+    requireDeterminateMemory(bytes, offset, 4);
+    return i32At(bytes, offset) >>> 0;
   }
   readI32(t: BurikoBpThread, a: number): number {
-    const p = this.scalarPointer(t, a, 4);
-    requireDeterminateMemory(p.bytes, p.offset, 4);
-    return i32At(p.bytes, p.offset);
+    const bytes = this.scalarBytes(t, a, 4),
+      offset = this.located;
+    requireDeterminateMemory(bytes, offset, 4);
+    return i32At(bytes, offset);
   }
   readU64(t: BurikoBpThread, a: number): bigint {
-    const p = this.scalarPointer(t, a, 8);
-    requireDeterminateMemory(p.bytes, p.offset, 8);
-    return byteDataView(p.bytes).getBigUint64(p.offset, true);
+    const bytes = this.scalarBytes(t, a, 8),
+      offset = this.located;
+    requireDeterminateMemory(bytes, offset, 8);
+    return byteDataView(bytes).getBigUint64(offset, true);
   }
   readI64(t: BurikoBpThread, a: number): bigint {
-    const p = this.scalarPointer(t, a, 8);
-    requireDeterminateMemory(p.bytes, p.offset, 8);
-    return byteDataView(p.bytes).getBigInt64(p.offset, true);
+    const bytes = this.scalarBytes(t, a, 8),
+      offset = this.located;
+    requireDeterminateMemory(bytes, offset, 8);
+    return byteDataView(bytes).getBigInt64(offset, true);
   }
   writeU8(t: BurikoBpThread, a: number, v: number): void {
-    const p = this.scalarPointer(t, a, 1);
-    byteDataView(p.bytes).setUint8(p.offset, v);
-    clearIndeterminateMemory(p.bytes, p.offset, 1);
+    const bytes = this.scalarBytes(t, a, 1),
+      offset = this.located;
+    bytes[offset] = toUint32(v);
+    clearIndeterminateMemory(bytes, offset, 1);
   }
   writeU16(t: BurikoBpThread, a: number, v: number): void {
-    const p = this.scalarPointer(t, a, 2);
+    const bytes = this.scalarBytes(t, a, 2),
+      offset = this.located;
     const value = toUint32(v);
-    p.bytes[p.offset] = value;
-    p.bytes[p.offset + 1] = value >>> 8;
-    clearIndeterminateMemory(p.bytes, p.offset, 2);
+    bytes[offset] = value;
+    bytes[offset + 1] = value >>> 8;
+    clearIndeterminateMemory(bytes, offset, 2);
   }
   writeU32(t: BurikoBpThread, a: number, v: number): void {
-    const p = this.scalarPointer(t, a, 4);
+    const bytes = this.scalarBytes(t, a, 4),
+      offset = this.located;
     const value = toUint32(v);
-    p.bytes[p.offset] = value;
-    p.bytes[p.offset + 1] = value >>> 8;
-    p.bytes[p.offset + 2] = value >>> 16;
-    p.bytes[p.offset + 3] = value >>> 24;
-    clearIndeterminateMemory(p.bytes, p.offset, 4);
+    bytes[offset] = value;
+    bytes[offset + 1] = value >>> 8;
+    bytes[offset + 2] = value >>> 16;
+    bytes[offset + 3] = value >>> 24;
+    clearIndeterminateMemory(bytes, offset, 4);
   }
   writeU64(t: BurikoBpThread, a: number, v: bigint): void {
-    const p = this.scalarPointer(t, a, 8);
-    byteDataView(p.bytes).setBigUint64(p.offset, v, true);
-    clearIndeterminateMemory(p.bytes, p.offset, 8);
+    const bytes = this.scalarBytes(t, a, 8),
+      offset = this.located;
+    byteDataView(bytes).setBigUint64(offset, v, true);
+    clearIndeterminateMemory(bytes, offset, 8);
   }
 
   readCString(thread: BurikoBpThread, address: number): Uint8Array {
-    const {bytes, offset} = this.pointer(thread, address);
+    const pointer = this.pointer(thread, address);
+    const bytes = pointer.view(),
+      offset = pointer.offset;
     let end = offset;
     for (; end < bytes.length; end++) {
       requireDeterminateMemory(bytes, end, 1);
@@ -370,7 +415,7 @@ export class BurikoBpMemory {
     if (size === 0) return;
     const target = this.pointer(thread, destination, size);
     const input = this.pointer(thread, source, size);
-    copyMemoryBytes(target.bytes, target.offset, input.bytes, input.offset, size);
+    copyMemoryBytes(target.view(), target.offset, input.view(), input.offset, size);
   }
 
   allocatePooled(size: number): number {
@@ -379,7 +424,7 @@ export class BurikoBpMemory {
       const table = this.pools[0]!,
         slot = table.indexOf(null);
       if (slot < 0) return 0;
-      table[slot] = {bytes: new Uint8Array(size), offset: 0};
+      table[slot] = this.regions.allocate(size);
       return ((slot + 16) * 0x04000000) >>> 0;
     }
     for (let index = 0; index < this.poolLayout.length; index++) {
@@ -388,7 +433,7 @@ export class BurikoBpMemory {
       const table = this.pools[index]!;
       const slot = table.indexOf(null);
       if (slot < 0) continue;
-      table[slot] = {bytes: new Uint8Array(size), offset: 0};
+      table[slot] = this.regions.allocate(size);
       return ((group.firstBank << this.abi.addressBits) + slot * 2 ** group.offsetBits) >>> 0;
     }
     return 0;
@@ -398,8 +443,10 @@ export class BurikoBpMemory {
     address >>>= 0;
     if (this.abi.revision === '1.520.6') {
       const slot = (address >>> 26) - 16;
-      if (slot < 0 || (address & 0x03ffffff) !== 0 || !this.pools[0]![slot]) return false;
+      const region = slot < 0 ? null : this.pools[0]![slot];
+      if ((address & 0x03ffffff) !== 0 || !region) return false;
       this.pools[0]![slot] = null;
+      this.regions.release(region);
       return true;
     }
     const bank = address >>> this.abi.addressBits;
@@ -410,8 +457,10 @@ export class BurikoBpMemory {
       const slot =
         ((bank - group.firstBank) << (this.abi.addressBits - group.offsetBits)) |
         ((address & this.abi.addressMask) >>> group.offsetBits);
-      if (this.pools[index]![slot]) {
+      const region = this.pools[index]![slot];
+      if (region) {
         this.pools[index]![slot] = null;
+        this.regions.release(region);
         return true;
       }
     }
@@ -420,7 +469,10 @@ export class BurikoBpMemory {
 
   /** EE4C0 / 1.6650049c400 frees and zeros the initialized pooled allocation tables. */
   clearPooled(): void {
-    for (const table of this.pools) table.fill(null);
+    for (const table of this.pools) {
+      for (const region of table) if (region) this.regions.release(region);
+      table.fill(null);
+    }
   }
 
   private indirect(address: number, selector: number): IndirectRecord | null {
@@ -448,10 +500,21 @@ export class BurikoBpMemory {
       const slot = (this.indirectNext[selector] = (this.indirectNext[selector]! + 31) & 255);
       if (bank[slot]) continue;
       const bytes = allocate();
-      bank[slot] = {bytes, size: bytes?.byteLength ?? 0};
+      bank[slot] = {region: bytes && this.regions.adopt(bytes), size: bytes?.byteLength ?? 0};
       return {result: 0, address: (0x0fff0000 | (selector << 12) | slot) >>> 0};
     }
     return {result: ALLOCATION_FAILED};
+  }
+
+  /** Installs a record's successor storage and retires the previous region. */
+  private replaceIndirect(
+    record: IndirectRecord,
+    region: BurikoBpRegion | null,
+    size: number,
+  ): void {
+    if (record.region) this.regions.release(record.region);
+    record.region = region;
+    record.size = size;
   }
 
   createBuffer(size: number): BurikoBpAllocationResult {
@@ -473,8 +536,10 @@ export class BurikoBpMemory {
   }
 
   freeIndirect(address: number, selector: 0 | 1): number {
-    if (!this.indirect(address, selector)) return INVALID_HANDLE;
+    const record = this.indirect(address, selector);
+    if (!record) return INVALID_HANDLE;
     this.indirectBanks[selector]![address & 255] = null;
+    if (record.region) this.regions.release(record.region);
     return 0;
   }
 
@@ -488,11 +553,10 @@ export class BurikoBpMemory {
     if (size > 0x40000000) return INVALID_SIZE;
     const record = this.indirect(address, 0);
     if (!record) return INVALID_HANDLE;
-    const bytes = size === 0 ? null : new Uint8Array(size);
-    if (bytes && record.bytes)
-      copyMemoryBytes(bytes, 0, record.bytes, 0, Math.min(size, record.size));
-    record.bytes = bytes;
-    record.size = size;
+    const region = size === 0 ? null : this.regions.allocate(size);
+    if (region && record.region)
+      copyMemoryBytes(region.view(), 0, record.region.view(), 0, Math.min(size, record.size));
+    this.replaceIndirect(record, region, size);
     return 0;
   }
 
@@ -511,7 +575,7 @@ export class BurikoBpMemory {
     if (size !== 0) {
       if (!destination) throw new BurikoBpMemoryFault(0, 'Null indirect buffer destination');
       pointerView(destination, size);
-      copyMemoryBytes(destination.bytes, destination.offset, record.bytes!, offset, size);
+      copyMemoryBytes(destination.view(), destination.offset, record.region!.view(), offset, size);
     }
     return 0;
   }
@@ -531,7 +595,7 @@ export class BurikoBpMemory {
     if (size !== 0) {
       if (!source) throw new BurikoBpMemoryFault(0, 'Null indirect buffer source');
       pointerView(source, size);
-      copyMemoryBytes(record.bytes!, offset, source.bytes, source.offset, size);
+      copyMemoryBytes(record.region!.view(), offset, source.view(), source.offset, size);
     }
     return 0;
   }
@@ -549,17 +613,19 @@ export class BurikoBpMemory {
     if (offset > record.size) return INVALID_OFFSET;
     const nextSize = (record.size + size) >>> 0;
     if (nextSize > 0x40000000) return INVALID_SIZE;
-    const bytes = nextSize === 0 ? null : new Uint8Array(nextSize);
-    if (record.bytes && bytes) copyMemoryBytes(bytes, 0, record.bytes, 0, offset);
+    // Source faults leave the record unchanged, so they are raised before allocating.
     if (size !== 0) {
       if (!source) throw new BurikoBpMemoryFault(0, 'Null indirect buffer source');
       pointerView(source, size);
-      copyMemoryBytes(bytes!, offset, source.bytes, source.offset, size);
     }
-    if (record.bytes && bytes)
-      copyMemoryBytes(bytes, offset + size, record.bytes, offset, record.size - offset);
-    record.bytes = bytes;
-    record.size = nextSize;
+    const region = nextSize === 0 ? null : this.regions.allocate(nextSize);
+    const bytes = region?.view() ?? null;
+    const previous = record.region?.view() ?? null;
+    if (previous && bytes) copyMemoryBytes(bytes, 0, previous, 0, offset);
+    if (size !== 0) copyMemoryBytes(bytes!, offset, source!.view(), source!.offset, size);
+    if (previous && bytes)
+      copyMemoryBytes(bytes, offset + size, previous, offset, record.size - offset);
+    this.replaceIndirect(record, region, nextSize);
     return 0;
   }
 
@@ -580,20 +646,19 @@ export class BurikoBpMemory {
     if (terminator >= 0) content = content.subarray(0, terminator);
     const size = (record.size + content.byteLength) >>> 0;
     if (size > 0x40000000) return INVALID_SIZE;
+    const previous = record.region!.view();
     const bytes = new Uint8Array(size);
-    bytes.set(record.bytes!.subarray(0, offset));
+    bytes.set(previous.subarray(0, offset));
     bytes.set(content, offset);
-    bytes.set(record.bytes!.subarray(offset, length), offset + content.byteLength);
-    record.bytes = bytes;
-    record.size = size;
+    bytes.set(previous.subarray(offset, length), offset + content.byteLength);
+    this.replaceIndirect(record, this.regions.adopt(bytes), size);
     return 0;
   }
 
   clearString(address: number): number {
     const record = this.indirect(address, 1);
     if (!record) return INVALID_HANDLE;
-    record.bytes = new Uint8Array(1);
-    record.size = 1;
+    this.replaceIndirect(record, this.regions.allocate(1), 1);
     return 0;
   }
 }

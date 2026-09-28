@@ -13,7 +13,7 @@ export function perspectiveScale(depth: number, perspective: number): number {
 
 function word(pointer: BurikoBpPointer | null, offset: number): DataView {
   if (pointer === null) throw new Error('Buriko perspective point dereferences a null pointer');
-  return pointerView({bytes: pointer.bytes, offset: pointer.offset + offset}, 4);
+  return pointerView(pointer.add(offset), 4);
 }
 
 /** 032370 reads sourceY only after destinationX is published. */

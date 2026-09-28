@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {playBrowserMediaWithActivation} from '../../../video/browser-media-activation.js';
 import {observeBrowserMediaLoading} from '../../../video/browser-media-loading.js';
 import {BrowserStreamMoviePlayer} from '../../../video/browser-stream-player.js';
@@ -251,9 +251,8 @@ export class BurikoBrowserTraditionalMovieSession {
   async start(archive: BurikoBpPointer | null, name: BurikoBpPointer): Promise<number | null> {
     if (this.closed || this.resetting)
       throw new Error('Buriko traditional movie source admission is closed');
-    const ownedArchive =
-      archive === null ? null : {bytes: textBytes(archive, true).slice(), offset: 0};
-    const ownedName = {bytes: textBytes(name, true).slice(), offset: 0};
+    const ownedArchive = archive === null ? null : hostPointer(textBytes(archive, true).slice());
+    const ownedName = hostPointer(textBytes(name, true).slice());
     this.generation++;
     for (const pending of this.aborts) pending.abort();
     const generation = this.generation;

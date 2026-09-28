@@ -3,6 +3,7 @@ import {
   BrowserWindowsTemporaryFileHost,
   type WindowsTemporaryFileOperations,
 } from '../../../platform/windows-temporary-file.js';
+import {hostPointer} from '../bp/memory.js';
 import {BurikoDirectoryTree} from './directory-tree.js';
 import {BurikoNativeFile} from './native-file.js';
 import type {BurikoProgramFiles} from './program-files.js';
@@ -144,7 +145,7 @@ export class BurikoTemporaryDirectoryProbe {
       let result = 0;
       try {
         const nativePath = this.files.text.encodeWide(temporary, 1);
-        const pointer = {bytes: nativePath, offset: 0};
+        const pointer = hostPointer(nativePath);
         if ((await file.openWrite(pointer, 0)) !== 0) {
           file.close();
           if ((await file.openRead(pointer)) !== 0) {

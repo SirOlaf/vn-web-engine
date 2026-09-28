@@ -1,7 +1,7 @@
 import {randomByteGenerator} from '../../../formats/buriko/binary.js';
 import {finishTask, type CooperativeTask} from '../../../core/cooperative-task.js';
 import {decodeSdc, SdcIntegrityError} from '../../../formats/buriko/compressed-resource.js';
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {codecRead, codecWrite, type BurikoCodecPointer} from './codec-storage.js';
 
 /** F49E0/F42D0/F4440: actual caller output, with private checked token storage. */
@@ -18,7 +18,7 @@ export function* decodeBurikoSdcSteps(
 ): CooperativeTask<number> {
   const sourceView = (offset: number, count: number): DataView => {
     if (source === null) throw new Error('Buriko SDC reads a null source');
-    return pointerView({bytes: source.bytes, offset: source.offset + offset}, count);
+    return pointerView(source.add(offset), count);
   };
   const magic = 'SDC FORMAT 1.00\0';
   for (let index = 0; index < magic.length; index++)
@@ -197,11 +197,11 @@ export function* encodeBurikoSdcSteps(
   if (count !== 0) {
     if (source === null) throw new Error('Buriko SDC encoding reads a null source');
     pointerView(source, count);
-    plain.set(source.bytes.subarray(source.offset, source.offset + count));
+    plain.set(source.view().subarray(source.offset, source.offset + count));
   }
   const view = (offset: number, length: number): DataView => {
     if (destination === null) throw new Error('Buriko SDC encoding accesses a null destination');
-    return pointerView({bytes: destination.bytes, offset: destination.offset + offset}, length);
+    return pointerView(destination.add(offset), length);
   };
   const packed = yield* compressSteps(plain, (offset, value) =>
     codecWrite(destination, 32 + offset, value),
@@ -226,7 +226,7 @@ export function* encodeBurikoSdcSteps(
   view(28, 2).setUint16(0, sum, true);
   view(30, 2).setUint16(0, xor, true);
   const verification = new Uint8Array((count * 2) >>> 0),
-    produced = yield* decodeBurikoSdcSteps({bytes: verification, offset: 0}, destination);
+    produced = yield* decodeBurikoSdcSteps(hostPointer(verification), destination);
   if (produced !== count) return 0;
   for (let index = 0; index < count; index++) {
     if (verification[index] !== plain[index]) return 0;

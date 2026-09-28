@@ -1,7 +1,7 @@
 import type {BurikoBpOpcodeContext, BurikoBpOpcodeHandler} from '../../native/types.js';
 import {textByte, textLength} from '../../native/text.js';
 import {formatVmConversion} from '../../native/text-format.js';
-import type {BurikoBpPointer} from '../memory.js';
+import {BurikoBpPointer} from '../memory.js';
 import {
   pop32,
   popDeferred32,
@@ -25,11 +25,11 @@ import {x87TrigonometricInteger} from '../../../../core/x87-integer.js';
 import {copyMemoryBytes} from '../../../../core/indeterminate-memory.js';
 
 /** 00421630 deliberately accepts80..9f ande0..ff, including invalid CP932 leads. */
-function character(p: BurikoBpPointer): {value: number; wide: number; length: number} {
-  const lead = textByte(p.bytes, p.offset);
+function character(bytes: Uint8Array, at: number): {value: number; wide: number; length: number} {
+  const lead = textByte(bytes, at);
   const wide = Number(lead >= 0x80 && (lead < 0xa0 || lead >= 0xe0));
   return {
-    value: wide ? (lead << 8) | textByte(p.bytes, p.offset + 1) : lead,
+    value: wide ? (lead << 8) | textByte(bytes, at + 1) : lead,
     wide,
     length: wide + 1,
   };
@@ -54,7 +54,7 @@ function copyForward(destination: BurikoBpPointer, source: BurikoBpPointer, leng
 function copyCString(destination: BurikoBpPointer, source: BurikoBpPointer): void {
   let offset = 0;
   for (;;) {
-    const value = textByte(source.bytes, source.offset + offset);
+    const value = textByte(source.view(), source.offset + offset);
     pointerBytes(destination, 1, offset, 'write')[0] = value;
     if (value === 0) return;
     offset++;
@@ -128,16 +128,18 @@ function vectorAngle(x: number, y: number): number {
 /** 0046a7a0: mismatch advances input without retrying a prefix at that character. */
 function findCharacters(source: BurikoBpPointer, needle: BurikoBpPointer): number {
   const search: number[] = [];
-  for (let at = needle.offset; textByte(needle.bytes, at) !== 0;) {
-    const c = character({bytes: needle.bytes, offset: at});
+  const needleBytes = needle.view(),
+    sourceBytes = source.view();
+  for (let at = needle.offset; textByte(needleBytes, at) !== 0;) {
+    const c = character(needleBytes, at);
     search.push(c.value);
     at += c.length;
   }
   let matched = 0,
     start = -1;
-  for (let at = source.offset; textByte(source.bytes, at) !== 0;) {
+  for (let at = source.offset; textByte(sourceBytes, at) !== 0;) {
     if (search.length === 0) throw new Error('Buriko1.69 substring search reads empty allocation');
-    const c = character({bytes: source.bytes, offset: at});
+    const c = character(sourceBytes, at);
     if (c.value === search[matched]) {
       if (matched === 0) start = at - source.offset;
       if (++matched >= search.length) return start;
@@ -225,7 +227,7 @@ export function createLegacy169CoreOpcodes(): Readonly<Record<number, BurikoBpOp
       const destination = pointer(h, pop32(h.thread)),
         length = readU8(h.thread);
       if ((h.thread.pc + length) >>> 0 <= h.thread.moduleLimit) {
-        copyForward(destination, {bytes: h.thread.moduleMemory, offset: h.thread.pc}, length);
+        copyForward(destination, new BurikoBpPointer(h.thread.moduleRegion, h.thread.pc), length);
         h.thread.pc = (h.thread.pc + length) >>> 0;
       }
       return 0;
@@ -340,12 +342,12 @@ export function createLegacy169CoreOpcodes(): Readonly<Record<number, BurikoBpOp
         if (found < 0) break;
         if (found > 0) {
           copyForward(destination, source, found);
-          source = {bytes: source.bytes, offset: source.offset + found};
-          destination = {bytes: destination.bytes, offset: destination.offset + found};
+          source = source.add(found);
+          destination = destination.add(found);
         }
         copyCString(destination, replacement);
-        source = {bytes: source.bytes, offset: source.offset + needleLength};
-        destination = {bytes: destination.bytes, offset: destination.offset + replacementLength};
+        source = source.add(needleLength);
+        destination = destination.add(replacementLength);
         count++;
       }
       copyCString(destination, source);
@@ -357,8 +359,8 @@ export function createLegacy169CoreOpcodes(): Readonly<Record<number, BurikoBpOp
         left = pointer(h, pop32(h.thread));
       let same = true;
       for (let i = 0; ; i++) {
-        const a = textByte(left.bytes, left.offset + i),
-          b = textByte(right.bytes, right.offset + i);
+        const a = textByte(left.view(), left.offset + i),
+          b = textByte(right.view(), right.offset + i);
         if (a !== b) {
           same = false;
           break;
@@ -377,7 +379,8 @@ export function createLegacy169CoreOpcodes(): Readonly<Record<number, BurikoBpOp
       return 0;
     },
     0x6c: (h) => {
-      const c = character(pointer(h, pop32(h.thread)));
+      const p = pointer(h, pop32(h.thread));
+      const c = character(p.view(), p.offset);
       push32(h.thread, c.value);
       push32(h.thread, c.wide);
       push32(h.thread, Number(punctuation.has(c.value)));
@@ -385,9 +388,10 @@ export function createLegacy169CoreOpcodes(): Readonly<Record<number, BurikoBpOp
     },
     0x6d: (h) => {
       const p = pointer(h, pop32(h.thread));
-      for (let at = p.offset; textByte(p.bytes, at) !== 0;) {
-        const c = character({bytes: p.bytes, offset: at});
-        if (!c.wide && c.value >= 0x41 && c.value <= 0x5a) p.bytes[at] = c.value + 0x20;
+      const bytes = p.view();
+      for (let at = p.offset; textByte(bytes, at) !== 0;) {
+        const c = character(bytes, at);
+        if (!c.wide && c.value >= 0x41 && c.value <= 0x5a) bytes[at] = c.value + 0x20;
         at += c.length;
       }
       return 0;

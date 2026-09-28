@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../../bp/memory.js';
+import {BurikoBpPointer} from '../../bp/memory.js';
 import type {BurikoResourceLoadingState, BurikoResourceResult} from '../resource-loading.js';
 import type {BurikoLoaderMetadata} from '../loader-metadata.js';
 import type {BurikoAudioMusicResources} from './resource-music.js';
@@ -92,7 +92,7 @@ export class BurikoAudioLoaderQueues {
     const job: StaticJob = {
       result,
       channel: channel >>> 0,
-      source: source === null ? null : {bytes: source.bytes, offset: source.offset},
+      source: source === null ? null : new BurikoBpPointer(source.region, source.offset),
       fade: fade | 0,
       gain,
       speed,

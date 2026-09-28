@@ -1,6 +1,6 @@
 import {FileError} from '../../../platform/filesystem.js';
 import type {WindowsDirectoryNamespaceHost} from '../../../platform/windows-directory-namespace.js';
-import {type BurikoBpPointer, pointerView} from '../bp/memory.js';
+import {type BurikoBpPointer, hostPointer, pointerView} from '../bp/memory.js';
 import type {BurikoProgramFiles} from './program-files.js';
 import {textBytes} from './text.js';
 import {assertBurikoPathDomain} from './path-domain.js';
@@ -125,7 +125,7 @@ export class BurikoFileEnumeration {
         throw new RangeError('Buriko enumeration name exceeds native byte stack buffer');
       if (output !== null) {
         if (size + bytes.length > capacity) return false;
-        const view = pointerView({...output, offset: output.offset + size}, bytes.length);
+        const view = pointerView(output.add(size), bytes.length);
         new Uint8Array(view.buffer, view.byteOffset, view.byteLength).set(bytes);
       }
       size = (size + bytes.length) >>> 0;
@@ -133,7 +133,7 @@ export class BurikoFileEnumeration {
       return true;
     };
     const visit = async (native: Uint8Array, prefix: string, limit: number): Promise<boolean> => {
-      const pointer = {bytes: native, offset: 0},
+      const pointer = hostPointer(native),
         wide = this.files.text.decodeAuto(pointer);
       const entries = await this.find(wide);
       if (entries.length === 0) return true;
@@ -156,11 +156,11 @@ export class BurikoFileEnumeration {
       const search = new Uint8Array(head.length + 2);
       search.set(head);
       search[head.length] = 42;
-      for (const entry of await this.find(this.files.text.decodeAuto({bytes: search, offset: 0}))) {
+      for (const entry of await this.find(this.files.text.decodeAuto(hostPointer(search)))) {
         if (entry.kind !== 'directory' || entry.name === '.' || entry.name === '..') continue;
         if (slash < 0)
           throw new Error('Buriko recursive child path dereferences a null native suffix');
-        const suffix = this.files.text.decodeAuto({bytes: native, offset: slash});
+        const suffix = this.files.text.decodeAuto(hostPointer(native, slash));
         const child = this.files.text.encodeWide(entry.name + suffix, 1);
         if (child.length > 784 || head.length + child.length > 784)
           throw new RangeError('Buriko recursive child exceeds native byte stack buffer');

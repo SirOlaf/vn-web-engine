@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {transformBurikoBitmap} from './bitmap-affine.js';
 import {clearBurikoBitmap} from './bitmap-copy.js';
 import {blendBurikoMaskColor} from './bitmap-mask-color.js';
@@ -70,14 +70,15 @@ export function readBurikoEmbeddedCharacter(
 
 /** 073200 substitutes recorded numeric codes only on the detector's CP932 path. */
 export function decodeBurikoEmbeddedText(text: BurikoNativeText, source: BurikoBpPointer): string {
-  if (text.detectEncoding(source.bytes, source.offset, false) !== 0) return text.decodeAuto(source);
+  const bytes = source.view();
+  if (text.detectEncoding(bytes, source.offset, false) !== 0) return text.decodeAuto(source);
   const encoded: number[] = [];
   const codes: number[] = [];
   let offset = source.offset;
-  while (textByte(source.bytes, offset) !== 0) {
-    const first = textByte(source.bytes, offset);
+  while (textByte(bytes, offset) !== 0) {
+    const first = textByte(bytes, offset);
     if (isNativeCp932Lead(first)) {
-      const embedded = readBurikoEmbeddedCharacter(text, source.bytes, offset);
+      const embedded = readBurikoEmbeddedCharacter(text, bytes, offset);
       if (embedded !== null) {
         codes.push(embedded.value >>> 0);
         encoded.push(0x84, 0xb7);
@@ -85,9 +86,9 @@ export function decodeBurikoEmbeddedText(text: BurikoNativeText, source: BurikoB
         continue;
       }
       if (first === 0xef || first === 0xff) {
-        codes.push(((first === 0xef ? 0xef00 : 0xf000) | textByte(source.bytes, offset + 1)) >>> 0);
+        codes.push(((first === 0xef ? 0xef00 : 0xf000) | textByte(bytes, offset + 1)) >>> 0);
         encoded.push(0x84, 0xb7);
-      } else encoded.push(first, textByte(source.bytes, offset + 1));
+      } else encoded.push(first, textByte(bytes, offset + 1));
       offset += 2;
     } else {
       encoded.push(first);
@@ -95,7 +96,7 @@ export function decodeBurikoEmbeddedText(text: BurikoNativeText, source: BurikoB
     }
   }
   encoded.push(0);
-  const decoded = text.decodeAuto({bytes: Uint8Array.from(encoded), offset: 0});
+  const decoded = text.decodeAuto(hostPointer(Uint8Array.from(encoded)));
   let result = '';
   let codeIndex = 0;
   for (let index = 0; index < decoded.length; index++) {

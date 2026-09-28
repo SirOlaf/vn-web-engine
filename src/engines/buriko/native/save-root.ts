@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoProgramFiles, terminatedNativeBytes} from './program-files.js';
 import {assertBurikoPathDomain} from './path-domain.js';
 import {textBytes} from './text.js';
@@ -33,10 +33,10 @@ export class BurikoSaveRoot {
   /** C1CE0/BD370 concatenate UTF8 root+filename without inserting another separator. */
   path(name: Uint8Array): Uint8Array {
     const first = this.files.text.convertEncoding(
-        {bytes: terminatedNativeBytes(this.bytes), offset: 0},
+        hostPointer(terminatedNativeBytes(this.bytes)),
         1,
       ),
-      second = this.files.text.convertEncoding({bytes: terminatedNativeBytes(name), offset: 0}, 1),
+      second = this.files.text.convertEncoding(hostPointer(terminatedNativeBytes(name)), 1),
       result = new Uint8Array(first.length - 1 + second.length);
     if (result.length > 784) throw new RangeError('Buriko save filename exceeds native scratch');
     result.set(first.subarray(0, -1));

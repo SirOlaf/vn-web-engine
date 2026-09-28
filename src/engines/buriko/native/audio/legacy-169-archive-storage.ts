@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../../bp/memory.js';
 import {BurikoNativeFile} from '../native-file.js';
 import type {BurikoProgramFiles} from '../program-files.js';
 import type {BurikoLiveAudioStorage} from './live-storage.js';
@@ -39,7 +39,7 @@ class Legacy169PackFile {
     try {
       const header = new Uint8Array(16);
       if (
-        (await file.read({bytes: header, offset: 0}, 16)) !== 16 ||
+        (await file.read(hostPointer(header), 16)) !== 16 ||
         signature.some((byte, offset) => header[offset] !== byte)
       )
         return false;
@@ -49,7 +49,7 @@ class Legacy169PackFile {
       this.index = new Uint8Array(byteLength);
       this.initialized = new Uint8Array(byteLength);
       // The native reader ignores this count. Unwritten bytes remain indeterminate.
-      await file.read({bytes: this.index, offset: 0}, byteLength, this.initialized);
+      await file.read(hostPointer(this.index), byteLength, this.initialized);
       for (let entry = 0; entry < this.count; entry++)
         for (let offset = entry * 32; this.byte(offset) !== 0; offset++)
           this.index[offset] = lower(this.byte(offset));

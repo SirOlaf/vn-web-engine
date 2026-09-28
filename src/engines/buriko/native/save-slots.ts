@@ -1,5 +1,5 @@
 import {randomByteGenerator} from '../../../formats/buriko/binary.js';
-import {pointerView, type BurikoBpMemory, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpMemory, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoProgramResources} from './program-resources.js';
 import {BurikoResourceFileServices} from './resource-file-services.js';
 import {BurikoUndefinedResourceRead} from './resource-memory.js';
@@ -121,7 +121,7 @@ export class BurikoSaveSlots {
     }
     const path = this.path(slot);
     return Number(
-      (await this.output.write({bytes: path, offset: 0}, {bytes, offset: 0}, bytes.length)) ===
+      (await this.output.write(hostPointer(path), hostPointer(bytes), bytes.length)) ===
         bytes.length,
     );
   }

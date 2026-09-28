@@ -40,7 +40,7 @@ export async function decodeBurikoResourcePointer(
   const read = (offset: number): number => {
     if (source === null)
       throw new BurikoUndefinedResourceRead('Buriko resource reads a null source');
-    return pointerView({bytes: source.bytes, offset: source.offset + offset}, 1).getUint8(0);
+    return pointerView(source.add(offset), 1).getUint8(0);
   };
   const matches = (magic: string): boolean => {
     for (let index = 0; index < magic.length; index++)
@@ -53,11 +53,11 @@ export async function decodeBurikoResourcePointer(
   else if (matches('CompressedBG___\0')) format = 'cbg-legacy';
   else format = 'raw';
   return decodeBurikoResource(
-    source!.bytes.subarray(source!.offset),
+    source!.view().subarray(source!.offset),
     mainProcessing,
     0,
     0,
-    destination === null ? null : {bytes: destination.bytes.subarray(destination.offset)},
+    destination === null ? null : {bytes: destination.view().subarray(destination.offset)},
     {format, rawLength: inputLength >>> 0},
     actor,
     beforeResume,

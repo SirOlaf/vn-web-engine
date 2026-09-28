@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoNativeFonts} from './fonts.js';
 import {BurikoNativeDisplayState, type BurikoNativeRectangle} from './display-state.js';
 import {burikoWideCharacter} from './font-raster.js';
@@ -63,7 +63,7 @@ export class BurikoInlineTextState {
     if (source === null) throw new Error('Buriko inline text initial string dereferences NULL');
     // The next global after this raw buffer is the visibility word; continuing past
     // the buffer corrupts native control globals rather than extending the string.
-    copyText({bytes: this.initial, offset: 0}, source);
+    copyText(hostPointer(this.initial), source);
   }
 
   /** Only WM_CHAR enters this filter; WM_PASTE/direct text replacement does not. */

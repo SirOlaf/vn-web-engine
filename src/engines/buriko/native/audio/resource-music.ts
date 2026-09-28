@@ -1,3 +1,4 @@
+import {hostPointer} from '../../bp/memory.js';
 import type {BurikoProgramResources} from '../program-resources.js';
 import {textBytes} from '../text.js';
 import type {BurikoAudioResourceStreams} from './resource-streams.js';
@@ -36,7 +37,7 @@ export function formatBurikoAudioNames(
     if (format[index] === 37 && format[index + 1] === 115) {
       const name = names[next++];
       if (name === undefined) throw new Error('Buriko audio diagnostic is missing native argument');
-      for (const byte of textBytes({bytes: name, offset: 0})) {
+      for (const byte of textBytes(hostPointer(name))) {
         output.push(byte);
         if (output.length >= capacity)
           throw new RangeError('Buriko audio diagnostic exceeds native stack');
@@ -64,8 +65,8 @@ export class BurikoAudioMusicResources {
   }
   private wide(bytes: Uint8Array): string {
     if (this.streams.abi.compatibility === '1.69')
-      return this.resources.files.text.decodeCp932(textBytes({bytes, offset: 0}));
-    return this.resources.files.text.decodeAuto({bytes, offset: 0});
+      return this.resources.files.text.decodeCp932(textBytes(hostPointer(bytes)));
+    return this.resources.files.text.decodeAuto(hostPointer(bytes));
   }
   private async stop(index: number, actor: object): Promise<void> {
     await this.engine(actor, async () => {

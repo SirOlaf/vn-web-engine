@@ -1,10 +1,10 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {runCooperativeTask, type CooperativeTask} from '../../../core/cooperative-task.js';
 import {decodeBurikoSdcSteps, encodeBurikoSdcSteps} from './sdc.js';
 import {encodeBurikoDcfsSteps} from './dcfs.js';
 import type {BurikoStructCodecScratch} from './struct-codec-scratch.js';
 import type {BurikoEngineErrors} from './engine-errors.js';
-import {codecView, type BurikoCodecPointer} from './codec-storage.js';
+import {codecPrivatePointer, codecView, type BurikoCodecPointer} from './codec-storage.js';
 import {decodeBurikoResourcePointer} from './resource-decode.js';
 import type {BurikoDistributedProcessing} from './distributed-processing.js';
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
@@ -129,7 +129,7 @@ export class BurikoDataCodecWorkers {
         let output: BurikoCodecPointer | null = worker.destination;
         if (output === null) {
           const extent = codecView(worker.source, 24, 4).getUint32(0, true);
-          output = {bytes: new Uint8Array(extent), offset: 0, initialized: new Uint8Array(extent)};
+          output = codecPrivatePointer(new Uint8Array(extent), new Uint8Array(extent));
           worker.destination = output;
           worker.initialized = output.initialized;
         }
@@ -150,7 +150,7 @@ export class BurikoDataCodecWorkers {
           if (decoded.bytes === null)
             throw new Error('Buriko successful data decode has no output');
           if (worker.destination === null) {
-            worker.destination = {bytes: decoded.bytes, offset: 0};
+            worker.destination = hostPointer(decoded.bytes);
             worker.initialized = decoded.initialized;
           }
           worker.result = decoded.bytes.length >>> 0;

@@ -4,7 +4,7 @@ import {BurikoDiagnosticDialogs} from './modal.js';
 import {BurikoNativeText} from './text.js';
 import {terminatedNativeBytes} from './program-files.js';
 import type {BurikoNativeDisplayState} from './display-state.js';
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 
 /** Exact display-device queries used by 1400b34f0; implemented by Buriko's device manager. */
 export interface BurikoModalDisplayDevice {
@@ -129,14 +129,12 @@ export class BurikoEngineDialogs {
       // f8e00's narrow replacement runs on UTF-8: the ASCII sequence backslash+n becomes LF.
       if (message === null) throw new Error('Buriko engine modal dereferences a null message');
       const source =
-        message instanceof Uint8Array
-          ? {bytes: terminatedNativeBytes(message), offset: 0}
-          : message;
+        message instanceof Uint8Array ? hostPointer(terminatedNativeBytes(message)) : message;
       const content = this.text.decodeMixed(source).replace(/\\n/g, '\n');
       const captionSource = title ?? this.preferredTitle ?? this.fallbackTitle;
       const caption = this.text.decodeAuto(
         captionSource instanceof Uint8Array
-          ? {bytes: terminatedNativeBytes(captionSource), offset: 0}
+          ? hostPointer(terminatedNativeBytes(captionSource))
           : captionSource,
       );
       const buttonKind = flags & 15;

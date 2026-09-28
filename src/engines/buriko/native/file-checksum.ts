@@ -1,5 +1,5 @@
 import {FileError} from '../../../platform/filesystem.js';
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoProgramResources} from './program-resources.js';
 import {updateNativeChecksum} from './group-81-hash.js';
 import {textByte, textBytes} from './text.js';
@@ -11,8 +11,9 @@ export class BurikoFileChecksum {
   constructor(readonly resources: BurikoProgramResources) {}
   async calculate(output: BurikoBpPointer | null, name: BurikoBpPointer | null): Promise<0 | 1> {
     if (name === null) throw new RangeError('Buriko file checksum consumed a null filename');
+    const nameBytes = name.view();
     const qualified =
-        textByte(name.bytes, name.offset) === 92 || textByte(name.bytes, name.offset + 1) === 58,
+        textByte(nameBytes, name.offset) === 92 || textByte(nameBytes, name.offset + 1) === 58,
       original = textBytes(name, true),
       files = this.resources.files;
     assertBurikoPathDomain(files.text.decodeAuto(name));
@@ -47,7 +48,7 @@ export class BurikoFileChecksum {
       cursor += bytes.length;
       let written = 0;
       while (written < requested && initialized[written] !== 0) written++;
-      updateNativeChecksum(output, {bytes: scratch, offset: 0}, written);
+      updateNativeChecksum(output, hostPointer(scratch), written);
       if (written !== requested)
         throw new BurikoUndefinedResourceRead(
           'Buriko file checksum consumes unwritten retained scratch',

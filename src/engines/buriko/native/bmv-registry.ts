@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoDisplayCriticalSection} from './display-critical-section.js';
 import type {BurikoDistributedAllocator} from './distributed-processing.js';
 import {terminatedNativeBytes} from './program-files.js';
@@ -76,14 +76,14 @@ export class BurikoBmvRegistry {
     provenance: BurikoBmvProvenance | null = null,
   ): number {
     return this.lock.run(() => {
-      const signature = pointerView({bytes: source, offset: 0}, 16);
+      const signature = pointerView(hostPointer(source), 16);
       if (
         signature.getBigUint64(0, true) !== 0x6569766f4d5f4642n ||
         signature.getBigUint64(8, true) !== 0x005f5f5f5f5f5f5fn
       )
         return 0x80000002;
       count >>>= 0;
-      pointerView({bytes: source, offset: 0}, count);
+      pointerView(hostPointer(source), count);
       const bytes = source.slice(0, count),
         copied =
           provenance === null
@@ -102,14 +102,10 @@ export class BurikoBmvRegistry {
         throw new Error('Buriko BMV registration dereferences null handle output');
       pointerView(output, 4).setUint32(0, entry.id, true);
       for (const [index, offset] of [0x14, 0x18, 0x20, 0x24, 0x28].entries()) {
-        const value = pointerView({bytes, offset}, 4).getUint32(0, true);
+        const value = pointerView(hostPointer(bytes, offset), 4).getUint32(0, true);
         if (metadata === null)
           throw new Error('Buriko BMV registration dereferences null metadata output');
-        pointerView({bytes: metadata.bytes, offset: metadata.offset + index * 4}, 4).setUint32(
-          0,
-          value,
-          true,
-        );
+        pointerView(metadata.add(index * 4), 4).setUint32(0, value, true);
       }
       return 0;
     });

@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {nativeDisplayEasing} from '../bp/opcodes/native-math.js';
 import type {BurikoNativeClock} from './clock.js';
 import {burikoRosettaSseReciprocal} from './cpu-numerical-profile.js';
@@ -32,7 +32,7 @@ const f32 = Math.fround;
 const u64 = (n: bigint): bigint => BigInt.asUintN(64, n);
 function read(points: BurikoBpPointer | null, offset: number): number {
   if (points === null) throw new Error('Buriko IconEEx dereferences null motion points');
-  return pointerView({bytes: points.bytes, offset: points.offset + offset}, 4).getInt32(0, true);
+  return pointerView(points.add(offset), 4).getInt32(0, true);
 }
 function fraction(elapsed: number, duration: number): number {
   const total = f32(duration >>> 0),
@@ -100,7 +100,7 @@ export class BurikoIndependentIconEEx extends BurikoIndependentIconEx {
     for (let i = 0; i < count; i++)
       for (let axis = 0; axis < 3; axis++)
         view.setInt32(i * 16 + axis * 4, read(points, i * 16 + axis * 4) << 16, true);
-    const status = this.splines.initialize(spline, count, {bytes, offset: 0}, duration);
+    const status = this.splines.initialize(spline, count, hostPointer(bytes), duration);
     if (status === 2 || status === 3) {
       this.splines.remove(spline);
       return status === 2 ? 0x80000003 : 0x80000006;
@@ -210,7 +210,7 @@ export class BurikoIndependentIconEEx extends BurikoIndependentIconEx {
         ),
         product = Math.imul(motion.duration, easing) >>> 16,
         sampleTime = entering ? (motion.duration - product) >>> 0 : product,
-        status = this.splines.sample({bytes, offset: 0}, motion.spline, sampleTime);
+        status = this.splines.sample(hostPointer(bytes), motion.spline, sampleTime);
       if (status !== 0)
         for (let axis = 0; axis < 3; axis++) view.setInt32(axis * 4, motion.endpoint[axis]!, true);
       const start = entering ? motion.blendB : motion.blendA,

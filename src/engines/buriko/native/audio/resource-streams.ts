@@ -1,4 +1,5 @@
 import {BURIKO_BP_ABI_172, type BurikoBpAbi} from '../../bp/abi.js';
+import {hostPointer} from '../../bp/memory.js';
 import type {BurikoProgramFiles} from '../program-files.js';
 import {Buriko1665ArchiveFileStorage} from './1665-archive-storage.js';
 import {BurikoAudioArchiveCache} from './archive-cache.js';
@@ -351,8 +352,7 @@ export class BurikoAudioResourceStreams {
     try {
       const scratch = new Uint8Array(64),
         initialized = new Uint8Array(64);
-      const count =
-        (await input.readInto({bytes: scratch, offset: 0}, 64, actor, initialized)) >>> 0;
+      const count = (await input.readInto(hostPointer(scratch), 64, actor, initialized)) >>> 0;
       if (count < 64)
         throw new BurikoWaveBoxError(14, 'Buriko stream selector read a short header');
       for (let offset = 48; offset < 52; offset++)

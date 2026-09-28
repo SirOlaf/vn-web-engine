@@ -37,7 +37,7 @@ export class BurikoLegacy169Registration {
     try {
       const bytes = await opened.source.read(0, Math.min(opened.source.size, comapBytes));
       if (output !== null && bytes.length !== 0)
-        copyMemoryBytes(output.bytes, output.offset, bytes, 0, bytes.length);
+        copyMemoryBytes(output.view(), output.offset, bytes, 0, bytes.length);
       return {bytes, readLength: bytes.length};
     } catch (error) {
       if (error instanceof FileError || error instanceof DOMException)

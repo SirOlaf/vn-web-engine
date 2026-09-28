@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {allocateBurikoBitmap, type BurikoBitmap} from './bitmap.js';
 import {bitmapWrite8, bitmapWrite16, bitmapWrite32} from './bitmap-scalar.js';
 import {BurikoMonochromeFont} from './font-monochrome.js';
@@ -120,8 +120,9 @@ export class BurikoMonochromeSurfaceText {
     try {
       const source = args.source;
       if (source === null) throw new Error('Buriko mono text dereferences a null text pointer');
-      const text = this.surfaces.fonts.text,
-        mode = text.detectEncoding(source.bytes, source.offset, true),
+      const bytes = source.view(),
+        text = this.surfaces.fonts.text,
+        mode = text.detectEncoding(bytes, source.offset, true),
         prepared = new Uint8Array(textLength(source) + 1);
       let input = source.offset,
         output = 0;
@@ -130,20 +131,20 @@ export class BurikoMonochromeSurfaceText {
           throw new RangeError('Buriko mono preprocessing writes outside allocated string');
         prepared[output++] = value;
       };
-      while (textByte(source.bytes, input) !== 0) {
-        const first = textByte(source.bytes, input);
+      while (textByte(bytes, input) !== 0) {
+        const first = textByte(bytes, input);
         if (first < 0x20) {
           append(first);
           input += first === 3 ? 2 : 1;
         } else {
-          const length = text.readCharacter(source.bytes, input, mode).length;
+          const length = text.readCharacter(bytes, input, mode).length;
           if (length === 0) throw new Error('Buriko mono text byte walk does not advance');
-          for (let byte = 0; byte < length; byte++) append(textByte(source.bytes, input + byte));
+          for (let byte = 0; byte < length; byte++) append(textByte(bytes, input + byte));
           input += length;
         }
       }
       append(0);
-      const wide = text.decodeAuto({bytes: prepared, offset: 0}) + '\0';
+      const wide = text.decodeAuto(hostPointer(prepared)) + '\0';
       let wideAt = 0,
         x = args.x | 0,
         y = args.y | 0,
@@ -155,7 +156,7 @@ export class BurikoMonochromeSurfaceText {
         x = args.x | 0;
       };
       for (;;) {
-        const first = textByte(source.bytes, input);
+        const first = textByte(bytes, input);
         if (first === 0) break;
         let character = wide.charCodeAt(wideAt),
           units = 1;
@@ -171,7 +172,7 @@ export class BurikoMonochromeSurfaceText {
           }
         }
         if (first < 0x20) {
-          if (first === 3) percent = textByte(source.bytes, ++input);
+          if (first === 3) percent = textByte(bytes, ++input);
           else if (first === 4) wrapWidth = destination.width >>> 0;
           else if (first === 10) lineAdvance();
         } else {
@@ -190,7 +191,7 @@ export class BurikoMonochromeSurfaceText {
           x = (x + advance) | 0;
           metric = (metric + advance) | 0;
         }
-        const length = text.readCharacter(source.bytes, input, mode).length;
+        const length = text.readCharacter(bytes, input, mode).length;
         if (length === 0) throw new Error('Buriko mono text byte walk does not advance');
         input += length;
         wideAt += units;

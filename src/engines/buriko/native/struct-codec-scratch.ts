@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {BurikoAsyncCriticalSection} from './async-critical-section.js';
 import type {BurikoCodecPointer} from './codec-storage.js';
 
@@ -23,7 +24,7 @@ export class BurikoStructCodecScratch {
     const extent = Math.ceil(bytes / this.pageSize) * this.pageSize;
     if (bytes === 0 || extent > this.capacity) return null;
     try {
-      this.committed = {bytes: new Uint8Array(extent), offset: 0};
+      this.committed = hostPointer(new Uint8Array(extent));
     } catch (error) {
       if (error instanceof RangeError) return null;
       throw error;

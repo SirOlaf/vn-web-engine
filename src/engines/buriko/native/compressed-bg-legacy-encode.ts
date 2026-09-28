@@ -8,10 +8,8 @@ export class BurikoLegacyBgEncoder {
   constructor(readonly ticks: BurikoSystemTicks) {}
 
   encode(output: BurikoBpPointer, count: BurikoBpPointer, source: BurikoBpPointer): number {
-    const word = (offset: number): number =>
-        pointerView({bytes: source.bytes, offset: source.offset + offset}, 2).getUint16(0, true),
-      byte = (offset: number): number =>
-        pointerView({bytes: source.bytes, offset: source.offset + offset}, 1).getUint8(0);
+    const word = (offset: number): number => pointerView(source.add(offset), 2).getUint16(0, true),
+      byte = (offset: number): number => pointerView(source.add(offset), 1).getUint8(0);
     // BF970 consumes individual fields, not an eagerly validated packed payload.
     if (word(0) === 0 || word(2) === 0) return 0x80000001;
     const depth = word(4);
@@ -102,7 +100,7 @@ export class BurikoLegacyBgEncoder {
         );
     }
     const outputView = (offset: number, length: number): DataView =>
-        pointerView({bytes: output.bytes, offset: output.offset + offset}, length),
+        pointerView(output.add(offset), length),
       storeByte = (offset: number, value: number): void => outputView(offset, 1).setUint8(0, value);
     outputView(0, 8).setBigUint64(0, 0n, true);
     outputView(8, 8).setBigUint64(0, 0n, true);
@@ -110,7 +108,7 @@ export class BurikoLegacyBgEncoder {
       storeByte(i, char.charCodeAt(0));
     const header = new Uint8Array(
       pointerView(source, 16).buffer,
-      source.bytes.byteOffset + source.offset,
+      source.view().byteOffset + source.offset,
       16,
     ).slice();
     outputView(32, 4).setUint32(0, runLength, true);

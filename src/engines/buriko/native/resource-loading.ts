@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoProgramResources} from './program-resources.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {BurikoResourceRanges} from './resource-ranges.js';
@@ -157,7 +157,7 @@ export class BurikoResourceLoadingState {
       }
       const bytes = new Uint8Array(length);
       job.output.bytes = bytes;
-      destination = {bytes, offset: 0};
+      destination = hostPointer(bytes);
     }
     if (destination !== null) {
       const read = await this.ranges.read(destination, job.archive, job.name, job.offset, length);

@@ -16,7 +16,7 @@ function popArguments(h: BurikoBpOpcodeContext, count: number): number[] {
 }
 function readDword(pointer: BurikoBpPointer | null, index = 0): number {
   if (pointer === null) throw new Error('Buriko particle parameter pointer is null');
-  return pointerView({...pointer, offset: pointer.offset + index * 4}, 4).getInt32(0, true);
+  return pointerView(pointer.add(index * 4), 4).getInt32(0, true);
 }
 
 /** The twenty-four actual C0 particle slots, including native prevalidation and fatal selection. */

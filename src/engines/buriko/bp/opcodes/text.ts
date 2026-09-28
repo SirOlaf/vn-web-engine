@@ -9,7 +9,7 @@ import {
   writeText,
 } from '../../native/text.js';
 import {formatVmText} from '../../native/text-format.js';
-import type {BurikoBpPointer} from '../memory.js';
+import {hostPointer, type BurikoBpPointer} from '../memory.js';
 import {pop32, push32} from '../state.js';
 import {moveBytes} from './operands.js';
 
@@ -23,7 +23,7 @@ function nonnull(pointer: BurikoBpPointer | null): BurikoBpPointer {
 }
 
 function displaced(pointer: BurikoBpPointer, offset: number): BurikoBpPointer {
-  return {bytes: pointer.bytes, offset: pointer.offset + offset};
+  return pointer.add(offset);
 }
 
 /** 1400f80d0 keeps pointers live across writes; the search needle's original byte length advances input. */
@@ -36,12 +36,12 @@ function replaceText(
 ): number {
   const replacementBytes = text.convertEncoding(
     replacement,
-    text.detectEncoding(source.bytes, source.offset),
+    text.detectEncoding(source.view(), source.offset),
   );
-  const replacementPointer = {bytes: replacementBytes, offset: 0};
+  const replacementPointer = hostPointer(replacementBytes);
   const needleLength = textLength(needle),
     replacementLength = textLength(replacementPointer);
-  const mode = text.detectEncoding(source.bytes, source.offset);
+  const mode = text.detectEncoding(source.view(), source.offset);
   let count = 0;
   for (;;) {
     const found = text.find(source, needle, mode);
@@ -69,7 +69,7 @@ function wrapText(
   if (text.mode === 0) {
     // Native narrow sprintf writes the first %c before measuring its %s operand.
     writeText(destination, Uint8Array.of(character));
-    const input = source ?? {bytes: Uint8Array.of(40, 110, 117, 108, 108, 41, 0), offset: 0};
+    const input = source ?? hostPointer(Uint8Array.of(40, 110, 117, 108, 108, 41, 0));
     const length = textLength(input);
     const middle = displaced(destination, 1);
     // CRT string_output_adapter<char>::write_string at 14001b5b8 calls native memmove.
@@ -146,8 +146,8 @@ export function createTextOpcodes(
     },
     0x6c: (h) => {
       const source = nonnull(popPointer(h)),
-        mode = text.detectEncoding(source.bytes, source.offset);
-      const character = text.readCharacter(source.bytes, source.offset, mode);
+        mode = text.detectEncoding(source.view(), source.offset);
+      const character = text.readCharacter(source.view(), source.offset, mode);
       push32(h.thread, character.length);
       push32(h.thread, character.value);
       push32(h.thread, character.fullWidth);

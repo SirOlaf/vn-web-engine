@@ -1,5 +1,5 @@
 import {FileError} from '../../../platform/filesystem.js';
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoMountedFileMetadata} from './file-metadata.js';
 import type {BurikoProgramFiles} from './program-files.js';
 import type {BurikoSpecialFolders} from './special-folders.js';
@@ -20,7 +20,7 @@ export class BurikoInstallerShortcutCleanup {
   }
 
   private async folder(selector: 1 | 2): Promise<string> {
-    const scratch: BurikoBpPointer = {bytes: new Uint8Array(784), offset: 0};
+    const scratch: BurikoBpPointer = hostPointer(new Uint8Array(784));
     if ((await this.folders.query(scratch, selector)) === 0)
       throw new Error('Buriko shortcut cleanup consumes an unwritten special-folder path');
     return this.files.text.decodeAuto(scratch);

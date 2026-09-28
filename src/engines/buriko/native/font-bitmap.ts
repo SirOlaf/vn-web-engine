@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {
   allocateBurikoBitmap,
   fillBurikoBitmap16,
@@ -239,13 +239,14 @@ export class BurikoBitmapText {
       for (let index = 0; index < length; index++) {
         if (source === null)
           throw new Error('Buriko hexadecimal font drawing dereferences a null source');
-        bytes += textByte(source.bytes, offset++).toString(16).toUpperCase().padStart(2, '0') + ' ';
+        bytes +=
+          textByte(source.view(), offset++).toString(16).toUpperCase().padStart(2, '0') + ' ';
       }
       const row = new TextEncoder().encode(
         (firstByte >>> 0).toString(16).toUpperCase().padStart(4, '0') + ' : ' + bytes + '\0',
       );
       const output = {value: 0};
-      this.draw(line, output, 0, 0, {bytes: row, offset: 0}, fontId, color, 0, 0, 0, 0);
+      this.draw(line, output, 0, 0, hostPointer(row), fontId, color, 0, 0, 0, 0);
       this.compositor.draw(destination, x, y, line, 0x80, 0);
       y = (y + font.size) | 0;
       firstByte = (firstByte + 16) | 0;

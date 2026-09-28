@@ -122,7 +122,7 @@ export class BurikoExtendedTextDisplayProcess extends BurikoTextDisplayProcess {
       }
       this.nodes = built.nodes;
       if (
-        textByte(source.bytes, source.offset) !== 0 &&
+        textByte(source.view(), source.offset) !== 0 &&
         (cursor.y !== originalY || maximum.value >>> 0 > originalExtent >>> 0)
       )
         runAsActor(() => this.window.setLineExtent(maximum.value));

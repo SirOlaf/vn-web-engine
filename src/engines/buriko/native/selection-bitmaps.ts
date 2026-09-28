@@ -13,7 +13,7 @@ export function drawBurikoSelectionBitmaps(
     manager = window.windowState.manager;
   for (let index = 0; index < count; index++) {
     if (records === null) throw new Error('Buriko bitmap selection reads null records');
-    const record = {bytes: records.bytes, offset: records.offset + index * 16},
+    const record = records.add(index * 16),
       source = manager.surfaces.snapshot(pointerView(record, 12).getInt32(8, true));
     if (source === null) continue;
     const y = pointerView(record, 8).getInt32(4, true),

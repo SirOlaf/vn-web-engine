@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {textBytes} from './text.js';
 import {BurikoNativeText} from './text.js';
 import type {
@@ -29,7 +29,7 @@ export class BurikoFileAssociations {
   ) {}
 
   private decode(bytes: Uint8Array): string {
-    return this.text.decodeAuto({bytes, offset: 0});
+    return this.text.decodeAuto(hostPointer(bytes));
   }
 
   private async create(

@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {push32} from '../bp/state.js';
 import {validateBurikoBmvHeader} from './bmv-frame.js';
 import type {BurikoBmvRegistry} from './bmv-registry.js';
@@ -50,7 +50,7 @@ export class BurikoBmvHeaderLoadProcess extends BurikoProcedure {
     if (this.stage === 1) {
       this.loading.enqueue(
         null,
-        {bytes: this.header, offset: 0},
+        hostPointer(this.header),
         this.result,
         null,
         this.archive,
@@ -68,7 +68,7 @@ export class BurikoBmvHeaderLoadProcess extends BurikoProcedure {
         this.extension = new Uint8Array(length);
         this.loading.enqueue(
           null,
-          {bytes: this.extension, offset: 0},
+          hostPointer(this.extension),
           this.result,
           null,
           this.archive,

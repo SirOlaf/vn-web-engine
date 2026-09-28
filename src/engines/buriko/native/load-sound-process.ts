@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoAudioLoaderQueues} from './audio/loader-queues.js';
 import {formatBurikoAudioNames} from './audio/resource-music.js';
 import type {BurikoNativeClock} from './clock.js';
@@ -102,7 +102,7 @@ export class BurikoLoadSoundProcess extends BurikoLoadProcedure {
       this.queues.enqueueStatic(
         this.staticResult,
         this.channel,
-        bytes === null ? null : {bytes, offset: 0},
+        bytes === null ? null : hostPointer(bytes),
         this.fade,
         this.gain,
         this.speed,

@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {listThreadModules} from '../bp/modules.js';
 import type {BurikoBpThread} from '../bp/state.js';
 import {writeText} from './text.js';
@@ -14,9 +15,9 @@ export function formatBurikoModuleList(thread: BurikoBpThread): Uint8Array {
     const suffix = new TextEncoder().encode(
       ` - $${(module.base >>> 0).toString(16).toUpperCase().padStart(6, '0')}\n\0`,
     );
-    writeText({bytes: output, offset}, module.name);
+    writeText(hostPointer(output, offset), module.name);
     offset += module.name.length;
-    writeText({bytes: output, offset}, suffix);
+    writeText(hostPointer(output, offset), suffix);
     offset += suffix.length - 1;
   }
   // With zero modules native operator_new(0) leaves no initialized string; a later read must fault.
@@ -36,14 +37,9 @@ export function createGroupE0Modules(
       name: 'ShowThreadModuleList',
       execute: async (h): Promise<0> => {
         const bytes = formatBurikoModuleList(h.thread),
-          output = {bytes, offset: 0};
+          output = hostPointer(bytes);
         const prompt = new TextEncoder().encode(`Thread [ ${h.thread.id | 0} ]\0`);
-        await selection.select(
-          output,
-          {bytes: engineCaption, offset: 0},
-          {bytes: prompt, offset: 0},
-          output,
-        );
+        await selection.select(output, hostPointer(engineCaption), hostPointer(prompt), output);
         return 0;
       },
     },

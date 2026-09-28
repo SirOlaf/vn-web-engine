@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpMemory, type BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer, pointerView, type BurikoBpMemory} from '../bp/memory.js';
 import {copyMemoryBytes} from '../../../core/indeterminate-memory.js';
 import {burikoWindowCenteredPosition, burikoWindowPositionAllowed} from './browser-main-window.js';
 import type {BurikoDisplayAdapters} from './display-adapters.js';
@@ -12,7 +12,7 @@ import {textLength} from './text.js';
 
 const reserved = 0x80000000;
 const gdbName = new TextEncoder().encode('BGI.gdb\0');
-const pointer = (bytes: Uint8Array, offset = 0): BurikoBpPointer => ({bytes, offset});
+const pointer = (bytes: Uint8Array, offset = 0): BurikoBpPointer => hostPointer(bytes, offset);
 function copy(target: BurikoBpPointer, source: BurikoBpPointer, length: number): void {
   const input = pointerView(source, length),
     output = pointerView(target, length);
@@ -127,7 +127,7 @@ export class BurikoPersistence {
       if (view.getUint32(16, true) !== decoded.length) return {status: 0x80000002, position: null};
       const position = this.position(view.getInt32(20, true), view.getInt32(24, true)),
         firstSize = view.getUint32(28, true);
-      copy(pointer(this.memory.globalMemory), at(32), firstSize);
+      copy(new BurikoBpPointer(this.memory.globalRegion, 0), at(32), firstSize);
       let offset = 32 + firstSize;
       const secondSize = view.getUint32(offset, true);
       offset += 4;
@@ -147,7 +147,7 @@ export class BurikoPersistence {
       view.getUint32(0x60420, true) > 0 &&
       view.getUint32(0x60424, true) === 0;
     const position = this.position(view.getInt32(0, true), view.getInt32(4, true));
-    copy(pointer(this.memory.globalMemory), at(8), 0x400);
+    copy(new BurikoBpPointer(this.memory.globalRegion, 0), at(8), 0x400);
     copy(pointer(this.persistent.bytes), at(0x408), 0x40000);
     this.persistent.bytes.fill(0, 0x40000);
     this.strings.replace(reserved, 0, null);
@@ -182,7 +182,7 @@ export class BurikoPersistence {
     view.setInt32(20, x, true);
     view.setInt32(24, y, true);
     view.setUint32(28, 0x400, true);
-    copy(pointer(bytes, 32), pointer(this.memory.globalMemory), 0x400);
+    copy(pointer(bytes, 32), new BurikoBpPointer(this.memory.globalRegion, 0), 0x400);
     view.setUint32(0x420, 0x100000, true);
     copy(pointer(bytes, 0x424), pointer(this.persistent.bytes), 0x100000);
     view.setUint32(0x100424, this.strings.count(reserved), true);

@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoBitmapStorage} from './bitmap.js';
 import {textBytes} from './text.js';
 import {
@@ -200,8 +200,8 @@ export class BurikoBrowserSurfaceMovieFactory {
     const nameBytes = textBytes(name, true).slice();
     const archiveBytes = archive === null ? null : textBytes(archive, true).slice();
     const selectedSource = await this.graph.movieSources.locate(
-      archiveBytes === null ? null : {bytes: archiveBytes, offset: 0},
-      {bytes: nameBytes, offset: 0},
+      archiveBytes === null ? null : hostPointer(archiveBytes),
+      hostPointer(nameBytes),
     );
     this.check(generation, signal);
     if (selectedSource === null)

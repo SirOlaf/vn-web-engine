@@ -1,3 +1,4 @@
+import {hostPointer} from '../../bp/memory.js';
 import type {BurikoLiveAudioStorage} from './live-storage.js';
 import {BurikoWaveBoxError} from './wavebox-header.js';
 import {
@@ -173,7 +174,7 @@ class LiveSource implements WaveSource {
     if (offset < 0 || offset + count > buffer.bytes.length)
       throw new RangeError('Buriko WaveBox stream read exceeds native allocation');
     return this.storage
-      .readInto({bytes: buffer.bytes, offset}, count, actor, buffer.defined)
+      .readInto(hostPointer(buffer.bytes, offset), count, actor, buffer.defined)
       .then((value) => value >>> 0);
   }
   dispose(): BurikoWaveEffect<void> {
@@ -588,7 +589,7 @@ export async function createBurikoLiveCustomWaveBoxDecoder(
     //118B30 initializes every header QWORD; the second native read ignores its count.
     const raw = new Uint8Array(64),
       defined = new Uint8Array(64).fill(1);
-    await storage.readInto({bytes: raw, offset: 0}, 64, actor, defined);
+    await storage.readInto(hostPointer(raw), 64, actor, defined);
     const view = new DataView(raw.buffer);
     requireBurikoWaveHeaderBytes(defined, 4, 4);
     if (view.getUint32(4, true) !== 0x20207762)

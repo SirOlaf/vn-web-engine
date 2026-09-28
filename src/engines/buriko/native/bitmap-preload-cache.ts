@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {BurikoNativeText} from './text.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {codecView, type BurikoCodecPointer} from './codec-storage.js';
@@ -21,7 +22,7 @@ export class BurikoBitmapPreloadCache {
     const result = terminatedNativeBytes(bytes).slice();
     if (result.length > 784)
       throw new RangeError('Buriko preload name exceeds native lookup scratch');
-    this.text.lowercase({bytes: result, offset: 0});
+    this.text.lowercase(hostPointer(result));
     return result;
   }
 
@@ -62,7 +63,7 @@ export class BurikoBitmapPreloadCache {
 
   /** 09AF20 retains the old payload on duplicate names and prepends only new records. */
   insert(archive: Uint8Array | null, name: Uint8Array, bytes: Uint8Array): 0 | 1 {
-    return this.insertPointer(archive, name, {bytes, offset: 0}, bytes.length);
+    return this.insertPointer(archive, name, hostPointer(bytes), bytes.length);
   }
 
   /** Duplicate lookup precedes all payload consumption, including validity checks. */
@@ -83,7 +84,7 @@ export class BurikoBitmapPreloadCache {
       bytes:
         count === 0
           ? new Uint8Array(0)
-          : source!.bytes.slice(source!.offset, source!.offset + count),
+          : source!.view().slice(source!.offset, source!.offset + count),
     });
     return 1;
   }

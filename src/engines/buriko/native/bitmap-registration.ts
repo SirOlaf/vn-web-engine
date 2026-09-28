@@ -25,7 +25,7 @@ export class BurikoBitmapRegistration {
     return importBurikoPackedBitmap(
       this.surfaces,
       index,
-      source.bytes.subarray(source.offset),
+      source.view().subarray(source.offset),
       source.initialized?.subarray(source.offset),
     );
   }
@@ -40,7 +40,7 @@ export class BurikoBitmapRegistration {
     if (source === null) throw new Error('Buriko preload reads a null bitmap header');
     if (
       burikoPackedBitmapFormat(
-        source.bytes.subarray(source.offset),
+        source.view().subarray(source.offset),
         source.initialized?.subarray(source.offset),
       ) === -1
     )
@@ -59,7 +59,7 @@ export class BurikoBitmapRegistration {
   ): 0 | 1 {
     if (
       burikoPackedBitmapFormat(
-        source.bytes.subarray(source.offset),
+        source.view().subarray(source.offset),
         source.initialized?.subarray(source.offset),
       ) === -1
     )

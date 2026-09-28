@@ -16,7 +16,8 @@ export const writeWatchOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> 
       return 0;
     }
     if (namePointer === null) throw new Error('Buriko write-watch name is null');
-    const end = namePointer.bytes.indexOf(0, namePointer.offset);
+    const nameBytes = namePointer.view();
+    const end = nameBytes.indexOf(0, namePointer.offset);
     if (end < 0) throw new RangeError('Unterminated Buriko write-watch name');
     push32(
       thread,
@@ -25,7 +26,7 @@ export const writeWatchOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> 
           thread,
           address,
           size,
-          namePointer.bytes.subarray(namePointer.offset, end),
+          nameBytes.subarray(namePointer.offset, end),
         ),
       ),
     );

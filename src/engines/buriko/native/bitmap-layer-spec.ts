@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import {BurikoNativeText} from './text.js';
 import {terminatedNativeBytes} from './program-files.js';
 
@@ -19,7 +20,7 @@ function split(
   first: number,
   second = 0,
 ): number | null {
-  const pointer = {bytes, offset};
+  const pointer = hostPointer(bytes, offset);
   const a = text.findCharacter(pointer, first),
     b = second === 0 ? null : text.findCharacter(pointer, second);
   const found = a === null ? b : b === null ? a : Math.min(a, b);
@@ -39,7 +40,7 @@ function number(
   cursor.offset = split(text, bytes, start, 44, 62);
   const end = bytes.indexOf(0, start),
     token = bytes.slice(start, end + 1);
-  text.lowercase({bytes: token, offset: 0});
+  text.lowercase(hostPointer(token));
   let at = 0;
   while (token[at] === 32) at++;
   const negative = token[at] === 45 && token[at + 1] === 0;

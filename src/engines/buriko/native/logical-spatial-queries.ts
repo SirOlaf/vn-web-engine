@@ -8,7 +8,7 @@ const f32 = Math.fround;
 
 function word(output: BurikoBpPointer | null, offset: number, value: number): void {
   if (output === null) throw new Error('Buriko logical-space null query output');
-  pointerView({bytes: output.bytes, offset: output.offset + offset}, 4).setUint32(0, value, true);
+  pointerView(output.add(offset), 4).setUint32(0, value, true);
 }
 
 function position(record: BurikoLogicalSpatialRecord): number[] {
@@ -31,7 +31,7 @@ function relativeVector(source: readonly number[], target: readonly number[]): n
 function vectorOutput(output: BurikoBpPointer | null, offset: number, values: number[]): void {
   const fixed = values.map(fixedResult);
   if (output === null) throw new Error('Buriko logical-space null query output');
-  const view = pointerView({bytes: output.bytes, offset: output.offset + offset}, 16);
+  const view = pointerView(output.add(offset), 16);
   for (let lane = 0; lane < 4; lane++) view.setInt32(lane * 4, fixed[lane]!, true);
 }
 

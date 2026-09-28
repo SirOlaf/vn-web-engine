@@ -7,7 +7,7 @@ import {truncateSplineInteger} from './spline.js';
 
 function read(pointer: BurikoBpPointer | null, offset: number): number {
   if (pointer === null) throw new Error('Buriko grid evaluator null arithmetic operand');
-  return pointerView({bytes: pointer.bytes, offset: pointer.offset + offset}, 4).getInt32(0, true);
+  return pointerView(pointer.add(offset), 4).getInt32(0, true);
 }
 
 /** 1400a7710: type 2/100 intentionally leave the second output DWORD unchanged. */

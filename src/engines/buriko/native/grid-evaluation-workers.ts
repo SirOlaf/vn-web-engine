@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {
   BurikoDistributedAllocator,
   BurikoDistributedProcessing,
@@ -195,9 +195,9 @@ export class BurikoGridEvaluationWorkers {
       if (job === null) throw new Error('Buriko evaluator worker has no native job record');
       let status: number;
       if (job.type === 0)
-        status = thread.evaluator.initialize(job.grid, job.count, {bytes: job.bytes, offset: 0});
+        status = thread.evaluator.initialize(job.grid, job.count, hostPointer(job.bytes));
       else if (job.type === 1)
-        status = thread.evaluator.update(job.index, {bytes: job.bytes, offset: 0}, job.recompute);
+        status = thread.evaluator.update(job.index, hostPointer(job.bytes), job.recompute);
       else status = thread.evaluator.evaluate(job.output, job.count, job.index, job.maximum);
       thread.status = burikoLogicalStatus(status);
       thread.job = null;

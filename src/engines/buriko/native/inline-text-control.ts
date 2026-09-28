@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoInlineTextState} from './inline-text-state.js';
 import {BurikoBrowserMainWindow} from './browser-main-window.js';
 import {BurikoNativeFonts} from './fonts.js';
@@ -296,7 +296,7 @@ export class BurikoInlineTextControl {
     );
     const charset = await this.fonts.charset(spec.font);
     const face = await this.fonts.browser.create({
-      face: this.fonts.text.decodeAuto({bytes: terminatedNativeBytes(spec.font), offset: 0}),
+      face: this.fonts.text.decodeAuto(hostPointer(terminatedNativeBytes(spec.font))),
       height: fontHeight | 0,
       width: fontWidth >>> 1,
       weight: 100,
@@ -314,7 +314,7 @@ export class BurikoInlineTextControl {
     element.style.transform = `scaleX(${face.horizontalScale})`;
     this.applyColor();
     this.state.limit = limit | 0;
-    this.setText(this.fonts.text.decodeAuto({bytes: this.state.initial, offset: 0}));
+    this.setText(this.fonts.text.decodeAuto(hostPointer(this.state.initial)));
     element.setSelectionRange(0, element.value.length);
     if (focus !== 0) element.focus();
     else this.host.focus();

@@ -203,8 +203,7 @@ export class BurikoLogicalSpatialManager {
     let copied = 0;
     for (const child of record.incoming[group]!) {
       if (child === -1) continue;
-      if (output !== null)
-        outputWord({bytes: output.bytes, offset: output.offset + copied * 4}, child);
+      if (output !== null) outputWord(output.add(copied * 4), child);
       copied++;
     }
     outputWord(count, copied);

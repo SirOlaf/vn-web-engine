@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer} from '../bp/memory.js';
 import {BurikoEngineDialogs} from './engine-dialogs.js';
 import {BurikoNativeText, textBytes, writeText} from './text.js';
 import {burikoWideCharacter} from './font-raster.js';
@@ -55,10 +55,10 @@ export class BurikoProductKeyDialog {
         if (position === null) prompts = [this.text.decodeAuto(prompt)];
         else {
           const first = new Uint8Array(position - prompt.offset + 1);
-          first.set(prompt.bytes.subarray(prompt.offset, position));
+          first.set(prompt.view().subarray(prompt.offset, position));
           prompts = [
-            this.text.decodeAuto({bytes: first, offset: 0}),
-            this.text.decodeAuto({bytes: prompt.bytes, offset: position + 1}),
+            this.text.decodeAuto(hostPointer(first)),
+            this.text.decodeAuto(new BurikoBpPointer(prompt.region, position + 1)),
           ];
         }
       }
@@ -101,12 +101,12 @@ export class BurikoProductKeyDialog {
               let offset = output.offset;
               for (const input of inputs) {
                 const encoded = this.text.encodeWide(input.value.slice(0, 32), 1);
-                writeText({bytes: output.bytes, offset}, encoded);
+                writeText(new BurikoBpPointer(output.region, offset), encoded);
                 offset += encoded.length - 1;
-                writeText({bytes: output.bytes, offset}, Uint8Array.of(45));
+                writeText(new BurikoBpPointer(output.region, offset), Uint8Array.of(45));
                 offset++;
               }
-              writeText({bytes: output.bytes, offset: offset - 1}, Uint8Array.of(0));
+              writeText(new BurikoBpPointer(output.region, offset - 1), Uint8Array.of(0));
             }
             dialog.close();
             dialog.remove();

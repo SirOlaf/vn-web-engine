@@ -1,11 +1,12 @@
 import type {WindowsInstallerDialogHost} from '../../../platform/windows-installer-dialogs.js';
 import type {WindowsTaskbarProgressHost} from '../../../platform/windows-taskbar-progress.js';
+import {hostPointer} from '../bp/memory.js';
 import type {BurikoBpThread} from '../bp/state.js';
 import type {BurikoEngineDialogs} from './engine-dialogs.js';
 import type {BurikoInstallationCall, BurikoInstallationService} from './installation.js';
 import {BURIKO_INSTALLER_TITLE} from './installer-dialogs.js';
 
-const quitKey = {bytes: new TextEncoder().encode('AREYOUSUREYOUWANTTOQUIT\0'), offset: 0};
+const quitKey = hostPointer(new TextEncoder().encode('AREYOUSUREYOUWANTTOQUIT\0'));
 
 /** C7640's progress dialog and ITaskbarList3 lifetime over the shared installer worker. */
 export class BurikoInstallerModal {
@@ -59,10 +60,9 @@ export class BurikoInstallerModal {
                   fileName:
                     progress.fileName === null
                       ? null
-                      : this.service.resources.files.text.decodeAuto({
-                          bytes: progress.fileName,
-                          offset: 0,
-                        }),
+                      : this.service.resources.files.text.decodeAuto(
+                          hostPointer(progress.fileName),
+                        ),
                 }),
               () => {
                 taskbarLease.current = this.taskbar.createTaskbarList3();

@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoProgramFiles} from './program-files.js';
 import {terminatedNativeBytes} from './program-files.js';
 
@@ -213,7 +213,7 @@ export class BurikoInternetReads {
     length: number,
   ): BurikoInternetReadRequest {
     return {
-      url: this.files.text.decodeAuto({bytes: terminatedNativeBytes(url), offset: 0}),
+      url: this.files.text.decodeAuto(hostPointer(terminatedNativeBytes(url))),
       userAgent: BURIKO_INTERNET_USER_AGENT,
       reload: true,
       destination,
@@ -251,7 +251,7 @@ export class BurikoInternetReads {
       );
     if (bytes.byteLength === 0 || request.destination === null) return 2;
     pointerView(request.destination, bytes.byteLength);
-    request.destination.bytes.set(bytes, request.destination.offset);
+    request.destination.view().set(bytes, request.destination.offset);
     return bytes.byteLength === request.length ? 0 : 3;
   }
 }

@@ -1,9 +1,9 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoBitmapLoading} from './bitmap-loading.js';
 import type {BurikoBitmapRegistration} from './bitmap-registration.js';
 import {burikoPackedBitmapFormat} from './bitmap-image.js';
 import {parseBurikoBitmapLayers} from './bitmap-layer-spec.js';
-import {codecView} from './codec-storage.js';
+import {codecPrivatePointer, codecView} from './codec-storage.js';
 import {copyText, textBytes, writeText} from './text.js';
 
 export class BurikoBitmapCacheServices {
@@ -26,12 +26,12 @@ export class BurikoBitmapCacheServices {
 
     const bytes = new Uint8Array(48),
       initialized = new Uint8Array(48),
-      read = await this.loading.resources.ranges.read({bytes, offset: 0}, archive, name, 0, 48);
+      read = await this.loading.resources.ranges.read(hostPointer(bytes), archive, name, 0, 48);
     if (read.result !== 0) return read.result === 2 || read.result === 3 ? 0x8000000d : 0xffffffff;
     if (read.size === null || read.size < 0 || read.size > 48)
       throw new Error('Buriko header range has no bounded initialized byte count');
     initialized.fill(1, 0, read.size);
-    const pointer = {bytes, offset: 0, initialized},
+    const pointer = codecPrivatePointer(bytes, initialized),
       word = (at: number) => codecView(pointer, at, 2).getUint16(0, true),
       signature = new TextEncoder().encode('CompressedBG___\0');
     let compressed = true;
@@ -73,7 +73,7 @@ export class BurikoBitmapCacheServices {
     const archiveBytes = archive === null ? null : textBytes(archive).slice();
     for (const layer of parsed.layers)
       if (!(await this.loading.resources.ranges.isAvailable(archiveBytes, layer.name))) {
-        if (output !== null) copyText(output, {bytes: layer.name, offset: 0});
+        if (output !== null) copyText(output, hostPointer(layer.name));
         return 0;
       }
     return 1;

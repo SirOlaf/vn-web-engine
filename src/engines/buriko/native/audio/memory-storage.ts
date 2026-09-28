@@ -20,7 +20,7 @@ export class BurikoMemoryAudioStorage implements BurikoLiveAudioStorage {
     if (
       !Number.isSafeInteger(pointer.offset) ||
       pointer.offset < 0 ||
-      pointer.offset + count > pointer.bytes.length
+      pointer.offset + count > pointer.view().length
     )
       throw new RangeError('Buriko memory audio copy crosses actual pointer backing');
   }
@@ -32,7 +32,7 @@ export class BurikoMemoryAudioStorage implements BurikoLiveAudioStorage {
     if (mask !== undefined && source.offset + length > mask.length)
       throw new RangeError('Buriko memory audio source mask is shorter than backing');
     const defined = mask?.slice(source.offset, source.offset + length);
-    this.bytes.set(source.bytes.slice(source.offset, source.offset + length), this.position);
+    this.bytes.set(source.view().slice(source.offset, source.offset + length), this.position);
     if (defined === undefined) this.initialized.fill(1, this.position, this.position + length);
     else this.initialized.set(defined, this.position);
     this.position += length;
@@ -52,7 +52,7 @@ export class BurikoMemoryAudioStorage implements BurikoLiveAudioStorage {
       throw new RangeError('Buriko memory audio destination mask is shorter than backing');
     const bytes = this.bytes.slice(this.position, this.position + length),
       defined = this.initialized.slice(this.position, this.position + length);
-    destination.bytes.set(bytes, destination.offset);
+    destination.view().set(bytes, destination.offset);
     if (mask !== undefined) mask.set(defined, destination.offset);
     else if (defined.includes(0))
       throw new Error('Buriko memory audio read needs initialized-byte ownership');

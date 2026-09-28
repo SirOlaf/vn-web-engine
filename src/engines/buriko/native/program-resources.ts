@@ -1,6 +1,6 @@
 import {FileError} from '../../../platform/filesystem.js';
 import type {BurikoBpModuleResourceSource} from './types.js';
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoProgramArchives, type BurikoArchiveResource} from './program-archives.js';
 import {BurikoProgramFiles, terminatedNativeBytes} from './program-files.js';
 import {BurikoEngineDialogs, BurikoNativeExit} from './engine-dialogs.js';
@@ -77,7 +77,7 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
     encoded[original.length] = 92;
     // The native sprintf always appends a slash, even to a caller's trailing slash.
     this.configuration.primaryRoot = encoded;
-    const decoded = this.files.text.decodeAuto({bytes: encoded, offset: 0});
+    const decoded = this.files.text.decodeAuto(hostPointer(encoded));
     if (decoded.length >= 784)
       throw new RangeError('Buriko primary root exceeds native wide buffer');
     this.configuration.nativeFileRoot = decoded;
@@ -85,7 +85,7 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
   }
 
   private convert(bytes: Uint8Array, mode: number): Uint8Array {
-    return this.files.text.convertEncoding({bytes: terminatedNativeBytes(bytes), offset: 0}, mode);
+    return this.files.text.convertEncoding(hostPointer(terminatedNativeBytes(bytes)), mode);
   }
 
   private concatenate(
@@ -94,8 +94,8 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
     separator: boolean,
     capacity: number,
   ): Uint8Array {
-    const a = textBytes({bytes: first, offset: 0});
-    const b = textBytes({bytes: second, offset: 0}, true);
+    const a = textBytes(hostPointer(first));
+    const b = textBytes(hostPointer(second), true);
     const length = a.length + Number(separator) + b.length;
     if (length > capacity)
       throw new RangeError('Buriko native resource path exceeds scratch storage');
@@ -200,7 +200,7 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
       for (const name of names) value = (value + name.length) >>> 0;
     } else {
       for (const name of names) {
-        writeText({bytes: packedNames.bytes, offset: packedNames.offset + value}, name);
+        writeText(packedNames.add(value), name);
         value = (value + name.length) >>> 0;
       }
       value = names.length >>> 0;
@@ -226,7 +226,7 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
     const list = new Uint8Array(Math.imul(names.length, 0x60) >>> 0);
     let offset = 0;
     for (const name of names) {
-      const bytes = textBytes({bytes: name, offset: 0});
+      const bytes = textBytes(hostPointer(name));
       if (offset + bytes.length + 2 > list.length)
         throw new RangeError('Buriko archive selection list exceeds its native allocation');
       list.set(bytes, offset);
@@ -234,7 +234,7 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
       list[offset++] = 10;
       list[offset] = 0;
     }
-    return (await selection.select(output, title, prompt, {bytes: list, offset: 0})) === 0
+    return (await selection.select(output, title, prompt, hostPointer(list))) === 0
       ? 0xffffffff
       : 0;
   }
@@ -258,9 +258,7 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
   private async retry(archive: BurikoArchiveName | null, name: Uint8Array): Promise<void> {
     // bd7d0 prepares its error text before bbc90 decides between a fatal error and a media dialog.
     const diagnosticArchive = archive === null ? null : archiveBytes(archive);
-    if (
-      textLength({bytes: terminatedNativeBytes(this.configuration.secondaryRoot), offset: 0}) === 0
-    ) {
+    if (textLength(hostPointer(terminatedNativeBytes(this.configuration.secondaryRoot))) === 0) {
       const resource = this.files.path(name);
       const item =
         diagnosticArchive === null
@@ -539,7 +537,7 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
     if (await this.archives.contains(path(config.primaryRoot), filename)) return 1;
     return Number(
       files.media.isAvailable(config.secondaryMediaPath) &&
-        (await this.archives.contains(path(config.secondaryRoot), filename)),
+        (await this.archives.contains(path(config.secondaryRoot), textBytes(pointer))),
     );
   }
 

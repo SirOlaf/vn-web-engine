@@ -1,8 +1,8 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer} from '../bp/memory.js';
 import {burikoCompareNamedBytes} from './named-value-map.js';
 import {BurikoNativeText, textByte, textBytes, textLength, writeText} from './text.js';
 
-const pointer = (bytes: Uint8Array): BurikoBpPointer => ({bytes, offset: 0});
+const pointer = (bytes: Uint8Array): BurikoBpPointer => hostPointer(bytes);
 const separator = pointer(Uint8Array.of(92, 0));
 const newline = pointer(Uint8Array.of(10, 0));
 
@@ -125,7 +125,7 @@ export class BurikoRubyAnnotations {
     source: BurikoBpPointer,
     includeWide = false,
   ): {key: Uint8Array; wide: string | null} | null {
-    const mode = this.text.detectEncoding(source.bytes, source.offset);
+    const mode = this.text.detectEncoding(source.view(), source.offset);
     for (let entry = this.head; entry !== null; entry = entry.next) {
       const found = this.text.find(source, pointer(entry.key), mode);
       if (found !== 0 || entry.used !== 0) continue;
@@ -190,24 +190,25 @@ export class BurikoRubyAnnotations {
   /** 078020 parses native key\\reading lines, detecting the source encoding once. */
   import(source: BurikoBpPointer | null): 0 | 1 {
     if (source === null) return 0;
-    const mode = this.text.detectEncoding(source.bytes, source.offset);
+    const bytes = source.view(),
+      mode = this.text.detectEncoding(bytes, source.offset);
     let offset = source.offset;
-    while (textByte(source.bytes, offset) !== 0) {
+    while (textByte(bytes, offset) !== 0) {
       const before = offset,
-        keyLength = this.text.find({bytes: source.bytes, offset}, separator, mode);
+        keyLength = this.text.find(new BurikoBpPointer(source.region, offset), separator, mode);
       if (keyLength !== null && keyLength > 0) {
         if (keyLength >= 256)
           throw new RangeError('Buriko ruby key exceeds its native scratch range');
         const key = new Uint8Array(keyLength + 1);
-        key.set(source.bytes.subarray(offset, offset + keyLength));
+        key.set(bytes.subarray(offset, offset + keyLength));
         offset += keyLength + 1;
-        const lineEnd = this.text.find({bytes: source.bytes, offset}, newline, mode),
-          readingLength = lineEnd ?? textLength({bytes: source.bytes, offset});
+        const lineEnd = this.text.find(new BurikoBpPointer(source.region, offset), newline, mode),
+          readingLength = lineEnd ?? textLength(new BurikoBpPointer(source.region, offset));
         if (readingLength > 0) {
           if (readingLength >= 256)
             throw new RangeError('Buriko ruby reading exceeds its native scratch range');
           const reading = new Uint8Array(readingLength + 1);
-          reading.set(source.bytes.subarray(offset, offset + readingLength));
+          reading.set(bytes.subarray(offset, offset + readingLength));
           offset += readingLength + Number(lineEnd !== null);
           this.add(pointer(key), pointer(reading));
         }
@@ -228,7 +229,7 @@ export class BurikoRubyAnnotations {
     while (textByte(normalized, offset) !== 0) {
       const character = this.text.readCharacter(normalized, offset, 1);
       if (skip < 1) {
-        const matched = this.matchPrefix({bytes: normalized, offset});
+        const matched = this.matchPrefix(hostPointer(normalized, offset));
         if (matched !== null) {
           count = (count + 1) | 0;
           const annotation = this.query(pointer(matched.key));
@@ -242,7 +243,7 @@ export class BurikoRubyAnnotations {
           line.set(reading, key.length + 1);
           line[line.length - 2] = 10;
           if (output === null) throw new Error('Buriko annotation collection writes through null');
-          writeText({bytes: output.bytes, offset: destination}, line);
+          writeText(new BurikoBpPointer(output.region, destination), line);
           destination += line.length - 1;
           skip = (burikoTextCodes(this.text, pointer(matched.key)) - 1) | 0;
         }

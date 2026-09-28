@@ -17,24 +17,18 @@ interface SettingsRecord {
 }
 
 function word(pointer: BurikoBpPointer, offset: number): number {
-  const at = pointer.offset + offset;
-  if (at < 0 || at + 4 > pointer.bytes.length)
+  const bytes = pointer.view(),
+    at = pointer.offset + offset;
+  if (at < 0 || at + 4 > bytes.length)
     throw new RangeError('Buriko settings read exceeds native input storage');
-  return new DataView(
-    pointer.bytes.buffer,
-    pointer.bytes.byteOffset,
-    pointer.bytes.byteLength,
-  ).getInt32(at, true);
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt32(at, true);
 }
 function writeWord(pointer: BurikoBpPointer, offset: number, value: number): void {
-  const at = pointer.offset + offset;
-  if (at < 0 || at + 4 > pointer.bytes.length)
+  const bytes = pointer.view(),
+    at = pointer.offset + offset;
+  if (at < 0 || at + 4 > bytes.length)
     throw new RangeError('Buriko settings write exceeds native output storage');
-  new DataView(pointer.bytes.buffer, pointer.bytes.byteOffset, pointer.bytes.byteLength).setInt32(
-    at,
-    value,
-    true,
-  );
+  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setInt32(at, value, true);
 }
 
 /** Native settings-dialog records, including 1400ae830's non-advancing tail pointer. */
@@ -179,14 +173,11 @@ export class BurikoModelessSettings {
     if (output !== null) {
       writeWord(output, 0, event.kind);
       writeWord(output, 4, event.value);
-      const at = output.offset + 8;
-      if (at < 0 || at + 8 > output.bytes.length)
+      const bytes = output.view(),
+        at = output.offset + 8;
+      if (at < 0 || at + 8 > bytes.length)
         throw new RangeError('Buriko settings next-pointer write exceeds native output storage');
-      new DataView(
-        output.bytes.buffer,
-        output.bytes.byteOffset,
-        output.bytes.byteLength,
-      ).setBigUint64(at, 0n, true);
+      new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setBigUint64(at, 0n, true);
     }
     record.head = event.next;
     event.alive = false;

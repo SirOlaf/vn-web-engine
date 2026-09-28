@@ -1,5 +1,6 @@
 import type {BurikoBpOpcodeContext, BurikoBpOpcodeHandler} from '../../native/types.js';
 import {pop32, popDeferred32, push32, validCodeAddress} from '../state.js';
+import {BurikoBpPointer} from '../memory.js';
 import {readU8, readU16, readU32, readTypedVarInt, readVarInt} from '../decode.js';
 import {
   accessSize,
@@ -55,7 +56,7 @@ export const memoryOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
     const destination = pointer(h, pop32(h.thread)),
       length = readU8(h.thread);
     if (validCodeAddress(h.thread, (h.thread.pc + length - 1) >>> 0)) {
-      moveBytes(destination, {bytes: h.thread.moduleMemory, offset: h.thread.pc}, length);
+      moveBytes(destination, new BurikoBpPointer(h.thread.moduleRegion, h.thread.pc), length);
       h.thread.pc = (h.thread.pc + length) >>> 0;
     }
     return 0;
@@ -159,8 +160,7 @@ export const memoryOpcodes: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
       count = pop32(h.thread),
       size = pop32(h.thread),
       destination = pointer(h, pop32(h.thread));
-    for (let i = 0; i < count; i++)
-      moveBytes({bytes: destination.bytes, offset: destination.offset + size * i}, source, size);
+    for (let i = 0; i < count; i++) moveBytes(destination.add(size * i), source, size);
     return 0;
   },
   0x65: (h) => {

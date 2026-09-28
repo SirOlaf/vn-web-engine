@@ -26,9 +26,10 @@ function requirePointer(value: BurikoBpPointer | null): BurikoBpPointer {
 
 function cString(value: BurikoBpPointer | null): Uint8Array | null {
   if (value === null) return null;
-  const end = value.bytes.indexOf(0, value.offset);
+  const bytes = value.view();
+  const end = bytes.indexOf(0, value.offset);
   if (value.offset < 0 || end < 0) throw new Error('Buriko ._bp unterminated byte string');
-  return value.bytes.subarray(value.offset, end);
+  return bytes.subarray(value.offset, end);
 }
 
 /** Each native wrapper recognizes its own explicit subset of the error space. */

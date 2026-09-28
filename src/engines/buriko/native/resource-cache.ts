@@ -1,7 +1,7 @@
 import {BurikoNativeText} from './text.js';
 import {terminatedNativeBytes} from './program-files.js';
 import {burikoCrtWideLower} from './crt-case.js';
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {codecView, type BurikoCodecPointer} from './codec-storage.js';
 
 interface CachedResource {
@@ -37,7 +37,7 @@ export class BurikoResourceCache {
   private key(bytes: Uint8Array | null): string | null {
     return bytes === null
       ? null
-      : burikoCrtWideLower(this.text.decodeAuto({bytes: terminatedNativeBytes(bytes), offset: 0}));
+      : burikoCrtWideLower(this.text.decodeAuto(hostPointer(terminatedNativeBytes(bytes))));
   }
 
   /** 08B260 promotes the first matching entry even for a size-only query. */
@@ -70,9 +70,9 @@ export class BurikoResourceCache {
     const size = bytes.length >>> 0;
     if (!this.enabled || size === 0 || size > this.limit >>> 1) return 0;
     return this.insertPointer(
-      archive === null ? null : {bytes: terminatedNativeBytes(archive), offset: 0},
-      name === null ? null : {bytes: terminatedNativeBytes(name), offset: 0},
-      {bytes, offset: 0},
+      archive === null ? null : hostPointer(terminatedNativeBytes(archive)),
+      name === null ? null : hostPointer(terminatedNativeBytes(name)),
+      hostPointer(bytes),
       bytes.length,
     );
   }
@@ -92,7 +92,7 @@ export class BurikoResourceCache {
     const entry = {
       archive: archiveKey,
       name: nameKey,
-      bytes: source!.bytes.slice(source!.offset, source!.offset + size),
+      bytes: source!.view().slice(source!.offset, source!.offset + size),
     };
     this.publish(entry, size);
     return 1;

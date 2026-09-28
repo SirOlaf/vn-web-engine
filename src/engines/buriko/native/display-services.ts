@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoDisplayController} from './display-controller.js';
 import type {BurikoNativeDisplayState} from './display-state.js';
 import {normalizeBurikoAsciiSpaces} from './byte-string-spaces.js';
@@ -10,7 +10,7 @@ export function readBurikoDisplayAdapter(
   description: BurikoBpPointer,
   version: BurikoBpPointer,
 ): void {
-  const bytes = normalizeBurikoAsciiSpaces({bytes: display.adapterIdentifier, offset: 0x200});
+  const bytes = normalizeBurikoAsciiSpaces(hostPointer(display.adapterIdentifier, 0x200));
   writeText(description, Uint8Array.of(...bytes, 0));
   const identifier = new DataView(
     display.adapterIdentifier.buffer,
@@ -18,11 +18,7 @@ export function readBurikoDisplayAdapter(
     display.adapterIdentifier.byteLength,
   );
   for (const [index, offset] of [0x426, 0x424, 0x422, 0x420].entries())
-    pointerView({bytes: version.bytes, offset: version.offset + index * 4}, 4).setUint32(
-      0,
-      identifier.getUint16(offset, true),
-      true,
-    );
+    pointerView(version.add(index * 4), 4).setUint32(0, identifier.getUint16(offset, true), true);
 }
 
 /** B2C70 writes client size and the preset latch before optionally rebuilding the windowed device. */

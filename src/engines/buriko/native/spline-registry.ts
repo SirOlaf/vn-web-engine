@@ -44,7 +44,7 @@ export class BurikoNativeSplines {
     entry.spline.clear();
     for (let index = 0; index < count; index++) {
       if (points === null) throw new Error('Buriko spline initialization dereferences null points');
-      const view = pointerView({bytes: points.bytes, offset: points.offset + index * 16}, 12);
+      const view = pointerView(points.add(index * 16), 12);
       // The fourth DWORD is padding; even excess points are read before the 100-point rejection.
       const z = view.getInt32(8, true),
         y = view.getInt32(4, true),

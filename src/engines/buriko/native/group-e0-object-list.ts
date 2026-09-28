@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import type {BurikoDisplayObject} from './display-object.js';
 import type {BurikoDisplayManager} from './display-manager.js';
 import type {BurikoSelectionDialog} from './selection-dialog.js';
@@ -35,7 +36,7 @@ export function formatBurikoObjectList(objects: readonly BurikoDisplayObject[]):
     const line = new TextEncoder().encode(
       `${label} - $${hex.toString(16).toUpperCase().padStart(8, '0')}( ${decimal} )\n\0`,
     );
-    writeText({bytes, offset}, line);
+    writeText(hostPointer(bytes, offset), line);
     offset += line.length - 1;
   }
   // A zero-object allocation has no published terminator; shared text consumption guards it.
@@ -55,10 +56,10 @@ export function createGroupE0ObjectList(
       execute: async (): Promise<0> => {
         const bytes = formatBurikoObjectList(manager.collectOrdinaryObjects());
         await selection.select(
-          {bytes: new Uint8Array(64), offset: 0},
-          {bytes: engineCaption, offset: 0},
-          {bytes: prompt, offset: 0},
-          {bytes, offset: 0},
+          hostPointer(new Uint8Array(64)),
+          hostPointer(engineCaption),
+          hostPointer(prompt),
+          hostPointer(bytes),
         );
         return 0;
       },

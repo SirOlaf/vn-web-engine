@@ -48,7 +48,7 @@ export function determinateTextEnd(bytes: Uint8Array, offset: number): number {
 }
 
 export function textLength(pointer: BurikoBpPointer): number {
-  const bytes = pointer.bytes,
+  const bytes = pointer.view(),
     end = determinateTextEnd(bytes, pointer.offset);
   if (end >= 0) return (end - pointer.offset) >>> 0;
   let length = 0;
@@ -57,32 +57,34 @@ export function textLength(pointer: BurikoBpPointer): number {
 }
 
 export function textBytes(pointer: BurikoBpPointer, includeTerminator = false): Uint8Array {
-  return pointer.bytes.subarray(
-    pointer.offset,
-    pointer.offset + textLength(pointer) + Number(includeTerminator),
-  );
+  return pointer
+    .view()
+    .subarray(pointer.offset, pointer.offset + textLength(pointer) + Number(includeTerminator));
 }
 
 /** Native strcpy copies forward one byte at a time, including on overlapping addresses. */
 export function copyText(destination: BurikoBpPointer, source: BurikoBpPointer): void {
+  const sourceBytes = source.view(),
+    destinationBytes = destination.view();
   let index = 0;
   for (;;) {
-    const value = textByte(source.bytes, source.offset + index);
-    if (destination.offset + index >= destination.bytes.length)
+    const value = textByte(sourceBytes, source.offset + index);
+    if (destination.offset + index >= destinationBytes.length)
       throw new RangeError('Buriko native text write outside backing storage');
-    destination.bytes[destination.offset + index] = value;
-    clearIndeterminateMemory(destination.bytes, destination.offset + index, 1);
+    destinationBytes[destination.offset + index] = value;
+    clearIndeterminateMemory(destinationBytes, destination.offset + index, 1);
     index++;
     if (value === 0) return;
   }
 }
 
 export function writeText(destination: BurikoBpPointer, bytes: Uint8Array): void {
-  if (destination.offset < 0 || destination.offset + bytes.length > destination.bytes.length)
+  const target = destination.view();
+  if (destination.offset < 0 || destination.offset + bytes.length > target.length)
     throw new RangeError('Buriko native text write outside backing storage');
   requireDeterminateMemory(bytes, 0, bytes.length);
-  destination.bytes.set(bytes, destination.offset);
-  clearIndeterminateMemory(destination.bytes, destination.offset, bytes.length);
+  target.set(bytes, destination.offset);
+  clearIndeterminateMemory(target, destination.offset, bytes.length);
 }
 
 /** 1400f8580 accepts 81..9f, e0..fc, and ff as a lead byte; it does not inspect the trail. */
@@ -244,7 +246,7 @@ export class BurikoNativeText {
   }
 
   decodeAuto(pointer: BurikoBpPointer): string {
-    const mode = this.detectEncoding(pointer.bytes, pointer.offset) === 0 ? 0 : 1;
+    const mode = this.detectEncoding(pointer.view(), pointer.offset) === 0 ? 0 : 1;
     return this.decodeBytes(textBytes(pointer), mode);
   }
 
@@ -376,13 +378,14 @@ export class BurikoNativeText {
 
   convertEncoding(pointer: BurikoBpPointer, mode: number): Uint8Array {
     if (mode !== 0 && mode !== 1) mode = this.mode;
-    const sourceMode = this.detectEncoding(pointer.bytes, pointer.offset);
+    const sourceMode = this.detectEncoding(pointer.view(), pointer.offset);
     if (sourceMode === 0x80000000 || sourceMode === mode) return textBytes(pointer, true).slice();
     return this.encodeWide(this.decodeAuto(pointer), mode);
   }
 
   find(source: BurikoBpPointer, needle: BurikoBpPointer, mode: number = -1): number | null {
-    if ((mode | 0) === -1) mode = this.detectEncoding(source.bytes, source.offset);
+    const sourceBytes = source.view();
+    if ((mode | 0) === -1) mode = this.detectEncoding(sourceBytes, source.offset);
     if (mode >>> 0 === 0x80000000) {
       const input = textBytes(source),
         search = textBytes(needle);
@@ -394,19 +397,20 @@ export class BurikoNativeText {
       return null;
     }
     if (mode !== 0 && mode !== 1) return null;
-    const search: number[] = [];
-    for (let offset = needle.offset; textByte(needle.bytes, offset) !== 0;) {
-      const character = this.readCharacter(needle.bytes, offset, mode);
+    const search: number[] = [],
+      needleBytes = needle.view();
+    for (let offset = needle.offset; textByte(needleBytes, offset) !== 0;) {
+      const character = this.readCharacter(needleBytes, offset, mode);
       search.push(character.value);
       offset += character.length;
     }
-    if (search.length === 0 && textByte(source.bytes, source.offset) !== 0) {
+    if (search.length === 0 && textByte(sourceBytes, source.offset) !== 0) {
       throw new RangeError('Buriko multibyte substring search reads an empty native allocation');
     }
     let matched = 0,
       start = 0;
-    for (let offset = source.offset; textByte(source.bytes, offset) !== 0;) {
-      const character = this.readCharacter(source.bytes, offset, mode);
+    for (let offset = source.offset; textByte(sourceBytes, offset) !== 0;) {
+      const character = this.readCharacter(sourceBytes, offset, mode);
       if (character.value === search[matched]) {
         if (matched === 0) start = offset;
         if (++matched === search.length) return start - source.offset;
@@ -418,19 +422,20 @@ export class BurikoNativeText {
 
   /** 1400f86e0 returns a native pointer offset, including the terminator when searching zero. */
   findCharacter(pointer: BurikoBpPointer, value: number, mode = -1): number | null {
-    if ((mode | 0) === -1) mode = this.detectEncoding(pointer.bytes, pointer.offset);
+    const bytes = pointer.view();
+    if ((mode | 0) === -1) mode = this.detectEncoding(bytes, pointer.offset);
     value >>>= 0;
     if (mode >>> 0 === 0x80000000) {
       for (let offset = pointer.offset; ; offset++) {
-        const byte = textByte(pointer.bytes, offset);
+        const byte = textByte(bytes, offset);
         if (byte === (value & 255)) return offset;
         if (byte === 0) return null;
       }
     }
     if (mode !== 0 && mode !== 1) return null;
     let offset = pointer.offset;
-    while (textByte(pointer.bytes, offset) !== 0) {
-      const character = this.readCharacter(pointer.bytes, offset, mode);
+    while (textByte(bytes, offset) !== 0) {
+      const character = this.readCharacter(bytes, offset, mode);
       if (character.value === value) return offset;
       offset += character.length;
     }
@@ -438,11 +443,12 @@ export class BurikoNativeText {
   }
 
   lowercase(pointer: BurikoBpPointer): void {
-    const mode = this.detectEncoding(pointer.bytes, pointer.offset);
-    for (let offset = pointer.offset; textByte(pointer.bytes, offset) !== 0;) {
-      const character = this.readCharacter(pointer.bytes, offset, mode);
+    const bytes = pointer.view(),
+      mode = this.detectEncoding(bytes, pointer.offset);
+    for (let offset = pointer.offset; textByte(bytes, offset) !== 0;) {
+      const character = this.readCharacter(bytes, offset, mode);
       if (character.length === 1 && character.value >= 65 && character.value <= 90)
-        pointer.bytes[offset] = character.value + 32;
+        bytes[offset] = character.value + 32;
       offset += character.length;
     }
   }

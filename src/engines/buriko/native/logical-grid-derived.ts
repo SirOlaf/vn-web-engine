@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {BurikoLogicalGridVisibility} from './logical-grid-visibility.js';
 import {gridAllocation, gridOutput, gridRead} from './logical-grid-path.js';
@@ -38,21 +38,18 @@ export function buildGridAbilityMaps(
   const ordinary = gridAllocation(width, height, 28, true);
   const extended = gridAllocation(width, height, 28, true);
   const temporary = new Uint8Array(12),
-    countOutput = {bytes: temporary, offset: 0},
-    visibleCount = {bytes: temporary, offset: 4},
-    costOutput = {bytes: temporary, offset: 8},
+    countOutput = hostPointer(temporary),
+    visibleCount = hostPointer(temporary, 4),
+    costOutput = hostPointer(temporary, 8),
     values = new DataView(temporary.buffer);
-  if (manager.copyReachable({bytes: positions, offset: 8}, countOutput, agentId) !== 0)
+  if (manager.copyReachable(hostPointer(positions, 8), countOutput, agentId) !== 0)
     throw new Error('Buriko logical-grid ability map reads uninitialized reachable count');
   const length = (values.getUint32(0, true) + 1) >>> 0;
-  gridOutput({bytes: positions, offset: 0}, agent.x);
-  gridOutput({bytes: positions, offset: 0}, agent.y, 4);
+  gridOutput(hostPointer(positions), agent.x);
+  gridOutput(hostPointer(positions), agent.y, 4);
   const visibility = new BurikoLogicalGridVisibility(manager);
   for (let requestIndex = 0; requestIndex < requestCount >>> 0; requestIndex++) {
-    const request =
-      requests === null
-        ? null
-        : {bytes: requests.bytes, offset: requests.offset + requestIndex * 20};
+    const request = requests === null ? null : requests.add(requestIndex * 20);
     if (agent.abilityMaps.some((entry) => sameGridAbilityRequest(request, entry.request))) continue;
     ordinary.fill(0);
     extended.fill(0);
@@ -60,13 +57,10 @@ export function buildGridAbilityMaps(
     const areas = new Map<number, Uint8Array>();
     const parameter = (word: number): number => {
       if (request === null) throw new Error('Buriko logical-grid ability map null request');
-      return pointerView({bytes: request.bytes, offset: request.offset + word * 4}, 4).getInt32(
-        0,
-        true,
-      );
+      return pointerView(request.add(word * 4), 4).getInt32(0, true);
     };
     for (let positionIndex = 0; positionIndex < length; positionIndex++) {
-      const position = pointerView({bytes: positions, offset: positionIndex * 8}, 8),
+      const position = pointerView(hostPointer(positions, positionIndex * 8), 8),
         x = position.getInt32(0, true),
         y = position.getInt32(4, true);
       if (manager.copyMetric(costOutput, agentId, x, y) !== 0)
@@ -80,7 +74,7 @@ export function buildGridAbilityMaps(
       const selected = cost <= budget ? ordinary : extended;
       // The allocated grid and native reachable coordinates make this call initialize its count.
       const status = visibility.collect(
-        {bytes: visiblePositions, offset: 0},
+        hostPointer(visiblePositions),
         null,
         visibleCount,
         x,
@@ -95,7 +89,7 @@ export function buildGridAbilityMaps(
       if (status !== 0)
         throw new Error('Buriko logical-grid ability map reads uninitialized visible count');
       for (let visibleIndex = 0; visibleIndex < values.getUint32(4, true); visibleIndex++) {
-        const point = pointerView({bytes: visiblePositions, offset: visibleIndex * 8}, 8),
+        const point = pointerView(hostPointer(visiblePositions, visibleIndex * 8), 8),
           hitX = point.getInt32(0, true),
           hitY = point.getInt32(4, true),
           hitIndex = manager.index(hitX, hitY),
@@ -108,9 +102,9 @@ export function buildGridAbilityMaps(
             area = gridAllocation(width, height, 8, true);
             areas.set(hitIndex, area);
             visibility.collect(
-              {bytes: area, offset: 0},
+              hostPointer(area),
               null,
-              {bytes: areaCounts, offset: hitIndex * 4},
+              hostPointer(areaCounts, hitIndex * 4),
               hitX,
               hitY,
               areaRange,
@@ -121,12 +115,9 @@ export function buildGridAbilityMaps(
               true,
             );
           }
-          const count = pointerView({bytes: areaCounts, offset: hitIndex * 4}, 4).getUint32(
-            0,
-            true,
-          );
+          const count = pointerView(hostPointer(areaCounts, hitIndex * 4), 4).getUint32(0, true);
           for (let areaIndex = 0; areaIndex < count; areaIndex++) {
-            const point = pointerView({bytes: area, offset: areaIndex * 8}, 8),
+            const point = pointerView(hostPointer(area, areaIndex * 8), 8),
               targetX = point.getInt32(0, true),
               targetY = point.getInt32(4, true),
               direction =
@@ -155,7 +146,7 @@ export function buildGridAbilityMaps(
 
 function incrementDirection(bytes: Uint8Array, cell: number, direction: number): void {
   const counterOffset = cell * 28 + ((direction - 2) >>> 0) * 4 + 4,
-    counter = pointerView({bytes, offset: counterOffset}, 4);
+    counter = pointerView(hostPointer(bytes, counterOffset), 4);
   counter.setInt32(0, (counter.getInt32(0, true) + 1) | 0, true);
-  gridOutput({bytes, offset: cell * 28}, 1);
+  gridOutput(hostPointer(bytes, cell * 28), 1);
 }

@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import type {BurikoSystemProfile} from './system-profile.js';
 import {copyText, writeText} from './text.js';
@@ -51,13 +51,13 @@ export function createGroupSystemProfile(
           version = new DataView(record.buffer);
         if (numbers === null) throw new Error('Buriko system version null numeric destination');
         for (let index = 0; index < 4; index++)
-          pointerView({bytes: numbers.bytes, offset: numbers.offset + index * 4}, 4).setUint32(
+          pointerView(numbers.add(index * 4), 4).setUint32(
             0,
             version.getUint32(4 + index * 4, true),
             true,
           );
         if (servicePack === null) throw new Error('Buriko system version null text destination');
-        copyText(servicePack, {bytes: record, offset: 20});
+        copyText(servicePack, hostPointer(record, 20));
         return 0;
       },
     },

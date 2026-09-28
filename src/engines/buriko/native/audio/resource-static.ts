@@ -26,13 +26,13 @@ export class BurikoAudioStaticResources {
     if (
       !Number.isSafeInteger(start) ||
       start < 0 ||
-      start + 16 > source.bytes.length ||
+      start + 16 > source.view().length ||
       targetOffset + 16 > target.length
     )
       throw new RangeError('Buriko static header copy exceeds actual storage');
     if (mask !== undefined && start + 16 > mask.length)
       throw new RangeError('Buriko static header source mask exceeds backing');
-    const bytes = source.bytes.slice(start, start + 16),
+    const bytes = source.view().slice(start, start + 16),
       defined = mask?.slice(start, start + 16);
     target.set(bytes, targetOffset);
     if (defined === undefined) targetMask.fill(1, targetOffset, targetOffset + 16);

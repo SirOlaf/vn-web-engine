@@ -1,6 +1,6 @@
 import {clearIndeterminateMemory, copyMemoryBytes} from '../../../core/indeterminate-memory.js';
 import {decodeSdc} from '../../../formats/buriko/compressed-resource.js';
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoNamedBitArrays} from './named-bit-arrays.js';
 import type {BurikoStringLists} from './string-lists.js';
 import {textLength} from './text.js';
@@ -10,7 +10,7 @@ const GDB_SIGNATURE = new TextEncoder().encode('BURIKO GDB 3.00\0');
 const RESERVED_STRING_LIST = 0x80000000;
 
 function offset(pointer: BurikoBpPointer, amount: number): BurikoBpPointer {
-  return {bytes: pointer.bytes, offset: pointer.offset + amount};
+  return pointer.add(amount);
 }
 
 function copyAndZero(
@@ -32,7 +32,7 @@ function copyAndZero(
   if (stored < capacity) {
     const remainder = pointerView(offset(destination, stored), capacity - stored);
     new Uint8Array(remainder.buffer, remainder.byteOffset, remainder.byteLength).fill(0);
-    clearIndeterminateMemory(destination.bytes, destination.offset + stored, capacity - stored);
+    clearIndeterminateMemory(destination.view(), destination.offset + stored, capacity - stored);
   }
 }
 
@@ -50,7 +50,7 @@ export class BurikoGdbRestore {
     secondCapacity: BurikoBpPointer | null,
     source: BurikoBpPointer,
   ): 0 | 0x80000002 {
-    const encoded = source.bytes.subarray(source.offset).slice();
+    const encoded = source.view().subarray(source.offset).slice();
     let decoded: Uint8Array;
     try {
       decoded = decodeSdc(encoded);
@@ -67,13 +67,13 @@ export class BurikoGdbRestore {
     let cursor = 0x1c;
     const firstStored = view.getUint32(cursor, true);
     cursor += 4;
-    copyAndZero(firstDestination, {bytes: decoded, offset: cursor}, firstStored, 0x400);
+    copyAndZero(firstDestination, hostPointer(decoded, cursor), firstStored, 0x400);
     pointerView(firstCapacity!, 4).setUint32(0, 0x400, true);
     cursor += firstStored;
 
     const secondStored = view.getUint32(cursor, true);
     cursor += 4;
-    copyAndZero(secondDestination, {bytes: decoded, offset: cursor}, secondStored, 0x100000);
+    copyAndZero(secondDestination, hostPointer(decoded, cursor), secondStored, 0x100000);
     pointerView(secondCapacity!, 4).setUint32(0, 0x100000, true);
     cursor += secondStored;
 
@@ -82,11 +82,11 @@ export class BurikoGdbRestore {
     const appendStrings = (stringCount | 0) > 0;
     if (appendStrings) this.strings.append(RESERVED_STRING_LIST, null);
     for (let index = 0; index < stringCount; index++) {
-      const value = {bytes: decoded, offset: cursor};
+      const value = hostPointer(decoded, cursor);
       if (appendStrings) this.strings.append(RESERVED_STRING_LIST, value);
       cursor += textLength(value) + 1;
     }
-    this.bits.mergePacked({bytes: decoded, offset: cursor});
+    this.bits.mergePacked(hostPointer(decoded, cursor));
     return 0;
   }
 }

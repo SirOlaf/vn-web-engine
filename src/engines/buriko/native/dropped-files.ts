@@ -1,6 +1,6 @@
 import {BlobSource} from '../../../core/source.js';
 import {filePath, MountedFileSystem, SourceFileSystem} from '../../../platform/filesystem.js';
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoProgramFiles} from './program-files.js';
 import {BurikoMountedFileMetadata} from './file-metadata.js';
 import {copyText, textLength, writeText} from './text.js';
@@ -72,7 +72,7 @@ export class BurikoDroppedFiles {
 
   /** B8090: repeated reads do not consume the retained name. */
   copyPath(output: BurikoBpPointer | null): number {
-    const source = {bytes: this.bytes, offset: 0};
+    const source = hostPointer(this.bytes);
     if (this.enabled === 0 || textLength(source) === 0) return 0;
     if (output === null) throw new Error('Buriko dropped path writes a null output');
     copyText(output, source);
@@ -90,7 +90,7 @@ export class BurikoDroppedFiles {
       const encoded = this.files.text.encodeWide(record.first, 1);
       if (encoded.length > this.bytes.length)
         throw new RangeError('Buriko dropped UTF8 path exceeds native shared storage');
-      writeText({bytes: this.bytes, offset: 0}, encoded);
+      writeText(hostPointer(this.bytes), encoded);
     }
     this.handles.delete(handle);
   }

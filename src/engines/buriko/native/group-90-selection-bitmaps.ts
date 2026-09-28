@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import {pop32} from '../bp/state.js';
 import type {BurikoDisplayManager} from './display-manager.js';
 import {BurikoWindowDisplayObject} from './display-window.js';
@@ -24,7 +24,7 @@ export function createGroup90SelectionBitmaps(
       for (let index = 0; index < count; index++) {
         if (records === null)
           throw new Error('Buriko extended bitmap selection reads null records');
-        const source = {bytes: records.bytes, offset: records.offset + index * 64};
+        const source = records.add(index * 64);
         for (let word = 0; word < 3; word++)
           destination.setInt32(
             index * 16 + word * 4,
@@ -33,7 +33,7 @@ export function createGroup90SelectionBitmaps(
           );
         destination.setInt32(index * 16 + 12, -1, true);
       }
-      records = {bytes, offset: 0};
+      records = hostPointer(bytes);
     }
     const window = manager.find('window', handle);
     if (window === null) return fatal(h, '無効なウィンドウハンドルが指定されました');

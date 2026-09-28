@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import {gridAllocation} from './logical-grid-path.js';
 import {BurikoLogicalGridVisibility} from './logical-grid-visibility.js';
 import type {BurikoGridEvaluatorRecords} from './grid-evaluator-records.js';
@@ -18,7 +18,7 @@ export function chooseGridEvaluatorTarget(
     targets: ([number, number] | undefined)[] = Array(count),
     scratch = new Uint8Array(128),
     values = new DataView(scratch.buffer),
-    pointer = (offset = 0) => ({bytes: scratch, offset});
+    pointer = (offset = 0) => hostPointer(scratch, offset);
   grid.search(actor.id, actor.word(0x8d), 0, -1, -1, false);
   if (actor.word(0x95) === 1) {
     for (let i = 0; i < count; i++) {
@@ -62,17 +62,17 @@ export function chooseGridEvaluatorTarget(
       positions = gridAllocation(width, height, 8),
       visible = new Uint8Array(0x200),
       visibility = new BurikoLogicalGridVisibility(grid);
-    if (grid.copyReachable({bytes: positions, offset: 0}, pointer(), actor.id, true) !== 0)
+    if (grid.copyReachable(hostPointer(positions), pointer(), actor.id, true) !== 0)
       throw new Error('Buriko grid evaluator target reads uninitialized reachable count');
     const length = values.getUint32(0, true);
     for (let positionIndex = 0; positionIndex < length; positionIndex++) {
-      const point = pointerView({bytes: positions, offset: positionIndex * 8}, 8),
+      const point = pointerView(hostPointer(positions, positionIndex * 8), 8),
         x = point.getInt32(0, true),
         y = point.getInt32(4, true);
       if (grid.copyMetric(pointer(), actor.id, x, y) !== 0)
         throw new Error('Buriko grid evaluator target reads uninitialized movement cost');
       visibility.collect(
-        {bytes: visible, offset: 0},
+        hostPointer(visible),
         null,
         pointer(4),
         x,
@@ -85,7 +85,7 @@ export function chooseGridEvaluatorTarget(
         true,
       );
       for (let hit = 0; hit < values.getUint32(4, true); hit++) {
-        const position = pointerView({bytes: visible, offset: hit * 8}, 8),
+        const position = pointerView(hostPointer(visible, hit * 8), 8),
           hx = position.getInt32(0, true),
           hy = position.getInt32(4, true);
         for (let i = 0; i < count; i++) {
@@ -152,14 +152,14 @@ export function chooseGridEvaluatorTarget(
     const length = values.getInt32(0, true),
       coordinates = gridAllocation(length, 1, 8);
     grid.copyRouteCoordinates(
-      {bytes: coordinates, offset: 0},
+      hostPointer(coordinates),
       pointer(),
       actor.id,
       actor.word(0x210),
       actor.word(0x211),
     );
     for (let i = 0; i < length; i++) {
-      const position = pointerView({bytes: coordinates, offset: i * 8}, 8),
+      const position = pointerView(hostPointer(coordinates, i * 8), 8),
         x = position.getInt32(0, true),
         y = position.getInt32(4, true);
       grid.copyMetric(pointer(4), actor.id, x, y);

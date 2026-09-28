@@ -1,5 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
-import {pointerView} from '../bp/memory.js';
+import {BurikoBpPointer, pointerView} from '../bp/memory.js';
 import {pop32, push32} from '../bp/state.js';
 import type {BurikoBpOpcodeContext, BurikoNativeSlotDefinition} from './types.js';
 import {BurikoNativeText, copyText, textByte, textBytes, textLength, writeText} from './text.js';
@@ -18,27 +17,20 @@ export function nativeCharacterWords(
   destination: BurikoBpPointer | null,
   source: BurikoBpPointer,
 ): number {
-  const mode = text.detectEncoding(source.bytes, source.offset);
+  const bytes = source.view();
+  const mode = text.detectEncoding(bytes, source.offset);
   let count = 0,
     offset = source.offset;
-  while (textByte(source.bytes, offset) !== 0) {
-    const character = text.readCharacter(source.bytes, offset, mode);
+  while (textByte(bytes, offset) !== 0) {
+    const character = text.readCharacter(bytes, offset, mode);
     offset += character.length;
     if (destination !== null) {
-      pointerView({bytes: destination.bytes, offset: destination.offset + count * 2}, 2).setUint16(
-        0,
-        character.value,
-        true,
-      );
+      pointerView(destination.add(count * 2), 2).setUint16(0, character.value, true);
     }
     count = (count + 1) | 0;
   }
   if (destination !== null) {
-    pointerView({bytes: destination.bytes, offset: destination.offset + count * 2}, 2).setUint16(
-      0,
-      0,
-      true,
-    );
+    pointerView(destination.add(count * 2), 2).setUint16(0, 0, true);
   }
   return count;
 }
@@ -46,7 +38,7 @@ export function nativeCharacterWords(
 function words(pointer: BurikoBpPointer): number[] {
   const result: number[] = [];
   for (let offset = pointer.offset; ; offset += 2) {
-    const value = pointerView({bytes: pointer.bytes, offset}, 2).getUint16(0, true);
+    const value = pointerView(new BurikoBpPointer(pointer.region, offset), 2).getUint16(0, true);
     if (value === 0) return result;
     result.push(value);
   }
@@ -116,7 +108,7 @@ export function createGroup81Text(text: BurikoNativeText): BurikoNativeSlotDefin
         let length = 0;
         if (mode === 0 || mode === 1 || mode === 0xffffffff) {
           const input = requirePointer(source);
-          const sourceMode = text.detectEncoding(input.bytes, input.offset);
+          const sourceMode = text.detectEncoding(input.view(), input.offset);
           const targetMode = mode === 0xffffffff ? text.mode : mode;
           if (destination !== null && (sourceMode === 0x80000000 || sourceMode === targetMode)) {
             copyText(destination, input);
@@ -163,7 +155,7 @@ export function createGroup81Text(text: BurikoNativeText): BurikoNativeSlotDefin
       name: 'DetectTextEncoding',
       execute: (h) => {
         const source = requirePointer(popPointer(h));
-        push32(h.thread, text.detectEncoding(source.bytes, source.offset));
+        push32(h.thread, text.detectEncoding(source.view(), source.offset));
         return 0;
       },
     },

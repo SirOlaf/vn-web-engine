@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {push32, type BurikoBpThread} from '../bp/state.js';
 import type {BurikoNativeClock} from './clock.js';
 import {BurikoBrowserMfMovieSession} from './movie-mf-browser-session.js';
@@ -37,8 +37,8 @@ export class BurikoMfMovieProcess extends BurikoProcedure {
         this.result = -3;
         return 1;
       }
-      const archive = this.archive === null ? null : {bytes: this.archive, offset: 0};
-      const name = {bytes: this.name, offset: 0};
+      const archive = this.archive === null ? null : hostPointer(this.archive);
+      const name = hostPointer(this.name);
       const status = await this.session.start(archive, name, this.volume);
       if (status === 0) {
         this.phase = 1;

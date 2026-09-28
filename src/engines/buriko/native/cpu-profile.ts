@@ -1,3 +1,4 @@
+import {hostPointer} from '../bp/memory.js';
 import type {BurikoNativeClock} from './clock.js';
 import {normalizeBurikoAsciiSpaces} from './byte-string-spaces.js';
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
@@ -281,6 +282,6 @@ export class BurikoCpuProfile {
     }
     const end = bytes.indexOf(0);
     if (end < 0) throw new Error('Buriko CPU brand has no terminator in its native record');
-    return normalizeBurikoAsciiSpaces({bytes, offset: 0});
+    return normalizeBurikoAsciiSpaces(hostPointer(bytes));
   }
 }

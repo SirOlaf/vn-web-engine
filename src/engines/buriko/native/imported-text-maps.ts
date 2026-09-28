@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {BurikoBpPointer, hostPointer, pointerView} from '../bp/memory.js';
 import {BurikoNamedValueMap} from './named-value-map.js';
 import {BurikoNativeText, textLength} from './text.js';
 
@@ -28,7 +28,7 @@ export class BurikoImportedTextMaps {
     }
     const outer = (this.outer ??= new BurikoNamedValueMap(8));
     let cursor = input.offset;
-    const pointer = (): BurikoBpPointer => ({bytes: input.bytes, offset: cursor});
+    const pointer = (): BurikoBpPointer => new BurikoBpPointer(input.region, cursor);
     const count = (): number => {
       const value = pointerView(pointer(), 4).getUint32(0, true);
       cursor += 4;
@@ -57,10 +57,10 @@ export class BurikoImportedTextMaps {
     if (this.outer === null) return null;
     if (group === null) throw new Error('Buriko imported text null group name');
     const groupUtf8 = this.text.convertEncoding(group, 1),
-      inner = this.outer.findReference({bytes: groupUtf8, offset: 0});
+      inner = this.outer.findReference(hostPointer(groupUtf8));
     if (inner === null) return null;
     if (key === null) throw new Error('Buriko imported text null entry name');
     const keyUtf8 = this.text.convertEncoding(key, 1);
-    return (inner as BurikoNamedValueMap).findValue({bytes: keyUtf8, offset: 0});
+    return (inner as BurikoNamedValueMap).findValue(hostPointer(keyUtf8));
   }
 }

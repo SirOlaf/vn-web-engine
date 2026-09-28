@@ -24,11 +24,7 @@ export function createGroup80Notifications(
             BigInt(record.type) | (BigInt(record.value1) << 32n),
             true,
           );
-          pointerView({bytes: pointer.bytes, offset: pointer.offset + 8}, 4).setUint32(
-            0,
-            record.value2,
-            true,
-          );
+          pointerView(pointer.add(8), 4).setUint32(0, record.value2, true);
         }
         push32(context.thread, record === null ? 0 : 1);
         return 0;

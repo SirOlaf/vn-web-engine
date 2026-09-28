@@ -168,10 +168,7 @@ export function createGroup91IndependentIconMotion(
         if (
           !settings.setMap(mode, (index) => {
             if (source === null) throw new Error('Buriko Icon map dereferences null source');
-            return pointerView(
-              {bytes: source.bytes, offset: source.offset + index * 4},
-              4,
-            ).getInt32(0, true);
+            return pointerView(source.add(index * 4), 4).getInt32(0, true);
           })
         )
           return fatal(h, `無効なキーアサインメント [ ${mode | 0} ] が指定されました`);

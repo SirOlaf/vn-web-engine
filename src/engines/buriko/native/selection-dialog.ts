@@ -1,4 +1,4 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoEngineDialogs} from './engine-dialogs.js';
 import {BurikoFontResources} from './font-resources.js';
 import {BurikoNativeText, textByte, textBytes, writeText} from './text.js';
@@ -21,22 +21,20 @@ export class BurikoSelectionDialog {
       const message = prompt === null ? '項目を一つ選択して下さい' : this.text.decodeAuto(prompt);
       if (list === null) throw new Error('Buriko native list dialog dereferences a null item list');
       const faces: string[] = [];
+      const bytes = list.view();
       let offset = list.offset;
-      while (textByte(list.bytes, offset) !== 0) {
+      while (textByte(bytes, offset) !== 0) {
         let length = 0;
-        while (
-          textByte(list.bytes, offset + length) !== 0 &&
-          textByte(list.bytes, offset + length) !== 10
-        )
+        while (textByte(bytes, offset + length) !== 0 && textByte(bytes, offset + length) !== 10)
           length++;
         if (length > 0) {
           if (length >= 784)
             throw new RangeError('Buriko list item overwrites its native stack scratch buffer');
           const line = new Uint8Array(length + 1);
-          line.set(list.bytes.subarray(offset, offset + length));
-          faces.push(this.text.decodeAuto({bytes: line, offset: 0}));
+          line.set(bytes.subarray(offset, offset + length));
+          faces.push(this.text.decodeAuto(hostPointer(line)));
         }
-        offset += length + Number(textByte(list.bytes, offset + length) === 10);
+        offset += length + Number(textByte(bytes, offset + length) === 10);
       }
       const selected = await this.dialogs.chooseList(caption, message, faces);
       if (!selected.accepted) return 0;
@@ -69,7 +67,7 @@ export class BurikoSelectionDialog {
     const list = new Uint8Array(0x100000);
     let offset = 0;
     for (const name of enumerated.names) {
-      const bytes = textBytes({bytes: name, offset: 0});
+      const bytes = textBytes(hostPointer(name));
       if (offset + bytes.length + 2 > list.length)
         throw new RangeError('Buriko font list overwrites its native scratch allocation');
       list.set(bytes, offset);
@@ -107,6 +105,6 @@ export class BurikoSelectionDialog {
       0xa2,
       0,
     );
-    return this.select(output, title, {bytes: prompt, offset: 0}, {bytes: list, offset: 0});
+    return this.select(output, title, hostPointer(prompt), hostPointer(list));
   }
 }

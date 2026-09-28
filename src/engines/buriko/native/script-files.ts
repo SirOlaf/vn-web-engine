@@ -1,4 +1,4 @@
-import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoAsyncCriticalSection} from './async-critical-section.js';
 import {BurikoNativeFile} from './native-file.js';
 import {burikoCompareNamedBytes} from './named-value-map.js';
@@ -69,7 +69,7 @@ export class BurikoScriptFiles {
     await this.section.enter(actor);
     try {
       if (this.closing) throw new Error('Buriko script files are closing');
-      const normalized = {bytes: new Uint8Array(784), offset: 0};
+      const normalized = hostPointer(new Uint8Array(784));
       copyText(normalized, path!);
       this.files.text.lowercase(normalized);
       for (let record = this.first; record !== null; record = record.next)
@@ -84,7 +84,7 @@ export class BurikoScriptFiles {
       this.counter = (this.counter + 1) >>> 0;
       const record: BurikoScriptFileRecord = {
         id: this.counter,
-        normalizedName: {bytes: textBytes(normalized, true).slice(), offset: 0},
+        normalizedName: hostPointer(textBytes(normalized, true).slice()),
         file,
         mode,
         busy: 0,

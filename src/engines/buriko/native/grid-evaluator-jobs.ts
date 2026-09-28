@@ -1,4 +1,4 @@
-import {pointerView} from '../bp/memory.js';
+import {hostPointer, pointerView} from '../bp/memory.js';
 import {gridAllocation, gridOutput} from './logical-grid-path.js';
 import {BurikoLogicalGridVisibility} from './logical-grid-visibility.js';
 import {chooseGridEvaluatorTarget} from './grid-evaluator-targets.js';
@@ -20,12 +20,12 @@ export class BurikoGridEvaluatorJobs {
       this.bytes = next;
     }
     // The initial no-action candidate is written without the growth check used by added actions.
-    const output = pointerView({bytes: this.bytes, offset: this.length * 0x4c}, 0x4c);
+    const output = pointerView(hostPointer(this.bytes, this.length * 0x4c), 0x4c);
     for (let i = 0; i < 19; i++) output.setInt32(i * 4, value[i]!, true);
     this.length = (this.length + 1) >>> 0;
   }
   job(index: number): DataView {
-    return pointerView({bytes: this.bytes, offset: index * 0x4c}, 0x4c);
+    return pointerView(hostPointer(this.bytes, index * 0x4c), 0x4c);
   }
 }
 
@@ -48,7 +48,7 @@ export function prepareGridEvaluation(
     actor = records[selectedIndex],
     scratch = new Uint8Array(32),
     values = new DataView(scratch.buffer),
-    pointer = (offset = 0) => ({bytes: scratch, offset});
+    pointer = (offset = 0) => hostPointer(scratch, offset);
   if (actor === undefined)
     throw new Error('Buriko grid evaluator selected actor address outside allocation');
   const visibility = new BurikoLogicalGridVisibility(grid),
@@ -61,7 +61,7 @@ export function prepareGridEvaluation(
       const length = values.getInt32(0, true);
       route = gridAllocation(length, 1, 8);
       grid.copyRouteCoordinates(
-        {bytes: route, offset: 0},
+        hostPointer(route),
         pointer(),
         actor.id,
         actor.word(0x210),
@@ -74,14 +74,14 @@ export function prepareGridEvaluation(
     grid.search(opponent.id, opponent.word(0x8d), 0, -1, -1, false);
   }
   grid.search(actor.id, actor.word(0x8d), actor.word(0x8e), -1, -1, true);
-  if (grid.copyReachable({bytes: positions, offset: 0}, pointer(), actor.id, true) !== 0)
+  if (grid.copyReachable(hostPointer(positions), pointer(), actor.id, true) !== 0)
     throw new Error('Buriko grid evaluator reads uninitialized candidate-position count');
   const length = values.getUint32(0, true);
-  grid.copyPosition({bytes: positions, offset: length * 8}, actor.id);
+  grid.copyPosition(hostPointer(positions, length * 8), actor.id);
   const jobs = new BurikoGridEvaluatorJobs();
   let direction = 6;
   for (let positionIndex = 0; positionIndex <= length; positionIndex++) {
-    const position = pointerView({bytes: positions, offset: positionIndex * 8}, 8),
+    const position = pointerView(hostPointer(positions, positionIndex * 8), 8),
       x = position.getInt32(0, true),
       y = position.getInt32(4, true);
     grid.setPosition(actor.id, x, y);
@@ -110,7 +110,7 @@ export function prepareGridEvaluation(
     base[11] = cost === 0 ? 0 : (Math.imul(actor.word(0x90), cost) + actor.word(0x8f)) | 0;
     if (route !== null) {
       for (let offset = 0; offset < route.length; offset += 8) {
-        const point = pointerView({bytes: route, offset}, 8);
+        const point = pointerView(hostPointer(route, offset), 8);
         if (point.getInt32(0, true) === x && point.getInt32(4, true) === y) base[12] = 1;
       }
     }
@@ -118,7 +118,7 @@ export function prepareGridEvaluation(
     const action = base.slice();
     action[2] = 6;
     visibility.collect(
-      {bytes: visible, offset: 0},
+      hostPointer(visible),
       null,
       pointer(),
       x,
@@ -132,7 +132,7 @@ export function prepareGridEvaluation(
     );
     const targets = values.getUint32(0, true);
     for (let hit = 0; hit < targets; hit++) {
-      const point = pointerView({bytes: visible, offset: hit * 8}, 8),
+      const point = pointerView(hostPointer(visible, hit * 8), 8),
         hx = point.getInt32(0, true),
         hy = point.getInt32(4, true),
         target = state.findPosition(hx, hy, records);
@@ -155,7 +155,7 @@ export function prepareGridEvaluation(
         continue;
       }
       visibility.collect(
-        {bytes: visible, offset: 0},
+        hostPointer(visible),
         null,
         pointer(),
         x,
@@ -169,7 +169,7 @@ export function prepareGridEvaluation(
       );
       const targets = values.getUint32(0, true);
       for (let hit = 0; hit < targets; hit++) {
-        const point = pointerView({bytes: visible, offset: hit * 8}, 8),
+        const point = pointerView(hostPointer(visible, hit * 8), 8),
           hx = point.getInt32(0, true),
           hy = point.getInt32(4, true);
         let accept = true;
@@ -182,7 +182,7 @@ export function prepareGridEvaluation(
           else if (type > 0 && type < 4) accept = ally;
         } else {
           visibility.collect(
-            {bytes: area, offset: 0},
+            hostPointer(area),
             null,
             pointer(4),
             hx,
@@ -199,7 +199,7 @@ export function prepareGridEvaluation(
           const areaCount = values.getUint32(4, true);
           if (areaCount === 0) continue;
           for (let i = 0; i < areaCount; i++) {
-            const point = pointerView({bytes: area, offset: i * 8}, 8),
+            const point = pointerView(hostPointer(area, i * 8), 8),
               target = state.findPosition(
                 point.getInt32(0, true),
                 point.getInt32(4, true),

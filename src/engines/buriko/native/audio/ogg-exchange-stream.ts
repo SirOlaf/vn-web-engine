@@ -1,3 +1,4 @@
+import {hostPointer} from '../../bp/memory.js';
 import type {BurikoLockActors} from '../exclusion-locks.js';
 import {materializeBurikoLiveOgg} from './live-ogg-stream.js';
 import type {BurikoWaveBoxOggOptions} from './wavebox-ogg.js';
@@ -128,7 +129,7 @@ export class BurikoOggExchangeDecoder extends BurikoWaveBoxOggDecoder {
 async function selectorCodec(input: BurikoLiveAudioStorage, actor: object): Promise<number> {
   const scratch = new Uint8Array(64),
     initialized = new Uint8Array(64);
-  const count = (await input.readInto({bytes: scratch, offset: 0}, 64, actor, initialized)) >>> 0;
+  const count = (await input.readInto(hostPointer(scratch), 64, actor, initialized)) >>> 0;
   if (count < 64)
     throw new BurikoWaveBoxError(14, 'Buriko Ogg exchange selector read a short header');
   requireBurikoWaveHeaderBytes(initialized, 48, 4);

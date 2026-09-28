@@ -1,12 +1,9 @@
-import type {BurikoBpPointer} from '../bp/memory.js';
+import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import type {BurikoLocalizedMessages} from './localized-messages.js';
 import {assertBurikoPathDomain} from './path-domain.js';
 import type {BurikoProgramResources} from './program-resources.js';
 
-const quitKey: BurikoBpPointer = {
-  bytes: new TextEncoder().encode('AREYOUSUREYOUWANTTOQUIT\0'),
-  offset: 0,
-};
+const quitKey = hostPointer(new TextEncoder().encode('AREYOUSUREYOUWANTTOQUIT\0'));
 
 /** BB1C0's blocking file-presence loop over the actual shared media, files and modal owners. */
 export class BurikoResourceFilePresence {
