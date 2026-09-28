@@ -9,8 +9,8 @@ test('mounted 81:EC/ED use the selected synchronous named-mutex owner', async ()
   const host = {
     createOwned(pointer) {
       assert.ok(pointer);
-      const end = pointer.bytes.indexOf(0, pointer.offset);
-      const name = new TextDecoder().decode(pointer.bytes.subarray(pointer.offset, end));
+      const end = pointer.view().indexOf(0, pointer.offset);
+      const name = new TextDecoder().decode(pointer.view().subarray(pointer.offset, end));
       const handle = {name};
       calls.push(['create', name]);
       open.add(handle);

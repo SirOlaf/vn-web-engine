@@ -62,7 +62,7 @@ test('mounted 81:31 shares selected internet owner for synchronous and serial pr
       assert.equal(request.url, 'https://example.test/data.bin');
       assert.equal(request.userAgent, BURIKO_INTERNET_USER_AGENT);
       assert.equal(request.reload, true);
-      assert.equal(request.destination.bytes, memory.globalMemory);
+      assert.equal(request.destination.view(), memory.globalMemory);
       assert.equal(request.destination.offset, kind === 'read' ? 0x300 : 0x400);
       assert.equal(request.offset, kind === 'read' ? 2 : 1);
       assert.equal(request.length, 3);

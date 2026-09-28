@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
@@ -19,7 +19,7 @@ import {singleArchive} from './aokana-resource-direct-fixtures.mjs';
 function checkedArchive(name, payload) {
   const archive = singleArchive(name, payload);
   const checksum = new Uint8Array(8);
-  updateNativeChecksum({bytes: checksum, offset: 0}, {bytes: payload, offset: 0}, payload.length);
+  updateNativeChecksum(hostPointer(checksum), hostPointer(payload), payload.length);
   new DataView(archive.buffer).setBigUint64(
     120,
     new DataView(checksum.buffer).getBigUint64(0, true),

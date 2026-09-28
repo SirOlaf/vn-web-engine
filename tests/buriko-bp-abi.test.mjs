@@ -94,7 +94,7 @@ for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_1665, BURIKO_BP_ABI_172]) {
           ? [0x12345678, 0xffffffff, 1, 0x2c, 0, 1, 32767, 32768, 45 * 65536]
           : [0x80000000, 1, 0x2c, 0, 1, 32767, 32768, 45 * 65536],
     );
-    assert.equal(memory.resolve(thread, abi.moduleTag + 200).bytes, thread.moduleMemory);
+    assert.equal(memory.resolve(thread, abi.moduleTag + 200).region, thread.moduleRegion);
     assert.throws(
       () => memory.resolve(thread, abi.addressBits === 26 ? 0x10000000 : 0x40000000),
       BurikoBpMemoryFault,
@@ -139,7 +139,7 @@ test('BP pool lifetimes retain each ABI bank layout and do not alias indirect ha
   const buffer = newer.createBuffer(4);
   assert.equal(buffer.result, 0);
   const t = new BurikoBpThread({id: 2, operandCapacity: 4, moduleCapacity: 4, frameCapacity: 4});
-  assert.equal(newer.resolve(t, buffer.address).bytes.length, 4);
-  assert.equal(older.resolve(t, buffer.address).bytes, t.heap.bytes);
+  assert.equal(newer.resolve(t, buffer.address).view().length, 4);
+  assert.equal(older.resolve(t, buffer.address).region, t.heap.region);
   assert.throws(() => older.pointer(t, buffer.address, 4), /outside backing allocation/);
 });

@@ -8,7 +8,7 @@ import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distribu
 import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
 import {createTextLayoutSettings} from '../dist/engines/buriko/native/group-text-layout-settings.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 function setup() {
@@ -20,7 +20,7 @@ function setup() {
   compositor.defaultFormat = 1;
   return {text, fonts, compositor, surfaces, state};
 }
-const pointer = (bytes) => ({bytes, offset: 0});
+const pointer = (bytes) => hostPointer(bytes);
 const ids = (...values) => pointer(new Uint8Array(Uint32Array.from(values).buffer));
 const firstPixel = (bitmap) => bitmap.storage.view.getUint32(bitmap.offset, true);
 
@@ -221,7 +221,7 @@ test('all five reading-font, policy and frame wrappers use real stacks and the s
   );
   surfaces.allocate(2, 1, 1, 1);
   surfaces.fill(2, 0x987654);
-  memory.globalMemory.set(ids(2, 0xffffffff).bytes, 16);
+  memory.globalMemory.set(ids(2, 0xffffffff).view(), 16);
   await call(0x90, 0x98, [2, 16]);
   assert.equal(firstPixel(state.overlayFrames[0]) & 0xffffff, 0x987654);
   await call(0x90, 0x98, [0, 0]);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
@@ -50,10 +50,7 @@ test('registered surface text draws multiline width and wrapped line metrics thr
   const surfaces = new BurikoSurfaces(fonts, compositor, new BurikoDistributedAllocator(1));
   const initialize = (id, width, height) =>
     assert.equal(
-      surfaces.importRaw(id, width, height, 1, {
-        bytes: new Uint8Array(width * height * 3),
-        offset: 0,
-      }),
+      surfaces.importRaw(id, width, height, 1, hostPointer(new Uint8Array(width * height * 3))),
       1,
     );
   initialize(1, 24, 24);
@@ -90,7 +87,7 @@ test('registered surface text draws multiline width and wrapped line metrics thr
     assert.equal(thread.stackIndex, 0);
   };
   const pixel = (surface, x, y) => {
-    assert.equal(surfaces.readPixel({bytes: memory.globalMemory, offset: 8}, surface, x, y), 0);
+    assert.equal(surfaces.readPixel(hostPointer(memory.globalMemory, 8), surface, x, y), 0);
     return new DataView(memory.globalMemory.buffer).getUint32(8, true);
   };
   await run(0x1c, [1, 1, 1, 32, font, 8, 100, 0, 0, 0xff0000], 8);

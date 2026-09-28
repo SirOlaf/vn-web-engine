@@ -27,14 +27,14 @@ import {
   alignBurikoVerticalTextNodes,
   rotateBurikoVerticalGlyph,
 } from '../dist/engines/buriko/native/text-layout-vertical.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
-const pointer = (value) => ({
-  bytes:
+const pointer = (value) =>
+  hostPointer(
     typeof value === 'string'
       ? Uint8Array.from([...new TextEncoder().encode(value), 0])
       : Uint8Array.from([...value, 0]),
-  offset: 0,
-});
+  );
 
 async function setup() {
   const text = new BurikoNativeText(),

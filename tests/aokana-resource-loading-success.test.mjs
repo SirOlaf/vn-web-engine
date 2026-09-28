@@ -16,6 +16,7 @@ import {
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
 import {BlobSource} from '../dist/core/source.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 const bytes = (value) => new TextEncoder().encode(value);
 
@@ -185,7 +186,7 @@ test('queued raw reads use stored ranges and archive metadata through the existi
   assert.deepEqual(output.bytes, payload);
   mount('/disc/loose', Uint8Array.of(10, 11, 12, 13));
   const direct = new Uint8Array(4).fill(77);
-  loading.enqueue(null, {bytes: direct, offset: 1}, status, null, null, bytes('loose'), 1, 2);
+  loading.enqueue(null, hostPointer(direct, 1), status, null, null, bytes('loose'), 1, 2);
   await loading.processNext();
   assert.equal(status.value, 2);
   assert.deepEqual(direct, Uint8Array.of(77, 11, 12, 77));

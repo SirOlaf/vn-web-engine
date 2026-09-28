@@ -16,16 +16,14 @@ import {
 } from '../dist/engines/buriko/native/diagnostic-records.js';
 import {createGroupE0Files} from '../dist/engines/buriko/native/group-e0-files.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const ascii = (value) => new TextEncoder().encode(value);
-const pointer = (value = 784) => ({
-  bytes: typeof value === 'number' ? new Uint8Array(value) : ascii(value + '\0'),
-  offset: 0,
-});
+const pointer = (value = 784) =>
+  hostPointer(typeof value === 'number' ? new Uint8Array(value) : ascii(value + '\0'));
 const string = (value) =>
-  new TextDecoder().decode(value.bytes.subarray(value.offset)).split('\0')[0];
+  new TextDecoder().decode(value.view().subarray(value.offset)).split('\0')[0];
 function fixture() {
   const text = new BurikoNativeText(),
     registry = new BurikoNativeRegistry(new MemoryStore());
@@ -146,8 +144,8 @@ test('ProgramFilesDir comes from the shared 64-bit registry and closes the opene
 test('native path combination converts CP932 separately and preserves an aliasing output', () => {
   const {folders, text} = fixture(),
     output = pointer();
-  output.bytes.set(ascii('C:\\Game\\\0'));
-  const name = {bytes: text.encodeWide('日本.log', 0), offset: 0};
+  output.view().set(ascii('C:\\Game\\\0'));
+  const name = hostPointer(text.encodeWide('日本.log', 0));
   folders.combine(output, output, 0, name);
   assert.equal(string(output), 'C:\\Game\\日本.log');
   folders.combine(output, pointer('C:\\Game\\'), 1, pointer('log'));
@@ -193,10 +191,10 @@ test('E0 count files keep bank order, full hexadecimal widths and signed decimal
   const data = pointer(1028),
     flags = pointer(1028);
   counts.register(0x180, 257, data, flags);
-  const view = new DataView(data.bytes.buffer);
+  const view = new DataView(data.view().buffer);
   view.setUint32(4, 0xffffffff, true);
   view.setUint32(8, 2, true);
-  flags.bytes[8] = 1;
+  flags.view()[8] = 1;
   view.setUint32(1024, 3, true);
   assert.equal(await execute(0x92, 'counts.log', 0), 0);
   assert.equal(await read('/drive/Game/counts.log'), '0x18001 : -1\n0x180100 : 3\n');

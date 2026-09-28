@@ -14,6 +14,7 @@ import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function setup() {
   const text = new BurikoNativeText();
@@ -135,10 +136,7 @@ test('ordinary unequal positive radii use the binary64 ellipse path', () => {
 
 test('unfitted custom outline sums the shared format-three bitmap over the shifted box', () => {
   const {surfaces, state} = setup();
-  assert.equal(
-    surfaces.importRaw(7, 2, 2, 3, {bytes: Uint8Array.of(200, 100, 80, 40), offset: 0}),
-    1,
-  );
+  assert.equal(surfaces.importRaw(7, 2, 2, 3, hostPointer(Uint8Array.of(200, 100, 80, 40))), 1);
   assert.equal(state.customGlyphs.register(0xff01, 7, 0, 0, 2, 2), 0);
   const destination = allocateBurikoBitmap(4, 4, 2);
   const font = {size: 4, widthPercent: 100, raster: null};
@@ -158,7 +156,7 @@ test('fitted custom outline sums the alpha produced by the actual shared glyph d
     const y = Math.trunc(index / 16);
     return (x * 11 + y * 7) & 255;
   });
-  assert.equal(surfaces.importRaw(8, 16, 16, 3, {bytes: mask, offset: 0}), 1);
+  assert.equal(surfaces.importRaw(8, 16, 16, 3, hostPointer(mask)), 1);
   assert.equal(state.customGlyphs.register(0xff02, 8, 0, 0, 16, 16), 0);
   state.field1D1D94 = 1;
   const font = {size: 4, widthPercent: 100, raster: null};

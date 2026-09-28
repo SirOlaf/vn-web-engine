@@ -12,10 +12,10 @@ import {
 import {BurikoTextLayoutState} from '../dist/engines/buriko/native/text-layout-state.js';
 import {createGroup91TextSettings} from '../dist/engines/buriko/native/group-91-text-settings.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
-const pointer = (bytes) => ({bytes, offset: 0});
+const pointer = (bytes) => hostPointer(bytes);
 function setup() {
   const text = new BurikoNativeText();
   const surfaces = new BurikoSurfaces(
@@ -140,9 +140,9 @@ test('all three text settings wrappers preserve native stack order and share the
       frameCapacity: 0,
     }),
     memory = new BurikoBpMemory(new Uint8Array(512));
-  memory.globalMemory.set(value('海', 0).bytes, 16);
-  memory.globalMemory.set(value('うみ', 0).bytes, 64);
-  memory.globalMemory.set(value('空\\そら\n海\\うみべ', 0).bytes, 128);
+  memory.globalMemory.set(value('海', 0).view(), 16);
+  memory.globalMemory.set(value('うみ', 0).view(), 64);
+  memory.globalMemory.set(value('空\\そら\n海\\うみべ', 0).view(), 128);
   async function call(slot, args, output = false) {
     const before = thread.stackIndex;
     for (const arg of args) push32(thread, arg);

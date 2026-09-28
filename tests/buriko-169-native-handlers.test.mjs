@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
@@ -18,7 +18,7 @@ import {
 } from '../dist/engines/buriko/native/legacy-169-handlers.js';
 import {BrowserWindowsFlashHost} from '../dist/platform/windows-flash.js';
 
-const name = {bytes: new TextEncoder().encode('synthetic.swf\0'), offset: 0};
+const name = hostPointer(new TextEncoder().encode('synthetic.swf\0'));
 function fixture(host = new BrowserWindowsFlashHost(), profile = null) {
   const text = new BurikoNativeText();
   const surfaces = new BurikoSurfaces(
@@ -195,7 +195,7 @@ test('unavailable Flash returns1 without replacing a surface; wrappers retain ex
     frameCapacity: 0,
   });
   const memory = new BurikoBpMemory(new Uint8Array(64));
-  memory.globalMemory.set(name.bytes, 4);
+  memory.globalMemory.set(name.view(), 4);
   const context = {thread, memory, diagnostics: {}};
   for (const arg of [9, 2, 2, 4, 7]) push32(thread, arg);
   assert.equal(await definitions[1].execute(context), 0);
@@ -333,7 +333,7 @@ test('1.69 Flash wrappers preserve unmapped native status words', async () => {
     frameCapacity: 0,
   });
   const memory = new BurikoBpMemory(new Uint8Array(64));
-  memory.globalMemory.set(name.bytes, 4);
+  memory.globalMemory.set(name.view(), 4);
   const h = {thread, memory, diagnostics: {}};
   const definitions = createLegacy169NativeDefinitions(
     {},

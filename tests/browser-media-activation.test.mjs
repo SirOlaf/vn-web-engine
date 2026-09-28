@@ -11,6 +11,7 @@ import {BurikoTraditionalMovieAudioPolicy} from '../dist/engines/buriko/native/m
 import {BurikoMovieImageConfiguration} from '../dist/engines/buriko/native/movie-image.js';
 import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 import {subscribeRuntimeActivity} from '../dist/platform/runtime-activity.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 class Element extends EventTarget {
   style = {};
@@ -233,7 +234,7 @@ test('MF and traditional movie owners retain their clocks during activation and 
     new BurikoTraditionalMovieAudioPolicy(),
   );
   try {
-    assert.equal(await session.start(null, {bytes: Uint8Array.of(1, 0), offset: 0}), 5000);
+    assert.equal(await session.start(null, hostPointer(Uint8Array.of(1, 0))), 5000);
     await tick();
     assert.equal(session.isPlaying(), true);
     assert.deepEqual(activities, ['Buffering movie']);
@@ -256,7 +257,7 @@ test('MF and traditional movie owners retain their clocks during activation and 
     video.currentTime = 5;
     assert.equal(session.isPlaying(), false);
 
-    await session.start(null, {bytes: Uint8Array.of(1, 0), offset: 0});
+    await session.start(null, hostPointer(Uint8Array.of(1, 0)));
     await tick();
     const button = s.request(),
       pendingVideo = s.document.videos.at(-1);

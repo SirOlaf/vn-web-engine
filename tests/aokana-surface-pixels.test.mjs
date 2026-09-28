@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
@@ -10,7 +10,7 @@ import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {createGroup92SurfacePixels} from '../dist/engines/buriko/native/group-92-surface-pixels.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
-const pointer = (bytes) => ({bytes, offset: 0});
+const pointer = (bytes) => hostPointer(bytes);
 const dwords = (values) => {
   const bytes = new Uint8Array(values.length * 4),
     view = new DataView(bytes.buffer);

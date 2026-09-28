@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
 test('mounted text layout settings clone overlay frames and share reading font policy', async () => {
@@ -77,7 +78,7 @@ test('mounted text layout settings clone overlay frames and share reading font p
     assert.ok(font >= 0);
     await call(0x91, 0x97, [font, 9, 80, 2, 3]);
     assert.deepEqual(fields(), [9, 80, 2, 3, 0xffffffff, 0xffffffff]);
-    assert.equal(graph.text.decodeAuto({bytes: state.readingFontName, offset: 0}), 'Shared');
+    assert.equal(graph.text.decodeAuto(hostPointer(state.readingFontName)), 'Shared');
     await call(0x92, 0x97, [font, 10, 75, 4, 5, 0x123456, 0xabcdef]);
     assert.deepEqual(fields(), [10, 75, 4, 5, 0x123456, 0xabcdef]);
     await call(0x90, 0x98, [0, 0]);

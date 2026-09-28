@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {allocateBurikoBitmap, BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
@@ -137,7 +137,7 @@ test('raster opcodes affect actual additive, displacement and cached font consum
         output,
         0,
         0,
-        {bytes: text.encodeWide(value, 1), offset: 0},
+        hostPointer(text.encodeWide(value, 1)),
         first.id,
         0x402010,
         0x80,

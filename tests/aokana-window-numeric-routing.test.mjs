@@ -12,6 +12,7 @@ import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compo
 import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoBitmapText} from '../dist/engines/buriko/native/font-bitmap.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 class Element {
   constructor(tagName, document) {
@@ -76,7 +77,7 @@ function document() {
 }
 
 function word() {
-  return {bytes: new Uint8Array(8), offset: 0};
+  return hostPointer(new Uint8Array(8));
 }
 
 test('queued numeric messages reach live inline, child, and property owners; synchronous send stays main-only', async () => {
@@ -142,10 +143,10 @@ test('queued numeric messages reach live inline, child, and property owners; syn
   children.initialize();
   const childOutput = word();
   assert.equal(
-    children.create(childOutput, {bytes: text.encodeWide('Child'), offset: 0}, 10, 20, 32, 32, 0),
+    children.create(childOutput, hostPointer(text.encodeWide('Child')), 10, 20, 32, 32, 0),
     0,
   );
-  const childId = new DataView(childOutput.bytes.buffer).getUint32(0, true),
+  const childId = new DataView(childOutput.view().buffer).getUint32(0, true),
     childTarget = inlineTarget + 1;
   assert.equal(messages.hasTarget(childTarget), true);
 
@@ -158,7 +159,7 @@ test('queued numeric messages reach live inline, child, and property owners; syn
   );
   const propertyOutput = word();
   assert.equal(properties.create(propertyOutput, null, null, null, 100, 200), 0);
-  const propertyId = new DataView(propertyOutput.bytes.buffer).getUint32(0, true),
+  const propertyId = new DataView(propertyOutput.view().buffer).getUint32(0, true),
     propertyTarget = childTarget + 1;
   assert.equal(messages.hasTarget(propertyTarget), true);
 

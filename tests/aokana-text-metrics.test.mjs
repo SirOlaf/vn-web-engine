@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
@@ -83,7 +83,7 @@ test('91 annotation collection and registered text measurement share drawing own
   assert.equal(await call(0x95, output, source), 0);
   assert.equal(pop32(thread), 2);
   assert.equal(
-    text.decodeAuto({bytes: memory.globalMemory, offset: output}),
+    text.decodeAuto(hostPointer(memory.globalMemory, output)),
     'AB\\reading\nAB\\reading\n',
   );
   assert.equal(state.annotations.first.used, 0);

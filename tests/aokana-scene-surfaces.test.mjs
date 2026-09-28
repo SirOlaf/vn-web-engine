@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
@@ -33,7 +33,7 @@ function setup() {
     const bytes = Uint8Array.from(
       pixels.flatMap((p) => [p & 255, (p >>> 8) & 255, (p >>> 16) & 255]),
     );
-    assert.equal(surfaces.importRaw(index, width, height, 1, {bytes, offset: 0}), 1);
+    assert.equal(surfaces.importRaw(index, width, height, 1, hostPointer(bytes)), 1);
   };
   return {fonts, compositor, surfaces, time, input, loading, words, rgb};
 }
@@ -41,7 +41,7 @@ function setup() {
 test('raw surface import expands packed BGR24, honors optional row alignment and retains metadata', () => {
   const {surfaces, words} = setup();
   const bytes = Uint8Array.of(99, 1, 2, 3, 4, 5, 6, 77, 78, 7, 8, 9, 10, 11, 12, 79, 80);
-  assert.equal(surfaces.importRaw(2, 2, 2, 1, {bytes, offset: 1}, [-7, 9], 1), 1);
+  assert.equal(surfaces.importRaw(2, 2, 2, 1, hostPointer(bytes, 1), [-7, 9], 1), 1);
   assert.deepEqual(words(2), [0x030201, 0x060504, 0x090807, 0x0c0b0a]);
   assert.equal(surfaces.descriptor(2).stride, 8);
   assert.equal(surfaces.descriptor(2).bytesPerPixel, 4);
@@ -54,7 +54,7 @@ test('RGBA import removes the selected shared matte with two truncations and pre
   compositor.importMatteColor = 0x204060;
   const pixels = [0x80323c50, 0x00010203, 0xff112233, 0x80000000, 0x01646464];
   const bytes = new Uint8Array(new Uint32Array(pixels).buffer);
-  assert.equal(surfaces.importRaw(1, 5, 1, 2, {bytes, offset: 0}), 1);
+  assert.equal(surfaces.importRaw(1, 5, 1, 2, hostPointer(bytes)), 1);
   assert.deepEqual(words(1), [0x80453941, 0x00010203, 0xff112233, 0x80000000, 0x01ffffff]);
   assert.deepEqual(Array.from(new Uint32Array(bytes.buffer)), pixels);
 });
@@ -62,10 +62,7 @@ test('RGBA import removes the selected shared matte with two truncations and pre
 test('in-place RGB/RGBA conversion preserves the image and uses the four/two/one opaque tails', () => {
   const {surfaces, words} = setup();
   const pixels = Array.from({length: 14}, (_, i) => (((i * 17) << 24) | (i * 0x030201)) >>> 0);
-  surfaces.importRaw(7, 7, 2, 2, {
-    bytes: new Uint8Array(new Uint32Array(pixels).buffer),
-    offset: 0,
-  });
+  surfaces.importRaw(7, 7, 2, 2, hostPointer(new Uint8Array(new Uint32Array(pixels).buffer)));
   const descriptor = surfaces.descriptor(7),
     id = surfaces.imageId(7),
     owner = descriptor.storage;

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {decodeBurikoSdcInto} from '../dist/engines/buriko/native/sdc.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
@@ -29,8 +30,8 @@ test('mounted VM encodes and restores an exact-sized pooled record table through
     assert.equal(await invoke(0x80, 0x20, [plain.length], 0), 1);
     const address = pop32(child.state);
     const source = memory.pointer(child.state, address, plain.length);
-    assert.equal(source.bytes.length - source.offset, plain.length);
-    source.bytes.set(plain, source.offset);
+    assert.equal(source.view().length - source.offset, plain.length);
+    source.view().set(plain, source.offset);
     memory.globalMemory.fill(0x5a, 0x200, 0x300);
 
     assert.equal(await invoke(0x80, 0xc4, [0x200, address, 8, 3], 2), 0);
@@ -67,10 +68,7 @@ test('mounted VM encodes and restores an exact-sized pooled record table through
     assert.equal(memory.globalMemory[0x200 + encodedLength], 0x5a);
     const decodedDcfs = new Uint8Array(expectedDcfs.length);
     assert.equal(
-      decodeBurikoSdcInto(
-        {bytes: decodedDcfs, offset: 0},
-        {bytes: memory.globalMemory, offset: 0x200},
-      ),
+      decodeBurikoSdcInto(hostPointer(decodedDcfs), hostPointer(memory.globalMemory, 0x200)),
       expectedDcfs.length,
     );
     assert.deepEqual(decodedDcfs, expectedDcfs);
@@ -81,7 +79,7 @@ test('mounted VM encodes and restores an exact-sized pooled record table through
     assert.equal(child.state.stackIndex, 0);
     assert.deepEqual(memory.globalMemory.subarray(0x300, 0x300 + plain.length), plain);
     assert.equal(memory.globalMemory[0x300 + plain.length], 0x7b);
-    assert.deepEqual(source.bytes.subarray(source.offset), plain);
+    assert.deepEqual(source.view().subarray(source.offset), plain);
     assert.equal(await invoke(0x80, 0x21, [address], 0), 1);
     assert.equal(pop32(child.state), 1);
     assert.equal(core.structCodecScratch.section.owner, null);

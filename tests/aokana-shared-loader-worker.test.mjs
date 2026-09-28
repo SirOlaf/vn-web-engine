@@ -31,6 +31,7 @@ import {BurikoScriptFiles} from '../dist/engines/buriko/native/script-files.js';
 import {BurikoSharedLoaderWorker} from '../dist/engines/buriko/native/shared-loader-worker.js';
 import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
 import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function wave(sample) {
   const bytes = new Uint8Array(64 + 5000 * 2),
@@ -129,9 +130,9 @@ test('one shared loader actor restarts priority after each real resource, music,
     musicResult = {value: 99},
     staticResult = {value: 99},
     staticBytes = wave(-8192),
-    completion = {bytes: new Uint8Array(4), offset: 0},
-    handle = {bytes: new Uint8Array(4), offset: 0},
-    scriptBuffer = {bytes: new Uint8Array(4), offset: 0};
+    completion = hostPointer(new Uint8Array(4)),
+    handle = hostPointer(new Uint8Array(4)),
+    scriptBuffer = hostPointer(new Uint8Array(4));
   try {
     await channels.initializeMasters();
     const originalScriptStep = scripts.processFirst.bind(scripts);
@@ -141,17 +142,17 @@ test('one shared loader actor restarts priority after each real resource, music,
     };
     worker.start({automatic: false});
     assert.equal(
-      await scripts.open(handle, {bytes: encode('C:\\game\\document'), offset: 0}, 0, caller),
+      await scripts.open(handle, hostPointer(encode('C:\\game\\document')), 0, caller),
       0,
     );
-    const id = new DataView(handle.bytes.buffer).getUint32(0, true);
+    const id = new DataView(handle.view().buffer).getUint32(0, true);
     assert.equal(await scripts.queueTransfer(completion, id, scriptBuffer, 4, caller), 0);
     loading.enqueueOwned(first, firstResult, null, encode('document'), 0, 0, caller);
     audio.enqueueMusic(musicResult, 0, encode('unused.arc'), encode('loose.bw'), 128, 64, caller);
     audio.enqueueStatic(
       staticResult,
       0,
-      {bytes: staticBytes, offset: 0},
+      hostPointer(staticBytes),
       0,
       1,
       1,
@@ -170,8 +171,8 @@ test('one shared loader actor restarts priority after each real resource, music,
     assert.equal(await worker.processOne(), 'static');
     assert.equal(staticResult.value, 0);
     assert.equal(await worker.processOne(), 'script');
-    assert.deepEqual([...scriptBuffer.bytes], [11, 22, 33, 44]);
-    assert.equal(new DataView(completion.bytes.buffer).getUint32(0, true), 4);
+    assert.deepEqual([...scriptBuffer.view()], [11, 22, 33, 44]);
+    assert.equal(new DataView(completion.view().buffer).getUint32(0, true), 4);
     assert.equal(await channels.stream[0].speaker.start(0), 0);
     assert.equal(await channels.startStatic(0, 128, 64), 0);
     assert.deepEqual([...backend.buffers[0].render(8)[0]], Array(8).fill(0.5));
@@ -211,7 +212,7 @@ test('one shared loader actor restarts priority after each real resource, music,
     audio.enqueueStatic(
       discardedStatic,
       0,
-      {bytes: staticBytes, offset: 0},
+      hostPointer(staticBytes),
       0,
       1,
       1,

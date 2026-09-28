@@ -20,7 +20,7 @@ import {BurikoWindowDisplayState} from '../dist/engines/buriko/native/display-wi
 import {BurikoWindowDisplayObject} from '../dist/engines/buriko/native/display-window.js';
 import {createGroup90Windows} from '../dist/engines/buriko/native/group-90-windows.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {BurikoDisplayTexture} from '../dist/engines/buriko/native/display-texture.js';
 import {recordRasterText, visibleRasterText} from '../dist/text/raster-text.js';
@@ -125,11 +125,11 @@ test('window text and overlays compose in order, preserving animated frame alpha
   assert.equal(pixel(window.compositionBitmap, 4, 1), 0xff112233);
 
   const frame = bitmap(4, 1, [0, 0, 0xff00bb00, 0xff00bb00]);
-  surfaces.importRaw(1, 4, 1, 2, {bytes: frame.storage.bytes, offset: 0});
+  surfaces.importRaw(1, 4, 1, 2, hostPointer(frame.storage.bytes));
   assert.equal(
     state.textLayout.configureOverlayFrames(
       2,
-      {bytes: new Uint8Array(Uint32Array.from([1, 0xffffffff]).buffer), offset: 0},
+      hostPointer(new Uint8Array(Uint32Array.from([1, 0xffffffff]).buffer)),
       {value: 0},
     ),
     1,

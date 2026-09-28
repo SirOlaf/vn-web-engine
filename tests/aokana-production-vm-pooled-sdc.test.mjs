@@ -38,7 +38,7 @@ test('mounted VM decodes a fixed SDC stream into its logged pooled allocation', 
     const address = pop32(child.state);
     assert.equal(child.state.stackIndex, 0);
     const destination = memory.pointer(child.state, address, 64);
-    destination.bytes.fill(0x7b, destination.offset, destination.offset + 64);
+    destination.view().fill(0x7b, destination.offset, destination.offset + 64);
     assert.equal(data.allocations.records.length, 1);
     assert.equal(data.allocations.records[0].address, address);
     assert.match(
@@ -50,11 +50,11 @@ test('mounted VM decodes a fixed SDC stream into its logged pooled allocation', 
     assert.equal(pop32(child.state), 40);
     assert.equal(child.state.stackIndex, 0);
     assert.deepEqual(
-      destination.bytes.subarray(destination.offset, destination.offset + 40),
+      destination.view().subarray(destination.offset, destination.offset + 40),
       new TextEncoder().encode('AB'.repeat(20)),
     );
     assert.deepEqual(
-      destination.bytes.subarray(destination.offset + 40, destination.offset + 64),
+      destination.view().subarray(destination.offset + 40, destination.offset + 64),
       new Uint8Array(24).fill(0x7b),
     );
     assert.deepEqual(memory.globalMemory.subarray(0x200, 0x200 + encoded.length), encoded);

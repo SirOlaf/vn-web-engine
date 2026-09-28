@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {applyBurikoBitmapMask} from '../dist/engines/buriko/native/bitmap-alpha-mask.js';
@@ -13,7 +13,7 @@ import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js'
 import {createGroup92SurfaceMasks} from '../dist/engines/buriko/native/group-92-surface-masks.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
-const pointer = (bytes) => ({bytes, offset: 0});
+const pointer = (bytes) => hostPointer(bytes);
 const dwords = (values) => {
   const bytes = new Uint8Array(values.length * 4),
     view = new DataView(bytes.buffer);
@@ -56,7 +56,7 @@ test('surface mask opcodes convert RGB and RGBA, invert and feed actual alpha-ma
   };
   const read = (surface, count) =>
     Array.from({length: count}, (_, x) => {
-      const output = {bytes: memory.globalMemory, offset: 8};
+      const output = hostPointer(memory.globalMemory, 8);
       assert.equal(surfaces.readPixel(output, surface, x, 0), 0);
       return new DataView(memory.globalMemory.buffer).getUint32(8, true);
     });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {bitmapRead32, bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
@@ -65,8 +65,8 @@ test('90:CC/CD live tone curves transform RGB and RGBA pair/tail pixels consumed
   assert.deepEqual(pixels(4), [0xff224281, 0x80000000, 0x40224281]);
   assert.equal(
     new BurikoRawSurfaceExport(surfaces).export(
-      {bytes: memory.globalMemory, offset: 128},
-      {bytes: memory.globalMemory, offset: 112},
+      hostPointer(memory.globalMemory, 128),
+      hostPointer(memory.globalMemory, 112),
       64,
       4,
     ),

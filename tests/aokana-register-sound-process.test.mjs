@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
@@ -83,7 +83,7 @@ test('direct sound process queues borrowed PCM, completes through the real stati
     queues = new BurikoAudioLoaderQueues(loading, music, statics),
     thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 2, frameCapacity: 0}),
     sourceBytes = new Uint8Array(80),
-    source = {bytes: sourceBytes, offset: 8},
+    source = hostPointer(sourceBytes, 8),
     view = new DataView(sourceBytes.buffer),
     process = new BurikoRegisterSoundProcess(
       {

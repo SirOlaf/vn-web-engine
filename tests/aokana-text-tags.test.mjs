@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {createGroup91TextTags} from '../dist/engines/buriko/native/group-91-text-tags.js';
@@ -50,7 +50,7 @@ test('raw link extraction and in-place tag stripping preserve encoded text and n
   // prefixes use memmove while the final tail still uses forward string copy.
   memory.globalMemory.set(text.encodeWide('pre<l>sea</l><b>sky</b>end', 1), 256);
   call(0x9f, 256, 256);
-  assert.equal(text.decodeAuto({bytes: memory.globalMemory, offset: 256}), 'preseaskyend');
+  assert.equal(text.decodeAuto(hostPointer(memory.globalMemory, 256)), 'preseaskyend');
   memory.globalMemory.set([60, 108, 62, 0x82, 0xa0, 60, 47, 108, 62, 0], 96);
   assert.equal(call(0x9e, 800, 96), 1);
   assert.deepEqual(memory.globalMemory.slice(800, 803), new Uint8Array([0x82, 0xa0, 0]));

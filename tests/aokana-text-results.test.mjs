@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
 import {allocateBurikoBitmap} from '../dist/engines/buriko/native/bitmap.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
@@ -120,7 +120,7 @@ test('text result services consume actual layout registries and cached glyph ABC
       lineOutput,
       x: 1,
       y: 2,
-      source: {bytes: memory.globalMemory, offset: 32},
+      source: hostPointer(memory.globalMemory, 32),
       readingEnabled: 0,
       annotations: null,
       fontId: window.fontId,

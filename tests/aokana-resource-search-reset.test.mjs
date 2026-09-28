@@ -3,7 +3,7 @@ import test from 'node:test';
 import {BlobSource} from '../dist/core/source.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoDistributedAllocator,
@@ -80,10 +80,9 @@ test('ECB90 resource search reset uses the same BC240/BC170 owner as Bank 80 and
     execute(0x37, 32);
     execute(0x36, 1);
     assert.equal(
-      text.decodeAuto({
-        bytes: await resources.findRelativeFile('C:\\game\\', {bytes: bytes('only\0'), offset: 0}),
-        offset: 0,
-      }),
+      text.decodeAuto(
+        hostPointer(await resources.findRelativeFile('C:\\game\\', hostPointer(bytes('only\0')))),
+      ),
       'C:\\game\\sub\\only',
     );
     const searchList = configuration.searchDirectories;
@@ -93,7 +92,7 @@ test('ECB90 resource search reset uses the same BC240/BC170 owner as Bank 80 and
     assert.equal(configuration.searchDirectories, searchList);
     assert.deepEqual(configuration.searchDirectories, []);
     assert.equal(
-      await resources.findRelativeFile('C:\\game\\', {bytes: bytes('only\0'), offset: 0}),
+      await resources.findRelativeFile('C:\\game\\', hostPointer(bytes('only\0'))),
       null,
     );
   } finally {
