@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {XflArchive} from '../dist/formats/rscript/xfl.js';
 import {decodeWcg, encodeWcg, readWcgHeader} from '../dist/formats/rscript/wcg.js';
 import {LwgImage} from '../dist/formats/rscript/lwg.js';
+import {decodePsd} from '../dist/formats/rscript/psd.js';
 import {decodeGscInstruction, parseGsc} from '../dist/formats/rscript/gsc.js';
 import {parseFsc} from '../dist/formats/rscript/fsc.js';
 import {parseWave, waveOggStream, wavePcmPlanes} from '../dist/formats/riff/wave.js';
@@ -389,4 +390,114 @@ test('WCG encoding round-trips small and large palettes through the decoder', ()
     assert.deepEqual(readWcgHeader(encoded), {flags: 0x271, width, height});
     assert.deepEqual(decodeWcg(encoded).pixels, pixels);
   }
+});
+
+/** Big-endian PSD with 8-bit RGB layers; each channel is [id, compression, rows]. */
+function psd(width, height, layers) {
+  const bytes = [];
+  const u16 = (v) => bytes.push((v >> 8) & 0xff, v & 0xff);
+  const u32 = (v) => bytes.push((v >>> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff);
+  bytes.push(...Buffer.from('8BPS'));
+  u16(1);
+  bytes.push(0, 0, 0, 0, 0, 0);
+  u16(3);
+  u32(height);
+  u32(width);
+  u16(8);
+  u16(3);
+  u32(0);
+  u32(0);
+  const data = layers.map(({channels}) =>
+    channels.map(([, compression, rows]) => {
+      const out = [compression >> 8, compression & 0xff];
+      if (compression === 0) out.push(...rows.flat());
+      else {
+        for (const row of rows) out.push(row.length >> 8, row.length & 0xff);
+        out.push(...rows.flat());
+      }
+      return out;
+    }),
+  );
+  u32(0);
+  u32(0);
+  u16(-layers.length & 0xffff);
+  layers.forEach(({top, left, bottom, right, channels}, i) => {
+    for (const v of [top, left, bottom, right]) u32(v >>> 0);
+    u16(channels.length);
+    channels.forEach(([id], c) => {
+      u16(id & 0xffff);
+      u32(data[i][c].length);
+    });
+    bytes.push(...Buffer.from('8BIMnorm'), 102, 0, 8, 0);
+    u32(8);
+    u32(0);
+    u32(0);
+  });
+  for (const channels of data) for (const channel of channels) bytes.push(...channel);
+  return new Uint8Array(bytes);
+}
+
+test('PSD images show the first layer at its position on a transparent canvas', () => {
+  const image = decodePsd(
+    psd(4, 3, [
+      {
+        top: 1,
+        left: -1,
+        bottom: 4,
+        right: 2,
+        channels: [
+          // Alpha: a literal run, then a repeat; the -128 header repeats 129 times natively.
+          [
+            -1,
+            1,
+            [
+              [0x02, 0xff, 0x80, 0x80],
+              [0x80, 0x40],
+              [0xfe, 0x00],
+            ],
+          ],
+          [
+            0,
+            0,
+            [
+              [1, 2, 3],
+              [4, 5, 6],
+              [7, 8, 9],
+            ],
+          ],
+          [
+            1,
+            1,
+            [
+              [0xfe, 0x11],
+              [0x00, 0x22, 0x01, 0x33, 0x44],
+              [0xfe, 0x55],
+            ],
+          ],
+          [
+            2,
+            0,
+            [
+              [10, 11, 12],
+              [13, 14, 15],
+              [16, 17, 18],
+            ],
+          ],
+        ],
+      },
+      {top: 0, left: 0, bottom: 1, right: 1, channels: [[0, 0, [[99]]]]},
+    ]),
+  );
+  assert.equal(image.width, 4);
+  assert.equal(image.height, 3);
+  const pixel = (x, y) => [...image.pixels.subarray((y * 4 + x) * 4, (y * 4 + x + 1) * 4)];
+  // Row 0 lies above the layer; the second layer's opacity and pixels are ignored.
+  for (let x = 0; x < 4; x++) assert.deepEqual(pixel(x, 0), [0, 0, 0, 0xff]);
+  // B, G, R and the inverted alpha; the layer's first column is clipped at the left edge.
+  assert.deepEqual(pixel(0, 1), [11, 0x11, 2, 0x7f]);
+  assert.deepEqual(pixel(1, 1), [12, 0x11, 3, 0x7f]);
+  assert.deepEqual(pixel(0, 2), [14, 0x33, 5, 0xbf]);
+  assert.deepEqual(pixel(1, 2), [15, 0x44, 6, 0xbf]);
+  assert.deepEqual(pixel(2, 2), [0, 0, 0, 0xff]);
+  assert.throws(() => decodePsd(new Uint8Array(26)), /Not a PSD/);
 });

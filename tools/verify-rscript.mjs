@@ -11,6 +11,7 @@ import {openSource} from './file-source.mjs';
 import {XflArchive} from '../dist/formats/rscript/xfl.js';
 import {decodeWcg} from '../dist/formats/rscript/wcg.js';
 import {LwgImage} from '../dist/formats/rscript/lwg.js';
+import {decodePsd} from '../dist/formats/rscript/psd.js';
 import {decodeGscInstruction, parseGsc} from '../dist/formats/rscript/gsc.js';
 import {parseFsc} from '../dist/formats/rscript/fsc.js';
 import {parseWave, waveOggStream} from '../dist/formats/riff/wave.js';
@@ -28,8 +29,8 @@ async function inspect(archive, entry, path) {
     return;
   }
   const bytes = await archive.read(entry);
-  if (extension === 'wcg') {
-    const image = decodeWcg(bytes);
+  if (extension === 'wcg' || extension === 'psd') {
+    const image = extension === 'wcg' ? decodeWcg(bytes) : decodePsd(bytes);
     if (image.pixels.length !== image.width * image.height * 4) throw new Error('size');
   } else if (extension === 'lwg') {
     const lwg = await LwgImage.open(archive.entrySource(entry));

@@ -1,5 +1,6 @@
 import {byteDataView, checkRange} from '../../core/binary.js';
 import {LwgImage} from '../../formats/rscript/lwg.js';
+import {decodePsd} from '../../formats/rscript/psd.js';
 import {decodeWcg, type RScriptImage} from '../../formats/rscript/wcg.js';
 import type {RScriptFiles} from './files.js';
 import {surfaceFromImage, type RScriptSurface} from './graphics/pixels.js';
@@ -82,6 +83,7 @@ export class RScriptImages {
         if (!bytes) continue;
         if (extension === '.wcg') return surfaceFromImage(decodeWcg(bytes));
         if (extension === '.bmp') return surfaceFromImage(decodeBmp(bytes));
+        if (extension === '.psd') return surfaceFromImage(decodePsd(bytes));
         throw new Error(`${path}${extension}: this image format is not supported yet`);
       }
       return null;
