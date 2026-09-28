@@ -74,6 +74,7 @@ export class RScriptConfigScreen extends RScriptContainer {
   private readonly groups: {setting: Setting; group: OptionGroup}[] = [];
   private readonly sliders: {offset: number; slider: Slider}[] = [];
   private readonly buttons = new Map<ConfigCommand, ImageButton>();
+  private fontButton: ImageButton | null = null;
   private fontName: RScriptTextBlock | null = null;
   private standalone = false;
 
@@ -130,11 +131,25 @@ export class RScriptConfigScreen extends RScriptContainer {
       this.buttons.set(command, button);
       this.add(button, 10);
     }
-    const font = image.position('font_txt');
+    // The font button (0x4501E0) shows the font name in its `font_txt` rectangle, or over
+    // the whole button without one (0x4504D0). The native font window it opens is not
+    // available in browsers, so pressing it does nothing.
+    const fontButton = await image.button('font', () => {});
+    this.fontButton = fontButton;
+    if (fontButton) this.add(fontButton, 1);
+    const font =
+      (await image.rect('font_txt')) ??
+      (fontButton && {
+        x: fontButton.x,
+        y: fontButton.y,
+        width: fontButton.width,
+        height: fontButton.height,
+      });
     if (font) {
+      // sub_4507F0 as the screen calls it: white, face 2, the rectangle's height.
       this.fontName = new RScriptTextBlock(this.env.rasterizer, 32, {
-        face: 0,
-        size: 24,
+        face: 2,
+        size: font.height,
         color: 0xffffff,
         palette: this.env.palette,
         shadow: false,
@@ -144,15 +159,15 @@ export class RScriptConfigScreen extends RScriptContainer {
         indent: 0,
         firstIndent: 0,
         align: 0,
-        width: 400,
-        height: 32,
+        width: font.width,
+        height: font.height,
         rubyFace: 0,
         rubySize: 12,
         rubyRaise: 0,
       });
-      this.fontName.resize(400, 32);
+      this.fontName.resize(font.width, font.height);
       this.fontName.setPosition(font.x, font.y);
-      this.add(this.fontName, 10);
+      this.add(this.fontName, 2);
     }
   }
 
@@ -209,6 +224,7 @@ export class RScriptConfigScreen extends RScriptContainer {
 
   close(): void {
     for (const button of this.buttons.values()) button.unfocus();
+    this.fontButton?.unfocus();
     this.show(false);
   }
 }

@@ -26,6 +26,12 @@ export class ScreenImage {
     const entry = this.lwg.find(name);
     return entry ? {x: entry.x, y: entry.y} : null;
   }
+  /** A layer's rectangle, for layers that only mark an area. */
+  async rect(name: string): Promise<{x: number; y: number; width: number; height: number} | null> {
+    const at = this.position(name);
+    const surface = await this.surface(name);
+    return at && surface ? {...at, width: surface.width, height: surface.height} : null;
+  }
   async surface(name: string): Promise<RScriptSurface | null> {
     return this.lwg.find(name) ? this.images.lwgLayer(this.path, name) : null;
   }
@@ -40,12 +46,16 @@ export class ScreenImage {
     sprite.show(true);
     return sprite;
   }
-  /** A two-image button from `name` and `name_f` (0x4499F0 +4). */
+  /** A button from `name` and whichever of `name_f`, `name_c`, `name_l` exist (0x449C00). */
   async button(name: string, press: () => void): Promise<ImageButton | null> {
     const at = this.position(name);
-    const normal = await this.surface(name);
-    if (!at || !normal) return null;
-    const button = new ImageButton(normal, await this.surface(`${name}_f`));
+    const frames: RScriptSurface[] = [];
+    for (const suffix of ['', '_f', '_c', '_l']) {
+      const surface = await this.surface(name + suffix);
+      if (surface) frames.push(surface);
+    }
+    if (!at || !frames.length) return null;
+    const button = new ImageButton(frames);
     button.setPosition(at.x, at.y);
     button.onPress = press;
     button.interactive = true;
@@ -55,18 +65,16 @@ export class ScreenImage {
 }
 
 /**
- * Two-image button (0x4499F0): the normal image, or the focus image under the pointer or
- * while selected in an option group.
+ * Image button (0x4499F0) over the frames that exist in load order. The pointer shows the
+ * second frame (0x44AB00) and selection in an option group the last (0x44A860); a single
+ * frame is drawn inverted (blend mode 13) instead.
  */
 export class ImageButton extends RScriptSprite {
   private inside = false;
   private chosen = false;
-  constructor(
-    private readonly normal: RScriptSurface,
-    private readonly focus: RScriptSurface | null,
-  ) {
+  constructor(private readonly frames: readonly RScriptSurface[]) {
     super();
-    this.setSurface(normal);
+    this.setSurface(frames[0]!);
     this.onHover = (_, inside) => {
       this.inside = inside;
       this.redraw();
@@ -80,7 +88,13 @@ export class ImageButton extends RScriptSprite {
     this.redraw();
   }
   private redraw(): void {
-    this.setSurface((this.inside || this.chosen) && this.focus ? this.focus : this.normal);
+    const {frames} = this;
+    const lit = this.inside || this.chosen;
+    if (frames.length === 1) {
+      this.setBlendMode(lit ? 13 : 0);
+      return;
+    }
+    this.setSurface(this.chosen ? frames.at(-1)! : this.inside ? frames[1]! : frames[0]!);
   }
   /** Leaves the focus image when input stops (vtable +148). */
   unfocus(): void {
