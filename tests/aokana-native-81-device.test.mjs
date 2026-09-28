@@ -13,7 +13,7 @@ function vm(controller) {
       moduleCapacity: 256,
       frameCapacity: 0,
     }),
-    memory = new BurikoBpMemory(),
+    memory = new BurikoBpMemory(new Uint8Array(0)),
     slots = createGroup81Device(controller);
   assert.equal(slots.length, 6);
   for (const slot of slots)

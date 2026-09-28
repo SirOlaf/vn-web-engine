@@ -46,11 +46,12 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
     },
   });
   const bytes = new Uint8Array(1024),
-    data = new DataView(bytes.buffer),
+    memory = new BurikoBpMemory(bytes),
+    data = () => new DataView(memory.globalMemory.buffer, memory.globalMemory.byteOffset),
     thread = new BurikoBpThread({id: 1, operandCapacity: 32, moduleCapacity: 0, frameCapacity: 0});
-  const context = {thread, memory: new BurikoBpMemory(bytes), diagnostics: {}};
+  const context = {thread, memory, diagnostics: {}};
   const put = (offset, values) =>
-    values.forEach((value, i) => data.setUint32(offset + i * 4, value, true));
+    values.forEach((value, i) => data().setUint32(offset + i * 4, value, true));
   const call = (secondary, args = [], pushed = 0) => {
     const depth = thread.stackIndex;
     args.forEach((value) => push32(thread, value));
@@ -73,9 +74,9 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
   atlas.storage.written(0, 128);
   put(4, [0, 0, 4, 4, 0, 4, 0, 4, 4, 0]);
   put(64, [1, 0]);
-  data.setUint32(64 + 33 * 4, 1, true);
+  data().setUint32(64 + 33 * 4, 1, true);
   put(200, [2, 0, 1]);
-  data.setUint32(200 + 33 * 4, 1, true);
+  data().setUint32(200 + 33 * 4, 1, true);
   put(400, [0, 1, 1, 0]);
   call(0x70, [4, 2, 2, 6, 1, 1], 1);
   const handle = pop32(thread),
@@ -88,7 +89,7 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
   call(0x75, [handle, 0, 0, 0x80, 0, 2]);
   call(0x78, [handle, 3, 2, 4, 1, 2, 64]);
   call(0x79, [handle, 2, 2, 400]);
-  data.setUint32(400, 1, true); // Row records own their copied cell IDs.
+  data().setUint32(400, 1, true); // Row records own their copied cell IDs.
   call(0x74, [handle, 1]);
   const keys = new Uint32Array(landscape.copyExpandedSortKeys(null));
   landscape.copyExpandedSortKeys(keys);
@@ -106,7 +107,7 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
   assert.equal(pixel(5, 5), red);
   call(0x7e, [500, handle, 0, 1], 1);
   assert.equal(pop32(thread), 1);
-  assert.equal(data.getUint32(500, true), 3);
+  assert.equal(data().getUint32(500, true), 3);
   call(0x7f, [5, handle, 0, 1], 1);
   assert.equal(pop32(thread), 1);
   assert.equal(surfaces.descriptor(5).storage.view.getUint32(0, true), red);
@@ -115,11 +116,11 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
   input.touchPositions = [[5, 1]];
   call(0x73, [504, handle, 0], 1);
   assert.equal(pop32(thread), 1);
-  assert.deepEqual([data.getUint32(504, true), data.getUint32(508, true)], [1, 0]);
+  assert.deepEqual([data().getUint32(504, true), data().getUint32(508, true)], [1, 0]);
   put(504, [77, 88]);
   call(0x73, [504, handle, 1], 1);
   assert.equal(pop32(thread), 0);
-  assert.deepEqual([data.getUint32(504, true), data.getUint32(508, true)], [77, 88]);
+  assert.deepEqual([data().getUint32(504, true), data().getUint32(508, true)], [77, 88]);
   // Ordinary silhouette replacement through the real compositor.
   call(0x76, [handle, 0, 0, 1, 256, 0x00a0b0c0]);
   draw(0x22000);
@@ -138,7 +139,7 @@ test('Landscape composes terrain, sorted cells, overlays and pointer queries thr
   call(0x7d, [handle, 1, 1, 1]);
   call(0x7e, [500, handle, 1, 1], 1);
   assert.equal(pop32(thread), 1);
-  assert.equal(data.getUint32(500, true), 4);
+  assert.equal(data().getUint32(500, true), 4);
   call(0x71, [handle]);
   assert.equal(manager.categoryCount(4), 0);
   assert.equal(thread.stackIndex, 0);

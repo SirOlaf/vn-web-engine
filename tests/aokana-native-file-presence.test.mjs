@@ -65,7 +65,7 @@ test('80:3c sees an ordinary empty file under the shared wide resource root with
     bytes = new Uint8Array(128),
     memory = new BurikoBpMemory(bytes),
     thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0});
-  bytes.set(text.encodeWide('資料.bin', 0), 16);
+  memory.globalMemory.set(text.encodeWide('資料.bin', 0), 16);
   // Actual engine/localized owners are composed; this existing-file branch never opens UI.
   push32(thread, 16);
   push32(thread, 0);

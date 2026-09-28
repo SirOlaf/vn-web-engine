@@ -56,9 +56,10 @@ test('80 path services share mounted directories, file flags and lexical UTF-8 s
     frameCapacity: 16,
   });
   const context = {thread, memory};
-  const put = (address, value) => bytes.set(text.encodeWide(value, 1), address);
+  const global = () => memory.globalMemory;
+  const put = (address, value) => global().set(text.encodeWide(value, 1), address);
   const read = (address) =>
-    new TextDecoder().decode(bytes.subarray(address, bytes.indexOf(0, address)));
+    new TextDecoder().decode(global().subarray(address, global().indexOf(0, address)));
   const invoke = async (slot, ...arguments_) => {
     for (const value of arguments_) push32(thread, value);
     assert.equal(await definitions.find((entry) => entry.secondary === slot).execute(context), 0);
@@ -95,7 +96,7 @@ test('80 path services share mounted directories, file flags and lexical UTF-8 s
   assert.deepEqual(await metadata.list('/'), []);
 
   // Split is lexical, keeps slash spelling and uses UTF-8 regardless of the source encoding.
-  bytes.set(text.encodeWide('C:\\資料.dir/場面.tar.gz', 0), 256);
+  global().set(text.encodeWide('C:\\資料.dir/場面.tar.gz', 0), 256);
   assert.equal(await invoke(0x2b, 1024, 1280, 1536, 1792, 256), 1);
   assert.deepEqual([1024, 1280, 1536, 1792].map(read), ['C:', '\\資料.dir/', '場面.tar', '.gz']);
   put(256, '\\\\server\\share\\.config');

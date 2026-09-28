@@ -67,7 +67,7 @@ test('all four file wrappers retain transfer pointers and publish queued complet
       moduleCapacity: 256,
       frameCapacity: 0,
     }),
-    memory = new BurikoBpMemory(),
+    memory = new BurikoBpMemory(new Uint8Array(0)),
     slots = createGroup81Files(registry);
   assert.equal(slots.length, 4);
   for (const slot of slots)

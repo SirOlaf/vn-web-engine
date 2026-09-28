@@ -189,7 +189,7 @@ test('81 1B/1D preserve native pop order, success values and output write order'
   assert.equal(gamepads.mapping(7), 0x89abcdef);
   assert.equal(call(0x1b, 36, 123), 0);
   assert.equal(call(0x1d, 32, 1), 1);
-  const view = new DataView(bytes.buffer, 32, 24);
+  const view = new DataView(memory.globalMemory.buffer, memory.globalMemory.byteOffset + 32, 24);
   assert.deepEqual(
     [
       view.getInt32(0, true),
@@ -202,6 +202,6 @@ test('81 1B/1D preserve native pop order, success values and output write order'
     [-256, 512, 1024, -1024, 0xffffffff, 4],
   );
   assert.equal(call(0x1d, 96, 99), 0);
-  assert.deepEqual([...bytes.subarray(96, 120)], Array(24).fill(0xa5));
+  assert.deepEqual([...memory.globalMemory.subarray(96, 120)], Array(24).fill(0xa5));
   assert.equal(thread.stackIndex, 0);
 });

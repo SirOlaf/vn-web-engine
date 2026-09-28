@@ -101,7 +101,7 @@ function setup() {
 
   function storeBytes(bytes) {
     const address = nextAddress;
-    memoryBytes.set(bytes, address);
+    memory.globalMemory.set(bytes, address);
     nextAddress += bytes.length + 8;
     return address;
   }
@@ -111,7 +111,7 @@ function setup() {
   function storeAddressArray(addresses) {
     nextAddress = (nextAddress + 3) & ~3;
     const address = nextAddress,
-      view = new DataView(memoryBytes.buffer);
+      view = new DataView(memory.globalMemory.buffer, memory.globalMemory.byteOffset);
     addresses.forEach((value, index) => view.setUint32(address + index * 4, value, true));
     nextAddress += addresses.length * 4 + 8;
     return address;
@@ -151,7 +151,9 @@ function setup() {
     events,
     invoke,
     mainWindowIdentity,
-    memoryBytes,
+    get memoryBytes() {
+      return memory.globalMemory;
+    },
     requests,
     surface,
     storeAddressArray,

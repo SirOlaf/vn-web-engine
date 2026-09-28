@@ -37,7 +37,7 @@ test('81 3D uses only the first drive byte, the exact ANSI root and raw host res
   assert.equal(pop32(thread), 0xf0000001);
   assert.equal(thread.stackIndex, 0);
   assert.deepEqual(calls, [{root: [0xe9, 58, 92, 0], capacity: 0x30c}]);
-  assert.deepEqual([...bytes.subarray(128, 132)], [0x82, 0xa0, 0, 0xa5]);
+  assert.deepEqual([...memory.globalMemory.subarray(128, 132)], [0x82, 0xa0, 0, 0xa5]);
 
   assert.equal(profile.readVolumeLabel(Uint8Array.of(0xe9, 58, 92, 0), null, 0x30c), 1);
 

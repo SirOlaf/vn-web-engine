@@ -90,6 +90,7 @@ test('80:3e changes the shared encoded/wide resource roots consumed by file, rea
   ];
   const bytes = new Uint8Array(4096),
     memory = new BurikoBpMemory(bytes),
+    global = () => memory.globalMemory,
     thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
@@ -104,26 +105,26 @@ test('80:3e changes the shared encoded/wide resource roots consumed by file, rea
     return result;
   };
   const original = text.encodeWide('C:\\資料\\', 0);
-  bytes.set(original, 32);
+  global().set(original, 32);
   assert.equal(await invoke(0x3e, 32), 1);
   const expected = Uint8Array.from([...original.subarray(0, -1), 92, 0]);
   assert.deepEqual(config.primaryRoot, expected);
   assert.equal(config.nativeFileRoot, 'C:\\資料\\\\');
   assert.equal(paths.currentDirectory, 'C:\\old');
   assert.equal(await invoke(0x3d, 512, 0), 1);
-  assert.deepEqual(bytes.subarray(512, 512 + expected.length), expected);
-  bytes.set(text.encodeWide('Asset.bin', 1), 256);
+  assert.deepEqual(global().subarray(512, 512 + expected.length), expected);
+  global().set(text.encodeWide('Asset.bin', 1), 256);
   assert.equal(await invoke(0x34, 0, 256), 1);
   assert.equal(await invoke(0x30, 1024, 0, 256), 3);
-  assert.deepEqual(Array.from(bytes.subarray(1024, 1027)), [9, 7, 5]);
-  bytes.set(text.encodeWide('New.bin', 1), 256);
-  bytes.set([2, 4], 1500);
+  assert.deepEqual(Array.from(global().subarray(1024, 1027)), [9, 7, 5]);
+  global().set(text.encodeWide('New.bin', 1), 256);
+  global().set([2, 4], 1500);
   assert.equal(await invoke(0x32, 256, 1500, 2), 1);
   assert.deepEqual(
     await (await files.open(text.encodeWide('C:\\資料\\New.bin', 1))).source.read(0, 2),
     Uint8Array.of(2, 4),
   );
-  bytes.set(text.encodeWide('C:\\missing', 1), 32);
+  global().set(text.encodeWide('C:\\missing', 1), 32);
   assert.equal(await invoke(0x3e, 32), 0);
   assert.deepEqual(config.primaryRoot, expected);
   processing.dispose();

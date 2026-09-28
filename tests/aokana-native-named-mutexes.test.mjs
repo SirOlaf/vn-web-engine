@@ -45,15 +45,15 @@ test('named mutex owner keeps copied newest-first nodes, rejects duplicates and 
     mutexes = new BurikoNamedMutexes(host),
     bytes = new Uint8Array(64),
     memory = new BurikoBpMemory(bytes);
-  writeName(bytes, 8, 'alpha');
-  writeName(bytes, 24, 'beta');
+  writeName(memory.globalMemory, 8, 'alpha');
+  writeName(memory.globalMemory, 24, 'beta');
 
   assert.equal(mutexes.create(memory.resolve(null, 8)), 1);
   assert.equal(mutexes.create(memory.resolve(null, 24)), 2);
   assert.deepEqual(mutexes.ids, [2, 1]);
-  bytes[8] = 88;
+  memory.globalMemory[8] = 88;
   assert.deepEqual([...mutexes.name(1)], [97, 108, 112, 104, 97, 0]);
-  bytes[8] = 97;
+  memory.globalMemory[8] = 97;
   assert.equal(mutexes.create(memory.resolve(null, 8)), 0);
   assert.deepEqual(mutexes.ids, [2, 1]);
   assert.equal(calls.at(-1)[0], 'close');
@@ -94,7 +94,7 @@ test('81 EC/ED preserve native argument pops and raw result pushes', () => {
       assert.equal(handlers.get(secondary)(context), 0);
       return pop32(thread);
     };
-  writeName(bytes, 12, 'vm-mutex');
+  writeName(memory.globalMemory, 12, 'vm-mutex');
 
   const id = call(0xec, 12);
   assert.equal(id, 1);

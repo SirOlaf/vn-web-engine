@@ -83,13 +83,15 @@ function setup(choice) {
   let nextText = 32;
   return {
     definition,
-    memoryBytes,
+    get memoryBytes() {
+      return memory.globalMemory;
+    },
     requests,
     name(value) {
       const address = nextText,
         encoded = bytes(`${value}\0`);
       nextText += encoded.length + 8;
-      memoryBytes.set(encoded, address);
+      memory.globalMemory.set(encoded, address);
       return address;
     },
     mount(path, names) {

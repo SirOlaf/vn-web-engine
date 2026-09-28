@@ -46,7 +46,7 @@ test('all five system wrappers use the selected Windows profile and preserve nat
     moduleCapacity: 256,
     frameCapacity: 0,
   });
-  const memory = new BurikoBpMemory(),
+  const memory = new BurikoBpMemory(new Uint8Array(0)),
     context = {thread, memory};
   const call = (primary, secondary, args = []) => {
     args.forEach((value) => push32(thread, value));

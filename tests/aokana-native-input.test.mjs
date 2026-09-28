@@ -240,7 +240,10 @@ test('native input slot pop order, capture flushing and click-index validation',
   input.recordClickPosition(2, 40, 50);
   call(0x81, 0x07, 0x10, 2);
   assert.equal(pop32(thread), 1);
-  assert.deepEqual([...new Int32Array(bytes.buffer, 16, 2)], [40, 50]);
+  assert.deepEqual(
+    [...new Int32Array(memory.globalMemory.buffer, memory.globalMemory.byteOffset + 16, 2)],
+    [40, 50],
+  );
   call(0x80, 0x10, 0);
   assert.equal(input.enabled, 0);
   assert.equal(input.totalPresses(13), 2);

@@ -58,7 +58,9 @@ function setup() {
   let nextText = 16;
   return {
     definition,
-    memoryBytes,
+    get memoryBytes() {
+      return memory.globalMemory;
+    },
     roots,
     mount(path, bytes) {
       const source = new RecordingSource(bytes);
@@ -69,7 +71,7 @@ function setup() {
       const address = nextText,
         bytes = encode(`${value}\0`);
       nextText += bytes.length + 8;
-      memoryBytes.set(bytes, address);
+      memory.globalMemory.set(bytes, address);
       return address;
     },
     async invoke(destination, outputSize, path, requestedLength) {
@@ -92,7 +94,13 @@ test('81 32 reads a requested prefix through the lowercase drive root and aligne
   assert.equal(await state.invoke(destination, outputSize, path, 5), 0);
   assert.deepEqual(state.roots, ['c:\\']);
   assert.deepEqual(source.reads, [[0, 8]]);
-  assert.equal(new DataView(state.memoryBytes.buffer).getUint32(outputSize, true), 5);
+  assert.equal(
+    new DataView(state.memoryBytes.buffer, state.memoryBytes.byteOffset).getUint32(
+      outputSize,
+      true,
+    ),
+    5,
+  );
   assert.deepEqual(state.memoryBytes.slice(destination, destination + 5), contents.slice(0, 5));
   assert.equal(state.memoryBytes[destination - 1], 0xa5);
   assert.equal(state.memoryBytes[destination + 5], 0xa5);
@@ -111,12 +119,18 @@ test('81 32 treats zero as whole-file length and clamps a longer request at EOF'
     shortPath = state.name('C:\\game\\short.bin');
 
   assert.equal(await state.invoke(512, 480, wholePath, 0), 0);
-  assert.equal(new DataView(state.memoryBytes.buffer).getUint32(480, true), whole.length);
+  assert.equal(
+    new DataView(state.memoryBytes.buffer, state.memoryBytes.byteOffset).getUint32(480, true),
+    whole.length,
+  );
   assert.deepEqual(state.memoryBytes.slice(512, 512 + whole.length), whole);
   assert.deepEqual(wholeSource.reads, [[0, whole.length]]);
 
   assert.equal(await state.invoke(640, 608, shortPath, 10), 0);
-  assert.equal(new DataView(state.memoryBytes.buffer).getUint32(608, true), short.length);
+  assert.equal(
+    new DataView(state.memoryBytes.buffer, state.memoryBytes.byteOffset).getUint32(608, true),
+    short.length,
+  );
   assert.deepEqual(state.memoryBytes.slice(640, 640 + short.length), short);
   assert.deepEqual(shortSource.reads, [[0, short.length]]);
   assert.deepEqual(state.roots, ['c:\\', 'c:\\']);

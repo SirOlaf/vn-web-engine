@@ -65,7 +65,7 @@ test('record outputs preserve byte snapshots, alias write order and deferred nul
 });
 
 test('record wrappers use the native five-argument write ABI and unchanged status words', () => {
-  const {bytes, records, pointer, view} = fixture();
+  const {bytes, records} = fixture();
   const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
@@ -73,6 +73,8 @@ test('record wrappers use the native five-argument write ABI and unchanged statu
     frameCapacity: 64,
   });
   const memory = new BurikoBpMemory(bytes),
+    global = () => memory.globalMemory,
+    view = () => new DataView(global().buffer, global().byteOffset),
     h = {thread, memory},
     definitions = createGroup81Records(records);
   const call = (secondary, ...args) => {
@@ -81,22 +83,22 @@ test('record wrappers use the native five-argument write ABI and unchanged statu
     return pop32(thread);
   };
   assert.equal(call(0xd0, 16, 2), 0);
-  const id = view.getUint32(16, true);
-  bytes.set([1, 2, 3], 100);
+  const id = view().getUint32(16, true);
+  global().set([1, 2, 3], 100);
   assert.equal(call(0xd2, 20, id, 57, 100, 3), 0);
-  assert.equal(view.getUint32(20, true), 0);
+  assert.equal(view().getUint32(20, true), 0);
   assert.equal(call(0xd4, 200, 24, id, 0), 0);
-  assert.deepEqual([...bytes.subarray(200, 203)], [1, 2, 3]);
-  assert.equal(view.getUint32(24, true), 3);
+  assert.deepEqual([...global().subarray(200, 203)], [1, 2, 3]);
+  assert.equal(view().getUint32(24, true), 3);
   assert.equal(call(0xd5, 300, 28, id), 0);
-  assert.equal(view.getUint32(28, true), 1);
-  assert.deepEqual([...new Uint32Array(bytes.buffer, 300, 2)], [0, 3]);
+  assert.equal(view().getUint32(28, true), 1);
+  assert.deepEqual([...new Uint32Array(global().buffer, global().byteOffset + 300, 2)], [0, 3]);
   assert.equal(call(0xd3, id, 0), 0);
   assert.equal(call(0xd1, id), 0);
 });
 
 test('C0640 clears the same Bank 81 record-set owner before the next program', () => {
-  const {bytes, records, pointer, view} = fixture();
+  const {bytes, records} = fixture();
   const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
@@ -104,22 +106,25 @@ test('C0640 clears the same Bank 81 record-set owner before the next program', (
     frameCapacity: 64,
   });
   const definitions = createGroup81Records(records);
-  const h = {thread, memory: new BurikoBpMemory(bytes)};
+  const memory = new BurikoBpMemory(bytes),
+    global = () => memory.globalMemory,
+    view = () => new DataView(global().buffer, global().byteOffset);
+  const h = {thread, memory};
   const call = (secondary, ...args) => {
     for (const arg of args) push32(thread, arg);
     assert.equal(definitions.find((entry) => entry.secondary === secondary).execute(h), 0);
     return pop32(thread);
   };
   assert.equal(call(0xd0, 16, 2), 0);
-  const oldId = view.getUint32(16, true);
-  bytes.set([41, 42], 100);
+  const oldId = view().getUint32(16, true);
+  global().set([41, 42], 100);
   assert.equal(call(0xd2, 20, oldId, 0, 100, 2), 0);
   records.clear();
   assert.equal(call(0xd4, 200, 24, oldId, 0), 0x80000002);
   assert.equal(call(0xd0, 16, 2), 0);
-  assert.equal(view.getUint32(16, true), oldId);
+  assert.equal(view().getUint32(16, true), oldId);
   assert.equal(call(0xd5, 200, 24, oldId), 0);
-  assert.equal(view.getUint32(24, true), 0);
+  assert.equal(view().getUint32(24, true), 0);
 });
 
 test('four disabled native services still pop and resolve arguments before returning one', () => {

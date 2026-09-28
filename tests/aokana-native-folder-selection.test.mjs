@@ -45,7 +45,7 @@ function setup(localizedSource = null) {
   function storeText(value) {
     const bytes = encode(`${value}\0`),
       address = nextAddress;
-    memoryBytes.set(bytes, address);
+    memory.globalMemory.set(bytes, address);
     nextAddress += bytes.length + 8;
     return address;
   }
@@ -61,7 +61,9 @@ function setup(localizedSource = null) {
     definition,
     invoke,
     mainWindowIdentity,
-    memoryBytes,
+    get memoryBytes() {
+      return memory.globalMemory;
+    },
     requests,
     storeText,
     text,

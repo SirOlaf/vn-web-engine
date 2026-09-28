@@ -231,6 +231,8 @@ test('partial production catalog routes BP calls through graph and mounted resou
   let titleEditorTarget = null;
   try {
     const memory = new BurikoBpMemory(new Uint8Array(0x1000));
+    const globalView = () =>
+      new DataView(memory.globalMemory.buffer, memory.globalMemory.byteOffset);
     const owners = new BurikoProductionDataOwners(graph, memory);
     const catalog = new BurikoProductionNativeFragments(graph, owners);
     const definitions = catalog.nativeDefinitions();
@@ -293,7 +295,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
       graph.properties.create(hostPointer(memory.globalMemory, 0x980), null, null, null, 120, 180),
       0,
     );
-    titleEditorId = new DataView(memory.globalMemory.buffer).getUint32(0x980, true);
+    titleEditorId = globalView().getUint32(0x980, true);
     titlePanel = parent.children.at(-1);
     assert.equal(parent.children.length, beforePanels + 1);
     assert.equal(titlePanel.children[0].textContent, '蒼空');
@@ -325,9 +327,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
       [...new TextEncoder().encode('Buriko Adapter\0'), 0xa5],
     );
     assert.deepEqual(
-      [0, 4, 8, 12].map((offset) =>
-        new DataView(memory.globalMemory.buffer).getUint32(0xd40 + offset, true),
-      ),
+      [0, 4, 8, 12].map((offset) => globalView().getUint32(0xd40 + offset, true)),
       [0x7788, 0x5566, 0x3344, 0x1122],
     );
     assert.deepEqual([...memory.globalMemory.subarray(0xd80, 0xd90)], Array(16).fill(0xa5));
@@ -376,15 +376,15 @@ test('partial production catalog routes BP calls through graph and mounted resou
     frameMilliseconds = 1;
     graph.frames.metrics.end(1);
     await invoke(0x80, 0x07, [0xa00, 0]);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0xa00, true), 1);
+    assert.equal(globalView().getUint32(0xa00, true), 1);
     await invoke(0x80, 0x07, [0xa00, 1]);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0xa00, true), 1000);
+    assert.equal(globalView().getUint32(0xa00, true), 1000);
     await invoke(0x80, 0x06, [0]);
     await invoke(0x80, 0x07, [0xa00, 0]);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0xa00, true), 1);
+    assert.equal(globalView().getUint32(0xa00, true), 1);
     await invoke(0x80, 0x06, [1]);
     await invoke(0x80, 0x07, [0xa00, 0]);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0xa00, true), 0);
+    assert.equal(globalView().getUint32(0xa00, true), 0);
     graph.manager.setRenderPixelBudget(4321);
     assert.equal(await invoke(0x80, 0x0b, [], true), 4321);
     assert.equal(await invoke(0x80, 0x09, [], true), graph.display.lastPresentMilliseconds);
@@ -408,7 +408,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
     assert.equal(graph.receiver.messages, graph.messages);
     assert.equal(graph.resource.errors.files, graph.resource.files);
     assert.equal(graph.resource.errors.dialogs, graph.dialogs);
-    const toggleKeys = new DataView(memory.globalMemory.buffer);
+    const toggleKeys = globalView();
     toggleKeys.setUint32(0xb00, 0x77, true);
     toggleKeys.setUint32(0xb04, 0x79, true);
     toggleKeys.setUint32(0xb08, 0, true);
@@ -770,7 +770,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
     );
     thread.moduleMemory.set(encode('Virtual.arc'), 0x150);
     thread.moduleMemory.set(encode('Raw.bin'), 0x170);
-    const pointers = new DataView(thread.moduleMemory.buffer);
+    const pointers = new DataView(thread.moduleMemory.buffer, thread.moduleMemory.byteOffset);
     pointers.setUint32(0x190, 0x10000170, true);
     pointers.setUint32(0x194, 0, true);
     assert.equal(await invoke(0x80, 0x38, [0x10000150, 0x10000190], true), 1);
@@ -789,18 +789,18 @@ test('partial production catalog routes BP calls through graph and mounted resou
     assert.equal(graph.resource.worker.scripts, graph.resource.scripts);
     memory.globalMemory.set(encode('C:\\game\\Script.bin'), 0x300);
     assert.equal(await invoke(0x81, 0x28, [0x220, 0x300, 0], true), 0);
-    const scriptId = new DataView(memory.globalMemory.buffer).getUint32(0x220, true);
+    const scriptId = globalView().getUint32(0x220, true);
     assert.equal(scriptId, 1);
     assert.equal(await invoke(0x81, 0x2b, [0x224, scriptId, 1], true), 0);
     assert.equal(await graph.resource.worker.processOne(), 'script');
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x224, true), 1);
+    assert.equal(globalView().getUint32(0x224, true), 1);
     assert.equal(await invoke(0x81, 0x2a, [0x224, scriptId, 0x240, 2], true), 0);
     assert.equal(await graph.resource.worker.processOne(), 'script');
     assert.deepEqual([...memory.globalMemory.subarray(0x240, 0x242)], [5, 7]);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x224, true), 2);
+    assert.equal(globalView().getUint32(0x224, true), 2);
     assert.equal(await invoke(0x81, 0x29, [0x224, scriptId], true), 0);
     assert.equal(await graph.resource.worker.processOne(), 'script');
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x224, true), 1);
+    assert.equal(globalView().getUint32(0x224, true), 1);
     assert.equal(graph.resource.scripts.find(scriptId), null);
 
     assert.equal(graph.localized.text, graph.text);
@@ -809,7 +809,10 @@ test('partial production catalog routes BP calls through graph and mounted resou
     memory.globalMemory.set(new TextEncoder().encode('abc\0'), 0x300);
     assert.equal(await invoke(0x81, 0x27, [0x300], true), 0x80000000);
     assert.equal(await invoke(0x81, 0x20, [0x340, 0x300, 2], true), 3);
-    assert.deepEqual([...new Uint16Array(memory.globalMemory.buffer, 0x340, 4)], [97, 98, 99, 0]);
+    assert.deepEqual(
+      [...new Uint16Array(memory.globalMemory.buffer, memory.globalMemory.byteOffset + 0x340, 4)],
+      [97, 98, 99, 0],
+    );
     graph.localized.load(new TextEncoder().encode('KEY=base\n@languageid=411\nKEY=Japanese\n'));
     const key = hostPointer(new TextEncoder().encode('KEY\0'));
     const readLocalized = () => {

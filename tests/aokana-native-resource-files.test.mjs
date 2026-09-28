@@ -76,6 +76,7 @@ test('80:32–34 share configured wide roots, real output lifetime, media and ar
     ranges = new BurikoResourceRanges(resources);
   const bytes = new Uint8Array(4096),
     memory = new BurikoBpMemory(bytes),
+    global = () => memory.globalMemory,
     thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
@@ -83,7 +84,7 @@ test('80:32–34 share configured wide roots, real output lifetime, media and ar
       frameCapacity: 16,
     }),
     slots = createGroup80ResourceFiles(new BurikoResourceFileServices(resources));
-  const put = (offset, value) => bytes.set(text.encodeWide(value, 1), offset);
+  const put = (offset, value) => global().set(text.encodeWide(value, 1), offset);
   const invoke = async (slot, ...args) => {
     for (const value of args) push32(thread, value);
     assert.equal(await slots.find((s) => s.secondary === slot).execute({thread, memory}), 0);
@@ -92,7 +93,7 @@ test('80:32–34 share configured wide roots, real output lifetime, media and ar
     return result;
   };
   put(32, '資料.bin');
-  bytes.set([1, 3, 5, 7], 1024);
+  global().set([1, 3, 5, 7], 1024);
   assert.equal(await invoke(0x32, 32, 1024, 4), 1);
   assert.deepEqual(
     await (await files.open(text.encodeWide('C:\\save\\資料.bin', 1))).source.read(0, 4),

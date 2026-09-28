@@ -60,6 +60,7 @@ test('80:30/31 decode into actual BP caller bytes through loose and archive owne
   );
   const bytes = new Uint8Array(4096),
     memory = new BurikoBpMemory(bytes),
+    global = () => memory.globalMemory,
     thread = new BurikoBpThread({
       id: 1,
       operandCapacity: 16,
@@ -79,7 +80,7 @@ test('80:30/31 decode into actual BP caller bytes through loose and archive owne
     observedActors.push(args[5]);
     return loadPartial(...args);
   };
-  const put = (offset, value) => bytes.set(text.encodeWide(value, 1), offset);
+  const put = (offset, value) => global().set(text.encodeWide(value, 1), offset);
   const invoke = async (slot, ...args) => {
     for (const value of args) push32(thread, value);
     assert.equal(await slots.find((s) => s.secondary === slot).execute({thread, memory, actor}), 0);
@@ -88,24 +89,24 @@ test('80:30/31 decode into actual BP caller bytes through loose and archive owne
     return result;
   };
   put(32, 'Motion.cbg');
-  for (let i = 1040; i < 1296; i += 4) bytes.set([19, 37, 53, 73], i);
+  for (let i = 1040; i < 1296; i += 4) global().set([19, 37, 53, 73], i);
   assert.equal(await invoke(0x30, 1024, 0, 32), 272);
-  assert.equal(new DataView(bytes.buffer).getUint16(1024, true), 8);
+  assert.equal(new DataView(global().buffer, global().byteOffset).getUint16(1024, true), 8);
   for (let i = 1040; i < 1296; i += 4)
-    assert.deepEqual(Array.from(bytes.subarray(i, i + 4)), [19, 37, 53, 170]);
+    assert.deepEqual(Array.from(global().subarray(i, i + 4)), [19, 37, 53, 170]);
   assert.equal(await invoke(0x31, 1024, 0, 32, 0, 0), 0);
   for (let i = 1040; i < 1296; i += 4)
-    assert.deepEqual(Array.from(bytes.subarray(i, i + 4)), [19, 37, 53, 170]);
+    assert.deepEqual(Array.from(global().subarray(i, i + 4)), [19, 37, 53, 170]);
   put(32, 'Legacy');
   put(256, 'Pack.arc');
   assert.equal(await invoke(0x30, 2048, 256, 32), 24);
-  assert.deepEqual(Array.from(bytes.subarray(2064, 2072)), [1, 1, 1, 0, 2, 2, 2, 0]);
-  assert.equal(new DataView(bytes.buffer).getUint16(2052, true), 32);
+  assert.deepEqual(Array.from(global().subarray(2064, 2072)), [1, 1, 1, 0, 2, 2, 2, 0]);
+  assert.equal(new DataView(global().buffer, global().byteOffset).getUint16(2052, true), 32);
   assert.equal(await invoke(0x31, 2500, 256, 32, 20, 4), 0);
-  assert.deepEqual(Array.from(bytes.subarray(2500, 2504)), [2, 2, 2, 0]);
+  assert.deepEqual(Array.from(global().subarray(2500, 2504)), [2, 2, 2, 0]);
   put(32, 'Raw.bin');
   assert.equal(await invoke(0x31, 2600, 0, 32, 1, 2), 0);
-  assert.deepEqual(Array.from(bytes.subarray(2600, 2602)), [9, 10]);
+  assert.deepEqual(Array.from(global().subarray(2600, 2602)), [9, 10]);
   assert.equal(observedActors.length, 5);
   assert.ok(observedActors.every((value) => value === actor));
   assert.equal(

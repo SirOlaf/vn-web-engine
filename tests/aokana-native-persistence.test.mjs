@@ -250,7 +250,11 @@ test('missing GDB coordinates can be stored then overwritten, but cannot be obse
     s.thread.frameCursor = 16;
     for (const displacement of [4, 8]) {
       s.thread.pc = 0;
-      new DataView(s.thread.moduleMemory.buffer).setUint16(0, 0x8000 | displacement, true);
+      new DataView(s.thread.moduleMemory.buffer, s.thread.moduleMemory.byteOffset).setUint16(
+        0,
+        0x8000 | displacement,
+        true,
+      );
       assert.equal(memoryOpcodes[0x0f](h), 0);
       const address = s.memory.abi.frameTag + 16 - displacement;
       assert.throws(() => s.memory.readU32(s.thread, address), /unwritten native stack/);
