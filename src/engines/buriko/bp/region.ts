@@ -1,3 +1,4 @@
+import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
 import {
   clearIndeterminateMemory,
   copyMemoryBytes,
@@ -306,8 +307,11 @@ export class BurikoBpRegionTable {
   allocate(size: number): BurikoBpRegion {
     const generation = this.arena.generation;
     const base = this.arena.allocate(size);
-    if (this.arena.generation !== generation)
+    if (this.arena.generation !== generation) {
       for (const region of this.live) region.rebase(this.arena.buffer);
+      recordRuntimeMetric('buriko.vm.arena-capacity', this.arena.capacity);
+      recordRuntimeMetric('buriko.vm.arena-live-bytes', this.liveBytes);
+    }
     const region = BurikoBpRegion.inArena(this.arena, base, size);
     this.live.add(region);
     return region;

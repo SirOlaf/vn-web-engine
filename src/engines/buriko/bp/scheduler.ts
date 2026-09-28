@@ -162,6 +162,12 @@ export class BurikoBpScheduler {
   private browserOptimized = false;
   private budgetYields = 0;
   private backgroundYields = 0;
+  /** Per-invocation counts published as runtime metrics; see docs/buriko-bp-vm.md. */
+  private acceleratedInstructions = 0;
+  private acceleratedRuns = 0;
+  private executorInstructions = 0;
+  private readonly executorOpcodes = new Uint32Array(256);
+  private readonly handbackOpcodes = new Uint32Array(256);
   private invocationToken: object | null = null;
   private dispatchingInstruction: BurikoBpThread | null = null;
   private processPollToken: object | null = null;
@@ -333,6 +339,21 @@ export class BurikoBpScheduler {
     this.accelerator = accelerator;
   }
 
+  private recordInstructionMix(): void {
+    if (this.accelerator !== null) {
+      recordRuntimeMetric('buriko.vm.accelerated-instructions', this.acceleratedInstructions);
+      recordRuntimeMetric('buriko.vm.accelerated-runs', this.acceleratedRuns);
+    }
+    recordRuntimeMetric('buriko.vm.executor-instructions', this.executorInstructions);
+    for (let opcode = 0; opcode < 256; opcode++) {
+      const hex = opcode.toString(16).padStart(2, '0');
+      if (this.executorOpcodes[opcode] !== 0)
+        recordRuntimeMetric(`buriko.vm.executor-opcode.${hex}`, this.executorOpcodes[opcode]!);
+      if (this.handbackOpcodes[opcode] !== 0)
+        recordRuntimeMetric(`buriko.vm.handback-opcode.${hex}`, this.handbackOpcodes[opcode]!);
+    }
+  }
+
   private checkpointHostBudget(batchable = false): Promise<void> | undefined {
     const pending = batchable ? this.hostBudget.checkpointBatched() : this.hostBudget.checkpoint();
     if (pending !== undefined) this.budgetYields++;
@@ -453,6 +474,9 @@ export class BurikoBpScheduler {
     this.browserOptimized = getRuntimeProfile() === 'browser-optimized';
     this.budgetYields = 0;
     this.backgroundYields = 0;
+    this.acceleratedInstructions = this.acceleratedRuns = this.executorInstructions = 0;
+    this.executorOpcodes.fill(0);
+    this.handbackOpcodes.fill(0);
     if (this.browserOptimized) this.hostBudget.reset();
     const finishTiming = beginRuntimeSpan('buriko.vm.scheduler', undefined, 16);
     try {
@@ -465,6 +489,7 @@ export class BurikoBpScheduler {
       });
       recordRuntimeMetric('buriko.vm.background-yields', this.backgroundYields);
       recordRuntimeMetric('buriko.vm.budget-yields', this.budgetYields);
+      this.recordInstructionMix();
       this.running = false;
       this.endInvocation(token);
     }
@@ -537,7 +562,11 @@ export class BurikoBpScheduler {
               this.hostBudget.batchedRemaining(),
             );
             const executed = accelerator!.run(node.state, limit);
+            if (accelerator!.blocked)
+              this.handbackOpcodes[node.state.moduleMemory[node.state.pc] ?? 0]!++;
             if (executed !== 0) {
+              this.acceleratedRuns++;
+              this.acceleratedInstructions += executed;
               count += executed - 1;
               sliceInstructions += executed;
               this.hostBudget.countBatched(executed - 1);
@@ -568,6 +597,8 @@ export class BurikoBpScheduler {
               batchableOpcodes[opcode] === true ||
               batchableNativeSlots?.[opcode]?.[code[(pc + 1) >>> 0]!] === true;
           }
+          this.executorInstructions++;
+          this.executorOpcodes[node.state.moduleMemory[node.state.pc] ?? 0]!++;
           this.dispatchingInstruction = node.state;
           try {
             sliceInstructions++;

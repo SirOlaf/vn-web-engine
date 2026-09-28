@@ -103,6 +103,21 @@ An opcode runs in wasm only when both hold:
 
 Each run copies the thread's registers and region bases into the core's control block and copies the registers back afterwards. Call sites are recorded in a log and replayed onto `thread.callSites`. The core runs only threads whose regions belong to the memory's arena (`thread.regions === memory.regions`).
 
+### Runtime metrics
+
+With performance recording active (**Game options → Performance diagnostics**, or `startRuntimePerformanceRecording`), each scheduler invocation adds these counts. They are instruction counts and bytes, not milliseconds:
+
+| Metric                                    | Meaning                                                                                                                            |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `buriko.vm.accelerated-instructions`      | Instructions the WebAssembly core completed                                                                                        |
+| `buriko.vm.accelerated-runs`              | Core runs that completed at least one instruction; instructions per run shows how often the scheduler returns to JavaScript        |
+| `buriko.vm.executor-instructions`         | Instructions run by the TypeScript executor                                                                                        |
+| `buriko.vm.executor-opcode.XX`            | Executor instructions by primary opcode (hex). Native banks (`80`–`FE`), text opcodes and unported primaries appear here           |
+| `buriko.vm.handback-opcode.XX`            | Instructions the core stopped before, by opcode: faults and host-only conditions for enabled opcodes, or the first disabled opcode |
+| `buriko.vm.arena-capacity`, `-live-bytes` | Recorded at each arena growth: data capacity and bytes held by live regions                                                        |
+
+`?bp-wasm=0` on the player URL creates the VM memory without the core, for A/B captures of the same scene.
+
 ## Differential harness
 
 `tools/differential-buriko-vm.mjs` (`npm run differential`) compares two compiled runtimes on generated cases for every pure primary opcode group: control, integer, memory, locals, fixed, native math, write watch, and the 1.69 and 1.665 legacy overrides.

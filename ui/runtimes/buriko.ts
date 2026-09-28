@@ -22,6 +22,7 @@ import {mountGameViewer} from '../player/game-viewer.js';
 import {setRuntimeState, subscribeSaveBusy} from '../player/runtime-state.js';
 import {mountFullscreenControls} from '../player/fullscreen.js';
 import {BurikoBpMemory} from '../../src/engines/buriko/bp/memory.js';
+import {setBurikoBpWasmEnabled} from '../../src/engines/buriko/bp/wasm-core.js';
 import {
   BurikoBrowserSpeakerBackend,
   BurikoMemorySpeakerBackend,
@@ -361,6 +362,8 @@ async function launch(
     graph.setTextMode(textMode.value === 'dom' ? 'dom' : 'native');
     graph.display.requestedWidth = 800;
     graph.display.requestedHeight = 600;
+    // `?bp-wasm=0` runs every BP instruction in TypeScript, for A/B performance captures.
+    setBurikoBpWasmEnabled(new URLSearchParams(location.search).get('bp-wasm') !== '0');
     const memory = new BurikoBpMemory(new Uint8Array(0x10000), graph.engineVersion.bpAbi);
     const data = new BurikoProductionDataOwners(graph, memory);
     const diagnostics = new BurikoBpDiagnostics((notice) => {
