@@ -246,7 +246,7 @@
     id="save-import-file"
     bind:this={input}
     type="file"
-    accept={game === 'buriko' ? '.gdb,.cad,.sud' : '.dat'}
+    accept={game === 'buriko' ? '.gdb,.cad,.sud' : game === 'rscript' ? '.dat,.wcg' : '.dat'}
     onchange={importFile}
     hidden
   />

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {XflArchive} from '../dist/formats/rscript/xfl.js';
-import {decodeWcg, readWcgHeader} from '../dist/formats/rscript/wcg.js';
+import {decodeWcg, encodeWcg, readWcgHeader} from '../dist/formats/rscript/wcg.js';
 import {LwgImage} from '../dist/formats/rscript/lwg.js';
 import {decodeGscInstruction, parseGsc} from '../dist/formats/rscript/gsc.js';
 import {parseFsc} from '../dist/formats/rscript/fsc.js';
@@ -360,4 +360,33 @@ test('FSC frame scripts compile labels, holds, jumps and native comment quirks',
     {op: 'end'},
     {op: 'jump', target: 0},
   ]);
+});
+
+test('WCG encoding round-trips small and large palettes through the decoder', () => {
+  for (const [width, height, distinct] of [
+    [7, 5, 3],
+    [128, 128, 60000],
+  ]) {
+    const pixels = new Uint8Array(width * height * 4);
+    let seed = 12345;
+    for (let i = 0; i < width * height; i++) {
+      // Runs of repeated pixels exercise the run codes; the rest spreads over the palette.
+      if (i % 9 < 4 && i) pixels.copyWithin(i * 4, (i - 1) * 4, i * 4);
+      else {
+        seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+        const value = seed % distinct;
+        pixels.set([value & 0xff, value >> 8, (value * 7) & 0xff, value & 1 ? 0 : 0x80], i * 4);
+      }
+    }
+    const encoded = encodeWcg({width, height, pixels});
+    // The first plane's palette size decides between three- and four-bit prefixes.
+    const high = new DataView(encoded.buffer).getUint16(16 + 8, true);
+    const low = new DataView(encoded.buffer).getUint16(
+      16 + 12 + high * 2 + new DataView(encoded.buffer).getUint32(16 + 4, true) + 8,
+      true,
+    );
+    assert.equal(low > 0x1000, distinct > 0x1000);
+    assert.deepEqual(readWcgHeader(encoded), {flags: 0x271, width, height});
+    assert.deepEqual(decodeWcg(encoded).pixels, pixels);
+  }
 });

@@ -23,11 +23,14 @@ export interface RScriptActiveGame {
 /** The installation opened in the player, for the save file controls. */
 export const activeRScriptGame = writable<RScriptActiveGame | null>(null);
 
-/** Whether `name` is the system save or a numbered slot of the game (`FRsave.dat`, `FRsave01.dat`). */
+/**
+ * Whether `name` is a save file of the game: the system save, a numbered slot or a slot's
+ * thumbnail (`FRsave.dat`, `FRsave01.dat`, `FRsave01.wcg`).
+ */
 export function isRScriptSaveName(game: RScriptActiveGame, name: string): boolean {
   const prefix = game.savePrefix.toUpperCase();
   const upper = name.toUpperCase();
-  return upper.startsWith(prefix) && /^(\d{2})?\.DAT$/.test(upper.slice(prefix.length));
+  return upper.startsWith(prefix) && /^(\.DAT|\d{2}\.(DAT|WCG))$/.test(upper.slice(prefix.length));
 }
 
 async function withSaves<T>(
@@ -58,7 +61,7 @@ export function writeRScriptSave(
 ): Promise<void> {
   if (!isRScriptSaveName(game, name))
     throw new Error(
-      `Choose ${game.savePrefix}.dat or a numbered save such as ${game.savePrefix}01.dat.`,
+      `Choose ${game.savePrefix}.dat, a numbered save such as ${game.savePrefix}01.dat or its ${game.savePrefix}01.wcg thumbnail.`,
     );
   return withSaves(game, (store) =>
     store.update((records) => void records.set(name.toUpperCase(), bytes.slice())),

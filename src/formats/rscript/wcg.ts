@@ -148,3 +148,95 @@ export function decodeWcg(bytes: Uint8Array): RScriptImage {
   }
   return {width, height, pixels};
 }
+
+/** MSB-first writer for the WCG bitstream. */
+class WcgBitWriter {
+  private readonly bytes: number[] = [];
+  private current = 0;
+  private used = 0;
+  write(value: number, count: number): void {
+    for (let bit = count - 1; bit >= 0; bit--) {
+      this.current = (this.current << 1) | (Math.floor(value / 2 ** bit) & 1);
+      if (++this.used === 8) {
+        this.bytes.push(this.current);
+        this.current = 0;
+        this.used = 0;
+      }
+    }
+  }
+  finish(): Uint8Array {
+    if (this.used) this.bytes.push(this.current << (8 - this.used));
+    return Uint8Array.from(this.bytes);
+  }
+}
+
+/** Encodes one 16-bit plane taken every 4 bytes from `start`, the inverse of `decodePlane`. */
+function encodeWidePlane(pixels: Uint8Array, start: number): Uint8Array {
+  const values: number[] = [];
+  for (let i = start; i < pixels.length; i += 4) values.push(pixels[i]! | (pixels[i + 1]! << 8));
+  // Frequent values get the short indexes.
+  const counts = new Map<number, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  const table = [...counts.keys()].sort((a, b) => counts.get(b)! - counts.get(a)!);
+  if (table.length > 0xffff) throw new Error('WCG plane has too many distinct values');
+  const index = new Map(table.map((value, i) => [value, i]));
+  const prefixBits = table.length > 0x1000 ? 4 : 3;
+  const escape = prefixBits === 4 ? 15 : 7;
+  const bits = new WcgBitWriter();
+  const writeIndex = (i: number): void => {
+    if (i < 2) {
+      bits.write(1, prefixBits);
+      bits.write(i, 1);
+      return;
+    }
+    const width = Math.floor(Math.log2(i));
+    if (width + 1 < escape) bits.write(width + 1, prefixBits);
+    else {
+      bits.write(escape, prefixBits);
+      for (let extra = width - (escape - 1); extra > 0; extra--) bits.write(1, 1);
+      bits.write(0, 1);
+    }
+    bits.write(i - 2 ** width, width);
+  };
+  for (let i = 0; i < values.length;) {
+    let run = 1;
+    while (run < 17 && values[i + run] === values[i]) run++;
+    if (run >= 2) {
+      bits.write(0, prefixBits);
+      bits.write(run - 2, 4);
+    } else run = 1;
+    writeIndex(index.get(values[i]!)!);
+    i += run;
+  }
+  const packed = bits.finish();
+  const plane = new Uint8Array(12 + table.length * 2 + packed.length);
+  const view = byteDataView(plane);
+  view.setUint32(0, values.length, true);
+  view.setUint32(4, packed.length, true);
+  view.setUint16(8, table.length, true);
+  table.forEach((value, i) => view.setUint16(12 + i * 2, value, true));
+  plane.set(packed, 12 + table.length * 2);
+  return plane;
+}
+
+/**
+ * Encodes an image as a version 1 WCG with two 16-bit planes, the form the native
+ * save-thumbnail writer produces (0x436C00, flags 0x271).
+ */
+export function encodeWcg(image: RScriptImage): Uint8Array {
+  const {width, height, pixels} = image;
+  if (pixels.length !== width * height * 4)
+    throw new Error('WCG pixel data does not match its size');
+  const high = encodeWidePlane(pixels, 2),
+    low = encodeWidePlane(pixels, 0);
+  const bytes = new Uint8Array(16 + high.length + low.length);
+  const view = byteDataView(bytes);
+  view.setUint16(0, WCG_SIGNATURE, true);
+  view.setUint16(2, 0x271, true);
+  view.setUint16(4, 32, true);
+  view.setUint32(8, width, true);
+  view.setUint32(12, height, true);
+  bytes.set(high, 16);
+  bytes.set(low, 16 + high.length);
+  return bytes;
+}

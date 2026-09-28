@@ -2,7 +2,8 @@ import {parseGsc, type GscProgram} from '../../../formats/rscript/gsc.js';
 import type {RScriptApini} from '../apini.js';
 import {initializeConfig, initializeScene} from '../defaults.js';
 import type {RScriptFiles} from '../files.js';
-import {createSurface, type RScriptSurface} from '../graphics/pixels.js';
+import {ADD_TABLE, createSurface, scaleRgb, type RScriptSurface} from '../graphics/pixels.js';
+import {encodeWcg} from '../../../formats/rscript/wcg.js';
 import {RScriptContainer, RScriptSprite, type RScriptNode} from '../graphics/sprite.js';
 import {RScriptImages} from '../images.js';
 import {Config, GAME_VARIABLE_COUNT, Scene, RScriptMemory} from '../memory.js';
@@ -16,6 +17,7 @@ import {
 import {loadFrameAnimation} from './animation.js';
 import {AudioChannel, RScriptAudio} from './audio.js';
 import {RScriptChoiceWindow} from './choice.js';
+import {RScriptSaveScreen} from './save-screen.js';
 import {RScriptDisplay, type RScriptPresenter, type RScriptTimer} from './display.js';
 import {RScriptLayer} from './layer.js';
 import {MessageState, RScriptMessageWindow} from './message-window.js';
@@ -102,6 +104,10 @@ class ScriptEvent {
       waiter();
     } else this.signaled = true;
   }
+  /** Drops a signal nobody waited for (ResetEvent), before a new scene thread starts. */
+  reset(): void {
+    this.signaled = false;
+  }
   wait(): Promise<void> {
     if (this.signaled) {
       this.signaled = false;
@@ -141,6 +147,19 @@ export class RScriptGame {
   readonly message: RScriptMessageWindow;
   /** Choice window (dword_48509C). */
   readonly choice: RScriptChoiceWindow;
+  /** Save and load screen (dword_485098) over a still of the scene (dword_48524C). */
+  readonly saveScreen: RScriptSaveScreen;
+  private readonly backdrop = new RScriptSprite();
+  /** Scaled still of the scene at the last menu opening, saved with slots (dword_4850A0). */
+  private thumbnail: RScriptSurface | null = null;
+  /** Native screen state (485374, 48537C, 485378, 485390) and the standalone title screens. */
+  private readonly screens = {
+    open: false,
+    save: false,
+    fromMenu: false,
+    resume: false,
+    standalone: false,
+  };
   /** Effect screen image (dword_485080) and full-screen tone overlay (dword_485244). */
   readonly effectScreen = new RScriptSprite();
   readonly overlay = new RScriptSprite();
@@ -219,6 +238,24 @@ export class RScriptGame {
       answered: () => this.choiceAnswered(),
     });
     this.root.add(this.choice, 100);
+    this.saveScreen = new RScriptSaveScreen({
+      memory: this.memory,
+      images: this.images,
+      rasterizer: host.rasterizer,
+      systemDirectory: apini.directories.system,
+      width: apini.width,
+      height: apini.height,
+      palette,
+      dateSize: apini.u16(496),
+      pageCount: apini.u16(438),
+      readSlot: (slot) => this.readSlot(slot),
+      readThumbnail: (slot) => this.host.saves.read(this.slotName(slot, 'wcg')),
+      choose: (slot, save) => void this.chooseSlot(slot, save),
+      close: () => void this.closeScreen(),
+      sound: (sound) => this.playSystemSound(sound),
+    });
+    this.display.screen.add(this.backdrop, 0);
+    this.display.screen.add(this.saveScreen, 3);
     this.overlay.setSurface(createSurface(apini.width, apini.height, 0xffffff));
     this.overlay.setBlendMode(0x6c);
     this.effectScreen.setBlendMode(0x68);
@@ -596,6 +633,7 @@ export class RScriptGame {
   /** sub_41DEB0: a click restores the window, stops waits, leaves the backlog or resumes. */
   private click(): void {
     const {flags} = this;
+    if (this.screens.open) return;
     if (flags.sleeping) flags.sleeping = false;
     else if (flags.windowHidden) this.showWindow();
     else if (flags.waitSound) {
@@ -614,12 +652,14 @@ export class RScriptGame {
   /** Right button (WM_RBUTTONDOWN) and Escape during a wait. */
   cancel(): void {
     const {flags} = this;
-    if (flags.windowHidden) this.showWindow();
+    if (this.screens.open) void this.closeScreen();
+    else if (flags.windowHidden) this.showWindow();
     else if (flags.buttonWait && flags.buttonCancel) this.buttonPressed(0, 0);
     else this.panelCommand('menu');
   }
   /** Mouse wheel (WM_MOUSEWHEEL): up browses the backlog, down pages forward or clicks. */
   wheel(up: boolean): void {
+    if (this.screens.open) return;
     if (up) void this.message.backlogBack().then(() => this.display.update());
     else
       void this.message.backlogForward().then((handled) => {
@@ -726,6 +766,10 @@ export class RScriptGame {
       case 'qload':
         void this.quickLoad();
         return;
+      case 'save':
+      case 'load':
+        void this.openSaveScreen(command === 'save');
+        return;
       default:
         this.diagnostic(`The ${command} screen is not implemented yet`);
     }
@@ -749,12 +793,32 @@ export class RScriptGame {
       this.resume();
     } else if (mode === 1) {
       if (!flags.buttonWait) return;
-      this.diagnostic(`Native screen ${id} is not implemented yet`);
+      void this.nativeCommand(id);
     } else if (!flags.buttonTimer) {
       flags.buttonWait = 0;
       flags.interrupt = true;
       this.memory.variables[0] = id;
       this.resume();
+    }
+  }
+
+  /** Mode-1 buttons (0x41EEC0): the engine's own screens and scene changes. */
+  private async nativeCommand(id: number): Promise<void> {
+    this.playSystemSound(1);
+    switch (id) {
+      case 0:
+        return this.quit();
+      case 1:
+        await this.saveSystem();
+        return this.returnToTitle();
+      case 2:
+        return this.openStandalone();
+      case 5:
+        return this.openSaveScreen(false, true);
+      case 6:
+        return this.openSaveScreen(true, true);
+      default:
+        this.diagnostic(`Native screen ${id} is not implemented yet`);
     }
   }
 
@@ -810,8 +874,8 @@ export class RScriptGame {
 
   // Saves (sub_421210, sub_4213D0, sub_421570).
 
-  private slotName(slot: number): string {
-    return `${this.apini.savePrefix}${pad(slot, 2)}.dat`;
+  private slotName(slot: number, extension = 'dat'): string {
+    return `${this.apini.savePrefix}${pad(slot, 2)}.${extension}`;
   }
   /** Writes the configuration, persistent variables and read flags. */
   saveSystem(): Promise<void> {
@@ -821,6 +885,13 @@ export class RScriptGame {
   async saveSlot(slot: number): Promise<void> {
     const bytes = encodeSlotSave(this.memory, this.message.pageText, new Date());
     await this.host.saves.write(this.slotName(slot), bytes);
+    // sub_41E980: the menu's scaled still, as a WCG beside the slot.
+    const thumbnail = this.thumbnail;
+    if (slot && thumbnail) {
+      const pixels = new Uint8Array(thumbnail.data.buffer.slice(0));
+      const wcg = encodeWcg({width: thumbnail.width, height: thumbnail.height, pixels});
+      await this.host.saves.write(this.slotName(slot, 'wcg'), wcg);
+    }
     await this.saveSystem();
   }
   readSlot(slot: number): Promise<Uint8Array | null> {
@@ -842,6 +913,135 @@ export class RScriptGame {
     return this.restartScene(null);
   }
 
+  // Native screens (0x41E0D0, 0x41E1E0, 0x41E360).
+
+  /** Renders the scene into the backdrop and keeps a scaled copy for slot thumbnails. */
+  private async captureBackdrop(): Promise<void> {
+    this.display.update();
+    const frame = this.display.frame;
+    const still = createSurface(frame.width, frame.height);
+    still.data.set(frame.data);
+    const size = await this.thumbnailSize();
+    this.thumbnail = size ? scaleStill(still, size.width, size.height) : null;
+    if (!this.apini.u16(436)) {
+      // sub_441A30(80): darkens by 80% through the CMath table row 255 * 80 / 100.
+      for (let i = 0; i < still.data.length; i++)
+        still.data[i] = scaleRgb(ADD_TABLE, 204, still.data[i]!);
+    }
+    this.backdrop.setSurface(still);
+  }
+  private thumbnailSizeCache: Promise<{width: number; height: number} | null> | null = null;
+  /** The saveconf `thmb` layer's size (dword_4A287C, dword_4A2880). */
+  private thumbnailSize(): Promise<{width: number; height: number} | null> {
+    return (this.thumbnailSizeCache ??= (async () => {
+      const path = `${this.apini.directories.system}\\saveconf`;
+      const surface = (await this.images.lwg(path))?.find('thmb')
+        ? await this.images.lwgLayer(path, 'thmb')
+        : null;
+      return surface ? {width: surface.width, height: surface.height} : null;
+    })());
+  }
+  private async enterScreen(): Promise<void> {
+    await this.captureBackdrop();
+    this.screens.open = true;
+    this.root.show(false);
+    this.backdrop.show(true);
+  }
+
+  /** sub_41E1E0: the save or load screen over the scene; `resume` continues a button wait. */
+  async openSaveScreen(save: boolean, resume = false): Promise<void> {
+    if (this.screens.save) return;
+    this.screens.save = true;
+    if (!this.screens.fromMenu) await this.enterScreen();
+    this.screens.resume = resume;
+    await this.saveScreen.open(save);
+    this.display.update();
+  }
+
+  /** sub_41E360: closes the open screen, returning to the menu when it opened from there. */
+  async closeScreen(): Promise<void> {
+    const screens = this.screens;
+    if (!screens.open) return;
+    if (screens.standalone) {
+      // The standalone title screens return to the game scene at the start script.
+      this.resetScreens();
+      this.startScene(() => this.newGame(this.apini.startScript));
+      return;
+    }
+    if (screens.save) {
+      screens.save = false;
+      this.saveScreen.close();
+      if (!screens.fromMenu) {
+        screens.open = false;
+        this.backdrop.show(false);
+        this.root.show(true);
+      }
+      if (screens.resume) {
+        screens.resume = false;
+        this.display.update();
+        this.resume();
+      }
+    } else {
+      screens.open = false;
+      screens.fromMenu = false;
+      this.backdrop.show(false);
+      this.root.show(true);
+    }
+    this.display.update();
+  }
+  private resetScreens(): void {
+    Object.assign(this.screens, {
+      open: false,
+      save: false,
+      fromMenu: false,
+      resume: false,
+      standalone: false,
+    });
+    this.saveScreen.close();
+    this.backdrop.show(false);
+    this.root.show(true);
+  }
+
+  /** sub_41EA70 (save) / sub_41EB60 (load) and the standalone load (sub_420200). */
+  private async chooseSlot(slot: number, save: boolean): Promise<void> {
+    const exists = !!(await this.readSlot(slot));
+    const {confirm} = this.host;
+    if (save) {
+      this.playSystemSound(1);
+      if (exists && !(await confirm(RScriptMessages.confirm, RScriptMessages.overwrite))) return;
+      const previous = this.memory.configWord(0x3a) & 0xffff;
+      this.memory.setConfigWord(0x3a, slot);
+      await this.saveSlot(slot);
+      if (previous !== slot) await this.saveScreen.refreshSlot(previous);
+      await this.saveScreen.refreshSlot(slot);
+      this.display.update();
+      return;
+    }
+    if (!exists) return;
+    if (!this.screens.standalone && !(await confirm(RScriptMessages.confirm, RScriptMessages.load)))
+      return;
+    this.playSystemSound(1);
+    await this.loadSlot(slot);
+  }
+
+  /** The title's load and config buttons switch to standalone screens (scene 485306). */
+  private async openStandalone(): Promise<void> {
+    await this.stopScene();
+    this.screens.open = true;
+    this.screens.standalone = true;
+    this.root.show(false);
+    await this.saveScreen.open(false);
+    this.display.refresh();
+  }
+
+  /** WM_CLOSE of the game window: quits after the native confirmation. */
+  async quit(): Promise<void> {
+    if (!(await this.host.confirm(RScriptMessages.quitCaption, RScriptMessages.quit))) return;
+    await this.saveSystem();
+    this.dispose();
+    this.host.exit();
+  }
+
   // Lifecycle.
 
   /**
@@ -849,6 +1049,15 @@ export class RScriptGame {
    * from the opening when `prepare` is null (sub_4535F0, sub_41DF70).
    */
   private async restartScene(prepare: (() => void) | null): Promise<void> {
+    await this.stopScene();
+    if (prepare) {
+      prepare();
+      this.startScene(() => this.resumeScene());
+    } else this.startScene(() => this.opening());
+  }
+
+  /** Unwinds the scene thread at its next wait and closes every screen. */
+  private async stopScene(): Promise<void> {
     this.sceneGeneration++;
     this.vm.stop();
     this.host.stopMovie();
@@ -856,12 +1065,10 @@ export class RScriptGame {
     this.audio.stopAll();
     this.event.set();
     await this.running;
+    this.event.reset();
     Object.assign(this.flags, new RScriptFlags());
     this.nesting = 0;
-    if (prepare) {
-      prepare();
-      this.startScene(() => this.resumeScene());
-    } else this.startScene(() => this.opening());
+    this.resetScreens();
   }
 
   /** Runs a scene thread; when its script ends the opening scene takes over again. */
@@ -898,6 +1105,7 @@ export class RScriptGame {
     this.display.refresh();
     this.ticker = setInterval(() => this.tick(), Math.max(1, apini.tickMilliseconds));
     await this.message.loadPanel();
+    await this.saveScreen.load();
     this.startScene(() => this.opening());
   }
 
@@ -956,4 +1164,25 @@ export class RScriptGame {
     this.event.set();
     this.audio.dispose();
   }
+}
+
+/**
+ * sub_450060: nearest-neighbour shrink by whole percentages of the screen, in 16.16 steps
+ * that divide by 0xFFFF like the native loop.
+ */
+function scaleStill(source: RScriptSurface, width: number, height: number): RScriptSurface {
+  const percentX = Math.max(1, Math.trunc((100 * width) / source.width)),
+    percentY = Math.max(1, Math.trunc((100 * height) / source.height));
+  const stepX = Math.trunc(0x640000 / percentX),
+    stepY = Math.trunc(0x640000 / percentY);
+  const target = createSurface(
+    Math.trunc((percentX * source.width) / 100),
+    Math.trunc((percentY * source.height) / 100),
+  );
+  for (let y = 0, sy = 0; y < target.height; y++, sy += stepY) {
+    const row = source.width * Math.trunc(sy / 0xffff);
+    for (let x = 0, sx = 0; x < target.width; x++, sx += stepX)
+      target.data[y * target.width + x] = source.data[row + Math.trunc(sx / 0xffff)]!;
+  }
+  return target;
 }
