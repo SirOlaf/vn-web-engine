@@ -80,6 +80,29 @@ Every mark has a sequence number. A read covering several marked bytes faults wi
 
 `thread.stackRegion` holds the operand cells followed by one 32-bit tag per cell (`thread.operandStack`, `thread.operandTags`). A tag is the reason id of an unwritten value moved onto the stack by `pushIndeterminate32`, or 0. `push32` clears the tag; `pop32` faults on a nonzero tag; `popDeferred32` returns the value and the reason without faulting, for opcodes that move the value on (`writeDeferredScalar` marks the destination memory with it).
 
+## WebAssembly core
+
+`wasm/buriko-bp` executes pure primary opcodes; its README lists the interface and the conditions it hands back. `bp/wasm-core.ts` drives it.
+
+### Arena backing
+
+When WebAssembly is available, `BurikoBpMemory` creates its arena on a `WebAssembly.Memory` and instantiates the core against it (`memory.wasm`). The module's statics and stack occupy the arena prefix below `__heap_base`; regions start after it. Growth uses `memory.grow`, which detaches the previous buffer exactly like the `ArrayBuffer` backing. Without WebAssembly, or after `setBurikoBpWasmEnabled(false)`, the arena is an `ArrayBuffer`, `memory.wasm` is null and every instruction runs in TypeScript. A load failure raises the `wasm-interpreter-fallback` runtime advisory once.
+
+### Which opcodes run in wasm
+
+An opcode runs in wasm only when both hold:
+
+- the interpreter selected its canonical handler from the pure groups (`interpreter.directOpcodes`), so a legacy ABI override or host replacement always stays in TypeScript;
+- the core implements it (`BURIKO_BP_WASM_OPCODES`).
+
+`BurikoBpWasmCore.configure` writes these flags, and the batchable set, into the module.
+
+### Scheduling
+
+`BurikoBpScheduler.bindBurstAccelerator(memory.wasm)` (done by `BurikoProductionInterpreter`) lets the burst loop hand runs of enabled opcodes to the core. A run receives `min(remaining burst, hostBudget.batchedRemaining())` instructions and stops early before an instruction it cannot complete, after a nonzero handler result, and after an unbatched instruction. The scheduler counts the run's batched checkpoints in bulk and performs the last instruction's checkpoint itself, so host yields fall on the same instructions as without the core. A run that stopped before an instruction it cannot complete is followed by exactly one executor step for that instruction.
+
+Each run copies the thread's registers and region bases into the core's control block and copies the registers back afterwards. Call sites are recorded in a log and replayed onto `thread.callSites`. The core runs only threads whose regions belong to the memory's arena (`thread.regions === memory.regions`).
+
 ## Differential harness
 
 `tools/differential-buriko-vm.mjs` (`npm run differential`) compares two compiled runtimes on generated cases for every pure primary opcode group: control, integer, memory, locals, fixed, native math, write watch, and the 1.69 and 1.665 legacy overrides.
@@ -95,23 +118,25 @@ Each case seeds a thread (module, frame and heap banks), the global arena, two p
 ```sh
 npm run build:runtime
 node tools/differential-buriko-vm.mjs --reference /path/to/baseline/dist --candidate dist
+node tools/differential-buriko-vm.mjs --candidate-engine wasm
 node tools/differential-buriko-vm.mjs --self-test
 node tools/differential-buriko-vm.mjs --record /tmp/vm.json
 node tools/differential-buriko-vm.mjs --compare /tmp/vm.json
 ```
 
-| Option                   | Effect                                                                  |
-| ------------------------ | ----------------------------------------------------------------------- |
-| `--reference DIR`        | Reference runtime root (default `dist`)                                 |
-| `--candidate DIR`        | Candidate runtime root (default: the reference)                         |
-| `--abi LIST`             | Comma list of `1.72`, `1.665`, `1.69` (default all)                     |
-| `--cases N`              | Single-instruction cases per opcode and ABI (default 48)                |
-| `--bursts N`             | Multi-instruction cases per ABI (default 512)                           |
-| `--seed N`               | Generator seed (default 1)                                              |
-| `--record` / `--compare` | Write or check per-case digest hashes of the candidate                  |
-| `--break GROUP`          | Corrupt the lowest opcode of one group in the candidate                 |
-| `--self-test`            | Corrupt each group in turn; exits non-zero unless every one is detected |
-| `--verbose`              | Print every mismatching case instead of the first per opcode            |
+| Option                   | Effect                                                                                                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reference DIR`        | Reference runtime root (default `dist`)                                                                                                                        |
+| `--candidate DIR`        | Candidate runtime root (default: the reference)                                                                                                                |
+| `--candidate-engine E`   | `ts` (default) or `wasm`: each candidate instruction runs in the core, falling back to its TypeScript handler; the summary reports how many the core completed |
+| `--abi LIST`             | Comma list of `1.72`, `1.665`, `1.69` (default all)                                                                                                            |
+| `--cases N`              | Single-instruction cases per opcode and ABI (default 48)                                                                                                       |
+| `--bursts N`             | Multi-instruction cases per ABI (default 512)                                                                                                                  |
+| `--seed N`               | Generator seed (default 1)                                                                                                                                     |
+| `--record` / `--compare` | Write or check per-case digest hashes of the candidate                                                                                                         |
+| `--break GROUP`          | Corrupt the lowest opcode of one group in the candidate                                                                                                        |
+| `--self-test`            | Corrupt each group in turn; exits non-zero unless every one is detected                                                                                        |
+| `--verbose`              | Print every mismatching case instead of the first per opcode                                                                                                   |
 
 A mismatch prints the case, the instruction index and the first differing digest line from each runtime. The exit status is non-zero when any case differs.
 
