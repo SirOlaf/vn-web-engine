@@ -30,6 +30,9 @@ const status = element('status'),
   surface = element('rscript-surface'),
   play = element<HTMLButtonElement>('play');
 const {collapseOptions: collapse} = mountGameViewer('rscript');
+const textMode = element<HTMLSelectElement>('text-mode');
+const selectedTextMode = (): 'native' | 'dom' => (textMode.value === 'dom' ? 'dom' : 'native');
+textMode.onchange = () => player?.setTextMode(selectedTextMode());
 let fullscreenControls: ReturnType<typeof mountFullscreenControls> | undefined;
 const displayHost = new BrowserPageFullscreenHost(
   element('display'),
@@ -179,6 +182,7 @@ play.onclick = () => {
   });
   element('welcome').hidden = true;
   surface.replaceChildren(player.panel);
+  player.setTextMode(selectedTextMode());
   sidebar.hidden = false;
   collapse(true);
   status.textContent = `${apini.title} is running.`;

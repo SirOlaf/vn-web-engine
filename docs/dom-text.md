@@ -1,6 +1,6 @@
 # DOM text presentation
 
-Both players expose **Text rendering → DOM text** in Game options. Text can be
+Every player exposes **Text rendering → DOM text** in Game options. Text can be
 selected and copied or read by browser dictionary extensions. Click outside the
 text to send input to the game. Switching modes does not modify game state.
 
@@ -124,3 +124,19 @@ enumeration and face request with the source the player would select.
 
 Validation uses synthetic fonts, pixels and strings. Game-asset visual review is
 left to the user.
+
+## codeX RScript
+
+RScript text objects keep the decoded characters of their glyphs, so the RScript
+player needs no raster tracking. The canvas keeps drawing the native glyphs; DOM
+mode places transparent text over every visible text object (message boxes and
+the backlog pages they show, choices and screen text), one span per glyph cell,
+so selections line up with the native layout. A text object's DOM is rebuilt only
+when its glyphs change, which keeps a selection while the page waits. Copying
+omits the newlines of layout wraps and keeps those the script wrote. Ruby is not
+exposed, so dictionary lookups see the base text.
+
+Shift is left to dictionary extensions in DOM mode instead of hiding the message
+window, and Control does not start skipping while text is selected, so it can be
+used to copy. The mouse wheel and the right button over the text still reach the
+game; the right button opens the browser menu while text is selected.

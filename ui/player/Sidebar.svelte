@@ -52,20 +52,25 @@
       <p id="fullscreen-help" role="status" hidden></p>
     </section>
     <InstallationFiles />
-    {#if game !== 'rscript'}
-      <section>
-        <h2>Text rendering</h2>
-        <label class="sr-only" for="text-mode">Text rendering mode</label>
-        <select id="text-mode" aria-describedby="text-help">
-          <option value="native">Native</option><option value="dom">DOM text</option>
-        </select>
-        <p id="text-help">
+    <section>
+      <h2>Text rendering</h2>
+      <label class="sr-only" for="text-mode">Text rendering mode</label>
+      <select id="text-mode" aria-describedby="text-help">
+        <option value="native">Native</option><option value="dom">DOM text</option>
+      </select>
+      <p id="text-help">
+        {#if game === 'rscript'}
+          DOM text places selectable text over the game’s own text for copying and dictionary
+          extensions. Click outside the text to continue; Shift is left to the extension.
+        {:else}
           DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and
           visual effects are approximate.
-        </p>
+        {/if}
+      </p>
+      {#if game !== 'rscript'}
         <DomTextStyle />
-      </section>
-    {/if}
+      {/if}
+    </section>
     <SaveFiles {game} runtime />
     {#if game === 'buriko'}
       <RuntimeProfile />

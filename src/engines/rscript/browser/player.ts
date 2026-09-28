@@ -8,6 +8,7 @@ import type {RScriptApini} from '../apini.js';
 import type {RScriptFiles} from '../files.js';
 import {RScriptGame, type RScriptSaveStorage} from '../runtime/game.js';
 import {CanvasGlyphRasterizer, CanvasPresenter, rscriptFontFamilies} from './canvas.js';
+import {RScriptDomText} from './dom-text.js';
 
 export interface RScriptBrowserPlayerOptions {
   readonly files: RScriptFiles;
@@ -39,6 +40,10 @@ export class RScriptBrowserPlayer {
   private readonly audio = new AudioContext();
   private readonly audioHost: BrowserAudioContextHost;
   private readonly game: RScriptGame;
+  private readonly domText: RScriptDomText;
+  private textMode: 'native' | 'dom' = 'native';
+  /** The left button went down on the canvas, so its release belongs to the game. */
+  private pressedOnCanvas = false;
   private movieRenderer: YuvRenderer | null = null;
   private skipMovie: (() => void) | null = null;
   private readonly abort = new AbortController();
@@ -49,6 +54,9 @@ export class RScriptBrowserPlayer {
     this.panel = document.createElement('section');
     this.panel.className = 'live-player';
     this.panel.style.position = 'relative';
+    // Focusable, so keys keep reaching the game after a click selects DOM text.
+    this.panel.tabIndex = -1;
+    this.panel.style.outline = 'none';
     this.canvas = document.createElement('canvas');
     this.canvas.width = apini.width;
     this.canvas.height = apini.height;
@@ -61,15 +69,33 @@ export class RScriptBrowserPlayer {
     this.movieCanvas.style.cssText = 'display:none;pointer-events:none';
     this.panel.append(this.canvas, this.movieCanvas);
     this.audioHost = new BrowserAudioContextHost(this.audio, document);
+    const families = rscriptFontFamilies(apini.fontName);
+    this.domText = new RScriptDomText({
+      document,
+      parent: this.panel,
+      canvas: this.canvas,
+      width: apini.width,
+      height: apini.height,
+      fontFamilies: families,
+      wheel: (up) => this.game.wheel(up),
+      cancel: () => this.game.cancel(),
+    });
+    const canvasPresenter = new CanvasPresenter(this.canvas);
     this.game = new RScriptGame({
       files: options.files,
       apini,
-      presenter: new CanvasPresenter(this.canvas),
+      presenter: {
+        present: (frame, rect, offsetX, offsetY) => {
+          canvasPresenter.present(frame, rect, offsetX, offsetY);
+          this.domText.schedule();
+        },
+        fill: (colorref) => canvasPresenter.fill(colorref),
+      },
       timer: {
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
         now: () => performance.now(),
       },
-      rasterizer: new CanvasGlyphRasterizer(rscriptFontFamilies(apini.fontName), document),
+      rasterizer: new CanvasGlyphRasterizer(families, document),
       audio: this.audio,
       saves: options.saves,
       playMovie: (path) => this.playMovie(path),
@@ -83,6 +109,15 @@ export class RScriptBrowserPlayer {
       exit: (error) => options.exit(error),
     });
     this.bindInput();
+  }
+
+  /**
+   * `dom` adds selectable text over the game text for copying and dictionary extensions;
+   * the canvas keeps drawing the native glyphs either way.
+   */
+  setTextMode(mode: 'native' | 'dom'): void {
+    this.textMode = mode;
+    this.domText.setEnabled(mode === 'dom', this.game.display.screen);
   }
 
   /** Call from the Play button handler so audio starts inside the user gesture. */
@@ -120,6 +155,7 @@ export class RScriptBrowserPlayer {
       'pointerdown',
       (event) => {
         if (event.button !== 0) return;
+        this.pressedOnCanvas = true;
         canvas.focus({preventScroll: true});
         const {x, y} = this.point(event);
         this.game.pointerDown(x, y);
@@ -130,7 +166,11 @@ export class RScriptBrowserPlayer {
       'pointerup',
       (event) => {
         if (event.button !== 0) return;
+        // A drag that selected DOM text ending over the canvas is not a click.
+        const pressed = this.pressedOnCanvas;
+        this.pressedOnCanvas = false;
         if (this.skipMovie) return this.skipMovie();
+        if (!pressed) return;
         const {x, y} = this.point(event);
         this.game.pointerUp(x, y);
       },
@@ -158,12 +198,22 @@ export class RScriptBrowserPlayer {
       ArrowUp: 'up',
       ArrowDown: 'down',
     };
-    canvas.addEventListener(
+    // Keys reach the game from the canvas or the DOM text, not from dialogs in the panel.
+    const forGame = (event: KeyboardEvent): boolean =>
+      event.target === canvas ||
+      event.target === this.panel ||
+      this.domText.element.contains(event.target as Node);
+    this.panel.addEventListener(
       'keydown',
       (event) => {
+        if (!forGame(event)) return;
         const key = keys[event.key];
-        if (event.key === 'Control') this.game.setSkip(true);
-        else if (event.key === 'Enter' || event.key === ' ') {
+        // With DOM text, Shift is left to dictionary extensions (Yomichan scans with it)
+        // and Control to copying a selection.
+        if (this.textMode === 'dom' && event.key === 'Shift') return;
+        if (event.key === 'Control') {
+          if (!this.domText.selected) this.game.setSkip(true);
+        } else if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           if (this.skipMovie) this.skipMovie();
           else if (!event.repeat) this.game.keyClick();
@@ -178,14 +228,20 @@ export class RScriptBrowserPlayer {
       },
       {signal},
     );
-    canvas.addEventListener(
+    this.panel.addEventListener(
       'keyup',
       (event) => {
         if (event.key === 'Control') this.game.setSkip(false);
       },
       {signal},
     );
-    canvas.addEventListener('blur', () => this.game.setSkip(false), {signal});
+    this.panel.addEventListener(
+      'focusout',
+      (event) => {
+        if (!this.panel.contains(event.relatedTarget as Node | null)) this.game.setSkip(false);
+      },
+      {signal},
+    );
   }
 
   /**
@@ -310,6 +366,7 @@ export class RScriptBrowserPlayer {
 
   dispose(): void {
     this.abort.abort();
+    this.domText.dispose();
     this.skipMovie?.();
     this.game.dispose();
     this.movieRenderer?.dispose();

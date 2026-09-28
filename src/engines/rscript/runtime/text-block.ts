@@ -1,4 +1,4 @@
-import {isCp932LeadByte} from '../text.js';
+import {decodeCp932, isCp932LeadByte} from '../text.js';
 import {compositeOver} from '../graphics/blend.js';
 import {colorrefPixel, createSurface, type RScriptSurface} from '../graphics/pixels.js';
 import {RScriptContainer, RScriptSprite} from '../graphics/sprite.js';
@@ -77,8 +77,21 @@ export interface TextStyle {
   rubyRaise: number;
 }
 
+/** A revealed glyph in block coordinates, for selectable browser text. */
+export interface TextBlockGlyph {
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  /** The script started a new line here (`^N`) rather than the layout wrapping. */
+  readonly newline: boolean;
+}
+
 interface Glyph {
   sprite: RScriptSprite;
+  /** Decoded character(s): one, or the two of a half-width pair. */
+  text: string;
   advance: number;
   height: number;
   newline: boolean;
@@ -179,6 +192,7 @@ export class RScriptTextBlock extends RScriptContainer {
     this.add(sprite, 0);
     this.glyphs.push({
       sprite,
+      text: decodeCp932(code > 0xff ? Uint8Array.of(code >>> 8, code & 0xff) : Uint8Array.of(code)),
       advance: code < 0x100 && !PAIRS.has(code) ? size >> 1 : size,
       height: size,
       newline: this.newlineNext,
@@ -386,6 +400,24 @@ export class RScriptTextBlock extends RScriptContainer {
         x += sprite.width;
       }
     }
+  }
+
+  /** The glyphs revealed so far, with their text and placement. */
+  shownGlyphs(): TextBlockGlyph[] {
+    const shown: TextBlockGlyph[] = [];
+    for (const glyph of this.glyphs) {
+      const {sprite} = glyph;
+      if (!sprite.visible) continue;
+      shown.push({
+        text: glyph.text,
+        x: sprite.x,
+        y: sprite.y,
+        width: glyph.advance,
+        height: glyph.height,
+        newline: glyph.newline,
+      });
+    }
+    return shown;
   }
 
   /** Shows every glyph immediately (vtable +96 on a text object). */
