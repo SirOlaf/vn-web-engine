@@ -342,7 +342,9 @@ class Materialized {
       // Direct opcodes are the canonical pure handlers; legacy and write-watch replacements
       // stay in TypeScript, as in the interpreter's identity check.
       const direct = Array.from({length: 256}, (_, op) =>
-        ['control', 'integer', 'memory', 'locals'].includes(this.table.get(op)?.group),
+        ['control', 'integer', 'memory', 'locals', 'fixed', 'native-math'].includes(
+          this.table.get(op)?.group,
+        ),
       );
       this.wasm = this.memory.wasm;
       this.wasm.configure(direct, [], this.diagnostics);

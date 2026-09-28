@@ -608,6 +608,12 @@ fn dispatch(vm: &mut Vm, opcode: u32) -> Step<u32> {
     if let Some(result) = crate::locals::dispatch(vm, opcode) {
         return result;
     }
+    if let Some(result) = crate::fixed::dispatch(vm, opcode) {
+        return result;
+    }
+    if let Some(result) = crate::native_math::dispatch(vm, opcode) {
+        return result;
+    }
     Err(Host)
 }
 

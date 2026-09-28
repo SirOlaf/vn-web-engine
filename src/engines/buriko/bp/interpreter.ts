@@ -14,6 +14,8 @@ import {controlOpcodes} from './opcodes/control.js';
 import {integerOpcodes} from './opcodes/integer.js';
 import {memoryOpcodes} from './opcodes/memory.js';
 import {localOpcodes} from './opcodes/locals.js';
+import {fixedOpcodes} from './opcodes/fixed.js';
+import {nativeMathOpcodes} from './opcodes/native-math.js';
 
 // Scalar/stack operations, watched scalar stores, local-descriptor forms and control
 // flow whose operands (fixed-width or varint immediates) bound their work. A watched
@@ -42,6 +44,8 @@ const directHandlers: Readonly<Record<number, BurikoBpOpcodeHandler>> = {
   ...integerOpcodes,
   ...memoryOpcodes,
   ...localOpcodes,
+  ...fixedOpcodes,
+  ...nativeMathOpcodes,
 };
 
 export type BurikoBpDispatchResult =

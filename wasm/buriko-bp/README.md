@@ -28,12 +28,16 @@ Wasm never formats an error. Each instruction logs its memory writes; when the i
 
 ## Source layout
 
-| File         | TypeScript counterpart                             |
-| ------------ | -------------------------------------------------- |
-| `vm.rs`      | decoder, banks, provenance checks, stack, run loop |
-| `control.rs` | `bp/opcodes/control.ts`                            |
-| `integer.rs` | `bp/opcodes/integer.ts`                            |
-| `memory.rs`  | `bp/opcodes/memory.ts`                             |
-| `locals.rs`  | `bp/opcodes/locals.ts`                             |
+| File             | TypeScript counterpart                                                |
+| ---------------- | --------------------------------------------------------------------- |
+| `vm.rs`          | decoder, banks, provenance checks, stack, run loop                    |
+| `control.rs`     | `bp/opcodes/control.ts`                                               |
+| `integer.rs`     | `bp/opcodes/integer.ts`                                               |
+| `memory.rs`      | `bp/opcodes/memory.ts`                                                |
+| `locals.rs`      | `bp/opcodes/locals.ts`                                                |
+| `fixed.rs`       | `bp/opcodes/fixed.ts`, `native/cpu-numerical-profile.ts`              |
+| `native_math.rs` | `bp/opcodes/native-math.ts` (primaries 43-45, 48, 49, 55)             |
+| `math_tables.rs` | the powf tables of `bp/opcodes/math-tables.ts`, as binary64 encodings |
+| `float.rs`       | `Math.fround`, `trunc`, `floor`, `round`, `min` and `sqrt` over `f64` |
 
 Each handler follows its TypeScript handler statement by statement, including decode, pop and resolution order. `tools/differential-buriko-vm.mjs --candidate-engine wasm` compares the two per instruction.

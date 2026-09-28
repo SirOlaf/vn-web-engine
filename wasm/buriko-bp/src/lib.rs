@@ -8,9 +8,13 @@
 #![no_std]
 
 mod control;
+mod fixed;
+mod float;
 mod integer;
 mod locals;
+mod math_tables;
 mod memory;
+mod native_math;
 mod vm;
 
 #[panic_handler]
