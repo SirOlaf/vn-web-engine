@@ -22,6 +22,8 @@ const modules = await Promise.all(
         'display-texture',
         'surfaces',
         'bitmap-compositor',
+        'bitmap-transition',
+        'bitmap-affine',
         'distributed-processing',
         'display-damage',
         'display-object',
@@ -78,6 +80,50 @@ function blend(lib, operation) {
       if (operation === 'fused') lib.blendMixedBurikoBitmapsIntoRgb(output, first, second, 127, 63);
       else if (operation === 'crossfade') lib.mixBurikoAllChannels(output, first, 127);
       else lib.blendBurikoAlphaIntoRgb(output, first);
+      return output.storage.bytes;
+    },
+  };
+}
+
+function transition(lib, parameter, extra) {
+  const output = bitmap(lib, 123, 1);
+  const source = bitmap(lib, 456, 1);
+  const storage = new lib.BurikoBitmapStorage(new Uint8Array(1280 * 720), true);
+  populate(storage.bytes, 789);
+  const mask = {
+    storage,
+    offset: 0,
+    stride: 1280,
+    width: 1280,
+    height: 720,
+    format: 3,
+    bytesPerPixel: 1,
+  };
+  return {
+    run() {
+      lib.transitionBurikoBitmap(output, 0, 0, source, mask, parameter, 128, extra, false);
+      return output.storage.bytes;
+    },
+  };
+}
+
+function affineDim(lib, sourceFormat) {
+  const compositor = new lib.BurikoBitmapCompositor();
+  const source = bitmap(lib, 456, sourceFormat);
+  const transform = {
+    x: 640 << 16,
+    y: 360 << 16,
+    pivotX: 640 << 16,
+    pivotY: 360 << 16,
+    angle: 10 << 16,
+    scaleX: 70000,
+    scaleY: 70000,
+  };
+  return {
+    run() {
+      const output = {...source, format: 2};
+      output.storage = new lib.BurikoBitmapStorage(new Uint8Array(1280 * 720 * 4), false);
+      lib.transformBurikoBitmap(compositor, output, source, transform, 96, 1);
       return output.storage.bytes;
     },
   };
@@ -313,6 +359,10 @@ for (const [name, create] of [
     (lib) => rgbaMix(lib, factor),
   ]),
   ['Affine scene, 1080p with 720 strip draws', affineScene],
+  ['Mask transition, 720p', (lib) => transition(lib, 0, 0)],
+  ['Mask transition with triangle table, 720p', (lib) => transition(lib, 9, 3)],
+  ['Affine bilinear dim, 720p', (lib) => affineDim(lib, 2)],
+  ['Affine bilinear dim with forced alpha, 720p', (lib) => affineDim(lib, 1)],
   ['Ogg checksums, 128 maximum-size pages', oggChecksum],
   ['Import packed BGR24, 720p', importRgb],
   ['RGB to alpha, fresh 720p destination', copyRgbToAlpha],

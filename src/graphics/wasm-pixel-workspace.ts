@@ -20,6 +20,11 @@ export interface WasmPixelRows {
   pitch: number;
 }
 
+/** An additional source may pack a different row width, e.g. an 8-bit mask beside RGB32 rows. */
+export interface WasmPixelAdditionalRows extends WasmPixelRows {
+  rowBytes?: number;
+}
+
 export interface WasmPixelPlane extends WasmPixelRows {
   rowBytes: number;
   rows: number;
@@ -47,10 +52,11 @@ export class WasmPixelWorkspace {
     rowBytes: number,
     rows: number,
     operation: (source: number, destination: number, additionalSource: number) => void,
-    additionalSource?: WasmPixelRows,
+    additionalSource?: WasmPixelAdditionalRows,
     preserveDestination = true,
     spans?: WasmPixelWorkspaceSpanNames,
   ): boolean {
+    const additionalRowBytes = additionalSource?.rowBytes ?? rowBytes;
     if (
       !(source.buffer instanceof ArrayBuffer) ||
       !(destination.buffer instanceof ArrayBuffer) ||
@@ -59,6 +65,8 @@ export class WasmPixelWorkspace {
       destination.buffer === this.kernel.memory.buffer ||
       !Number.isSafeInteger(rowBytes) ||
       rowBytes <= 0 ||
+      !Number.isSafeInteger(additionalRowBytes) ||
+      additionalRowBytes <= 0 ||
       !Number.isSafeInteger(rows) ||
       rows <= 0
     )
@@ -71,26 +79,33 @@ export class WasmPixelWorkspace {
         additionalSource.view.buffer === this.kernel.memory.buffer)
     )
       return false;
-    for (const [view, offset, pitch] of [
-      [source, sourceOffset, sourcePitch],
-      [destination, destinationOffset, destinationPitch],
+    for (const [view, offset, pitch, width] of [
+      [source, sourceOffset, sourcePitch, rowBytes],
+      [destination, destinationOffset, destinationPitch, rowBytes],
       ...(additionalSource === undefined
         ? []
-        : [[additionalSource.view, additionalSource.offset, additionalSource.pitch] as const]),
+        : [
+            [
+              additionalSource.view,
+              additionalSource.offset,
+              additionalSource.pitch,
+              additionalRowBytes,
+            ] as const,
+          ]),
     ] as const)
       if (
         !Number.isSafeInteger(offset) ||
         offset < 0 ||
         !Number.isSafeInteger(pitch) ||
-        pitch < rowBytes ||
-        offset + (rows - 1) * pitch + rowBytes > view.byteLength
+        pitch < width ||
+        offset + (rows - 1) * pitch + width > view.byteLength
       )
         return false;
     const length = rowBytes * rows,
       planeLength = Math.ceil(length / 16) * 16,
       output = this.input + planeLength,
       additionalInput = additionalSource === undefined ? 0 : output + planeLength,
-      end = (additionalInput === 0 ? output : additionalInput) + length;
+      end = additionalInput === 0 ? output + length : additionalInput + additionalRowBytes * rows;
     if (!Number.isSafeInteger(end) || end > 128 * 1024 * 1024) {
       reportWasmGraphicsFallback();
       return false;
@@ -123,7 +138,7 @@ export class WasmPixelWorkspace {
           additionalSource.offset,
           additionalSource.pitch,
           additionalInput,
-          rowBytes,
+          additionalRowBytes,
           rows,
         );
     } finally {

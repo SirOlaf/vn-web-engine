@@ -484,10 +484,19 @@ function affinePixels(
     (destination.width >>> 0) * (destination.height >>> 0),
   );
   if (
-    mode === 'copy' &&
+    writeOnly &&
     input !== null &&
     output !== null &&
-    tryBurikoBitmapAffineWasm(destination, source, output, input, coordinates, bilinear)
+    tryBurikoBitmapAffineWasm(
+      destination,
+      source,
+      output,
+      input,
+      coordinates,
+      bilinear,
+      mode === 'dim' ? transparency : 0,
+      forceAlpha,
+    )
   ) {
     for (let row = 0; row < destination.height >>> 0; row++)
       destination.storage!.written(

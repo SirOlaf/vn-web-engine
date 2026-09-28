@@ -3,6 +3,7 @@
 use core::arch::wasm32::*;
 
 pub mod dsc;
+mod transition;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
@@ -166,6 +167,107 @@ pub unsafe extern "C" fn affine_copy(
                 bilinear,
             );
             *destination.add(row * width + column) = pixel;
+            fixed_x = fixed_x.wrapping_add(column_x);
+            fixed_y = fixed_y.wrapping_add(column_y);
+        }
+        start_x = start_x.wrapping_add(row_x);
+        start_y = start_y.wrapping_add(row_y);
+    }
+}
+
+#[inline]
+unsafe fn affine_dim_pixel(
+    source: *const u32,
+    width: i32,
+    height: i32,
+    x: i32,
+    y: i32,
+    alpha: u32,
+) -> v128 {
+    // Forced alpha applies only to in-bounds reads; border samples stay zero.
+    affine_channels(if x >= 0 && y >= 0 && x < width && y < height {
+        *source.add((y * width + x) as usize) | alpha
+    } else {
+        0
+    })
+}
+
+/// affine_sample with forced alpha, returning unnarrowed 16-bit channels.
+#[inline]
+unsafe fn affine_dim_sample(
+    source: *const u32,
+    source_width: i32,
+    source_height: i32,
+    fixed_x: i32,
+    fixed_y: i32,
+    bilinear: u32,
+    alpha: u32,
+) -> v128 {
+    if bilinear == 0 {
+        return affine_dim_pixel(
+            source,
+            source_width,
+            source_height,
+            fixed_x.wrapping_add(0x8000) >> 16,
+            fixed_y.wrapping_add(0x8000) >> 16,
+            alpha,
+        );
+    }
+    let x = fixed_x >> 16;
+    let y = fixed_y >> 16;
+    if x < -1 || y < -1 || x >= source_width || y >= source_height {
+        return i16x8_splat(0);
+    }
+    let tap = |x: i32, y: i32| affine_dim_pixel(source, source_width, source_height, x, y, alpha);
+    let fx = i16x8_splat(((fixed_x as u32 >> 12) & 15) as i16);
+    let fy = i16x8_splat(((fixed_y as u32 >> 12) & 15) as i16);
+    affine_lerp(
+        affine_lerp(tap(x, y), tap(x + 1, y), fx),
+        affine_lerp(tap(x, y + 1), tap(x + 1, y + 1), fx),
+        fy,
+    )
+}
+
+/// 052480's dimming branch (04ec00/0500e0/050410). `coefficient` is the native
+/// 16-bit 256 - transparency; `alpha` is 0xff000000 when an RGB source feeds an
+/// alpha destination and is ORed into every in-bounds read before interpolation.
+#[no_mangle]
+pub unsafe extern "C" fn affine_dim_copy(
+    source: *const u32,
+    destination: *mut u32,
+    source_width: i32,
+    source_height: i32,
+    width: usize,
+    height: usize,
+    mut start_x: i32,
+    mut start_y: i32,
+    column_x: i32,
+    column_y: i32,
+    row_x: i32,
+    row_y: i32,
+    bilinear: u32,
+    alpha: u32,
+    coefficient: i32,
+) {
+    // PMULLW keeps the low product word before PSRLW; alpha uses 256 to pass through.
+    let coefficient = coefficient as i16;
+    let coefficients = i16x8(coefficient, coefficient, coefficient, 256, 0, 0, 0, 0);
+    for row in 0..height {
+        let mut fixed_x = start_x;
+        let mut fixed_y = start_y;
+        for column in 0..width {
+            let channels = affine_dim_sample(
+                source,
+                source_width,
+                source_height,
+                fixed_x,
+                fixed_y,
+                bilinear,
+                alpha,
+            );
+            let dimmed = u16x8_shr(i16x8_mul(channels, coefficients), 8);
+            *destination.add(row * width + column) =
+                u32x4_extract_lane::<0>(u8x16_narrow_i16x8(dimmed, i16x8_splat(0)));
             fixed_x = fixed_x.wrapping_add(column_x);
             fixed_y = fixed_y.wrapping_add(column_y);
         }

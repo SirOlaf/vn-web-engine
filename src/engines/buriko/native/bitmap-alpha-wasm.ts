@@ -49,6 +49,31 @@ export interface BurikoBitmapExports extends WasmPixelExports {
     rowY: number,
     bilinear: number,
   ) => void;
+  affine_dim_copy: (
+    source: number,
+    destination: number,
+    sourceWidth: number,
+    sourceHeight: number,
+    width: number,
+    height: number,
+    startX: number,
+    startY: number,
+    columnX: number,
+    columnY: number,
+    rowX: number,
+    rowY: number,
+    bilinear: number,
+    alpha: number,
+    coefficient: number,
+  ) => void;
+  transition_table: () => number;
+  transition_rgb: (
+    source: number,
+    destination: number,
+    mask: number,
+    width: number,
+    height: number,
+  ) => void;
   alpha_rgb: (
     source: number,
     destination: number,
@@ -243,7 +268,10 @@ export function tryBurikoBitmapAffineAlphaWasm(
   );
 }
 
-/** The caller has proven native signed-WORD source addressing and writable output bounds. */
+/**
+ * The caller has proven native signed-WORD source addressing and writable output bounds.
+ * Nonzero transparency or forced alpha selects the dimming branch.
+ */
 export function tryBurikoBitmapAffineWasm(
   destination: BurikoBitmap,
   source: BurikoBitmap,
@@ -251,6 +279,8 @@ export function tryBurikoBitmapAffineWasm(
   input: DataView,
   coordinates: BurikoBitmapAffineCoordinates,
   bilinear: boolean,
+  transparency = 0,
+  forceAlpha = false,
 ): boolean {
   const width = destination.width >>> 0,
     height = destination.height >>> 0,
@@ -279,22 +309,42 @@ export function tryBurikoBitmapAffineWasm(
       rowBytes: width * 4,
       rows: height,
     },
-    (sourcePointer, destinationPointer) =>
-      exports.affine_copy(
-        sourcePointer,
-        destinationPointer,
-        source.width >>> 0,
-        source.height >>> 0,
-        width,
-        height,
-        coordinates.startX,
-        coordinates.startY,
-        coordinates.columnX,
-        coordinates.columnY,
-        coordinates.rowX,
-        coordinates.rowY,
-        Number(bilinear),
-      ),
+    (sourcePointer, destinationPointer) => {
+      if (transparency === 0 && !forceAlpha)
+        exports.affine_copy(
+          sourcePointer,
+          destinationPointer,
+          source.width >>> 0,
+          source.height >>> 0,
+          width,
+          height,
+          coordinates.startX,
+          coordinates.startY,
+          coordinates.columnX,
+          coordinates.columnY,
+          coordinates.rowX,
+          coordinates.rowY,
+          Number(bilinear),
+        );
+      else
+        exports.affine_dim_copy(
+          sourcePointer,
+          destinationPointer,
+          source.width >>> 0,
+          source.height >>> 0,
+          width,
+          height,
+          coordinates.startX,
+          coordinates.startY,
+          coordinates.columnX,
+          coordinates.columnY,
+          coordinates.rowX,
+          coordinates.rowY,
+          Number(bilinear),
+          forceAlpha ? 0xff000000 | 0 : 0,
+          (256 - transparency) & 65535,
+        );
+    },
   );
 }
 
@@ -465,4 +515,48 @@ export function tryBurikoBitmapMixWasm(
   } finally {
     recordRuntimeMetric('buriko.sprite.mix.wasm-applied', Number(wasmApplied));
   }
+}
+
+/**
+ * Exact 04BC40/04B860/04BA70/04B660 RGB32 transition over separate, initialized,
+ * packed-or-padded rows. `actions` maps each mask byte to skip, copy or a signed
+ * coefficient, as derived by the TypeScript reference.
+ */
+export function tryBurikoBitmapTransitionWasm(
+  destination: BurikoBitmap,
+  source: BurikoBitmap,
+  mask: BurikoBitmap,
+  output: DataView,
+  input: DataView,
+  matte: DataView,
+  width: number,
+  height: number,
+  actions: Int32Array,
+): boolean {
+  const rowBytes = width * 4;
+  if (
+    width * height < BURIKO_BITMAP_WASM_MIN_PIXELS ||
+    input.buffer === output.buffer ||
+    matte.buffer === output.buffer ||
+    (width < 128 &&
+      (source.stride !== rowBytes || destination.stride !== rowBytes || mask.stride !== width))
+  )
+    return false;
+  const exports = getKernel();
+  if (exports === null) return false;
+  return workspace!.run(
+    input,
+    source.offset,
+    source.stride,
+    output,
+    destination.offset,
+    destination.stride,
+    rowBytes,
+    height,
+    (sourcePointer, destinationPointer, maskPointer) => {
+      new Int32Array(exports.memory.buffer, exports.transition_table(), 256).set(actions);
+      exports.transition_rgb(sourcePointer, destinationPointer, maskPointer, width, height);
+    },
+    {view: matte, offset: mask.offset, pitch: mask.stride, rowBytes: width},
+  );
 }

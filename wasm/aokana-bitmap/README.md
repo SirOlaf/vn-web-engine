@@ -3,8 +3,9 @@
 This dependency-free Rust module accelerates initialized, separate Aokana bitmap
 surfaces. `alpha_rgb` implements native spans 14003d950/14003cd30; `mix_all`
 implements the bounded coefficient domain of 14003d3f0; `fused_rgb` implements
-the bounded 03C8B0/03C580 crossfade and RGB composition path. `affine_copy` implements
-the validated copy branch of 052480. Integer SIMD preserves
+the bounded 03C8B0/03C580 crossfade and RGB composition path. `affine_copy` and
+`affine_dim_copy` implement the validated copy and dimming branches of 052480.
+`transition_rgb` implements the RGB32 masked transition 04BC40/04B860/04BA70/04B660. Integer SIMD preserves
 native floors and the alpha table's 254/255 entries. Fully opaque pixel pairs copy
 source alpha, a fully opaque odd tail clears alpha, and zero-alpha pairs and
 alpha-zero/one tails retain their existing bytes.
@@ -28,9 +29,25 @@ and samples transparent black beyond the source border. Only fully initialized
 sources with positive signed-WORD dimensions/pitch and nonaliased, writable
 destinations enter this path. It writes every output pixel, including transparent
 border pixels, so temporary destinations need no input copy or prior initialization.
-Copy dimming and destination blending retain their existing JavaScript path.
+The dimming kernel multiplies each RGB byte by the native 16-bit `256 - transparency`
+coefficient, keeps the low product word, and shifts it right by eight; alpha passes
+through unchanged. When an RGB source feeds an alpha destination, every in-bounds
+read, but no border sample, has alpha forced to 255 before interpolation. Opaque
+`mix` blending reads old output and retains its existing JavaScript path.
 Small damage rectangles also stay in JavaScript when the source contains more
 than sixteen times as many pixels, avoiding a large staging copy for little work.
+
+The transition kernel reads an 8-bit mask plane beside separate RGB32 source and
+destination planes. Every native per-pixel decision depends only on the mask byte,
+so the TypeScript reference derives a 256-entry action table (skip, copy, or a signed
+coefficient) from its own coverage, bias, triangle-table and `extra` rules and writes
+it to `transition_table()` before each call. Blends compute
+`((difference << 4) * k) >> 16`, saturate each RGB channel, and retain destination
+alpha; copies take the whole source pixel. The small-parameter Q7 product
+`(difference * c) >> 7` is supplied as `k = 32c`, which is exact for its `c < 128`
+domain. Shared or overlapping storage uses a checked-once JavaScript traversal in
+native pixel order instead, and any partially initialized, out-of-range or unusual
+descriptor keeps the per-pixel checked path, preserving the exact fault pixel.
 
 The native TypeScript caller retains unusual coefficients, aliases (including
 separate views of one buffer), shared backing buffers, overlapping or reverse rows,
@@ -41,7 +58,8 @@ staging can outweigh SIMD savings. Alpha and fused blending also keep padded spa
 narrower than 128 pixels in JavaScript.
 
 The reusable `src/graphics/wasm-pixel-workspace.ts` owns compact row staging,
-including an optional second source for fused operations and independently sized
+including an optional second source for fused operations (which may pack a different
+row width, as the 8-bit transition mask does) and independently sized
 input/output planes for transforms, and
 bounded linear-memory growth, capped at 128 MiB. The native caller and this crate
 own bitmap numerical policy. Source/destination bytes are copied afresh on every

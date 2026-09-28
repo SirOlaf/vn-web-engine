@@ -8,6 +8,7 @@ import {
 } from './bitmap.js';
 import {burikoSignedProduct16, saturateBurikoByte} from './bitmap-pairs.js';
 import {bitmapRead8, bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
+import {tryBurikoBitmapTransitionWasm} from './bitmap-alpha-wasm.js';
 import {transitionLegacy169BitmapPixels} from './legacy-169-bitmap-transition.js';
 
 function cvtt32(value: number): number {
@@ -37,6 +38,81 @@ function triangleTable(parameter: number, extra: number): number[] {
   return table;
 }
 
+// Mask-byte actions shared with the Wasm kernel. Other entries are signed
+// coefficients k for delta = ((difference << 4) * k) >> 16.
+const TRANSITION_COPY = 0x10000,
+  TRANSITION_SKIP = 0x20000;
+
+/** Positive-stride rows whose whole envelope is in bounds and already initialized. */
+function transitionRows(bitmap: BurikoBitmap, rowBytes: number, rows: number): DataView | null {
+  if (!Number.isSafeInteger(bitmap.stride) || bitmap.stride < rowBytes) return null;
+  const view =
+    bitmap.storage?.initializedView(bitmap.offset, (rows - 1) * bitmap.stride + rowBytes) ?? null;
+  return view !== null && view.buffer instanceof ArrayBuffer ? view : null;
+}
+
+/**
+ * Checked-once traversal of transition32. Every read in the envelope is proven
+ * valid, so no pixel can fault; the JavaScript loop keeps per-pixel order for
+ * shared storage, and Wasm is used only for separate buffers.
+ */
+function transition32Fast(
+  destination: BurikoBitmap,
+  source: BurikoBitmap,
+  mask: BurikoBitmap,
+  width: number,
+  height: number,
+  actions: Int32Array,
+): boolean {
+  if (width === 0 || height === 0) return false;
+  const output = transitionRows(destination, width * 4, height),
+    input = transitionRows(source, width * 4, height),
+    matte = transitionRows(mask, width, height);
+  if (output === null || input === null || matte === null) return false;
+  if (
+    !tryBurikoBitmapTransitionWasm(
+      destination,
+      source,
+      mask,
+      output,
+      input,
+      matte,
+      width,
+      height,
+      actions,
+    )
+  ) {
+    const levels = mask.storage!.bytes;
+    for (let y = 0; y < height; y++) {
+      const maskRow = mask.offset + y * mask.stride,
+        outputRow = destination.offset + y * destination.stride,
+        inputRow = source.offset + y * source.stride;
+      for (let x = 0; x < width; x++) {
+        const action = actions[levels[maskRow + x]!]!;
+        if (action === TRANSITION_SKIP) continue;
+        const offset = outputRow + x * 4,
+          pixel = input.getUint32(inputRow + x * 4, true);
+        if (action === TRANSITION_COPY) {
+          output.setUint32(offset, pixel, true);
+          continue;
+        }
+        const old = output.getUint32(offset, true);
+        let result = old & 0xff000000;
+        for (let shift = 0; shift < 24; shift += 8) {
+          const previous = (old >>> shift) & 255,
+            delta = (((((pixel >>> shift) & 255) - previous) << 4) * action) >> 16;
+          result |= saturateBurikoByte(previous + delta) << shift;
+        }
+        output.setUint32(offset, result, true);
+      }
+    }
+  }
+  // The envelope was initialized, so row publication retains validity state.
+  for (let y = 0; y < height; y++)
+    destination.storage!.written(destination.offset + y * destination.stride, width * 4);
+  return true;
+}
+
 /** Exact04BC40/04B860/04BA70/04B660 scalar MOVD traversal on shared storage. */
 function transition32(
   destination: BurikoBitmap,
@@ -58,6 +134,24 @@ function transition32(
   }
   const bounds = small && extra === 0 ? destination : source;
   const bias = small ? (Math.imul(~(1 << parameter), blend) + 256) | 0 : Math.imul(128 - blend, 2);
+  // Every per-pixel decision depends only on the mask byte. The small, extra-free
+  // Q7 product is rescaled: (d * c) >> 7 === ((d << 4) * (c * 32)) >> 16 for c < 128.
+  const actions = new Int32Array(256);
+  for (let byte = 0; byte < 256; byte++) {
+    const coverage = ((small ? byte << parameter : byte) + bias) | 0;
+    actions[byte] =
+      coverage <= 0
+        ? TRANSITION_SKIP
+        : extra === 0 && coverage >= 256
+          ? TRANSITION_COPY
+          : small && extra === 0
+            ? (coverage >> 1) * 32
+            : (coefficients[small ? Math.min(128, coverage >> 1) : Math.min(256, coverage)]! <<
+                16) >>
+              16;
+  }
+  if (transition32Fast(destination, source, mask, bounds.width >>> 0, bounds.height >>> 0, actions))
+    return;
   for (let y = 0; y < bounds.height >>> 0; y++) {
     for (let x = 0; x < bounds.width >>> 0; x++) {
       const byte = bitmapRead8(mask, mask.offset + y * mask.stride + x);

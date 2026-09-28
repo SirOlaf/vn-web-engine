@@ -155,7 +155,7 @@ test('affine temporary output initializes pixels while preserving unwritten row 
   }
 });
 
-test('large affine copies agree across independent and shared backing with cropped and padded rows', () => {
+test('large affine copies and dims agree across independent and shared backing with cropped and padded rows', () => {
   const compositor = new BurikoBitmapCompositor();
   const source = bitmap(
     73,
@@ -167,38 +167,61 @@ test('large affine copies agree across independent and shared backing with cropp
   source.offset = source.stride + 4;
   source.width -= 2;
   source.height -= 2;
-  for (const sampling of [0, 1])
-    for (const transform of [
-      {...identity, x: 0x9000, y: -0x3000},
-      {...identity, angle: 7 * 65536, scaleX: 70000, scaleY: 55000},
-      {...identity, x: -0x7fff8000, y: 0x7fff8000},
-      {...identity, scaleX: 1, scaleY: 1},
-    ]) {
-      const destination = bitmap(65, 19, [], 2, 8);
-      destination.storage = new BurikoBitmapStorage(destination.storage.bytes, false);
-      const inputLength = source.storage.bytes.length,
-        outputStart = inputLength + 8,
-        shared = new Uint8Array(outputStart + destination.storage.bytes.length);
-      shared.set(source.storage.bytes);
-      shared.set(destination.storage.bytes, outputStart);
-      const sharedSource = {
-        ...source,
-        storage: new BurikoBitmapStorage(shared.subarray(0, inputLength), true),
-      };
-      const sharedDestination = {
-        ...destination,
-        storage: new BurikoBitmapStorage(shared.subarray(outputStart), false),
-      };
-      // Separate views of one buffer retain the checked JavaScript traversal.
-      transformBurikoBitmap(compositor, sharedDestination, sharedSource, transform, 0, sampling);
-      transformBurikoBitmap(compositor, destination, source, transform, 0, sampling);
-      assert.deepEqual(destination.storage.bytes, sharedDestination.storage.bytes);
-      assert.deepEqual(
-        destination.storage.initializedRange(0, destination.storage.bytes.length),
-        sharedDestination.storage.initializedRange(0, sharedDestination.storage.bytes.length),
-      );
-      assert.deepEqual(shared.subarray(0, inputLength), source.storage.bytes);
-    }
+  // RGB sources force covered alpha into alpha destinations and always dim, with
+  // native 16-bit wrapping of 256 - transparency.
+  for (const [format, transparency] of [
+    [2, 0],
+    [2, 96],
+    [1, 0],
+    [1, 300],
+  ])
+    for (const sampling of [0, 1])
+      for (const transform of [
+        {...identity, x: 0x9000, y: -0x3000},
+        {...identity, angle: 7 * 65536, scaleX: 70000, scaleY: 55000},
+        {...identity, x: -0x7fff8000, y: 0x7fff8000},
+        {...identity, scaleX: 1, scaleY: 1},
+      ]) {
+        const destination = bitmap(65, 19, [], 2, 8);
+        destination.storage = new BurikoBitmapStorage(destination.storage.bytes, false);
+        const inputLength = source.storage.bytes.length,
+          outputStart = inputLength + 8,
+          shared = new Uint8Array(outputStart + destination.storage.bytes.length);
+        shared.set(source.storage.bytes);
+        shared.set(destination.storage.bytes, outputStart);
+        const sharedSource = {
+          ...source,
+          format,
+          storage: new BurikoBitmapStorage(shared.subarray(0, inputLength), true),
+        };
+        const sharedDestination = {
+          ...destination,
+          storage: new BurikoBitmapStorage(shared.subarray(outputStart), false),
+        };
+        // Separate views of one buffer retain the checked JavaScript traversal.
+        transformBurikoBitmap(
+          compositor,
+          sharedDestination,
+          sharedSource,
+          transform,
+          transparency,
+          sampling,
+        );
+        transformBurikoBitmap(
+          compositor,
+          destination,
+          {...source, format},
+          transform,
+          transparency,
+          sampling,
+        );
+        assert.deepEqual(destination.storage.bytes, sharedDestination.storage.bytes);
+        assert.deepEqual(
+          destination.storage.initializedRange(0, destination.storage.bytes.length),
+          sharedDestination.storage.initializedRange(0, sharedDestination.storage.bytes.length),
+        );
+        assert.deepEqual(shared.subarray(0, inputLength), source.storage.bytes);
+      }
 });
 
 test('affine pairs retain alias order and completed stores before a later source fault', () => {
