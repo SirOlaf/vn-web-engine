@@ -80,6 +80,8 @@ export interface BurikoBitmapExports extends WasmPixelExports {
     width: number,
     height: number,
     opacity: number,
+    sourceStride: number,
+    destinationStride: number,
   ) => void;
   mix_all: (source: number, destination: number, pixels: number, destinationWeight: number) => void;
   mix_rgba: (
@@ -373,7 +375,20 @@ export function tryBurikoBitmapAlphaWasm(
     return false;
   const exports = getKernel();
   if (exports === null) return false;
-  return workspace!.run(
+  if (allChannels)
+    return workspace!.run(
+      input,
+      source.offset,
+      source.stride,
+      output,
+      destination.offset,
+      destination.stride,
+      width * 4,
+      height,
+      (sourcePointer, destinationPointer) =>
+        exports.mix_all(sourcePointer, destinationPointer, width * height, transparency! >>> 1),
+    );
+  return workspace!.runStrided(
     input,
     source.offset,
     source.stride,
@@ -382,18 +397,16 @@ export function tryBurikoBitmapAlphaWasm(
     destination.stride,
     width * 4,
     height,
-    (sourcePointer, destinationPointer) => {
-      if (allChannels)
-        exports.mix_all(sourcePointer, destinationPointer, width * height, transparency! >>> 1);
-      else
-        exports.alpha_rgb(
-          sourcePointer,
-          destinationPointer,
-          width,
-          height,
-          transparency === null ? -1 : 256 - transparency,
-        );
-    },
+    (sourcePointer, destinationPointer, sourceStride, destinationStride) =>
+      exports.alpha_rgb(
+        sourcePointer,
+        destinationPointer,
+        width,
+        height,
+        transparency === null ? -1 : 256 - transparency,
+        sourceStride,
+        destinationStride,
+      ),
   );
 }
 

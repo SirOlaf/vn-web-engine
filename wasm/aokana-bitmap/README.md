@@ -57,6 +57,11 @@ to integral transparency 0–256. Spans below 1,024 pixels stay in JavaScript be
 staging can outweigh SIMD savings. Alpha and fused blending also keep padded spans
 narrower than 128 pixels in JavaScript.
 
+`alpha_rgb` takes a source and destination stride in pixels. Its host stages each
+padded plane as one pitched copy when that copy is at most twice the packed rows,
+otherwise row by row, and returns a pitched destination in one copy. The kernel never
+writes the bytes between rows, so that copy restores their staged original values.
+
 The reusable `src/graphics/wasm-pixel-workspace.ts` owns compact row staging,
 including an optional second source for fused operations (which may pack a different
 row width, as the 8-bit transition mask does) and independently sized

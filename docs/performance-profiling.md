@@ -283,6 +283,22 @@ Each Vite invocation embeds a mode and UTC build timestamp through `src/platform
 
 The profiling build includes the service worker. An already open player keeps its loaded code, and an installed worker can keep serving the previous cached build. After rebuilding, close every tab and installed app window for that origin, then reopen it so a waiting update can activate. If an older build still appears, allow the update to download, close all its windows, and reopen once more. A reload alone does not necessarily activate a waiting worker. A new recorder profile starts without an old worker or cached build.
 
+## Summarizing a DevTools CPU trace
+
+A trace saved from the DevTools Performance panel contains sampled call stacks. `tools/summarize-cpu-trace.mjs` prints self and inclusive time per function from those samples, without opening the Performance panel:
+
+```sh
+node --max-old-space-size=8192 tools/summarize-cpu-trace.mjs trace.json \
+  --lines decodeLegacy,checkpoint --callers copyIn --timeline 1000
+```
+
+- `--lines` splits the self time of the named functions by source line.
+- `--callers` lists the heaviest caller chains that lead to the named functions.
+- `--timeline` lists the top self-time functions in each bucket of the given width in milliseconds.
+- `--thread` selects a profiled thread other than `CrRendererMain`.
+
+Locations name the served chunk and line (`buriko-<hash>.js:<line>`). For a trace of the profiling build, open that line in `site-profile/assets/`. Each rebuild changes the chunk hashes, so keep the matching `site-profile/` build alongside a trace. Starting the CPU profiler costs about a second of main-thread time (`CpuProfiler::StartProfiling`). The samples charge that second as self time to whatever function was running at the start of the trace, usually at its first line. Discount self time that sits only at the start of a trace. Under DevTools CPU throttling, every per-call cost is multiplied, including `performance.now()` and typed-array allocation.
+
 ## Sampling-free Chromium trace
 
 Use this when timings alone cannot explain a pause, or when renderer termination evidence is needed. The standalone recorder controls an isolated Chromium-family browser through its browser-level DevTools connection. It does not evaluate page scripts, simulate player input, or request screenshots. The user operates the game normally.

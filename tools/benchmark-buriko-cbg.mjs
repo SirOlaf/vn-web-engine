@@ -21,7 +21,12 @@ async function pageMain(_fixture, options) {
   const codec = await import('/runtime/formats/buriko/compressed-bg.js');
   const {randomByteGenerator} = await import('/runtime/formats/buriko/binary.js');
   const diagnostics = await import('/runtime/platform/runtime-performance.js');
-  const asyncDecode = codec.decodeCompressedBgLegacyAsync;
+  // Production decoding enters through the engine's Wasm stages; older baselines lack them.
+  const engine = await import('/runtime/engines/buriko/native/compressed-bg-wasm.js').catch(
+    () => null,
+  );
+  const asyncDecode =
+    engine?.decodeBurikoCompressedBgLegacyAsync ?? codec.decodeCompressedBgLegacyAsync;
   const round = (value) => Math.round(value * 100) / 100;
   const varint = (value) => {
     const output = [];

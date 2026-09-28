@@ -168,6 +168,102 @@ export class WasmPixelWorkspace {
     }
     return true;
   }
+  /**
+   * run() for blending kernels that take per-plane strides in staged pixels. A plane whose
+   * pitched span is at most twice its packed rows is staged as one copy with its own pitch;
+   * wider pitches are packed row by row. The destination is always staged, so a span
+   * returns in one copy: bytes between its rows are the unmodified staged originals.
+   */
+  runStrided(
+    source: DataView,
+    sourceOffset: number,
+    sourcePitch: number,
+    destination: DataView,
+    destinationOffset: number,
+    destinationPitch: number,
+    rowBytes: number,
+    rows: number,
+    operation: (
+      source: number,
+      destination: number,
+      sourceStride: number,
+      destinationStride: number,
+    ) => void,
+  ): boolean {
+    if (
+      !(source.buffer instanceof ArrayBuffer) ||
+      !(destination.buffer instanceof ArrayBuffer) ||
+      source.buffer === destination.buffer ||
+      source.buffer === this.kernel.memory.buffer ||
+      destination.buffer === this.kernel.memory.buffer ||
+      !Number.isSafeInteger(rowBytes) ||
+      rowBytes <= 0 ||
+      (rowBytes & 3) !== 0 ||
+      !Number.isSafeInteger(rows) ||
+      rows <= 0
+    )
+      return false;
+    for (const [view, offset, pitch] of [
+      [source, sourceOffset, sourcePitch],
+      [destination, destinationOffset, destinationPitch],
+    ] as const)
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(pitch) ||
+        pitch < rowBytes ||
+        offset + (rows - 1) * pitch + rowBytes > view.byteLength
+      )
+        return false;
+    const packed = rowBytes * rows,
+      staged = (pitch: number): number =>
+        (pitch & 3) === 0 && (rows - 1) * pitch + rowBytes <= 2 * packed ? pitch : rowBytes,
+      sourceStaged = staged(sourcePitch),
+      destinationStaged = staged(destinationPitch),
+      sourceLength = (rows - 1) * sourceStaged + rowBytes,
+      destinationLength = (rows - 1) * destinationStaged + rowBytes,
+      output = this.input + Math.ceil(sourceLength / 16) * 16,
+      end = output + destinationLength;
+    if (!Number.isSafeInteger(end) || end > 128 * 1024 * 1024) {
+      reportWasmGraphicsFallback();
+      return false;
+    }
+    const memory = this.kernel.memory;
+    if (end > memory.buffer.byteLength) {
+      try {
+        memory.grow(Math.ceil((end - memory.buffer.byteLength) / 65536));
+      } catch {
+        reportWasmGraphicsFallback();
+        return false;
+      }
+    }
+    if (this.bytes?.buffer !== memory.buffer) this.bytes = new Uint8Array(memory.buffer);
+    const bytes = this.bytes;
+    this.copyIn(source, sourceOffset, sourcePitch, this.input, rowBytes, rows, sourceStaged);
+    this.copyIn(
+      destination,
+      destinationOffset,
+      destinationPitch,
+      output,
+      rowBytes,
+      rows,
+      destinationStaged,
+    );
+    operation(this.input, output, sourceStaged >>> 2, destinationStaged >>> 2);
+    const target = new Uint8Array(
+      destination.buffer,
+      destination.byteOffset + destinationOffset,
+      (rows - 1) * destinationPitch + rowBytes,
+    );
+    if (destinationStaged === destinationPitch)
+      target.set(bytes.subarray(output, output + destinationLength));
+    else
+      for (let row = 0; row < rows; row++) {
+        const start = output + row * rowBytes;
+        target.set(bytes.subarray(start, start + rowBytes), row * destinationPitch);
+      }
+    return true;
+  }
   /** Stages independent plane sizes. Unless preserved, every destination byte must be overwritten. */
   transform(
     source: WasmPixelPlane,
@@ -242,13 +338,15 @@ export class WasmPixelWorkspace {
     target: number,
     rowBytes: number,
     rows: number,
+    stagedPitch = rowBytes,
   ): void {
     const source = new Uint8Array(
       view.buffer,
       view.byteOffset + offset,
       (rows - 1) * pitch + rowBytes,
     );
-    if (pitch === rowBytes) this.bytes!.set(source, target);
+    // A staged pitch equal to the source pitch keeps the whole span in one copy.
+    if (pitch === stagedPitch) this.bytes!.set(source, target);
     else
       for (let row = 0; row < rows; row++)
         this.bytes!.set(

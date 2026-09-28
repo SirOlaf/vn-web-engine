@@ -454,7 +454,9 @@ export class BurikoBpScheduler {
     let condition = false;
     let node = this.root.next;
     while (node !== null) {
-      const pending = this.checkpointHostBudget();
+      // Polls, bursts and removals end with an unbatched deadline check. Reaching the
+      // next node otherwise costs only the skip branches below, so it may amortize.
+      const pending = this.checkpointHostBudget(true);
       if (pending !== undefined) await pending;
       if (this.exclusiveMode && node !== this.exclusiveThread) {
         node = node.next;
@@ -466,8 +468,11 @@ export class BurikoBpScheduler {
         if (
           terminated.state.retentionCount === 0 &&
           !terminated.process?.hasOutstandingExternalBorrow?.()
-        )
+        ) {
           this.remove(terminated);
+          const pending = this.checkpointHostBudget();
+          if (pending !== undefined) await pending;
+        }
         continue;
       }
       if ((node.flags & 1) !== 0) {

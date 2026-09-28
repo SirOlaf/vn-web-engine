@@ -744,11 +744,13 @@ unsafe fn alpha_rows<const NORMAL: bool>(
     width: usize,
     height: usize,
     opacity: u32,
+    source_stride: usize,
+    destination_stride: usize,
 ) {
     let opacity_vector = i16x8_splat(opacity as i16);
     for row in 0..height {
-        let source = source.add(row * width);
-        let destination = destination.add(row * width);
+        let source = source.add(row * source_stride);
+        let destination = destination.add(row * destination_stride);
         let mut column = 0;
         while column + 3 < width {
             let pixels = v128_load(source.add(column) as *const v128);
@@ -800,6 +802,7 @@ unsafe fn alpha_rows<const NORMAL: bool>(
 }
 
 /// Native 14003d950 / 14003cd30, with -1 selecting the nontransparent table path.
+/// Strides count pixels between staged row starts; bytes between rows are never written.
 #[no_mangle]
 pub unsafe extern "C" fn alpha_rgb(
     source: *const u32,
@@ -807,11 +810,29 @@ pub unsafe extern "C" fn alpha_rgb(
     width: usize,
     height: usize,
     opacity: i32,
+    source_stride: usize,
+    destination_stride: usize,
 ) {
     if opacity < 0 {
-        alpha_rows::<true>(source, destination, width, height, 0);
+        alpha_rows::<true>(
+            source,
+            destination,
+            width,
+            height,
+            0,
+            source_stride,
+            destination_stride,
+        );
     } else {
-        alpha_rows::<false>(source, destination, width, height, opacity as u32);
+        alpha_rows::<false>(
+            source,
+            destination,
+            width,
+            height,
+            opacity as u32,
+            source_stride,
+            destination_stride,
+        );
     }
 }
 

@@ -7,6 +7,9 @@ class Marks extends Map<number, string> {
 /** Unwritten native outputs have no reproducible numeric value. Keep their
  * provenance beside storage until a caller overwrites or observes them. */
 const unwritten = new WeakMap<ArrayBufferLike, Marks>();
+/** Entries added minus entries cleared. A collected buffer's entry keeps this conservatively
+ * positive; zero proves every lookup would miss, so scalar accesses skip the WeakMap. */
+let markedBuffers = 0;
 
 function marksFor(buffer: ArrayBufferLike): Marks | undefined {
   return unwritten.get(buffer);
@@ -25,6 +28,7 @@ export function markIndeterminateMemory(
   let cells = marksFor(bytes.buffer);
   if (!cells) {
     unwritten.set(bytes.buffer, (cells = new Marks()));
+    markedBuffers++;
   }
   const start = bytes.byteOffset + offset;
   for (let i = 0; i < length; i++) cells.set(start + i, reason);
@@ -36,19 +40,19 @@ export function markIndeterminateMemory(
 
 // Ranges shorter than the marked set probe their own bytes; longer ranges scan the marks.
 export function clearIndeterminateMemory(bytes: Uint8Array, offset: number, length: number): void {
+  if (markedBuffers === 0) return;
   const cells = marksFor(bytes.buffer);
   if (!cells) return;
   const start = bytes.byteOffset + offset;
   if (outside(cells, start, length)) return;
   if (length < cells.size) for (let at = start; at < start + length; at++) cells.delete(at);
   else for (const at of cells.keys()) if (at >= start && at < start + length) cells.delete(at);
-  if (!cells.size) {
-    unwritten.delete(bytes.buffer);
-  }
+  if (!cells.size && unwritten.delete(bytes.buffer)) markedBuffers--;
 }
 
 /** Inspect provenance without observing or clearing the covered bytes. */
 export function hasIndeterminateMemory(bytes: Uint8Array, offset: number, length: number): boolean {
+  if (markedBuffers === 0) return false;
   const cells = marksFor(bytes.buffer);
   if (!cells) return false;
   const start = bytes.byteOffset + offset;
@@ -63,6 +67,7 @@ export function hasIndeterminateMemory(bytes: Uint8Array, offset: number, length
 
 /** Faults with the reason of the earliest marked covered byte in mark order. */
 export function requireDeterminateMemory(bytes: Uint8Array, offset: number, length: number): void {
+  if (markedBuffers === 0) return;
   const cells = marksFor(bytes.buffer);
   if (!cells) return;
   const start = bytes.byteOffset + offset;
@@ -104,7 +109,7 @@ for (const [type, width] of [
       value(this: DataView, offset: number, ...args: unknown[]) {
         // Native bounds and coercion faults take precedence over provenance.
         const result = native.call(this, offset, ...args);
-        if (!marksFor(this.buffer)) return result;
+        if (markedBuffers === 0 || !marksFor(this.buffer)) return result;
         const bytes = new Uint8Array(this.buffer, this.byteOffset, this.byteLength);
         if (operation === 'get') requireDeterminateMemory(bytes, Math.trunc(offset), width);
         else clearIndeterminateMemory(bytes, Math.trunc(offset), width);
@@ -128,7 +133,7 @@ export function copyMemoryBytes(
   sourceOffset: number,
   length: number,
 ): void {
-  const cells = marksFor(source.buffer);
+  const cells = markedBuffers === 0 ? undefined : marksFor(source.buffer);
   const start = source.byteOffset + sourceOffset;
   let marks: [number, string][] = [];
   if (cells && length < cells.size) {
