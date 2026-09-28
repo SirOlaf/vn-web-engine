@@ -4,8 +4,11 @@ import {parseWave, waveOggStream, wavePcmPlanes} from '../../../formats/riff/wav
 
 /** DirectSound attenuation floor used by the native fades (hundredths of a decibel). */
 const FADE_FLOOR = -5000;
-/** Stream fade timer period (0x471240 with the delay set in 0x46B970). */
-export const FADE_STEP_MS = 100;
+/**
+ * Stream fade timer period (0x471240). The stream object starts with 100 ms (0x46B970),
+ * but loading a clip sets 20 ms (0x46BAF0), so every fade runs at 20 ms per step.
+ */
+export const FADE_STEP_MS = 20;
 /** Default number of fade steps until a caller sets another (0x46B970, 0x46AC40). */
 export const DEFAULT_FADE_STEPS = 150;
 
@@ -45,7 +48,7 @@ export interface RScriptAudioEnvironment {
  * One DirectSound stream (0x46A5C0 behind the 0x46A970 wrapper). `load` replaces the
  * clip, `play` repeats it `loops + 1` times (forever when negative) and optionally fades
  * in from -50 dB, and `stop` optionally fades out first. Fades are linear in decibels,
- * one step per 100 ms, so they map onto exponential gain ramps.
+ * one step per 20 ms, so they map onto exponential gain ramps.
  */
 export class RScriptSoundChannel {
   private readonly output: GainNode;
@@ -310,7 +313,7 @@ export class RScriptAudio {
   setMusicVolume(volume: number): void {
     for (const stream of this.music) stream.setAttenuation(volumeAttenuation(volume));
   }
-  /** sub_455F90: stops every channel and fades the BGM out over one second. */
+  /** sub_455F90: stops every channel and fades the BGM out in ten steps. */
   stopAll(): void {
     for (const channel of this.channels.slice(1)) channel.stop(false);
     this.stopMusic(true, 10);
