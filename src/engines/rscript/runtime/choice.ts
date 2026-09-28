@@ -127,6 +127,9 @@ export class RScriptChoiceWindow extends RScriptContainer {
     if (!states.length) return null;
     const sprite = new RScriptSprite();
     sprite.setSurface(states[0]!);
+    sprite.bakedText = block
+      .shownGlyphs()
+      .map((glyph) => ({...glyph, x: glyph.x + textRect.x, y: glyph.y + textRect.y}));
     return {sprite, states, final: {x: 0, y: 0}, start: {x: 0, y: 0}, end: {x: 0, y: 0}};
   }
 
@@ -248,8 +251,10 @@ export class RScriptChoiceWindow extends RScriptContainer {
     this.show(false);
   }
 
+  /** sub_413930: the focused answer shows its second image, or is inverted with only one. */
   private hover(item: Item, inside: boolean): void {
-    item.sprite.setSurface(item.states[inside ? 1 : 0] ?? item.states[0]!);
+    if (item.states.length === 1) item.sprite.setBlendMode(inside ? 13 : 0);
+    else item.sprite.setSurface(item.states[inside ? 1 : 0]!);
   }
   private press(index: number): void {
     const item = this.answers[index - 1];

@@ -16,6 +16,16 @@ export interface RScriptPoint {
   y: number;
 }
 
+/** A glyph of text composited into a node's image, relative to the node. */
+export interface BakedGlyph {
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly newline: boolean;
+}
+
 /**
  * Base of every drawable (the native sprite object at 0x440910). Positions are relative
  * to the parent container; invalidation accumulates one screen-space dirty rectangle.
@@ -35,6 +45,8 @@ export abstract class RScriptNode {
   idleRepeats = 0;
   /** Called on every animation step; a true result keeps the node animating (+132). */
   onStep: (() => boolean) | null = null;
+  /** Text already drawn into this node's image, so selectable browser text can cover it. */
+  bakedText: readonly BakedGlyph[] | null = null;
   private drawn: RScriptRect = emptyRect();
 
   abstract get width(): number;

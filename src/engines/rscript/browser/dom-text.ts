@@ -1,5 +1,5 @@
-import {RScriptContainer, type RScriptNode} from '../graphics/sprite.js';
-import {RScriptTextBlock, type TextBlockGlyph} from '../runtime/text-block.js';
+import {RScriptContainer, type BakedGlyph, type RScriptNode} from '../graphics/sprite.js';
+import {RScriptTextBlock} from '../runtime/text-block.js';
 
 export interface RScriptDomTextOptions {
   readonly document: Document;
@@ -40,7 +40,7 @@ const STYLE = `
  */
 export class RScriptDomText {
   readonly element: HTMLElement;
-  private readonly blocks = new Map<RScriptTextBlock, BlockView>();
+  private readonly blocks = new Map<RScriptNode, BlockView>();
   private readonly resize: ResizeObserver;
   private enabled = false;
   private frame = 0;
@@ -120,12 +120,12 @@ export class RScriptDomText {
 
   update(): void {
     if (!this.enabled || !this.root) return;
-    const found: RScriptTextBlock[] = [];
+    const found: RScriptNode[] = [];
     collect(this.root, found);
-    const keep = new Set<RScriptTextBlock>();
+    const keep = new Set<RScriptNode>();
     let order = 0;
     for (const block of found) {
-      const glyphs = block.shownGlyphs();
+      const glyphs = block instanceof RScriptTextBlock ? block.shownGlyphs() : block.bakedText!;
       if (!glyphs.length) continue;
       keep.add(block);
       const at = block.screenPosition();
@@ -156,11 +156,11 @@ export class RScriptDomText {
       }
   }
 
-  private render(element: HTMLElement, glyphs: readonly TextBlockGlyph[]): void {
+  private render(element: HTMLElement, glyphs: readonly BakedGlyph[]): void {
     const {document, fontFamilies} = this.options;
     element.replaceChildren();
     // Glyphs of one row share a bottom edge (0x45AF80 aligns them to the line height).
-    const rows: TextBlockGlyph[][] = [];
+    const rows: BakedGlyph[][] = [];
     for (const glyph of glyphs) {
       const row = rows.at(-1);
       const bottom = glyph.y + glyph.height;
@@ -231,9 +231,12 @@ export class RScriptDomText {
   }
 }
 
-/** Visible text objects in drawing order; hidden containers hide their text. */
-function collect(node: RScriptNode, out: RScriptTextBlock[]): void {
+/**
+ * Visible text objects and nodes with text drawn into their images (choice plates), in
+ * drawing order; hidden containers hide their text.
+ */
+function collect(node: RScriptNode, out: RScriptNode[]): void {
   if (!node.visible) return;
-  if (node instanceof RScriptTextBlock) out.push(node);
+  if (node instanceof RScriptTextBlock || node.bakedText) out.push(node);
   else if (node instanceof RScriptContainer) for (const child of node.nodes()) collect(child, out);
 }
