@@ -23,6 +23,7 @@ import {
   hostPointer,
 } from '../dist/engines/buriko/bp/memory.js';
 import {attachModule, detachLastModule} from '../dist/engines/buriko/bp/modules.js';
+import {markIndeterminateMemory} from '../dist/core/indeterminate-memory.js';
 
 const thread = (options = {}) =>
   new BurikoBpThread({
@@ -386,4 +387,40 @@ test('Buriko child threads share bases, forward allocation and validation, and r
   assert.equal(owner.retentionCount, 0);
   assert.equal(owner.heap.region.view().length, 0x8000);
   assert.equal(owner.moduleMemory[80], 7);
+});
+
+test('Buriko arena growth keeps addresses, provenance and stale-pointer contents', () => {
+  const m = new BurikoBpMemory(new Uint8Array(0x100), undefined, 0x1000);
+  const t = new BurikoBpThread({
+    id: 1,
+    operandCapacity: 4,
+    moduleCapacity: 0x20,
+    frameCapacity: 0x20,
+    heapEnabled: false,
+    regions: m.regions,
+  });
+  m.writeU32(t, 0x20000004, 0x11223344);
+  push32(t, 0x55);
+  markIndeterminateMemory(t.frameMemory, 8, 2, 'unwritten frame');
+  const earlyView = m.globalMemory;
+  const generation = m.memoryViews().generation;
+  const pooled = m.allocatePooled(0x3000);
+  assert.ok(m.memoryViews().generation > generation);
+  assert.equal(earlyView.length, 0);
+  assert.equal(m.readU32(t, 0x20000004), 0x11223344);
+  assert.equal(pop32(t), 0x55);
+  assert.throws(() => m.readU8(t, 0x20000009), /unwritten frame/);
+  const {bytes} = m.memoryViews();
+  assert.equal(bytes[t.frameRegion.arenaOffset + 4], 0x44);
+
+  const region = m.resolve(t, pooled).region;
+  m.writeU8(t, pooled + 3, 9);
+  const stale = m.resolve(t, pooled);
+  assert.equal(m.freePooled(pooled), true);
+  assert.equal(region.retired, true);
+  assert.equal(region.arenaOffset, -1);
+  assert.equal(stale.view()[3], 9);
+  assert.equal(m.allocatePooled(0x3000), pooled);
+  assert.equal(m.readU8(t, pooled + 3), 0);
+  assert.equal(stale.view()[3], 9);
 });
