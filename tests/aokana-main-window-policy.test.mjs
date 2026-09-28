@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
 import {BurikoBitmapStorage} from '../dist/engines/buriko/native/bitmap.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
@@ -459,7 +459,7 @@ test('shake skips late presentations while advancing phase and shares its CRT dr
 
 test('inline creation uses native font/geometry, visibility and wide-text read semantics', async () => {
   const s = setup();
-  s.inline.state.setInitial({bytes: new TextEncoder().encode('A日本😀\0'), offset: 0});
+  s.inline.state.setInitial(hostPointer(new TextEncoder().encode('A日本😀\0'), 0));
   s.inline.state.setAlignment(1);
   s.inline.state.setColor(0x123456);
   assert.equal(await s.inline.create(10, 20, 120, 20, 0, 20, 16, 1), 0);
@@ -485,7 +485,7 @@ test('inline creation uses native font/geometry, visibility and wide-text read s
   assert.equal(element.style.color, '#123456');
   assert.deepEqual([element.selectionStart, element.selectionEnd], [0, 5]);
   const output = new Uint8Array(64);
-  assert.equal(s.inline.read({bytes: output, offset: 0}), 5);
+  assert.equal(s.inline.read(hostPointer(output, 0)), 5);
   assert.equal(new TextDecoder().decode(output.slice(0, output.indexOf(0))), 'A日本😀');
   s.inline.show(7);
   assert.equal(s.inline.state.visible, 7);
@@ -528,7 +528,7 @@ test('inline queued default editing performs selection, backspace, copy, cut and
 
 test('inline preserves native CRLF counts and maps browser selections before the width policy', async () => {
   const s = setup();
-  s.inline.state.setInitial({bytes: new TextEncoder().encode('A\r\n日本\0'), offset: 0});
+  s.inline.state.setInitial(hostPointer(new TextEncoder().encode('A\r\n日本\0'), 0));
   await s.inline.create(0, 0, 120, 48, 0, 16, 8, 1);
   assert.equal(s.inline.element.value, 'A\n日本');
   assert.equal(s.inline.read(null), 5);
@@ -537,11 +537,11 @@ test('inline preserves native CRLF counts and maps browser selections before the
   await s.message(0x102, 65);
   assert.equal(s.inline.element.value, 'A\nA本');
   const output = new Uint8Array(32);
-  assert.equal(s.inline.read({bytes: output, offset: 0}), 5);
+  assert.equal(s.inline.read(hostPointer(output, 0)), 5);
   assert.equal(new TextDecoder().decode(output.slice(0, output.indexOf(0))), 'A\r\nA本');
   s.inline.element.value = 'A\nA本\nZ';
   s.inline.element.fire('input');
-  assert.equal(s.inline.read({bytes: output, offset: 0}), 8);
+  assert.equal(s.inline.read(hostPointer(output, 0)), 8);
   assert.equal(new TextDecoder().decode(output.slice(0, output.indexOf(0))), 'A\r\nA本\r\nZ');
 });
 

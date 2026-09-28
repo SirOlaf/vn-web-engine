@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
@@ -290,14 +290,7 @@ test('partial production catalog routes BP calls through graph and mounted resou
       ),
     );
     assert.equal(
-      graph.properties.create(
-        {bytes: memory.globalMemory, offset: 0x980},
-        null,
-        null,
-        null,
-        120,
-        180,
-      ),
+      graph.properties.create(hostPointer(memory.globalMemory, 0x980), null, null, null, 120, 180),
       0,
     );
     titleEditorId = new DataView(memory.globalMemory.buffer).getUint32(0x980, true);
@@ -700,13 +693,13 @@ test('partial production catalog routes BP calls through graph and mounted resou
     memory.globalMemory.set(encode('Sprite'), 0xb00);
     await invoke(0x80, 0xe8, [0xb40]);
     assert.equal(
-      graph.text.decodeAuto({bytes: memory.globalMemory, offset: 0xb40}),
+      graph.text.decodeAuto(hostPointer(memory.globalMemory, 0xb40)),
       'AoNoKanataNoFourRhythmUEDL',
     );
     memory.globalMemory.set(encode('aokana.path'), 0xb80);
     assert.equal(await invoke(0x80, 0xf8, [0xc00, 0xb00, 0xb40], true), 1);
     assert.equal(
-      graph.text.decodeAuto({bytes: memory.globalMemory, offset: 0xc00}),
+      graph.text.decodeAuto(hostPointer(memory.globalMemory, 0xc00)),
       'C:\\game\\Installed',
     );
     assert.equal(graph.registry.openHandleCount, 0);
@@ -731,19 +724,19 @@ test('partial production catalog routes BP calls through graph and mounted resou
     );
     await invoke(0x80, 0xfb, [0xc40]);
     assert.equal(
-      graph.text.decodeAuto({bytes: memory.globalMemory, offset: 0xc40}),
+      graph.text.decodeAuto(hostPointer(memory.globalMemory, 0xc40)),
       'C:\\game\\Windows',
     );
     assert.equal(await invoke(0x80, 0xfa, [0xc80, 0xb80], true), 1);
     assert.equal(
-      graph.text.decodeAuto({bytes: memory.globalMemory, offset: 0xc80}),
+      graph.text.decodeAuto(hostPointer(memory.globalMemory, 0xc80)),
       'C:\\game\\Installed',
     );
     graph.folders.combine(
-      {bytes: memory.globalMemory, offset: 0xe00},
-      {bytes: memory.globalMemory, offset: 0xc80},
+      hostPointer(memory.globalMemory, 0xe00),
+      hostPointer(memory.globalMemory, 0xc80),
       1,
-      {bytes: encode('content.txt'), offset: 0},
+      hostPointer(encode('content.txt')),
     );
     const installedContent = await graph.resource.files.open(memory.globalMemory.subarray(0xe00));
     assert.ok(installedContent.source);
@@ -818,12 +811,12 @@ test('partial production catalog routes BP calls through graph and mounted resou
     assert.equal(await invoke(0x81, 0x20, [0x340, 0x300, 2], true), 3);
     assert.deepEqual([...new Uint16Array(memory.globalMemory.buffer, 0x340, 4)], [97, 98, 99, 0]);
     graph.localized.load(new TextEncoder().encode('KEY=base\n@languageid=411\nKEY=Japanese\n'));
-    const key = {bytes: new TextEncoder().encode('KEY\0'), offset: 0};
+    const key = hostPointer(new TextEncoder().encode('KEY\0'));
     const readLocalized = () => {
       const result = graph.localized.lookup(key);
       assert.ok(result);
-      const end = result.bytes.indexOf(0, result.offset);
-      return new TextDecoder().decode(result.bytes.subarray(result.offset, end));
+      const end = result.view().indexOf(0, result.offset);
+      return new TextDecoder().decode(result.view().subarray(result.offset, end));
     };
     assert.equal(readLocalized(), 'base');
     assert.equal(await invoke(0x81, 0x02, [0x411], true), 0x411);

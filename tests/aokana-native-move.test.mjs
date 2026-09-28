@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem, MountedFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
 import {
@@ -103,7 +103,7 @@ test('80:27 moves real shared directory trees and copies files between independe
   const enumeration = new BurikoFileEnumeration(files);
   bytes.set(text.encodeWide('C:\\Renamed\\*', 1), 32);
   assert.deepEqual(
-    await enumeration.enumerate({bytes, offset: 1024}, 1024, {bytes, offset: 32}, false, 0),
+    await enumeration.enumerate(hostPointer(bytes, 1024), 1024, hostPointer(bytes, 32), false, 0),
     {count: 1, size: new TextEncoder().encode('資料.txt\0').length},
   );
   assert.equal(new TextDecoder().decode(bytes.subarray(1024, bytes.indexOf(0, 1024))), '資料.txt');

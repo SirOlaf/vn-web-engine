@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoImportedTextMaps} from '../dist/engines/buriko/native/imported-text-maps.js';
 import {createGroup81ImportedText} from '../dist/engines/buriko/native/group-81-imported-text.js';
 import {BurikoNativeText, textBytes} from '../dist/engines/buriko/native/text.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
-const pointer = (bytes) => ({bytes, offset: 0});
+const pointer = (bytes) => hostPointer(bytes, 0);
 function encodeImport(text, groups) {
   const bytes = [],
     word = (value) =>
@@ -71,7 +71,7 @@ test('81 D8/DA preserve import and output stack order, raw UTF8 copying and the 
     context = {thread, memory};
   const put = (address, bytes) => {
     const output = memory.resolve(thread, address);
-    output.bytes.set(bytes, output.offset);
+    output.view().set(bytes, output.offset);
   };
   const data = encodeImport(text, [['項目', [['名前', '青']]]]);
   put(0x10000000, data);

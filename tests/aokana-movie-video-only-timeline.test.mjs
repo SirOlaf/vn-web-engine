@@ -21,6 +21,7 @@ import {BurikoMovieSourceDocument} from '../dist/engines/buriko/native/movie-sou
 import {BurikoMovieSourceTracks} from '../dist/engines/buriko/native/movie-source-tracks.js';
 import {BurikoMovieReferenceClock} from '../dist/engines/buriko/native/movie-render-events.js';
 import {BurikoMovieVideoOnlyTimeline} from '../dist/engines/buriko/native/movie-video-only-timeline.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function join(...parts) {
   const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -99,7 +100,7 @@ test('selected mounted video-only timeline anchors real reference time without d
   await fs.commit([{kind: 'write', path: '/game/video/clip.iso', data: bytes}]);
   const text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
-    pointer = (value) => ({bytes: encode(value), offset: 0}),
+    pointer = (value) => hostPointer(encode(value), 0),
     media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
   const files = new BurikoProgramFiles(

@@ -28,7 +28,7 @@ test('native 80 20/21 share the real memory pool and successful module logging b
   push32(thread, 16);
   assert.equal(slots[0].execute(h), 0);
   const address = pop32(thread);
-  assert.equal(memory.resolve(thread, address).bytes.length, 16);
+  assert.equal(memory.resolve(thread, address).view().length, 16);
   assert.equal(records.records.length, 1);
   assert.equal(records.records[0].address, address);
   assert.match(

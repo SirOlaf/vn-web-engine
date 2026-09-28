@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {decodeSdc} from '../dist/formats/buriko/compressed-resource.js';
-import {BurikoBpMemory, pointerView} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, pointerView, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {markIndeterminateMemory} from '../dist/core/indeterminate-memory.js';
 import {textByte} from '../dist/engines/buriko/native/text.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
@@ -36,7 +36,7 @@ import {controlOpcodes} from '../dist/engines/buriko/bp/opcodes/control.js';
 import {fetchOpcode} from '../dist/engines/buriko/bp/decode.js';
 import {createLegacy169CoreOpcodes} from '../dist/engines/buriko/bp/opcodes/legacy-169.js';
 
-const ptr = (bytes, offset = 0) => ({bytes, offset});
+const ptr = (bytes, offset = 0) => hostPointer(bytes, offset);
 const text = new BurikoNativeText(),
   encode = (s) => text.encodeWide(s, 1);
 
@@ -259,7 +259,7 @@ test('missing GDB coordinates can be stored then overwritten, but cannot be obse
     }
     const bytes = s.memory.globalMemory;
     markIndeterminateMemory(bytes, 512, 4, 'unwritten native stack coordinates');
-    const view = pointerView({bytes, offset: 508}, 8);
+    const view = pointerView(hostPointer(bytes, 508), 8);
     assert.equal(view.getUint32(0, true), 0); // An unrelated read is valid.
     assert.throws(() => view.getUint32(4, true), /unwritten native stack/);
     assert.throws(() => textByte(bytes, 512), /unwritten native stack/);

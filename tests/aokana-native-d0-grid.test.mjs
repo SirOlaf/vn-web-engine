@@ -9,15 +9,15 @@ import {BurikoLogicalGridVisibility} from '../dist/engines/buriko/native/logical
 import {BurikoNativeSpline} from '../dist/engines/buriko/native/spline.js';
 import {createGroupD0Grid} from '../dist/engines/buriko/native/group-d0-grid.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture(width = 3, height = 3) {
   const manager = new BurikoLogicalGridManager(1),
     bytes = new Uint8Array(4096),
     view = new DataView(bytes.buffer),
-    pointer = (offset) => ({bytes, offset}),
+    pointer = (offset) => hostPointer(bytes, offset),
     cells = new Uint8Array(width * height * 16);
-  manager.setCells(width, height, {bytes: cells, offset: 0});
+  manager.setCells(width, height, hostPointer(cells, 0));
   const create = (x, y) => {
     manager.createAgent(pointer(16));
     const id = view.getUint32(16, true);
@@ -180,7 +180,7 @@ test('grid visibility uses spline terrain samples, source flags, threshold bound
     source = new DataView(cells.buffer);
   source.setInt32(0, 2, true);
   source.setInt32(48, 3, true);
-  corners.setCells(2, 2, {bytes: cells, offset: 0});
+  corners.setCells(2, 2, hostPointer(cells, 0));
   assert.deepEqual(
     [...new Int32Array(corners.corners.buffer)],
     [0, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 2, 0, 0, 0],

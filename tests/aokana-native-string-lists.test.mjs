@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoStringLists} from '../dist/engines/buriko/native/string-lists.js';
 import {createGroup80StringLists} from '../dist/engines/buriko/native/group-80-string-lists.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 const strings = (...values) => new TextEncoder().encode(values.join('\0') + '\0');
-const pointer = (bytes) => ({bytes, offset: 0});
+const pointer = (bytes) => hostPointer(bytes);
 
 test('80 D8–DE preserve native list replacement, duplicate append indices, bytes and wrapper order', () => {
   const lists = new BurikoStringLists(),
@@ -25,7 +25,7 @@ test('80 D8–DE preserve native list replacement, duplicate append indices, byt
     context = {thread, memory};
   const put = (address, bytes) => {
     const output = memory.resolve(thread, address);
-    output.bytes.set(bytes, output.offset);
+    output.view().set(bytes, output.offset);
   };
   put(0x10000020, strings('alpha', 'beta', 'alpha'));
   put(0x10000080, strings('beta'));
@@ -43,13 +43,13 @@ test('80 D8–DE preserve native list replacement, duplicate append indices, byt
   assert.equal(call(0xdb, [0x10000200, 7]), 23);
   const packed = memory.resolve(thread, 0x10000200);
   assert.deepEqual(
-    packed.bytes.slice(packed.offset, packed.offset + 23),
+    packed.view().slice(packed.offset, packed.offset + 23),
     strings('alpha', 'beta', 'alpha', 'gamma'),
   );
   assert.equal(call(0xdb, [0, 7]), 23);
   assert.equal(call(0xdd, [0x10000300, 7, 2]), 0);
   const selected = memory.resolve(thread, 0x10000300);
-  assert.deepEqual(selected.bytes.slice(selected.offset, selected.offset + 6), strings('alpha'));
+  assert.deepEqual(selected.view().slice(selected.offset, selected.offset + 6), strings('alpha'));
   assert.equal(call(0xde, [0x10000310, 7, 2]), 0);
   assert.equal(memory.readU32(thread, 0x10000310), 5);
   assert.equal(call(0xdc, [0x80000000, 0x100000a0]), 0);

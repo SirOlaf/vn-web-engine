@@ -18,6 +18,7 @@ import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.
 
 import {BurikoMovieSources} from '../dist/engines/buriko/native/movie-sources.js';
 import {BurikoMovieFileStream} from '../dist/engines/buriko/native/movie-file-stream.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function arc(entries) {
   const base = 16 + entries.length * 128,
@@ -60,7 +61,7 @@ test('movie sources retain loose search precedence and resolve real complex-arch
   ]);
   const text = new BurikoNativeText(),
     encode = (s) => text.encodeWide(s, 1),
-    pointer = (s) => ({bytes: encode(s), offset: 0}),
+    pointer = (s) => hostPointer(encode(s), 0),
     media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
   const files = new BurikoProgramFiles(

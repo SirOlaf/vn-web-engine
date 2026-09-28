@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoProgramFiles,
@@ -106,7 +106,7 @@ test('80:C0 schedules actual encoding and publishes its result through the share
     assert.equal(thread.moduleMemory[49], 0xa5);
     const restored = new Uint8Array(80);
     assert.equal(
-      decodeBurikoSdcInto({bytes: restored, offset: 0}, {bytes: thread.moduleMemory, offset: 8}),
+      decodeBurikoSdcInto(hostPointer(restored), hostPointer(thread.moduleMemory, 8)),
       40,
     );
     assert.deepEqual(restored.subarray(0, 40), plain);

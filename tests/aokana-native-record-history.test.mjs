@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoRecordHistories,
@@ -36,7 +36,7 @@ test('80:98/99/9A/9C–9F retain bounded copied records with exact zero-run and 
   const encoded = encodeBurikoRecord(first);
   assert.deepEqual(encoded, Uint8Array.of(16, 2, 3, 4, 0, 5, 3, 2, 6, 7, 6));
   const decoded = new Uint8Array(24).fill(0x55);
-  assert.equal(decodeBurikoRecord({bytes: decoded, offset: 0}, encoded), 16);
+  assert.equal(decodeBurikoRecord(hostPointer(decoded), encoded), 16);
   assert.deepEqual(decoded.subarray(0, 16), first);
   assert.deepEqual(decoded.subarray(16), new Uint8Array(8).fill(0x55));
   assert.equal(await invoke(0x98, [0x10000010, 2, 16]), 0);

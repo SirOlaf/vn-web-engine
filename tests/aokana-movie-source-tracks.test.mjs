@@ -18,6 +18,7 @@ import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.
 import {BurikoMovieSources} from '../dist/engines/buriko/native/movie-sources.js';
 import {BurikoMovieSourceDocument} from '../dist/engines/buriko/native/movie-source-document.js';
 import {BurikoMovieSourceTracks} from '../dist/engines/buriko/native/movie-source-tracks.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function join(...parts) {
   const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -135,7 +136,7 @@ test('explicit movie tracks retain direct and archive document identity through 
   ]);
   const text = new BurikoNativeText(),
     encode = (value) => text.encodeWide(value, 1),
-    pointer = (value) => ({bytes: encode(value), offset: 0}),
+    pointer = (value) => hostPointer(encode(value), 0),
     media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
   const files = new BurikoProgramFiles(

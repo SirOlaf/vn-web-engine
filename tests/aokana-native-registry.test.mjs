@@ -10,9 +10,10 @@ import {
   createGroupB0Wallpaper,
 } from '../dist/engines/buriko/native/wallpaper.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 const hkcu = 0xffffffff80000001n;
-const bytes = (value) => ({bytes: new TextEncoder().encode(value + '\0'), offset: 0});
+const bytes = (value) => hostPointer(new TextEncoder().encode(value + '\0'));
 
 test('registry preserves raw values, independent handles and persistent title storage', async () => {
   const store = new MemoryStore();

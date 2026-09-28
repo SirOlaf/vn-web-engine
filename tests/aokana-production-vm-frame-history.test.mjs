@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MountedFileSystem, StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {BurikoMountedFileMetadata} from '../dist/engines/buriko/native/file-metadata.js';
@@ -163,7 +163,7 @@ test('production VM retains one frame-history ring seeded before root constructi
     );
 
     const bytes = new Uint8Array(8);
-    const output = {bytes, offset: 0};
+    const output = hostPointer(bytes);
     milliseconds = 107;
     history.record(Number(graph.clock.read()));
     assert.equal(history.copy(output, 2), 1);

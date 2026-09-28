@@ -6,6 +6,7 @@ import {BurikoWaveStream} from '../dist/engines/buriko/native/audio/wave-stream.
 import {BurikoWaveBoxOggDecoder} from '../dist/engines/buriko/native/audio/wavebox-ogg.js';
 import {parseBurikoWaveBoxHeader} from '../dist/engines/buriko/native/audio/wavebox-header.js';
 import {BURIKO_BP_ABI_169, BURIKO_BP_ABI_172} from '../dist/engines/buriko/bp/abi.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function source(values) {
   const raw = new Uint8Array(64),
@@ -20,7 +21,7 @@ function source(values) {
     view.setUint32(offset, value, true);
   const storage = new BurikoMemoryAudioStorage(64);
   storage.flags = 3;
-  storage.write({bytes: raw, offset: 0}, 64);
+  storage.write(hostPointer(raw), 64);
   storage.seek(0);
   const link = {
     channels: 1,

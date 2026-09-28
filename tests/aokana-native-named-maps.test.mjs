@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNamedValueMaps} from '../dist/engines/buriko/native/named-value-maps.js';
 import {createGroup80NamedMaps} from '../dist/engines/buriko/native/group-80-named-maps.js';
@@ -52,16 +52,16 @@ test('80 D0–D4 keep fixed-width maps, native stack order and insertion-order i
 test('native registry clearing resets its counter while normal deletion preserves it', () => {
   const maps = new BurikoNamedValueMaps(),
     bytes = new Uint8Array(16),
-    output = {bytes, offset: 0},
+    output = hostPointer(bytes),
     view = new DataView(bytes.buffer);
   assert.equal(maps.create(output, 3), 0);
   const first = view.getUint32(0, true);
   assert.equal(first, 1);
-  const key = {bytes: Uint8Array.of(0x83, 0x65, 0), offset: 0},
-    source = {bytes: Uint8Array.of(1, 2, 3), offset: 0};
+  const key = hostPointer(Uint8Array.of(0x83, 0x65, 0)),
+    source = hostPointer(Uint8Array.of(1, 2, 3));
   assert.equal(maps.write(first, key, source), 0);
-  source.bytes.fill(9);
-  assert.equal(maps.read({bytes, offset: 4}, first, key, 0), 0);
+  source.view().fill(9);
+  assert.equal(maps.read(hostPointer(bytes, 4), first, key, 0), 0);
   assert.deepEqual([...bytes.subarray(4, 7)], [1, 2, 3]);
   assert.equal(maps.destroy(first), 0);
   assert.equal(maps.create(output, 3), 0);

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('mounted B0 modals share the graph title, DOM presenter, BP results and selection output', async () => {
   const shown = [];
@@ -88,7 +89,7 @@ test('mounted B0 modals share the graph title, DOM presenter, BP results and sel
     assert.equal(child.state.stackIndex, 0);
     assert.equal(core.pendingNativeCallbackCount, 0);
     assert.equal(
-      graph.text.decodeAuto({bytes: graph.dialogs.preferredTitle, offset: 0}),
+      graph.text.decodeAuto(hostPointer(graph.dialogs.preferredTitle)),
       'Preferred title',
     );
 

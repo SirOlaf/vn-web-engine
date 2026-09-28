@@ -12,11 +12,11 @@ import {BurikoScriptFiles} from '../dist/engines/buriko/native/script-files.js';
 import {BurikoAsyncCriticalSection} from '../dist/engines/buriko/native/async-critical-section.js';
 import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
 import {createGroup81Files} from '../dist/engines/buriko/native/group-81-files.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 const bytes = (value) => new TextEncoder().encode(value),
-  pointer = (value) => ({bytes: bytes(value + '\0'), offset: 0});
+  pointer = (value) => hostPointer(bytes(value + '\0'));
 const readFile = async (fs, path) => {
   const source = await fs.open(path);
   return new TextDecoder().decode(await source.read(0, source.size));
@@ -42,12 +42,12 @@ test('mounted output and CFileDX cursors preserve overwrite tails and OPEN_ALWAY
   assert.equal(await native.write(pointer('!'), 1), 1);
   native.close();
   const input = new BurikoNativeFile(files),
-    result = {bytes: new Uint8Array(16), offset: 2};
+    result = hostPointer(new Uint8Array(16), 2);
   assert.equal(await input.openRead(pointer('/output')), 1);
   assert.equal(input.size(), 7n);
   assert.equal(input.seekAbsolute(1n), true);
   assert.equal(await input.read(result, 12), 6);
-  assert.equal(new TextDecoder().decode(result.bytes.slice(2, 8)), 'bXYef!');
+  assert.equal(new TextDecoder().decode(result.view().slice(2, 8)), 'bXYef!');
   input.close();
 });
 
@@ -74,8 +74,8 @@ test('all four file wrappers retain transfer pointers and publish queued complet
     assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x81][slot.secondary]);
   const path = memory.resolve(thread, 0x10000020),
     source = memory.resolve(thread, 0x10000060);
-  path.bytes.set(pointer('/data').bytes, path.offset);
-  source.bytes.set(bytes('XYZ'), source.offset);
+  path.view().set(pointer('/data').view(), path.offset);
+  source.view().set(bytes('XYZ'), source.offset);
   const call = async (secondary, args) => {
     args.forEach((value) => push32(thread, value));
     assert.equal(
@@ -89,14 +89,14 @@ test('all four file wrappers retain transfer pointers and publish queued complet
   assert.equal(id, 1);
   await call(0x2a, [0x10000004, id, 0x10000060, 3]);
   assert.equal(memory.readU32(thread, 0x10000004), 0);
-  source.bytes.set(bytes('MNO'), source.offset);
+  source.view().set(bytes('MNO'), source.offset);
   assert.equal(await registry.processFirst(worker), 0);
   assert.equal(memory.readU32(thread, 0x10000004), 3);
   assert.equal(await readFile(fs, '/data'), 'MNOdef');
   await call(0x2b, [0x10000008, id, 0xffffffff]);
   assert.equal(await registry.processFirst(worker), 0);
   assert.equal(memory.readU32(thread, 0x10000008), 1);
-  source.bytes[source.offset] = 33;
+  source.view()[source.offset] = 33;
   await call(0x2a, [0x1000000c, id, 0x10000060, 1]);
   await call(0x29, [0x10000010, id]);
   assert.equal(await registry.processFirst(worker), 0);
@@ -118,8 +118,8 @@ test('script read releases its section during mounted I/O and preserves a normal
   let observe = false,
     registry,
     id;
-  const completion = {bytes: new Uint8Array(8), offset: 0},
-    seekCompletion = {bytes: completion.bytes, offset: 4},
+  const completion = hostPointer(new Uint8Array(8)),
+    seekCompletion = completion.add(4),
     observations = [];
   const fs = {
     stat: (path) => backing.stat(path),
@@ -146,21 +146,21 @@ test('script read releases its section during mounted I/O and preserves a normal
     await registry.processFirst(worker);
   });
   registry.initialize();
-  const handle = {bytes: new Uint8Array(4), offset: 0};
+  const handle = hostPointer(new Uint8Array(4));
   assert.equal(await registry.open(handle, pointer('/input'), 0), 0);
-  id = new DataView(handle.bytes.buffer).getUint32(0, true);
-  const output = {bytes: new Uint8Array(16), offset: 3};
+  id = new DataView(handle.view().buffer).getUint32(0, true);
+  const output = hostPointer(new Uint8Array(16), 3);
   assert.equal(await registry.queueTransfer(completion, id, output, 4), 0);
   observe = true;
   assert.equal(await registry.processFirst(worker), 0);
   observe = false;
   assert.deepEqual(observations, [[null, 1]]);
   assert.equal(registry.find(id).busy, 0);
-  assert.equal(new TextDecoder().decode(output.bytes.slice(3, 7)), 'abcd');
-  assert.equal(new DataView(completion.bytes.buffer).getUint32(0, true), 4);
+  assert.equal(new TextDecoder().decode(output.view().slice(3, 7)), 'abcd');
+  assert.equal(new DataView(completion.view().buffer).getUint32(0, true), 4);
   assert.equal(registry.hasPending, true);
   assert.equal(await registry.processFirst(worker), 0);
-  assert.equal(new DataView(completion.bytes.buffer).getUint32(4, true), 1);
+  assert.equal(new DataView(completion.view().buffer).getUint32(4, true), 1);
   await registry.shutdown();
 });
 

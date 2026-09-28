@@ -7,19 +7,19 @@ import {
   writeBurikoMatchingRecordIndices,
 } from '../dist/engines/buriko/native/record-search.js';
 import {createGroup81RecordSearch} from '../dist/engines/buriko/native/group-81-record-search.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
-const pointer = (...bytes) => ({bytes: Uint8Array.of(...bytes), offset: 0});
+const pointer = (...bytes) => hostPointer(Uint8Array.of(...bytes));
 function words(values) {
   const bytes = new Uint8Array(values.length * 4),
     view = new DataView(bytes.buffer);
   values.forEach((value, index) => view.setUint32(index * 4, value, true));
-  return {bytes, offset: 0};
+  return hostPointer(bytes);
 }
 function readWords(pointer, count) {
-  const view = new DataView(pointer.bytes.buffer, pointer.bytes.byteOffset + pointer.offset);
+  const view = new DataView(pointer.view().buffer, pointer.view().byteOffset + pointer.offset);
   return Array.from({length: count}, (_, index) => view.getUint32(index * 4, true));
 }
 
@@ -73,7 +73,7 @@ test('typed predicates retain native byte widths, one-sided signed extension and
   const rawA = pointer(1, 2, 4),
     rawB = pointer(8, 16, 32);
   assert.equal(matchesBurikoRecordPredicate(rawA, rawB, 0x0003ffff, 2, 1), true);
-  rawB.bytes[2] = 4;
+  rawB.view()[2] = 4;
   assert.equal(matchesBurikoRecordPredicate(rawA, rawB, 0x0003ffff, 3, 1), true);
 });
 
@@ -86,7 +86,7 @@ test('matching-index enumeration observes preceding normal writes to comparison 
   );
   assert.deepEqual(readWords(comparisonAndOutput, 2), [0, 1]);
   const liveSource = words([5, 5, 5, 5]),
-    output = {bytes: liveSource.bytes, offset: 4};
+    output = liveSource.add(4);
   assert.equal(writeBurikoMatchingRecordIndices(output, liveSource, 4, 4, words([5]), 2, 0), 3);
   assert.deepEqual(readWords(output, 3), [0, 2, 3]);
   const padded = words([10, 999, 30, 999, 20, 999]);

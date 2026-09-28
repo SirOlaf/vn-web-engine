@@ -5,6 +5,7 @@ import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
 import {createGroupCpu} from '../dist/engines/buriko/native/group-cpu.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function words(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -184,7 +185,7 @@ test('CPU wrappers copy the same 64-byte record and return the normalized brand 
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const context = {thread, memory: {resolve: (_thread, value) => ({bytes: output, offset: value})}};
+  const context = {thread, memory: {resolve: (_thread, value) => hostPointer(output, value)}};
   for (const slot of createGroupCpu(cpu)) {
     assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
     push32(thread, slot.primary === 0x80 ? 0 : 64);

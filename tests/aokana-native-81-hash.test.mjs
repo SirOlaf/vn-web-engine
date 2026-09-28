@@ -7,13 +7,13 @@ import {
   group81Hash,
 } from '../dist/engines/buriko/native/group-81-hash.js';
 import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('native MD5 matches independent digests across padding and block boundaries', () => {
   const output = new Uint8Array(16);
   for (let count = 0; count <= 257; count++) {
     const source = Uint8Array.from({length: count}, (_, i) => (i * 149 + count) & 255);
-    nativeMd5({bytes: output, offset: 0}, count ? {bytes: source, offset: 0} : null, count);
+    nativeMd5(hostPointer(output, 0), count ? hostPointer(source, 0) : null, count);
     assert.equal(
       Buffer.from(output).toString('hex'),
       createHash('md5').update(source).digest('hex'),
@@ -24,7 +24,7 @@ test('native MD5 matches independent digests across padding and block boundaries
 test('native MD5 snapshots input before writing overlapping output', () => {
   const bytes = Uint8Array.from({length: 256}, (_, i) => i);
   const expected = createHash('md5').update(bytes.subarray(0, 128)).digest();
-  nativeMd5({bytes, offset: 2}, {bytes, offset: 0}, 128);
+  nativeMd5(hostPointer(bytes, 2), hostPointer(bytes, 0), 128);
   assert.deepEqual(bytes.subarray(2, 18), new Uint8Array(expected));
 });
 
@@ -32,15 +32,15 @@ test('native checksum retains state across chunks and rereads aliased source byt
   const full = new Uint8Array(8),
     chunks = new Uint8Array(8),
     source = Uint8Array.from([10, 20, 30, 40]);
-  updateNativeChecksum({bytes: full, offset: 0}, {bytes: source, offset: 0}, 4);
-  updateNativeChecksum({bytes: chunks, offset: 0}, {bytes: source, offset: 0}, 2);
-  updateNativeChecksum({bytes: chunks, offset: 0}, {bytes: source, offset: 2}, 2);
+  updateNativeChecksum(hostPointer(full, 0), hostPointer(source, 0), 4);
+  updateNativeChecksum(hostPointer(chunks, 0), hostPointer(source, 0), 2);
+  updateNativeChecksum(hostPointer(chunks, 0), hostPointer(source, 2), 2);
   assert.deepEqual(full, chunks);
   assert.equal(new DataView(full.buffer).getUint32(0, true), 127586180);
   assert.equal(full[6], 100);
   assert.equal(full[7], 40);
   const alias = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
-  updateNativeChecksum({bytes: alias, offset: 0}, {bytes: alias, offset: 6}, 1);
+  updateNativeChecksum(hostPointer(alias, 0), hostPointer(alias, 6), 1);
   assert.equal(alias[6], 14);
   assert.equal(alias[7], 6);
   updateNativeChecksum(null, null, 0);

@@ -22,5 +22,5 @@ test('80:E8 copies the initialized shared product identity into actual native te
   const copied = memory.resolve(thread, 32);
   assert.equal(textLength(copied), 26);
   assert.equal(text.decodeAuto(copied), 'AoNoKanataNoFourRhythmUEDL');
-  assert.equal(copied.bytes[copied.offset + 26], 0);
+  assert.equal(copied.view()[copied.offset + 26], 0);
 });

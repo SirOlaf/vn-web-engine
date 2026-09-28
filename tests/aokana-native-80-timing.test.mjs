@@ -7,6 +7,7 @@ import {
   nativeNanoseconds,
 } from '../dist/engines/buriko/native/system-timing.js';
 import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('CRT random uses one shared 32-bit generator and exactly three draws for positive bounds', () => {
   const random = new BurikoCrtRandom();
@@ -32,7 +33,7 @@ test('CRT random uses one shared 32-bit generator and exactly three draws for po
 test('frame history keeps newest order across ring wrap, DWORD tick wrap and native restart', () => {
   const history = new BurikoVmFrameHistory(0xfffffffe),
     bytes = new Uint8Array(2400),
-    pointer = {bytes, offset: 0};
+    pointer = hostPointer(bytes, 0);
   history.record(2);
   assert.equal(history.copy(pointer, 2), 1);
   assert.deepEqual([...new Uint32Array(bytes.buffer, 0, 2)], [4, 0]);

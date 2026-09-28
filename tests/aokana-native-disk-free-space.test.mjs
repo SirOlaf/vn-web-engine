@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {createGroup81DiskFreeSpace} from '../dist/engines/buriko/native/group-81-disk-free-space.js';
@@ -50,27 +50,27 @@ test('disk-free-space failures preserve output and do not query unavailable medi
       return null;
     },
   };
-  const output = {bytes: new Uint8Array([1, 2, 3, 4]), offset: 0};
+  const output = hostPointer(new Uint8Array([1, 2, 3, 4]), 0);
 
   assert.equal(
     files.readDiskFreeMegabytes(
       host,
-      {bytes: new TextEncoder().encode('D:\\disc\0'), offset: 0},
+      hostPointer(new TextEncoder().encode('D:\\disc\0'), 0),
       output,
     ),
     0,
   );
   assert.deepEqual(calls, []);
-  assert.deepEqual([...output.bytes], [1, 2, 3, 4]);
+  assert.deepEqual([...output.view()], [1, 2, 3, 4]);
 
   assert.equal(
     files.readDiskFreeMegabytes(
       host,
-      {bytes: new TextEncoder().encode('C:\\fail\\\0'), offset: 0},
+      hostPointer(new TextEncoder().encode('C:\\fail\\\0'), 0),
       output,
     ),
     0,
   );
   assert.deepEqual(calls, ['C:\\fail\\']);
-  assert.deepEqual([...output.bytes], [1, 2, 3, 4]);
+  assert.deepEqual([...output.view()], [1, 2, 3, 4]);
 });

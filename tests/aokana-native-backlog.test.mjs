@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoProgramFiles,
@@ -47,7 +47,7 @@ test('80:90/91/94–97 share copied backlog records with bounded history and ret
     bytes.set(encode(s), offset);
     return 0x10000000 + offset;
   };
-  const string = (offset) => text.decodeAuto({bytes, offset});
+  const string = (offset) => text.decodeAuto(hostPointer(bytes, offset));
   const invoke = async (slot, args = [], outputs = 0) => {
     for (const value of args) push32(thread, value);
     assert.equal(await slots.find((s) => s.secondary === slot).execute({thread, memory}), 0);

@@ -21,15 +21,15 @@ import {
   createGroupE0Modules,
 } from '../dist/engines/buriko/native/group-e0-modules.js';
 import {BurikoSelectionDialog} from '../dist/engines/buriko/native/selection-dialog.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {
   copyBurikoBitmapGroupDescription,
   formatBurikoBitmapGroups,
 } from '../dist/engines/buriko/native/bitmap-group-description.js';
 import {createGroupE0BitmapDescription} from '../dist/engines/buriko/native/group-e0-bitmap-description.js';
 
-const pointer = (size) => ({bytes: new Uint8Array(size), offset: 0});
-const view = (p) => new DataView(p.bytes.buffer, p.bytes.byteOffset + p.offset);
+const pointer = (size) => hostPointer(new Uint8Array(size), 0);
+const view = (p) => new DataView(p.view().buffer, p.view().byteOffset + p.offset);
 const thread = () =>
   new BurikoBpThread({id: 4, operandCapacity: 4, moduleCapacity: 128, frameCapacity: 128});
 const ascii = (text) => new TextEncoder().encode(text);
@@ -49,10 +49,10 @@ test('native counter registration keeps bank order, clears counts and retains fl
   assert.equal(counts.enumerate(null), 0);
   const data = pointer(8),
     flags = pointer(8);
-  data.bytes.fill(0xff);
-  flags.bytes.fill(2);
+  data.view().fill(0xff);
+  flags.view().fill(2);
   assert.equal(counts.register(0x180, 2, data, flags), 1);
-  assert.deepEqual([...data.bytes], Array(8).fill(0));
+  assert.deepEqual([...data.view()], Array(8).fill(0));
   assert.equal(counts.register(0x180, 1, null, null), 0);
   view(data).setUint32(0, 0xffffffff, true);
   assert.equal(counts.setFlags(0x180, 2, 0), 4);
@@ -73,7 +73,7 @@ test('native count enumeration preserves sequential writes when output aliases l
   counts.register(0x144, 2, data, flags);
   view(data).setUint32(0, 1, true);
   assert.equal(counts.enumerate(data), 2);
-  assert.deepEqual([...new Uint32Array(data.bytes.buffer)], [0x4400, 0x4400, 0x4401, 0x4400]);
+  assert.deepEqual([...new Uint32Array(data.view().buffer)], [0x4400, 0x4400, 0x4401, 0x4400]);
   counts.dispose();
   counts.register(1, 1, pointer(4), null);
   assert.equal(counts.enumerate(null), 0);
@@ -239,10 +239,10 @@ test('grouped bitmap descriptions copy all units before formatting and preserve 
   const expected =
     '- Group [ 0 ] -\n\n\tUnit [   0 ] / Validity : TRUE  / Visibility : FALSE / Position(   -2,    3 ) / Origin(   -4,    5 ) / Bitmaps : 6 / ChangeInterval : -7 / BaseBitmaps( 8, 9, 10, 11 ) / BitmapForVPD : -1\n\n';
   assert.equal(
-    new TextDecoder().decode(output.bytes.subarray(output.offset, output.offset + size)),
+    new TextDecoder().decode(output.view().subarray(output.offset, output.offset + size)),
     expected,
   );
-  assert.equal(output.bytes[output.offset + size], 0);
+  assert.equal(output.view()[output.offset + size], 0);
   assert.equal(formatBurikoBitmapGroups(null, result.description, text), size);
   assert.equal(
     createGroupE0BitmapDescription(text)[0].nativeAddress,
@@ -257,21 +257,21 @@ test('bitmap group allocation uses low16 counts but formatter consumes full sign
   const skipped = copyBurikoBitmapGroupDescription(source, memory, owner);
   assert.equal(skipped.result, 0);
   const destination = pointer(2048);
-  destination.bytes.fill(0xcc);
+  destination.view().fill(0xcc);
   const length = formatBurikoBitmapGroups(destination, skipped.description, text);
   assert.equal(
-    new TextDecoder().decode(destination.bytes.subarray(0, length)),
+    new TextDecoder().decode(destination.view().subarray(0, length)),
     '- Group [ 0 ] -\n\n\n',
   );
   data.setUint32(128, 0x10001, true);
   const overread = copyBurikoBitmapGroupDescription(source, memory, owner);
   assert.equal(overread.result, 0);
-  destination.bytes.fill(0xcc);
+  destination.view().fill(0xcc);
   assert.throws(
     () => formatBurikoBitmapGroups(destination, overread.description, text),
     /outside backing/,
   );
-  assert.ok(destination.bytes.every((byte) => byte === 0xcc));
+  assert.ok(destination.view().every((byte) => byte === 0xcc));
 });
 
 test('bitmap descriptor validation resolves addresses before counts and skips later groups after failure', () => {

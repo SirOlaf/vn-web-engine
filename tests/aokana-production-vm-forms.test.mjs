@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function descendants(element, tagName, type) {
   return element.children.flatMap((child) => [
@@ -35,7 +36,7 @@ test('mounted B0 forms share the graph ANSI host, product-key state and BP outpu
     return matches[0];
   };
   const writeAnsi = (offset, value) => memory.globalMemory.set(graph.ansiUi.encode(value), offset);
-  const readAnsi = (offset) => graph.ansiUi.decode({bytes: memory.globalMemory, offset});
+  const readAnsi = (offset) => graph.ansiUi.decode(hostPointer(memory.globalMemory, offset));
   const button = (dialog, label) => {
     const match = dialog.children.find(
       (child) => child.tagName === 'BUTTON' && child.textContent === label,

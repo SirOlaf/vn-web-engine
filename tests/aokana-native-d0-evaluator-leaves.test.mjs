@@ -12,11 +12,12 @@ import {
 import {BurikoGridEvaluatorRecords} from '../dist/engines/buriko/native/grid-evaluator-records.js';
 import {chooseGridEvaluatorTarget} from '../dist/engines/buriko/native/grid-evaluator-targets.js';
 import {prepareGridEvaluation} from '../dist/engines/buriko/native/grid-evaluator-jobs.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function data(size) {
   const bytes = new Uint8Array(size),
     view = new DataView(bytes.buffer);
-  return {bytes, view, ptr: (offset = 0) => ({bytes, offset})};
+  return {bytes, view, ptr: (offset = 0) => hostPointer(bytes, offset)};
 }
 
 test('grid sorted cells retain CRT equal-cost permutation, metric status and neighbor write order', () => {

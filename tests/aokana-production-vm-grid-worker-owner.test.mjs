@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('mounted grid worker owner drains queued valid work before grid and BP teardown', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, data, core, memory, child, invoke} = fixture;
   const view = new DataView(memory.globalMemory.buffer);
-  const pointer = (offset) => ({bytes: memory.globalMemory, offset});
+  const pointer = (offset) => hostPointer(memory.globalMemory, offset);
   const call = async (secondary, args, expected) => {
     assert.equal(await invoke(0xd0, secondary, args, 0), 1);
     assert.equal(pop32(child.state), expected);

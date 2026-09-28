@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoWindowTitle} from '../dist/engines/buriko/native/window-title.js';
@@ -82,7 +82,7 @@ test('80:66 updates actual caption and shared default property-window title', ()
   assert.equal(dialogs.fallbackTitle, title.bytes);
   assert.equal(children.nativeWindowTitle, title.bytes);
   assert.equal(properties.nativeWindowTitle, title.bytes);
-  const output = {bytes: memory.globalMemory, offset: 512};
+  const output = hostPointer(memory.globalMemory, 512);
   assert.equal(properties.create(output, null, null, null, 120, 180), 0);
   assert.equal(parent.children[0].children[0].textContent, '蒼空');
   const id = new DataView(memory.globalMemory.buffer).getUint32(512, true);

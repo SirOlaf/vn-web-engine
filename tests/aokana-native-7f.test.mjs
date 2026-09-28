@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {createGroup7f} from '../dist/engines/buriko/native/group-7f.js';
@@ -46,7 +46,7 @@ test('record sort retains native validation precedence and signed width comparis
   assert.equal(sortNativeRecords(null, 2, 1, 0, 4), 2);
   assert.throws(() => sortNativeRecords(null, 2, 1, 0, 0), /invalid parameter/);
   const bytes = new Uint8Array(32),
-    pointer = {bytes, offset: 0},
+    pointer = hostPointer(bytes, 0),
     view = new DataView(bytes.buffer);
   for (let selector = 0; selector < 6; selector++) {
     const width = 1 << (selector >>> 1);
@@ -72,7 +72,7 @@ test('CRT equal-key permutations differ across its eight-record cutoff', () => {
     const bytes = new Uint8Array(count * 8),
       view = new DataView(bytes.buffer);
     for (let i = 0; i < count; i++) view.setUint32(i * 8 + 4, i, true);
-    sortNativeRecords({bytes, offset: 0}, count, 8, 0, 4);
+    sortNativeRecords(hostPointer(bytes, 0), count, 8, 0, 4);
     const ids = Array.from({length: count}, (_, i) => view.getUint32(i * 8 + 4, true));
     assert.deepEqual(
       ids,
@@ -93,7 +93,7 @@ test('CRT partitioning sorts varied sizes and preserves each complete record', (
       view.setInt32(i * 8, keys[i], true);
       view.setUint32(i * 8 + 4, i, true);
     }
-    sortNativeRecords({bytes, offset: 0}, count, 8, 0, 4);
+    sortNativeRecords(hostPointer(bytes, 0), count, 8, 0, 4);
     let previous = -Infinity;
     const seen = new Set();
     for (let i = 0; i < count; i++) {

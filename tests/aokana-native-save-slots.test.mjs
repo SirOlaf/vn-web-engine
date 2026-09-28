@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
 import {randomByteGenerator} from '../dist/formats/buriko/binary.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoProgramFiles,
@@ -91,7 +91,7 @@ test('80:74/78–7B save encrypted and plain slots through shared files, preserv
       Array.from({length: 8}, (_, i) => header.getUint16(i * 2, true)),
       [2026, 9, 6, 19, 12, 34, 56, 123],
     );
-    assert.equal(text.decodeAuto({bytes: stored, offset: 16}), 'First chapter');
+    assert.equal(text.decodeAuto(hostPointer(stored, 16)), 'First chapter');
     const next = randomByteGenerator(123),
       encrypted = Uint8Array.from(original, (v) => (v + next()) & 255);
     assert.deepEqual(stored.subarray(64), encrypted);

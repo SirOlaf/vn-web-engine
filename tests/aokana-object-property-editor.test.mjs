@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoPropertyEditors} from '../dist/engines/buriko/native/property-editor.js';
@@ -132,7 +132,7 @@ test('E0:20 binds actual Sprite fields and routes modal row edits through the di
     ),
     memory = new BurikoBpMemory(new Uint8Array(512)),
     view = new DataView(memory.globalMemory.buffer),
-    pointer = (offset) => ({bytes: memory.globalMemory, offset}),
+    pointer = (offset) => hostPointer(memory.globalMemory, offset),
     thread = new BurikoBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
     [slot] = createGroupE0ObjectProperties(editors, manager);
   assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0xe0][0x20]);

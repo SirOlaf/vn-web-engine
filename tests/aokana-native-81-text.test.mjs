@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {
@@ -36,7 +36,7 @@ function wide(value) {
   const bytes = new Uint8Array((value.length + 1) * 2),
     view = new DataView(bytes.buffer);
   for (let i = 0; i < value.length; i++) view.setUint16(i * 2, value.charCodeAt(i), true);
-  return {bytes, offset: 0};
+  return hostPointer(bytes, 0);
 }
 
 test('native WORD similarity has longest-common-subsequence results and null distinction', () => {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoProgramFiles,
@@ -92,13 +92,7 @@ test('80:C4/C5 encode and restore an embedded record table through the shared wo
   const direct = new Uint8Array(128),
     result = {value: 0};
   assert.equal(
-    encodeBurikoDcfs(
-      {bytes: direct, offset: 0},
-      result,
-      {bytes: thread.moduleMemory, offset: 16},
-      8,
-      3,
-    ),
+    encodeBurikoDcfs(hostPointer(direct), result, hostPointer(thread.moduleMemory, 16), 8, 3),
     0,
   );
   assert.equal(result.value, 40);
@@ -124,7 +118,7 @@ test('80:C4/C5 encode and restore an embedded record table through the shared wo
     assert.equal(thread.stackIndex, 0);
     const decoded = new Uint8Array(128);
     assert.equal(
-      decodeBurikoSdcInto({bytes: decoded, offset: 0}, {bytes: memory.globalMemory, offset: 0x100}),
+      decodeBurikoSdcInto(hostPointer(decoded), hostPointer(memory.globalMemory, 0x100)),
       40,
     );
     assert.deepEqual(decoded.subarray(0, 40), expected);

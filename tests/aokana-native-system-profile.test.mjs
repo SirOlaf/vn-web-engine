@@ -63,13 +63,13 @@ test('all five system wrappers use the selected Windows profile and preserve nat
   call(0x81, 0x08, [0x10000000]);
   const account = memory.resolve(thread, 0x10000000);
   assert.deepEqual(
-    [...account.bytes.subarray(account.offset, account.offset + 7)],
+    [...account.view().subarray(account.offset, account.offset + 7)],
     [0x83, 0x65, 0x83, 0x58, 0x83, 0x67, 0],
   );
   call(0x81, 0x09, [0x10000020]);
   const machine = memory.resolve(thread, 0x10000020);
   assert.deepEqual(
-    machine.bytes.slice(machine.offset, machine.offset + 8),
+    machine.view().slice(machine.offset, machine.offset + 8),
     Uint8Array.of(...ansi('TEST-PC'), 0),
   );
   call(0x81, 0x0c, [0x10000040, 0x10000060]);
@@ -79,7 +79,7 @@ test('all five system wrappers use the selected Windows profile and preserve nat
   );
   const servicePack = memory.resolve(thread, 0x10000060);
   assert.deepEqual(
-    servicePack.bytes.slice(servicePack.offset, servicePack.offset + 15),
+    servicePack.view().slice(servicePack.offset, servicePack.offset + 15),
     Uint8Array.of(...ansi('Service Pack 1'), 0),
   );
   call(0x81, 0x0d, [0x10000080, 0x10000084]);

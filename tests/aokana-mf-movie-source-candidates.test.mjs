@@ -18,6 +18,7 @@ import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.
 import {BurikoMfMovieSourceCandidates} from '../dist/engines/buriko/native/movie-mf-source-candidates.js';
 import {BurikoMfMovieDocuments} from '../dist/engines/buriko/native/movie-mf-document.js';
 import {BlobSource, SliceSource} from '../dist/core/source.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function arc(name, data) {
   const bytes = new Uint8Array(16 + 128 + data.length);
@@ -41,7 +42,7 @@ test('MF movie candidates keep qualified/direct/search order and physical archiv
   ]);
   const text = new BurikoNativeText();
   const encode = (value) => text.encodeWide(value, 1);
-  const pointer = (value) => ({bytes: encode(value), offset: 0});
+  const pointer = (value) => hostPointer(encode(value), 0);
   const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
   const files = new BurikoProgramFiles(

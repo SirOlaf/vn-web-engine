@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {StoredFileSystem} from '../dist/platform/filesystem.js';
 import {MemoryStore} from '../dist/platform/store.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {
   BurikoProgramFiles,
@@ -126,7 +126,7 @@ test('80:38 registers ordered real component archives in the shared resource cac
   assert.equal(await archives.size(logical, encode('Empty')), 0);
   assert.deepEqual(
     (await archives.enumerateNames(secondPath)).map((name) =>
-      text.decodeAuto({bytes: name, offset: 0}),
+      text.decodeAuto(hostPointer(name, 0)),
     ),
     ['shared', 'onlysecond', 'empty'],
   );

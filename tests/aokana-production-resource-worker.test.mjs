@@ -27,6 +27,7 @@ import {
 } from '../dist/engines/buriko/native/engine-dialogs.js';
 import {BurikoDiagnosticDialogs} from '../dist/engines/buriko/native/modal.js';
 import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 class Element {
   constructor(tag) {
@@ -188,7 +189,7 @@ test('one production owner shares mounted resource, audio and script identities 
     owner.audio.enqueueStatic(
       staticResult,
       0,
-      {bytes: staticBytes, offset: 0},
+      hostPointer(staticBytes),
       0,
       1,
       1,
@@ -197,18 +198,15 @@ test('one production owner shares mounted resource, audio and script identities 
     assert.equal(await owner.worker.processOne(), 'static');
     assert.equal(staticResult.value, 0);
 
-    const handle = {bytes: new Uint8Array(4), offset: 0};
-    assert.equal(
-      await owner.scripts.open(handle, {bytes: encode('C:\\game\\document'), offset: 0}, 0),
-      0,
-    );
-    const id = new DataView(handle.bytes.buffer).getUint32(0, true),
-      completion = {bytes: new Uint8Array(4), offset: 0},
-      scriptBuffer = {bytes: new Uint8Array(4), offset: 0};
+    const handle = hostPointer(new Uint8Array(4));
+    assert.equal(await owner.scripts.open(handle, hostPointer(encode('C:\\game\\document')), 0), 0);
+    const id = new DataView(handle.view().buffer).getUint32(0, true),
+      completion = hostPointer(new Uint8Array(4)),
+      scriptBuffer = hostPointer(new Uint8Array(4));
     assert.equal(await owner.scripts.queueTransfer(completion, id, scriptBuffer, 4), 0);
     assert.equal(await owner.worker.processOne(), 'script');
-    assert.deepEqual([...scriptBuffer.bytes], [11, 22, 33, 44]);
-    assert.equal(new DataView(completion.bytes.buffer).getUint32(0, true), 4);
+    assert.deepEqual([...scriptBuffer.view()], [11, 22, 33, 44]);
+    assert.equal(new DataView(completion.view().buffer).getUint32(0, true), 4);
   } finally {
     await owner.shutdown();
   }

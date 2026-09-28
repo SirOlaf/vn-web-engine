@@ -8,13 +8,13 @@ import {BurikoLogicalSpatialDensity} from '../dist/engines/buriko/native/logical
 import {createGroupD0SpatialDensity} from '../dist/engines/buriko/native/group-d0-spatial-density.js';
 import {createGroupD0SpatialRecords} from '../dist/engines/buriko/native/group-d0-spatial.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
   const manager = new BurikoLogicalSpatialManager(),
     density = new BurikoLogicalSpatialDensity(manager);
   const bytes = new Uint8Array(256),
-    output = {bytes, offset: 100},
+    output = hostPointer(bytes, 100),
     words = () => [...new Int32Array(bytes.buffer, 100, 4)];
   const create = (index, x, y, weight = 1, radius = 10, mask = 1) => {
     manager.createRecord(index, [x, y, 0, 0, 0, 0, 1, 0, 0], mask, 0);

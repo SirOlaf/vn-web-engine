@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import {BurikoNativeWorldMaps, worldMapPosition} from '../dist/engines/buriko/native/world-map.js';
 import {createGroupD0WorldMap} from '../dist/engines/buriko/native/group-d0-world-map.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
   const bytes = new Uint8Array(1024),
     view = new DataView(bytes.buffer),
     maps = new BurikoNativeWorldMaps();
-  const pointer = (offset) => ({bytes, offset});
+  const pointer = (offset) => hostPointer(bytes, offset);
   maps.create(pointer(0), 8, 4);
   const id = view.getUint32(0, true);
   const node = (index, x, y = 0, z = 0, w = 0) =>

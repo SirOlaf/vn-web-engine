@@ -9,14 +9,14 @@ import {nativeSpatialAngle} from '../dist/engines/buriko/bp/opcodes/native-math.
 import {createGroupD0SpatialRecords} from '../dist/engines/buriko/native/group-d0-spatial.js';
 import {createGroupD0SpatialCollision} from '../dist/engines/buriko/native/group-d0-spatial-collision.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
   const manager = new BurikoLogicalSpatialManager(),
     collision = new BurikoLogicalSpatialCollision(manager);
   const bytes = new Uint8Array(1024),
     view = new DataView(bytes.buffer),
-    pointer = (offset) => ({bytes, offset});
+    pointer = (offset) => hostPointer(bytes, offset);
   const create = (index, position, radius = 1, mask = 1, priority = 0) =>
     manager.createRecord(index, [...position, 0, 0, 0, radius, 0, 0], mask, priority);
   const collect = (

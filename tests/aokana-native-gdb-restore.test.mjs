@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoGdbRestore} from '../dist/engines/buriko/native/gdb-restore.js';
 import {createGroup81GdbRestore} from '../dist/engines/buriko/native/group-81-gdb-restore.js';
@@ -9,7 +9,7 @@ import {BurikoStringLists} from '../dist/engines/buriko/native/string-lists.js';
 
 const text = (value) => new TextEncoder().encode(value);
 const strings = (...values) => text(values.join('\0') + '\0');
-const pointer = (bytes) => ({bytes, offset: 0});
+const pointer = (bytes) => hostPointer(bytes, 0);
 
 function dword(value) {
   const bytes = new Uint8Array(4);

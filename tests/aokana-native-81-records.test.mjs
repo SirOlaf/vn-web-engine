@@ -6,13 +6,13 @@ import {
   group81Disabled,
 } from '../dist/engines/buriko/native/group-81-records.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
   const bytes = new Uint8Array(2048),
     records = new BurikoNativeRecordBuffers(),
     view = new DataView(bytes.buffer);
-  return {bytes, records, view, pointer: (offset) => ({bytes, offset})};
+  return {bytes, records, view, pointer: (offset) => hostPointer(bytes, offset)};
 }
 
 test('record sets preserve native validation precedence, slot reuse and destructive replacement', () => {

@@ -14,12 +14,12 @@ import {BurikoGridEvaluationWorkers} from '../dist/engines/buriko/native/grid-ev
 import {simulateGridEvaluation} from '../dist/engines/buriko/native/grid-evaluator-simulation.js';
 import {createGroupD0Evaluator} from '../dist/engines/buriko/native/group-d0-evaluator.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function storage(size) {
   const bytes = new Uint8Array(size),
     view = new DataView(bytes.buffer);
-  return {bytes, view, pointer: (offset = 0) => ({bytes, offset})};
+  return {bytes, view, pointer: (offset = 0) => hostPointer(bytes, offset)};
 }
 
 function actorsFixture(positions = [0, 4], grid = new BurikoLogicalGridManager(1)) {
@@ -294,7 +294,7 @@ test('all nine evaluator VM wrappers preserve pop order, independent progress an
   });
   const context = {thread, memory},
     bytes = memory.globalMemory,
-    pointer = (offset) => ({bytes, offset}),
+    pointer = (offset) => hostPointer(bytes, offset),
     view = new DataView(bytes.buffer);
   grids.create(pointer(4), 0, 1);
   const gridId = view.getUint32(4, true),

@@ -18,6 +18,7 @@ import {BurikoEngineDialogs} from '../dist/engines/buriko/native/engine-dialogs.
 import {BurikoMovieSources} from '../dist/engines/buriko/native/movie-sources.js';
 import {BurikoMovieSourceDocument} from '../dist/engines/buriko/native/movie-source-document.js';
 import {burikoIsoSampleBytes} from '../dist/engines/buriko/native/movie-iso-samples.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function join(...parts) {
   const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -115,7 +116,7 @@ test('selected direct and archive movie regions retain source identity and real 
   ]);
   const text = new BurikoNativeText();
   const encode = (value) => text.encodeWide(value, 1);
-  const pointer = (value) => ({bytes: encode(value), offset: 0});
+  const pointer = (value) => hostPointer(encode(value), 0);
   const media = new BurikoProgramMedia();
   media.setDriveType(2, 3);
   const files = new BurikoProgramFiles(

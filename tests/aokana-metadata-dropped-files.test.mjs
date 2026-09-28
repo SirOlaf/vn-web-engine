@@ -11,6 +11,7 @@ import {BurikoMainWindowMessageReceiver} from '../dist/engines/buriko/native/mai
 import {BurikoWindowMessages as Waits} from '../dist/engines/buriko/native/procedure.js';
 import {BurikoKnobDisplays} from '../dist/engines/buriko/native/knob-displays.js';
 import {deviceServiceFixture} from './aokana-device-service-fixture.mjs';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('production file owner reads a dropped Blob through its metadata-backed mount', async () => {
   const s = deviceServiceFixture(),
@@ -89,7 +90,7 @@ test('production file owner reads a dropped Blob through its metadata-backed mou
     });
     assert.equal(prevented, true);
     assert.deepEqual(s.notifications.take(), {type: 16, value1: 0, value2: 0});
-    const output = {bytes: new Uint8Array(780), offset: 0};
+    const output = hostPointer(new Uint8Array(780), 0);
     assert.equal(drops.copyPath(output), 1);
     const native = text.decodeAuto(output);
     assert.equal(native, 'D:\\Drops\\1\\SaMpLe.TXT');

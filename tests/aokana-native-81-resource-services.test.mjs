@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BlobSource} from '../dist/core/source.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoNativeClock} from '../dist/engines/buriko/native/clock.js';
@@ -28,7 +28,7 @@ const bytes = (value) => new TextEncoder().encode(value);
 
 function checksumMetadata(payload) {
   const checksum = new Uint8Array(8);
-  updateNativeChecksum({bytes: checksum, offset: 0}, {bytes: payload, offset: 0}, payload.length);
+  updateNativeChecksum(hostPointer(checksum, 0), hostPointer(payload, 0), payload.length);
   return new DataView(checksum.buffer).getBigUint64(0, true);
 }
 

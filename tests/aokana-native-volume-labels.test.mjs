@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpDiagnostics} from '../dist/engines/buriko/native/diagnostics.js';
 import {createGroup81VolumeLabels} from '../dist/engines/buriko/native/group-81-volume-labels.js';
@@ -44,8 +44,8 @@ test('81 3D uses only the first drive byte, the exact ANSI root and raw host res
   const untouched = new Uint8Array([1, 2, 3, 4]);
   assert.equal(
     new BurikoVolumeLabels(new BurikoVolumeLabelProfile([])).read(
-      {bytes: untouched, offset: 0},
-      {bytes: Uint8Array.of(67), offset: 0},
+      hostPointer(untouched),
+      hostPointer(Uint8Array.of(67)),
     ),
     0,
   );

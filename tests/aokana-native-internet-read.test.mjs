@@ -85,7 +85,7 @@ function checkRequest(request, state, offset, length) {
   assert.equal(request.url, 'https://example.test/data.bin');
   assert.equal(request.userAgent, BURIKO_INTERNET_USER_AGENT);
   assert.equal(request.reload, true);
-  assert.equal(request.destination.bytes, state.memory.globalMemory);
+  assert.equal(request.destination.view(), state.memory.globalMemory);
   assert.equal(request.destination.offset, 512);
   assert.equal(request.offset, offset);
   assert.equal(request.length, length);

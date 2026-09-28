@@ -23,7 +23,7 @@ import {
 } from '../dist/engines/buriko/native/group-b0-dialogs.js';
 import {BurikoSelectionDialog} from '../dist/engines/buriko/native/selection-dialog.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
 class Element {
@@ -132,10 +132,10 @@ function controls(element, type) {
   ]);
 }
 function initial(values = Array(9).fill(0)) {
-  return {bytes: new Uint8Array(new Int32Array(values).buffer), offset: 0};
+  return hostPointer(new Uint8Array(new Int32Array(values).buffer));
 }
 function out() {
-  return {bytes: new Uint8Array(16), offset: 0};
+  return hostPointer(new Uint8Array(16));
 }
 function vmSlots(definitions) {
   const slots = new Map(definitions.map((slot) => [slot.secondary, slot]));
@@ -168,7 +168,7 @@ function vmSlots(definitions) {
   };
 }
 function event(output) {
-  const view = new DataView(output.bytes.buffer);
+  const view = new DataView(output.view().buffer);
   return [view.getInt32(0, true), view.getInt32(4, true)];
 }
 
@@ -261,7 +261,7 @@ test('settings poll writes its two DWORDs before the indivisible NULL-pointer st
   slider.value = '37';
   slider.fire('input');
   const bytes = new Uint8Array(12).fill(0xa5);
-  assert.throws(() => settings.poll(id, {bytes, offset: 0}), /next-pointer write/);
+  assert.throws(() => settings.poll(id, hostPointer(bytes)), /next-pointer write/);
   assert.deepEqual([...bytes], [0, 0, 0, 0, 37, 0, 0, 0, 0xa5, 0xa5, 0xa5, 0xa5]);
   const output = out();
   assert.equal(settings.poll(id, output), 0);
@@ -295,7 +295,7 @@ test('product-key acceptance reads each field as UTF-16 but always writes UTF-8 
     },
     text,
   );
-  const output = {bytes: new Uint8Array(200).fill(0xa5), offset: 2};
+  const output = hostPointer(new Uint8Array(200).fill(0xa5), 2);
   const pending = dialog.show(output, null, null, 0);
   const inputs = controls(host.parent, 'text');
   inputs[0].value = 'あ';
@@ -305,10 +305,10 @@ test('product-key acceptance reads each field as UTF-16 but always writes UTF-8 
   controls(host.parent, 'button')[0].fire('click');
   assert.equal(await pending, 1);
   assert.equal(
-    new TextDecoder().decode(output.bytes.subarray(2, output.bytes.indexOf(0, 2))),
+    new TextDecoder().decode(output.view().subarray(2, output.view().indexOf(0, 2))),
     `あ-${'B'.repeat(32)}--C`,
   );
-  assert.equal(output.bytes[1], 0xa5);
+  assert.equal(output.view()[1], 0xa5);
   assert.equal(text.mode, 0);
 });
 
@@ -511,10 +511,10 @@ async function editor() {
     messages,
     text.encodeWide('Native title'),
   );
-  const pointer = (value) => ({bytes: text.encodeWide(value), offset: 0});
+  const pointer = (value) => hostPointer(text.encodeWide(value));
   const output = out();
   service.create(output, null, pointer('Description'), initial([-12, 34]), 100, 200);
-  const id = new DataView(output.bytes.buffer).getUint32(0, true);
+  const id = new DataView(output.view().buffer).getUint32(0, true);
   service.addTab(null, id, pointer('First tab'));
   return {service, host, messages, text, id, pointer};
 }
@@ -525,8 +525,8 @@ test('property records retain static values and compare live BOOL values by zero
     boolean = initial([2]);
   service.addRow(null, id, 0, pointer('Static'), 0, scalar, 0, 1);
   service.addRow(null, id, 0, pointer('Boolean'), 4, boolean, 1, 1);
-  new DataView(scalar.bytes.buffer).setInt32(0, 7, true);
-  new DataView(boolean.bytes.buffer).setInt32(0, 3, true);
+  new DataView(scalar.view().buffer).setInt32(0, 7, true);
+  new DataView(boolean.view().buffer).setInt32(0, 3, true);
   service.refresh(id);
   const output = out(),
     type = out();
@@ -535,7 +535,7 @@ test('property records retain static values and compare live BOOL values by zero
   service.getValue(output, type, id, 0, 1);
   assert.equal(event(output)[0], 2);
   assert.equal(event(type)[0], 4);
-  new DataView(boolean.bytes.buffer).setInt32(0, 0, true);
+  new DataView(boolean.view().buffer).setInt32(0, 0, true);
   service.refresh(id);
   service.getValue(output, null, id, 0, 1);
   assert.equal(event(output)[0], 0);
@@ -551,11 +551,11 @@ test('property UI events wait for the shared FIFO and MOVUPS failures retain the
   const output = out();
   assert.equal(service.poll(output, id), 0x8000001f);
   await service.handleMessage(messages.take());
-  const short = {bytes: new Uint8Array(15).fill(0xa5), offset: 0};
+  const short = hostPointer(new Uint8Array(15).fill(0xa5));
   assert.throws(() => service.poll(short, id), /MOVUPS/);
-  assert.deepEqual([...short.bytes], Array(15).fill(0xa5));
+  assert.deepEqual([...short.view()], Array(15).fill(0xa5));
   assert.equal(service.poll(output, id), 0);
-  assert.deepEqual([...new Int32Array(output.bytes.buffer)], [1, 0, 0, 0]);
+  assert.deepEqual([...new Int32Array(output.view().buffer)], [1, 0, 0, 0]);
   const target = messages.createTarget() - 1;
   await service.handleMessage({target, message: 0x10, wParam: 0, lParam: 0});
   await service.handleMessage(messages.take());
@@ -591,7 +591,7 @@ test('property edit callbacks replace direct writes while accepted edits still e
   named(host.parent, 'OK')[0].fire('click');
   await pending;
   assert.deepEqual(calls, [[12, 'context', 0]]);
-  assert.equal(new DataView(source.bytes.buffer).getInt32(0, true), 3);
+  assert.equal(new DataView(source.view().buffer).getInt32(0, true), 3);
   const output = out();
   service.getValue(output, null, id, 0, 0);
   assert.equal(event(output)[0], 12);
@@ -601,8 +601,8 @@ test('property edit callbacks replace direct writes while accepted edits still e
 
 test('editing a live string changes only its formatted copy until source bytes change', async () => {
   const {service, host, messages, id, pointer, text} = await editor();
-  const source = {bytes: new Uint8Array(100), offset: 0};
-  source.bytes.set(text.encodeWide('Original'));
+  const source = hostPointer(new Uint8Array(100));
+  source.view().set(text.encodeWide('Original'));
   service.addRow(null, id, 0, pointer('Text'), 5, source, 1, 1, null, null, () => {
     throw new Error('Native type 5 never calls its edit callback');
   });
@@ -613,10 +613,10 @@ test('editing a live string changes only its formatted copy until source bytes c
   await pending;
   assert.equal(text.decodeAuto(source), 'Original');
   service.refresh(id);
-  const output = {bytes: new Uint8Array(100), offset: 0};
+  const output = hostPointer(new Uint8Array(100));
   service.getValue(output, null, id, 0, 0);
   assert.equal(text.decodeAuto(output), 'Edited');
-  source.bytes.set(text.encodeWide('Changed'));
+  source.view().set(text.encodeWide('Changed'));
   service.refresh(id);
   service.getValue(output, null, id, 0, 0);
   assert.equal(text.decodeAuto(output), 'Changed');
@@ -626,11 +626,11 @@ test('property tagged-ID OR collisions write output and keep the original window
   const {service, host, id, pointer} = await editor();
   const output = out();
   service.create(output, pointer('Second'), null, null, 80, 80);
-  const second = new DataView(output.bytes.buffer).getUint32(0, true);
+  const second = new DataView(output.view().buffer).getUint32(0, true);
   assert.equal(id, 0xf8000001);
   assert.equal(second, 0xf8000003);
   assert.throws(() => service.create(output, pointer('Third'), null, null, 80, 80), /collision/);
-  assert.equal(new DataView(output.bytes.buffer).getUint32(0, true), second);
+  assert.equal(new DataView(output.view().buffer).getUint32(0, true), second);
   assert.equal(host.parent.children.length, 3);
   service.addButton(null, second, pointer('Still second'));
   assert.equal(named(host.parent.children[1], 'Still second').length, 1);
@@ -669,11 +669,7 @@ function ansiDialogs() {
         return result;
       },
       async show(message, title, flags) {
-        errors.push([
-          ansi.decode({bytes: message, offset: 0}),
-          ansi.decode({bytes: title, offset: 0}),
-          flags,
-        ]);
+        errors.push([ansi.decode(hostPointer(message)), ansi.decode(hostPointer(title)), flags]);
         return 1;
       },
     },
@@ -683,7 +679,7 @@ function ansiDialogs() {
   const pointer = (value, capacity = 512) => {
     const bytes = new Uint8Array(capacity);
     bytes.set(ansi.encode(value));
-    return {bytes, offset: 0};
+    return hostPointer(bytes);
   };
   return {host, text, ansi, dialog, transitions, errors, pointer};
 }
@@ -776,8 +772,8 @@ test('name validation preserves prior successful writes and birthday February ke
   named(host.parent, 'OK')[0].fire('click');
   assert.equal(await pending, 1);
   assert.equal(ansi.decode(outputs[1]), '');
-  assert.equal(new DataView(month.bytes.buffer).getInt32(0, true), 1);
-  assert.equal(new DataView(day.bytes.buffer).getInt32(0, true), 0);
+  assert.equal(new DataView(month.view().buffer).getInt32(0, true), 1);
+  assert.equal(new DataView(day.view().buffer).getInt32(0, true), 0);
 });
 
 test('name validation faults on an odd dangling native lead after its written ANSI terminator', async () => {
@@ -868,10 +864,10 @@ function childWindows(context) {
   );
   service.initialize();
   const output = out(),
-    title = {bytes: text.encodeWide('Child'), offset: 0};
+    title = hostPointer(text.encodeWide('Child'));
   const create = (flags = 0) => {
     const result = service.create(output, title, 10, 20, 32, 32, flags);
-    return {result, id: new DataView(output.bytes.buffer).getUint32(0, true)};
+    return {result, id: new DataView(output.view().buffer).getUint32(0, true)};
   };
   return {
     host,
@@ -943,7 +939,7 @@ test('child WndProc forwards key message parameters unchanged but consumes Ctrl+
   const key = {target: paint.target, message: 0x100, wParam: 0x41, lParam: 0xfedcba9876543210n};
   await service.handleMessage(key);
   assert.deepEqual(messages.take(), {...key, target: 'main'});
-  service.setClipboard(id, {bytes: text.encodeWide('Copied'), offset: 0});
+  service.setClipboard(id, hostPointer(text.encodeWide('Copied')));
   physical.set(0x11, true);
   await service.handleMessage({...key, wParam: 0x43});
   assert.deepEqual(clipboard, ['Copied']);
@@ -1073,7 +1069,7 @@ test('B0 dialog binding enters the real single form and translates its accepted 
   named(host.parent, 'OK')[0].fire('click');
   await pending;
   assert.equal(vm.pop(), 1);
-  assert.equal(text.decodeAuto({bytes: vm.memory.globalMemory, offset: 128}), '123');
+  assert.equal(text.decodeAuto(hostPointer(vm.memory.globalMemory, 128)), '123');
   await vm.run(0xa0, [128, 99, 0]);
   assert.equal(vm.pop(), 0);
   await vm.run(0xa3, [0, 0]);

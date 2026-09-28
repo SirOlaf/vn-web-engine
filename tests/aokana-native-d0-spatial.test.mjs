@@ -7,13 +7,13 @@ import {
 import {createGroupD0SpatialRecords} from '../dist/engines/buriko/native/group-d0-spatial.js';
 import {burikoLogicalStatus} from '../dist/engines/buriko/native/logical-status.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture() {
   const manager = new BurikoLogicalSpatialManager(),
     bytes = new Uint8Array(1024),
     view = new DataView(bytes.buffer);
-  const pointer = (offset) => ({bytes, offset});
+  const pointer = (offset) => hostPointer(bytes, offset);
   const create = (index, direction = [1, 0, 0]) =>
     manager.createRecord(index, [0, 0, 0, ...direction, 1, 2, 3], 1, 0);
   const children = (index, group) => {

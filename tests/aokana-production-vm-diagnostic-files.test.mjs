@@ -27,7 +27,7 @@ test('mounted VM shares diagnostic counts and pooled allocation records with E0 
     memory.globalMemory.fill(0xa5, 0x180, 0x190);
     assert.equal(await invoke(0xe0, 0x93, [0x9001, 1], 0), 1);
     assert.equal(pop32(child.state), 0);
-    assert.equal(data.counts.banks.find(({bank}) => bank === 0x90).flags.bytes[4], 1);
+    assert.equal(data.counts.banks.find(({bank}) => bank === 0x90).flags.view()[4], 1);
     assert.equal(await invoke(0xe0, 0x91, [0x180], 0), 1);
     assert.equal(pop32(child.state), 0);
     assert.deepEqual(memory.globalMemory.subarray(0x180, 0x190), new Uint8Array(16).fill(0xa5));

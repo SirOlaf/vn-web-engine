@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 test('80:F0/F1 use the selected modal form owner and preserve native outputs', async () => {
   const requests = [];
@@ -68,7 +69,7 @@ test('80:F0/F1 use the selected modal form owner and preserve native outputs', a
     );
     assert.equal(pop32(child.state), 1);
     assert.equal(
-      graph.text.decodeAuto({bytes: memory.globalMemory, offset: 0x900}),
+      graph.text.decodeAuto(hostPointer(memory.globalMemory, 0x900)),
       'C:\\restart\\install',
     );
     assert.equal(

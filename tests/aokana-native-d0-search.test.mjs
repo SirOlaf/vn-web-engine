@@ -11,7 +11,7 @@ import {
   BurikoDistributedProcessing,
 } from '../dist/engines/buriko/native/distributed-processing.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function fixture(capacity = 3) {
   const manager = new BurikoLogicalSpatialManager(),
@@ -19,7 +19,7 @@ function fixture(capacity = 3) {
     pool = new BurikoDistributedProcessing(allocator, capacity),
     search = new BurikoLogicalSpatialSearch(manager, pool),
     bytes = new Uint8Array(256).fill(0x55),
-    pointer = {bytes, offset: 16};
+    pointer = hostPointer(bytes, 16);
   manager.createRecord(0, [0, 0, 0, 0, 0, 0, 1, 0, 0], 1, 7);
   manager.createRecord(1, [2, 0, 0, 0, 0, 0, 1, 0, 0], 1, 8);
   return {manager, pool, search, bytes, pointer};
@@ -85,7 +85,7 @@ test('D072 wrapper converts its two fixed arguments and consumes eleven native v
     }),
     h = {thread, memory},
     definition = createGroupD0SpatialSearch(managers, pool)[0];
-  managers.create({bytes, offset: 16});
+  managers.create(hostPointer(bytes, 16));
   const id = new DataView(bytes.buffer).getUint32(16, true);
   managers.use(id, (manager) => {
     manager.createRecord(0, [0, 0, 0, 0, 0, 0, 1, 0, 0], 1, 0);

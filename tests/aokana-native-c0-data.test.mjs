@@ -4,12 +4,12 @@ import {BurikoNativeSplines} from '../dist/engines/buriko/native/spline-registry
 import {createGroupC0Splines} from '../dist/engines/buriko/native/group-c0-splines.js';
 import {decodeBwefPairs} from '../dist/engines/buriko/native/bwef.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
-import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
+import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 function storage(size) {
   const bytes = new Uint8Array(size),
     view = new DataView(bytes.buffer);
-  return {bytes, view, pointer: (offset = 0) => ({bytes, offset})};
+  return {bytes, view, pointer: (offset = 0) => hostPointer(bytes, offset)};
 }
 
 test('C0 spline registry retains signed-bank IDs, validation precedence and uninitialized duration', () => {

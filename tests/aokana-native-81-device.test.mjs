@@ -49,7 +49,7 @@ test('six device wrappers use actual cached adapter, current mode, shader and wi
   await v.call(0x0b, [0x10000000, 0x10000040, 0x10000060]);
   assert.deepEqual(resolved, [0x10000060, 0x10000040, 0x10000000]);
   const description = resolve(v.thread, 0x10000000);
-  assert.deepEqual([...description.bytes.slice(0, 7)], [65, 32, 0x83, 0x65, 32, 66, 0]);
+  assert.deepEqual([...description.view().slice(0, 7)], [65, 32, 0x83, 0x65, 32, 66, 0]);
   assert.deepEqual(
     [0, 4, 8, 12].map((offset) => v.memory.readU32(v.thread, 0x10000040 + offset)),
     [404, 303, 202, 101],
