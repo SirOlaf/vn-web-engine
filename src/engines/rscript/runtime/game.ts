@@ -51,6 +51,8 @@ export interface RScriptGameHost {
   confirm(caption: string, text: string): Promise<boolean>;
   /** The configuration's window/fullscreen option (sub_452990). */
   setFullscreen?(fullscreen: boolean): void;
+  /** Shows or hides the pointer over the game (ShowCursor). */
+  setCursorVisible?(visible: boolean): void;
   diagnostic(message: string): void;
   /** The script thread ended (the native game closes its window) or failed. */
   exit(error?: unknown): void;
@@ -178,6 +180,9 @@ export class RScriptGame {
   private readonly handlers: ReadonlyMap<number, RScriptNativeHandler>;
   private hovered: RScriptNode | null = null;
   private pressed: RScriptNode | null = null;
+  /** Input-wait ticks since the last input, and whether auto-hide is in effect. */
+  private idleTicks = 0;
+  private idleHidden = false;
   private ticker: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
   /** Incremented when the scene thread restarts (a load or a return to the title). */
@@ -617,6 +622,7 @@ export class RScriptGame {
     return this.display.screen.pick(x, y);
   }
   pointerMove(x: number, y: number): void {
+    this.wake();
     const pressed = this.pressed;
     if (pressed instanceof RScriptSprite && pressed.onDrag) {
       const origin = pressed.screenPosition();
@@ -638,6 +644,7 @@ export class RScriptGame {
     this.display.update();
   }
   pointerDown(x: number, y: number): void {
+    this.wake();
     const node = this.hit(x, y);
     this.pressed = node;
     if (node instanceof RScriptSprite && node.onDrag) {
@@ -651,6 +658,7 @@ export class RScriptGame {
    * skipping stops, or the scene handles the click.
    */
   pointerUp(x: number, y: number): void {
+    this.wake();
     const node = this.hit(x, y);
     const pressed = this.pressed;
     this.pressed = null;
@@ -685,6 +693,7 @@ export class RScriptGame {
   }
   /** Right button (WM_RBUTTONDOWN) and Escape during a wait. */
   cancel(): void {
+    this.wake();
     const {flags} = this;
     if (this.screens.open) void this.closeScreen();
     else if (flags.windowHidden) this.showWindow();
@@ -693,6 +702,7 @@ export class RScriptGame {
   }
   /** Mouse wheel (WM_MOUSEWHEEL): up browses the backlog, down pages forward or clicks. */
   wheel(up: boolean): void {
+    this.wake();
     if (this.screens.open) return;
     if (up) void this.message.backlogBack().then(() => this.display.update());
     else
@@ -703,6 +713,7 @@ export class RScriptGame {
   }
   /** Control key held (485360): skipping starts at the next instruction. */
   setSkip(held: boolean): void {
+    this.wake();
     if (!held) {
       this.flags.skipHeld = false;
       return;
@@ -713,12 +724,14 @@ export class RScriptGame {
   }
   /** Enter and space act like a left click; a skip in progress stops instead. */
   keyClick(): void {
+    this.wake();
     if (this.flags.auto) this.stopAuto();
     else if (this.flags.skip) this.flags.skipHeld = false;
     else this.click();
   }
   /** Keyboard shortcuts of the game window (WM_KEYDOWN). */
   key(key: 'tab' | 'shift' | 'up' | 'down'): void {
+    this.wake();
     if (key === 'tab') this.panelCommand('skip');
     else if (key === 'shift') this.panelCommand('hide');
     else this.wheel(key === 'up');
@@ -740,6 +753,25 @@ export class RScriptGame {
   private showWindow(): void {
     this.message.show(true);
     this.flags.windowHidden = false;
+    this.display.update();
+  }
+
+  /** sub_41E010: after 100 idle input-wait ticks, auto-hide hides the cursor and window. */
+  private idleTick(): void {
+    if (!this.config(Config.autoHide) || this.idleHidden || this.screens.open) return;
+    if (++this.idleTicks <= 100) return;
+    this.idleHidden = true;
+    this.host.setCursorVisible?.(false);
+    this.message.show(false);
+    this.display.update();
+  }
+  /** sub_41E070: input restores them, leaving a window the player hid hidden. */
+  private wake(): void {
+    this.idleTicks = 0;
+    if (!this.idleHidden) return;
+    this.idleHidden = false;
+    this.host.setCursorVisible?.(true);
+    if (!this.flags.windowHidden) this.message.show(true);
     this.display.update();
   }
 
@@ -908,6 +940,7 @@ export class RScriptGame {
       for (const layer of this.layers) layer.tick();
       this.message.tickWaiting();
       this.display.update();
+      this.idleTick();
     } catch (error) {
       this.fail(error);
     }
@@ -1176,6 +1209,7 @@ export class RScriptGame {
     this.event.reset();
     Object.assign(this.flags, new RScriptFlags());
     this.nesting = 0;
+    this.wake();
     this.resetScreens();
   }
 

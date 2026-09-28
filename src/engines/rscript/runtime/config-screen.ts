@@ -53,7 +53,7 @@ const SETTINGS: readonly Setting[] = [
   {names: 'cmp', offset: 0x16, change: 'panel'},
   {names: 'usr', offset: 'usr'},
   {names: 'vocst', offset: Config.voiceContinues},
-  {names: 'awh', offset: Config.hideIdleCursor},
+  {names: 'awh', offset: Config.autoHide},
   {names: 'bgr', offset: 0x18},
 ];
 

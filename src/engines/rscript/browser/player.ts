@@ -76,6 +76,9 @@ export class RScriptBrowserPlayer {
       stopMovie: () => this.skipMovie?.(),
       confirm: (caption, text) => this.confirm(caption, text),
       setFullscreen: (fullscreen) => this.setFullscreen(fullscreen),
+      setCursorVisible: (visible) => {
+        this.canvas.style.cursor = visible ? '' : 'none';
+      },
       diagnostic: options.diagnostic,
       exit: (error) => options.exit(error),
     });

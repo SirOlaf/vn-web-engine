@@ -27,7 +27,8 @@ export const Config = {
   autoSpeed: 0x1a,
   autoWait: 0x1e,
   voiceContinues: 0x20,
-  hideIdleCursor: 0x22,
+  /** Hides the cursor and message window while idle (sub_41E010). */
+  autoHide: 0x22,
   /** Per voice-bank enable flags, indexed by voice id / 10000. */
   voiceBanks: 0x24,
   systemWords: 0x3c,
