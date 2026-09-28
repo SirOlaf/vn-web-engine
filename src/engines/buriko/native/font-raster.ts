@@ -1,3 +1,4 @@
+import {viewsOverlap} from '../../../core/binary.js';
 import type {BurikoFontFace} from './font-browser.js';
 import {nativeSineFirstQuadrant} from '../bp/opcodes/native-math.js';
 
@@ -303,7 +304,7 @@ export class BurikoFontRaster {
             geometry.width > 0 &&
             geometry.height > 0 &&
             (geometry.height - 1) * geometry.stride + geometry.width <= pixels.length &&
-            dib.bytes.buffer !== pixels.buffer
+            !viewsOverlap(dib.bytes, pixels)
               ? new Uint32Array(
                   dib.bytes.buffer,
                   dib.bytes.byteOffset,

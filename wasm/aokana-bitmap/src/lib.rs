@@ -68,9 +68,16 @@ pub unsafe extern "C" fn reduce_half(
 }
 
 #[inline]
-unsafe fn affine_pixel(source: *const u32, width: i32, height: i32, x: i32, y: i32) -> u32 {
+unsafe fn affine_pixel(
+    source: *const u32,
+    width: i32,
+    height: i32,
+    stride: i32,
+    x: i32,
+    y: i32,
+) -> u32 {
     if x >= 0 && y >= 0 && x < width && y < height {
-        *source.add((y * width + x) as usize)
+        *source.add((y * stride + x) as usize)
     } else {
         0
     }
@@ -94,6 +101,7 @@ unsafe fn affine_sample(
     source: *const u32,
     source_width: i32,
     source_height: i32,
+    source_stride: i32,
     fixed_x: i32,
     fixed_y: i32,
     bilinear: u32,
@@ -103,6 +111,7 @@ unsafe fn affine_sample(
             source,
             source_width,
             source_height,
+            source_stride,
             fixed_x.wrapping_add(0x8000) >> 16,
             fixed_y.wrapping_add(0x8000) >> 16,
         )
@@ -112,15 +121,35 @@ unsafe fn affine_sample(
         if x < -1 || y < -1 || x >= source_width || y >= source_height {
             0
         } else {
-            let first = affine_channels(affine_pixel(source, source_width, source_height, x, y));
-            let right =
-                affine_channels(affine_pixel(source, source_width, source_height, x + 1, y));
-            let bottom =
-                affine_channels(affine_pixel(source, source_width, source_height, x, y + 1));
+            let first = affine_channels(affine_pixel(
+                source,
+                source_width,
+                source_height,
+                source_stride,
+                x,
+                y,
+            ));
+            let right = affine_channels(affine_pixel(
+                source,
+                source_width,
+                source_height,
+                source_stride,
+                x + 1,
+                y,
+            ));
+            let bottom = affine_channels(affine_pixel(
+                source,
+                source_width,
+                source_height,
+                source_stride,
+                x,
+                y + 1,
+            ));
             let diagonal = affine_channels(affine_pixel(
                 source,
                 source_width,
                 source_height,
+                source_stride,
                 x + 1,
                 y + 1,
             ));
@@ -138,15 +167,18 @@ unsafe fn affine_sample(
 }
 
 /// Validated, nonaliased copy branch of 052480. All source taps fit signed WORD
-/// coordinates; the host packs rows without changing their logical pixel addresses.
+/// coordinates. Strides count pixels between row starts, so the host may pass packed
+/// staged rows or resident rows in place without changing logical pixel addresses.
 #[no_mangle]
 pub unsafe extern "C" fn affine_copy(
     source: *const u32,
     destination: *mut u32,
     source_width: i32,
     source_height: i32,
+    source_stride: i32,
     width: usize,
     height: usize,
+    destination_stride: usize,
     mut start_x: i32,
     mut start_y: i32,
     column_x: i32,
@@ -163,11 +195,12 @@ pub unsafe extern "C" fn affine_copy(
                 source,
                 source_width,
                 source_height,
+                source_stride,
                 fixed_x,
                 fixed_y,
                 bilinear,
             );
-            *destination.add(row * width + column) = pixel;
+            *destination.add(row * destination_stride + column) = pixel;
             fixed_x = fixed_x.wrapping_add(column_x);
             fixed_y = fixed_y.wrapping_add(column_y);
         }
@@ -181,13 +214,14 @@ unsafe fn affine_dim_pixel(
     source: *const u32,
     width: i32,
     height: i32,
+    stride: i32,
     x: i32,
     y: i32,
     alpha: u32,
 ) -> v128 {
     // Forced alpha applies only to in-bounds reads; border samples stay zero.
     affine_channels(if x >= 0 && y >= 0 && x < width && y < height {
-        *source.add((y * width + x) as usize) | alpha
+        *source.add((y * stride + x) as usize) | alpha
     } else {
         0
     })
@@ -199,6 +233,7 @@ unsafe fn affine_dim_sample(
     source: *const u32,
     source_width: i32,
     source_height: i32,
+    source_stride: i32,
     fixed_x: i32,
     fixed_y: i32,
     bilinear: u32,
@@ -209,6 +244,7 @@ unsafe fn affine_dim_sample(
             source,
             source_width,
             source_height,
+            source_stride,
             fixed_x.wrapping_add(0x8000) >> 16,
             fixed_y.wrapping_add(0x8000) >> 16,
             alpha,
@@ -219,7 +255,17 @@ unsafe fn affine_dim_sample(
     if x < -1 || y < -1 || x >= source_width || y >= source_height {
         return i16x8_splat(0);
     }
-    let tap = |x: i32, y: i32| affine_dim_pixel(source, source_width, source_height, x, y, alpha);
+    let tap = |x: i32, y: i32| {
+        affine_dim_pixel(
+            source,
+            source_width,
+            source_height,
+            source_stride,
+            x,
+            y,
+            alpha,
+        )
+    };
     let fx = i16x8_splat(((fixed_x as u32 >> 12) & 15) as i16);
     let fy = i16x8_splat(((fixed_y as u32 >> 12) & 15) as i16);
     affine_lerp(
@@ -238,8 +284,10 @@ pub unsafe extern "C" fn affine_dim_copy(
     destination: *mut u32,
     source_width: i32,
     source_height: i32,
+    source_stride: i32,
     width: usize,
     height: usize,
+    destination_stride: usize,
     mut start_x: i32,
     mut start_y: i32,
     column_x: i32,
@@ -261,13 +309,14 @@ pub unsafe extern "C" fn affine_dim_copy(
                 source,
                 source_width,
                 source_height,
+                source_stride,
                 fixed_x,
                 fixed_y,
                 bilinear,
                 alpha,
             );
             let dimmed = u16x8_shr(i16x8_mul(channels, coefficients), 8);
-            *destination.add(row * width + column) =
+            *destination.add(row * destination_stride + column) =
                 u32x4_extract_lane::<0>(u8x16_narrow_i16x8(dimmed, i16x8_splat(0)));
             fixed_x = fixed_x.wrapping_add(column_x);
             fixed_y = fixed_y.wrapping_add(column_y);
@@ -321,8 +370,10 @@ unsafe fn affine_alpha_horizontal<const BILINEAR: bool>(
     destination: *mut u32,
     source_width: i32,
     source_height: i32,
+    source_stride: i32,
     width: usize,
     height: usize,
+    destination_stride: usize,
     mut start_x: i32,
     mut start_y: i32,
     row_x: i32,
@@ -353,9 +404,9 @@ unsafe fn affine_alpha_horizontal<const BILINEAR: bool>(
                 && x + 3 + (BILINEAR as i32) < source_width
                 && y + (BILINEAR as i32) < source_height
             {
-                let top = source.add((y * source_width + x) as usize);
+                let top = source.add((y * source_stride + x) as usize);
                 let pixels = if BILINEAR {
-                    let bottom = top.add(source_width as usize);
+                    let bottom = top.add(source_stride as usize);
                     affine_lerp_four(
                         affine_lerp_four(
                             v128_load(top as *const v128),
@@ -372,7 +423,7 @@ unsafe fn affine_alpha_horizontal<const BILINEAR: bool>(
                 } else {
                     v128_load(top as *const v128)
                 };
-                let target = destination.add(row * width + column);
+                let target = destination.add(row * destination_stride + column);
                 v128_store(
                     target as *mut v128,
                     affine_alpha_four(pixels, v128_load(target as *const v128), opacity_vector),
@@ -384,6 +435,7 @@ unsafe fn affine_alpha_horizontal<const BILINEAR: bool>(
                     source,
                     source_width,
                     source_height,
+                    source_stride,
                     fixed_x,
                     fixed_y,
                     BILINEAR as u32,
@@ -391,7 +443,7 @@ unsafe fn affine_alpha_horizontal<const BILINEAR: bool>(
                 let alpha = pixel >> 25;
                 let coefficient = (if alpha == 127 { 128 } else { alpha }) * opacity >> 8;
                 if coefficient != 0 {
-                    let target = destination.add(row * width + column);
+                    let target = destination.add(row * destination_stride + column);
                     *target = weighted_pixel(pixel, *target, coefficient, true);
                 }
                 fixed_x = fixed_x.wrapping_add(65536);
@@ -410,6 +462,7 @@ unsafe fn affine_sample_four<const BILINEAR: bool>(
     source: *const u32,
     source_width: i32,
     source_height: i32,
+    source_stride: i32,
     fixed_x: v128,
     fixed_y: v128,
 ) -> v128 {
@@ -429,6 +482,7 @@ unsafe fn affine_sample_four<const BILINEAR: bool>(
                 source,
                 source_width,
                 source_height,
+                source_stride,
                 i32x4_extract_lane::<0>(fixed_x),
                 i32x4_extract_lane::<0>(fixed_y),
                 BILINEAR as u32,
@@ -437,6 +491,7 @@ unsafe fn affine_sample_four<const BILINEAR: bool>(
                 source,
                 source_width,
                 source_height,
+                source_stride,
                 i32x4_extract_lane::<1>(fixed_x),
                 i32x4_extract_lane::<1>(fixed_y),
                 BILINEAR as u32,
@@ -445,6 +500,7 @@ unsafe fn affine_sample_four<const BILINEAR: bool>(
                 source,
                 source_width,
                 source_height,
+                source_stride,
                 i32x4_extract_lane::<2>(fixed_x),
                 i32x4_extract_lane::<2>(fixed_y),
                 BILINEAR as u32,
@@ -453,13 +509,14 @@ unsafe fn affine_sample_four<const BILINEAR: bool>(
                 source,
                 source_width,
                 source_height,
+                source_stride,
                 i32x4_extract_lane::<3>(fixed_x),
                 i32x4_extract_lane::<3>(fixed_y),
                 BILINEAR as u32,
             ),
         );
     }
-    let addresses = i32x4_add(i32x4_mul(y, i32x4_splat(source_width)), x);
+    let addresses = i32x4_add(i32x4_mul(y, i32x4_splat(source_stride)), x);
     let first = source.add(u32x4_extract_lane::<0>(addresses) as usize);
     let second = source.add(u32x4_extract_lane::<1>(addresses) as usize);
     let third = source.add(u32x4_extract_lane::<2>(addresses) as usize);
@@ -469,7 +526,7 @@ unsafe fn affine_sample_four<const BILINEAR: bool>(
         return top;
     }
     let right = u32x4(*first.add(1), *second.add(1), *third.add(1), *fourth.add(1));
-    let stride = source_width as usize;
+    let stride = source_stride as usize;
     let bottom = u32x4(
         *first.add(stride),
         *second.add(stride),
@@ -524,8 +581,10 @@ unsafe fn affine_alpha_general<const BILINEAR: bool>(
     destination: *mut u32,
     source_width: i32,
     source_height: i32,
+    source_stride: i32,
     width: usize,
     height: usize,
+    destination_stride: usize,
     mut start_x: i32,
     mut start_y: i32,
     column_x: i32,
@@ -549,10 +608,11 @@ unsafe fn affine_alpha_general<const BILINEAR: bool>(
                 source,
                 source_width,
                 source_height,
+                source_stride,
                 fixed_x,
                 fixed_y,
             );
-            let target = destination.add(row * width + column);
+            let target = destination.add(row * destination_stride + column);
             v128_store(
                 target as *mut v128,
                 affine_alpha_four(pixels, v128_load(target as *const v128), opacity_vector),
@@ -568,6 +628,7 @@ unsafe fn affine_alpha_general<const BILINEAR: bool>(
                 source,
                 source_width,
                 source_height,
+                source_stride,
                 tail_x,
                 tail_y,
                 BILINEAR as u32,
@@ -575,7 +636,7 @@ unsafe fn affine_alpha_general<const BILINEAR: bool>(
             let alpha = pixel >> 25;
             let coefficient = (if alpha == 127 { 128 } else { alpha }) * opacity >> 8;
             if coefficient != 0 {
-                let target = destination.add(row * width + column);
+                let target = destination.add(row * destination_stride + column);
                 *target = weighted_pixel(pixel, *target, coefficient, true);
             }
             tail_x = tail_x.wrapping_add(column_x);
@@ -595,8 +656,10 @@ pub unsafe extern "C" fn affine_alpha_rgb(
     destination: *mut u32,
     source_width: i32,
     source_height: i32,
+    source_stride: i32,
     width: usize,
     height: usize,
+    destination_stride: usize,
     start_x: i32,
     start_y: i32,
     column_x: i32,
@@ -613,8 +676,10 @@ pub unsafe extern "C" fn affine_alpha_rgb(
                 destination,
                 source_width,
                 source_height,
+                source_stride,
                 width,
                 height,
+                destination_stride,
                 start_x,
                 start_y,
                 row_x,
@@ -627,8 +692,10 @@ pub unsafe extern "C" fn affine_alpha_rgb(
                 destination,
                 source_width,
                 source_height,
+                source_stride,
                 width,
                 height,
+                destination_stride,
                 start_x,
                 start_y,
                 row_x,
@@ -644,8 +711,10 @@ pub unsafe extern "C" fn affine_alpha_rgb(
             destination,
             source_width,
             source_height,
+            source_stride,
             width,
             height,
+            destination_stride,
             start_x,
             start_y,
             column_x,
@@ -660,8 +729,10 @@ pub unsafe extern "C" fn affine_alpha_rgb(
             destination,
             source_width,
             source_height,
+            source_stride,
             width,
             height,
+            destination_stride,
             start_x,
             start_y,
             column_x,

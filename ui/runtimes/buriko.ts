@@ -23,6 +23,7 @@ import {setRuntimeState, subscribeSaveBusy} from '../player/runtime-state.js';
 import {mountFullscreenControls} from '../player/fullscreen.js';
 import {BurikoBpMemory} from '../../src/engines/buriko/bp/memory.js';
 import {setBurikoBpWasmEnabled} from '../../src/engines/buriko/bp/wasm-core.js';
+import {setBurikoBitmapResidencyEnabled} from '../../src/engines/buriko/native/bitmap-resident.js';
 import {
   BurikoBrowserSpeakerBackend,
   BurikoMemorySpeakerBackend,
@@ -364,6 +365,10 @@ async function launch(
     graph.display.requestedHeight = 600;
     // `?bp-wasm=0` runs every BP instruction in TypeScript, for A/B performance captures.
     setBurikoBpWasmEnabled(new URLSearchParams(location.search).get('bp-wasm') !== '0');
+    // `?bitmap-resident=0` keeps bitmaps in ordinary buffers, staging them for every kernel.
+    // It overrides the sidebar's bitmap memory setting, which applies from page load.
+    if (new URLSearchParams(location.search).get('bitmap-resident') === '0')
+      setBurikoBitmapResidencyEnabled(false);
     const memory = new BurikoBpMemory(new Uint8Array(0x10000), graph.engineVersion.bpAbi);
     const data = new BurikoProductionDataOwners(graph, memory);
     const diagnostics = new BurikoBpDiagnostics((notice) => {

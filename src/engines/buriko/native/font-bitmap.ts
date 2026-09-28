@@ -1,3 +1,4 @@
+import {viewsOverlap} from '../../../core/binary.js';
 import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {
   allocateBurikoBitmap,
@@ -63,7 +64,7 @@ export function rasterBurikoGlyph(
       sourceStride >= width &&
       Number.isSafeInteger(sourceEnd) &&
       sourceEnd <= glyph.pixels.length &&
-      bitmap.storage?.bytes.buffer !== glyph.pixels.buffer
+      (bitmap.storage === null || !viewsOverlap(bitmap.storage.bytes, glyph.pixels))
         ? writableBurikoBitmapView(bitmap, width, height)
         : null;
   const finishCopy = beginRuntimeSpan('buriko.text.glyph.copy');

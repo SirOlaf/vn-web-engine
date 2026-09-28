@@ -1,3 +1,4 @@
+import {viewsOverlap} from '../core/binary.js';
 import {reportWasmGraphicsFallback} from '../platform/runtime-advisories.js';
 import {beginRuntimeSpan} from '../platform/runtime-performance.js';
 
@@ -60,7 +61,7 @@ export class WasmPixelWorkspace {
     if (
       !(source.buffer instanceof ArrayBuffer) ||
       !(destination.buffer instanceof ArrayBuffer) ||
-      source.buffer === destination.buffer ||
+      viewsOverlap(source, destination) ||
       source.buffer === this.kernel.memory.buffer ||
       destination.buffer === this.kernel.memory.buffer ||
       !Number.isSafeInteger(rowBytes) ||
@@ -74,8 +75,8 @@ export class WasmPixelWorkspace {
     if (
       additionalSource !== undefined &&
       (!(additionalSource.view.buffer instanceof ArrayBuffer) ||
-        additionalSource.view.buffer === source.buffer ||
-        additionalSource.view.buffer === destination.buffer ||
+        viewsOverlap(additionalSource.view, source) ||
+        viewsOverlap(additionalSource.view, destination) ||
         additionalSource.view.buffer === this.kernel.memory.buffer)
     )
       return false;
@@ -193,7 +194,7 @@ export class WasmPixelWorkspace {
     if (
       !(source.buffer instanceof ArrayBuffer) ||
       !(destination.buffer instanceof ArrayBuffer) ||
-      source.buffer === destination.buffer ||
+      viewsOverlap(source, destination) ||
       source.buffer === this.kernel.memory.buffer ||
       destination.buffer === this.kernel.memory.buffer ||
       !Number.isSafeInteger(rowBytes) ||
@@ -271,7 +272,7 @@ export class WasmPixelWorkspace {
     operation: (source: number, destination: number) => void,
     preserveDestination = false,
   ): boolean {
-    if (source.view.buffer === destination.view.buffer) return false;
+    if (viewsOverlap(source.view, destination.view)) return false;
     for (const {view, offset, pitch, rowBytes, rows} of [source, destination])
       if (
         !(view.buffer instanceof ArrayBuffer) ||

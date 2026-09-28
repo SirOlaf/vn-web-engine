@@ -119,7 +119,7 @@ export function burikoPackedBitmapDescriptor(bytes: Uint8Array): {
   }
   return {
     bitmap: {
-      storage: new BurikoBitmapStorage(decoded, true),
+      storage: BurikoBitmapStorage.adopt(decoded),
       offset: 16,
       width,
       height,

@@ -1,5 +1,9 @@
 import {cloneRasterText, releaseRasterText, withRasterText} from '../../../text/raster-text.js';
 import {indexOfZeroByte} from '../../../core/binary.js';
+import {allocateBurikoResidentBytes, releaseBurikoResidentBytes} from './bitmap-resident.js';
+
+/** Frees resident bytes of storages that are collected without a native release. */
+const residentFinalizer = new FinalizationRegistry<Uint8Array>(releaseBurikoResidentBytes);
 
 /** Native bitmap backing identity is shared by cropped descriptors and copied slot records. */
 export class BurikoBitmapStorage {
@@ -14,6 +18,26 @@ export class BurikoBitmapStorage {
     this.bytes = bytes;
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     this.initializedPrefix = initialized ? bytes.length : 0;
+  }
+  /**
+   * New native storage, resident in the bitmap kernel's memory when possible so kernels work
+   * on it in place. Its bytes start zero either way. Resident bytes must not be retained past
+   * the storage: they return to the heap on release() or when the storage is collected.
+   */
+  static allocate(length: number, initialized: boolean): BurikoBitmapStorage {
+    const resident = allocateBurikoResidentBytes(length);
+    const storage = new BurikoBitmapStorage(resident ?? new Uint8Array(length), initialized);
+    if (resident !== null) residentFinalizer.register(storage, resident, storage);
+    return storage;
+  }
+  /** Initialized storage holding a copy of decoded pixels, resident when possible. */
+  static adopt(bytes: Uint8Array): BurikoBitmapStorage {
+    const resident = allocateBurikoResidentBytes(bytes.length);
+    if (resident === null) return new BurikoBitmapStorage(bytes, true);
+    resident.set(bytes);
+    const storage = new BurikoBitmapStorage(resident, true);
+    residentFinalizer.register(storage, resident, storage);
+    return storage;
   }
   /** Import validity metadata without reading retained pixel storage. */
   static tracked(bytes: Uint8Array, initialized?: Uint8Array): BurikoBitmapStorage {
@@ -102,10 +126,17 @@ export class BurikoBitmapStorage {
         )
       : this.defined.slice(offset, offset + length);
   }
-  /** Native temporary pixel snapshots preserve unwritten bytes and their state. */
+  /**
+   * Native temporary pixel snapshots preserve unwritten bytes and their state. Large clones,
+   * such as raster-text presentation planes that replay every draw, are resident too.
+   */
   cloneRange(offset: number, length: number): BurikoBitmapStorage {
     this.range(offset, length, false);
-    const clone = new BurikoBitmapStorage(this.bytes.slice(offset, offset + length), true);
+    const source = this.bytes.subarray(offset, offset + length),
+      resident = allocateBurikoResidentBytes(length);
+    resident?.set(source);
+    const clone = new BurikoBitmapStorage(resident ?? source.slice(), true);
+    if (resident !== null) residentFinalizer.register(clone, resident, clone);
     if (this.defined !== null) {
       clone.defined = this.defined.slice(offset, offset + length);
     }
@@ -116,6 +147,8 @@ export class BurikoBitmapStorage {
   }
   release(): void {
     releaseRasterText(this);
+    if (!this.disposed && residentFinalizer.unregister(this))
+      releaseBurikoResidentBytes(this.bytes);
     this.disposed = true;
   }
 }
@@ -154,7 +187,7 @@ export function allocateBurikoBitmap(width: number, height: number, format: numb
   const stride = Math.imul(bytesPerPixel, width);
   const storage =
     width !== 0 && height !== 0
-      ? new BurikoBitmapStorage(new Uint8Array(Math.imul(stride, height) >>> 0), false)
+      ? BurikoBitmapStorage.allocate(Math.imul(stride, height) >>> 0, false)
       : null;
   return {storage, offset: 0, stride, width, height, format, bytesPerPixel};
 }

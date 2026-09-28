@@ -30,7 +30,7 @@ export class BurikoMemoryDx {
     size >>>= 0;
     let storage: BurikoBitmapStorage | null;
     try {
-      storage = new BurikoBitmapStorage(new Uint8Array(size), false);
+      storage = BurikoBitmapStorage.allocate(size, false);
     } catch (error) {
       if (!(error instanceof RangeError)) throw error;
       storage = null;

@@ -1,3 +1,4 @@
+import {viewsOverlap} from '../../../core/binary.js';
 import {withBurikoBitmapText} from './bitmap-dom-text.js';
 import {
   initializedBurikoBitmapView,
@@ -407,7 +408,7 @@ function mixInitializedRows(
   // zero even when both alphas are zero. RGB and RGBA both reproduce the second
   // pixel, including its otherwise invisible color bytes. Validate both sources
   // above first, and retain MOVQ traversal when the second source aliases output.
-  if (factor === 256 && b.buffer !== output.buffer) {
+  if (factor === 256 && !viewsOverlap(b, output)) {
     const rowBytes = width * 4,
       sourceBytes = new Uint8Array(b.buffer, b.byteOffset, b.byteLength),
       outputBytes = new Uint8Array(output.buffer, output.byteOffset, output.byteLength);

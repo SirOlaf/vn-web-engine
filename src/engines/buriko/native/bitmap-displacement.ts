@@ -1,3 +1,4 @@
+import {viewsOverlap} from '../../../core/binary.js';
 import {withBurikoBitmapText} from './bitmap-dom-text.js';
 import type {BurikoBitmap} from './bitmap.js';
 import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
@@ -12,7 +13,7 @@ function relativeOrigin(source: BurikoBitmap, bounds: BurikoBitmap): [number, nu
   if (
     source.storage === null ||
     bounds.storage === null ||
-    source.storage.bytes.buffer !== bounds.storage.bytes.buffer
+    !viewsOverlap(source.storage.bytes, bounds.storage.bytes)
   )
     throw new Error('Buriko displacement requires cropped and full descriptors of the same bitmap');
   const stride = source.stride | 0;

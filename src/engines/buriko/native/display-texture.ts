@@ -50,8 +50,9 @@ export class BurikoDisplayTexture {
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1)
       throw new RangeError('Buriko display texture dimensions must be positive integers');
     this.pitch = width * 4;
-    this.storage = new BurikoBitmapStorage(new Uint8Array(this.pitch * height), true);
-    this.words = new Uint32Array(this.storage.bytes.buffer);
+    this.storage = BurikoBitmapStorage.allocate(this.pitch * height, true);
+    const bytes = this.storage.bytes;
+    this.words = new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >>> 2);
     this.addDirtyRectangle({left: 0, top: 0, right: width - 1, bottom: height - 1});
   }
   private check(): void {

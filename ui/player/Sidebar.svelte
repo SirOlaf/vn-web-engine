@@ -5,6 +5,7 @@
   import AudioDiagnostics from './AudioDiagnostics.svelte';
   import PerformanceDiagnostics from './PerformanceDiagnostics.svelte';
   import RuntimeProfile from './RuntimeProfile.svelte';
+  import BitmapMemory from './BitmapMemory.svelte';
   import {legacyAokanaProfile} from '../game-profiles/aokana.js';
   export let game: GameId;
 </script>
@@ -66,6 +67,7 @@
     <SaveFiles {game} runtime />
     {#if game === 'buriko'}
       <RuntimeProfile />
+      <BitmapMemory />
       <section id="playback-options" hidden>
         <h2>Playback</h2>
         <button id="skip-startup" type="button" aria-pressed="false" disabled hidden

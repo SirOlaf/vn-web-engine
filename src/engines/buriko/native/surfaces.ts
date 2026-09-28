@@ -1,3 +1,4 @@
+import {viewsOverlap} from '../../../core/binary.js';
 import {BurikoSurfaceToneCurves} from './surface-tone-curves.js';
 import {applyBurikoBitmapTone} from './bitmap-tone.js';
 import {recolorBurikoBitmapAlpha, replaceBurikoBitmapColor} from './bitmap-recolor.js';
@@ -88,7 +89,7 @@ function importInitializedRgb24(
     !Number.isSafeInteger(source.stride) ||
     !(input.bytes.buffer instanceof ArrayBuffer) ||
     !(output.bytes.buffer instanceof ArrayBuffer) ||
-    input.bytes.buffer === output.bytes.buffer ||
+    viewsOverlap(input.bytes, output.bytes) ||
     (initialized !== undefined &&
       (!(initialized.buffer instanceof ArrayBuffer) || initialized.length !== input.bytes.length))
   )
@@ -495,7 +496,7 @@ export class BurikoSurfaces {
     const size = Math.imul(stride, height) >>> 0;
     let owner: BurikoBitmapStorage;
     try {
-      owner = new BurikoBitmapStorage(new Uint8Array(size), false);
+      owner = BurikoBitmapStorage.allocate(size, false);
     } catch (error) {
       if (error instanceof RangeError) return 0;
       throw error;

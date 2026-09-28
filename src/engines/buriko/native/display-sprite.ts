@@ -1,3 +1,4 @@
+import {viewsOverlap} from '../../../core/binary.js';
 import {perspectiveScale} from './perspective-point.js';
 import {
   displayPropertyOutput,
@@ -1260,7 +1261,8 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
           source.stride === (source.stride | 0) &&
           source.stride >= source.width * 4 &&
           source.storage?.bytes.buffer instanceof ArrayBuffer &&
-          source.storage.bytes.buffer !== destination.storage?.bytes.buffer &&
+          (destination.storage === null ||
+            !viewsOverlap(source.storage.bytes, destination.storage.bytes)) &&
           !hasRasterText(source) &&
           initializedBurikoBitmapView(source, source.width, source.height) !== null,
       ) &&

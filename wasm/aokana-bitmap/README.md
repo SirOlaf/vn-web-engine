@@ -50,14 +50,15 @@ native pixel order instead, and any partially initialized, out-of-range or unusu
 descriptor keeps the per-pixel checked path, preserving the exact fault pixel.
 
 The native TypeScript caller retains unusual coefficients, aliases (including
-separate views of one buffer), shared backing buffers, overlapping or reverse rows,
+separate views of one buffer), overlapping byte ranges of one buffer, overlapping or reverse rows,
 unwritten source/destination reads, and invalid descriptors. This preserves pair load/store order and writes
 completed before a later checked access faults. Ordinary coefficients are limited
 to integral transparency 0–256. Spans below 1,024 pixels stay in JavaScript because
 staging can outweigh SIMD savings. Alpha and fused blending also keep padded spans
 narrower than 128 pixels in JavaScript.
 
-`alpha_rgb` takes a source and destination stride in pixels. Its host stages each
+`alpha_rgb` and the three affine kernels take a source and destination stride in
+pixels, so they can address resident rows in place (see below). `alpha_rgb` Its host stages each
 padded plane as one pitched copy when that copy is at most twice the packed rows,
 otherwise row by row, and returns a pitched destination in one copy. The kernel never
 writes the bytes between rows, so that copy restores their staged original values.
@@ -68,10 +69,42 @@ row width, as the 8-bit transition mask does) and independently sized
 input/output planes for transforms, and
 bounded linear-memory growth, capped at 128 MiB. The native caller and this crate
 own bitmap numerical policy. Source/destination bytes are copied afresh on every
-call; affine copies omit the old destination contents. There is no ownership or
-content cache. The module has no imports, allocator,
+call; affine copies omit the old destination contents. The module has no imports, allocator,
 WASI, relaxed SIMD, or host callbacks. Unsupported Wasm/SIMD or memory allocation
 failure selects the existing JavaScript implementation.
+
+## Resident bitmaps
+
+Most Buriko bitmap storage lives inside a second instance of this module, so
+kernels read and write it in place instead of staging it per call.
+`src/graphics/wasm-resident-heap.ts` reserves the whole budget with one `grow`
+when that instance is created and never grows it again. The memory's
+`ArrayBuffer` therefore never detaches, and it stays a fixed-length buffer. That
+matters: JavaScript pixel loops over views of a resizable buffer
+(`toResizableBuffer`) ran several times slower in V8, which cancelled the kernel
+savings. Untouched pages cost no physical memory; a failed reservation retries
+with halves down to 64 MiB, then leaves residency off.
+
+`src/engines/buriko/native/bitmap-resident.ts` owns the instance, the device-dependent budget
+(384 MiB with 8 GiB or more of device memory, 256 MiB with 4 GiB or when unknown, 128 MiB
+below that) and the 16 KiB minimum size. Kernel calls never create the instance. `BurikoBitmapStorage.allocate`, `adopt` and
+`cloneRange` place storage there when it fits, and ordinary buffers otherwise.
+The display textures, native surfaces, decoded images and raster-text presentation
+planes (which replay every draw) all qualify. Blocks are first fit with
+coalescing, zeroed on reuse, and freed on `release()` or, for storage that is
+only collected, by a `FinalizationRegistry`. Resident bytes must never be
+retained past their storage. The staging instance remains separate because DSC
+and staged kernels reuse its scratch area from `__heap_base`.
+
+Many storages share the resident buffer, so buffer identity no longer means
+aliasing: callers use `byteSpansOverlap`/`viewsOverlap` from `src/core/binary.ts`.
+A kernel runs in place only when every plane is resident, 4-byte aligned where
+it holds pixels, and the destination overlaps no source. The packed-only kernels
+(`mix_all`, `mix_rgba`, `fused_rgb`, `transition_rgb`, `reduce_half`)
+additionally need packed rows. Any other call stages through the workspace as
+before; `buriko.bitmap.wasm-resident` counts both outcomes, and
+`buriko.bitmap.wasm-staged-plane` names the plane that forced staging. The
+player's `?bitmap-resident=0` switch disables residency for A/B captures.
 
 `dsc_decode` (`src/dsc.rs`) decodes DSC FORMAT 1.00 resources for
 `src/engines/buriko/native/dsc-wasm.ts`. It reproduces the key-stream code

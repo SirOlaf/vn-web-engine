@@ -1,3 +1,4 @@
+import {viewsOverlap} from '../../../core/binary.js';
 import {isRasterTextPresentation} from '../../../text/raster-text.js';
 import {withBurikoBitmapText} from './bitmap-dom-text.js';
 import {
@@ -138,7 +139,7 @@ function copyBurikoBitmapRowsPixels(destination: BurikoBitmap, source: BurikoBit
       rowBytes > block &&
       source.storage !== null &&
       destination.storage !== null &&
-      source.storage.bytes.buffer !== destination.storage.bytes.buffer
+      !viewsOverlap(source.storage.bytes, destination.storage.bytes)
     ) {
       try {
         copyBlock(destination, output, source, input, rowBytes);
@@ -181,7 +182,7 @@ function copyInitializedRgbToAlpha(destination: BurikoBitmap, source: BurikoBitm
     input === null ||
     !(input.buffer instanceof ArrayBuffer) ||
     !(output.bytes.buffer instanceof ArrayBuffer) ||
-    input.buffer === output.bytes.buffer ||
+    viewsOverlap(input, output.bytes) ||
     !Number.isSafeInteger(destinationEnd) ||
     destinationEnd > output.bytes.length ||
     // A zero-length initialized span proves liveness without requiring old

@@ -8,6 +8,8 @@ import {BURIKO_BITMAP_WASM_BINARY} from './bitmap-alpha-wasm-binary.js';
 import type {BurikoBitmap} from './bitmap.js';
 import type {BurikoBitmapAffineCoordinates} from './bitmap-affine.js';
 import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
+import {byteSpansOverlap, viewsOverlap} from '../../../core/binary.js';
+import {existingBurikoResidentKernel} from './bitmap-resident.js';
 
 export interface BurikoBitmapExports extends WasmPixelExports {
   reduce_half: (
@@ -23,8 +25,10 @@ export interface BurikoBitmapExports extends WasmPixelExports {
     destination: number,
     sourceWidth: number,
     sourceHeight: number,
+    sourceStride: number,
     width: number,
     height: number,
+    destinationStride: number,
     startX: number,
     startY: number,
     columnX: number,
@@ -39,8 +43,10 @@ export interface BurikoBitmapExports extends WasmPixelExports {
     destination: number,
     sourceWidth: number,
     sourceHeight: number,
+    sourceStride: number,
     width: number,
     height: number,
+    destinationStride: number,
     startX: number,
     startY: number,
     columnX: number,
@@ -54,8 +60,10 @@ export interface BurikoBitmapExports extends WasmPixelExports {
     destination: number,
     sourceWidth: number,
     sourceHeight: number,
+    sourceStride: number,
     width: number,
     height: number,
+    destinationStride: number,
     startX: number,
     startY: number,
     columnX: number,
@@ -129,6 +137,66 @@ function getKernel(): BurikoBitmapExports | null {
   return kernel;
 }
 
+/** One pixel span of a kernel call: a view, its first byte, row pitch, row bytes and rows. */
+type ResidentSpan = readonly [
+  view: DataView,
+  offset: number,
+  pitch: number,
+  rowBytes: number,
+  rows: number,
+  alignment: number,
+];
+
+/**
+ * Resident addresses of every span when all of them lie in the resident heap, are aligned, and
+ * the destination (the first span) overlaps no source. The kernels then work in place on the
+ * resident instance; otherwise the caller stages through the shared workspace.
+ */
+function residentAddresses(spans: readonly ResidentSpan[]): number[] | null {
+  // Kernel calls never create the resident instance; only resident allocations do.
+  const resident = existingBurikoResidentKernel();
+  if (resident === null) return null;
+  const buffer = resident.heap.buffer,
+    addresses: number[] = [],
+    lengths: number[] = [];
+  for (const [index, [view, offset, pitch, rowBytes, rows, alignment]] of spans.entries()) {
+    const address = view.byteOffset + offset,
+      length = (rows - 1) * pitch + rowBytes;
+    if (view.buffer !== buffer) {
+      // Which plane (0 is the destination) and storage size keep a kernel call staged.
+      recordRuntimeMetric('buriko.bitmap.wasm-resident', 0);
+      recordRuntimeMetric('buriko.bitmap.wasm-staged-plane', index);
+      recordRuntimeMetric('buriko.bitmap.wasm-staged-storage-bytes', view.byteLength);
+      return null;
+    }
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(length) ||
+      offset + length > view.byteLength ||
+      address % alignment !== 0 ||
+      pitch % alignment !== 0
+    )
+      return null;
+    addresses.push(address);
+    lengths.push(length);
+  }
+  for (let index = 1; index < spans.length; index++)
+    if (
+      byteSpansOverlap(
+        buffer,
+        addresses[0]!,
+        lengths[0]!,
+        buffer,
+        addresses[index]!,
+        lengths[index]!,
+      )
+    )
+      return null;
+  recordRuntimeMetric('buriko.bitmap.wasm-resident', 1);
+  return addresses;
+}
+
 /** Native PAVGB reduction; checked aliased or unusual views retain the JS traversal. */
 export function tryBurikoBitmapReduceWasm(
   destination: BurikoBitmap,
@@ -142,17 +210,36 @@ export function tryBurikoBitmapReduceWasm(
 ): boolean {
   const width = pairWidth + Number(oddColumn),
     height = pairHeight + Number(oddRow);
-  if (width * height < BURIKO_BITMAP_WASM_MIN_PIXELS || input.buffer === output.buffer)
-    return false;
+  if (width * height < BURIKO_BITMAP_WASM_MIN_PIXELS || viewsOverlap(input, output)) return false;
   const exports = getKernel();
   if (exports === null) return false;
+  const sourceRowBytes = (pairWidth * 2 + Number(oddColumn)) * 4,
+    sourceRows = pairHeight * 2 + Number(oddRow);
+  // The kernel reads packed rows, so only packed resident planes run in place.
+  if (source.stride === sourceRowBytes && destination.stride === width * 4) {
+    const addresses = residentAddresses([
+      [output, destination.offset, destination.stride, width * 4, height, 4],
+      [input, source.offset, source.stride, sourceRowBytes, sourceRows, 4],
+    ]);
+    if (addresses !== null) {
+      existingBurikoResidentKernel()!.exports.reduce_half(
+        addresses[1]!,
+        addresses[0]!,
+        pairWidth,
+        pairHeight,
+        Number(oddColumn),
+        Number(oddRow),
+      );
+      return true;
+    }
+  }
   return workspace!.transform(
     {
       view: input,
       offset: source.offset,
       pitch: source.stride,
-      rowBytes: (pairWidth * 2 + Number(oddColumn)) * 4,
-      rows: pairHeight * 2 + Number(oddRow),
+      rowBytes: sourceRowBytes,
+      rows: sourceRows,
     },
     {
       view: output,
@@ -190,7 +277,7 @@ export function tryBurikoBitmapAffineAlphaWasm(
     pixels < BURIKO_BITMAP_WASM_MIN_PIXELS ||
     source.format !== 2 ||
     destination.format !== 1 ||
-    input.buffer === output.buffer ||
+    viewsOverlap(input, output) ||
     !(input.buffer instanceof ArrayBuffer) ||
     !(output.buffer instanceof ArrayBuffer) ||
     !Number.isInteger(transparency) ||
@@ -234,10 +321,36 @@ export function tryBurikoBitmapAffineAlphaWasm(
   if (sourceWidth * sourceHeight > pixels * 16) return false;
   const exports = getKernel();
   if (exports === null) return false;
+  const footprint = source.offset + top * source.stride + left * 4;
+  const addresses = residentAddresses([
+    [output, destination.offset, destination.stride, width * 4, height, 4],
+    [input, footprint, source.stride, sourceWidth * 4, sourceHeight, 4],
+  ]);
+  if (addresses !== null) {
+    existingBurikoResidentKernel()!.exports.affine_alpha_rgb(
+      addresses[1]!,
+      addresses[0]!,
+      sourceWidth,
+      sourceHeight,
+      source.stride >>> 2,
+      width,
+      height,
+      destination.stride >>> 2,
+      coordinates.startX - left * 65536,
+      coordinates.startY - top * 65536,
+      coordinates.columnX,
+      coordinates.columnY,
+      coordinates.rowX,
+      coordinates.rowY,
+      Number(bilinear),
+      256 - transparency,
+    );
+    return true;
+  }
   return workspace!.transform(
     {
       view: input,
-      offset: source.offset + top * source.stride + left * 4,
+      offset: footprint,
       pitch: source.stride,
       rowBytes: sourceWidth * 4,
       rows: sourceHeight,
@@ -255,8 +368,10 @@ export function tryBurikoBitmapAffineAlphaWasm(
         destinationPointer,
         sourceWidth,
         sourceHeight,
+        sourceWidth,
         width,
         height,
+        width,
         coordinates.startX - left * 65536,
         coordinates.startY - top * 65536,
         coordinates.columnX,
@@ -286,23 +401,81 @@ export function tryBurikoBitmapAffineWasm(
 ): boolean {
   const width = destination.width >>> 0,
     height = destination.height >>> 0,
-    pixels = width * height;
-  if (
-    pixels < BURIKO_BITMAP_WASM_MIN_PIXELS ||
-    input.buffer === output.buffer ||
-    // Small damage rectangles should not stage a disproportionately larger source plane.
-    (source.width >>> 0) * (source.height >>> 0) > pixels * 16
-  )
-    return false;
+    pixels = width * height,
+    sourceWidth = source.width >>> 0,
+    sourceHeight = source.height >>> 0;
+  if (pixels < BURIKO_BITMAP_WASM_MIN_PIXELS || viewsOverlap(input, output)) return false;
   const exports = getKernel();
   if (exports === null) return false;
+  const apply = (
+    kernel: BurikoBitmapExports,
+    sourcePointer: number,
+    destinationPointer: number,
+    sourceStride: number,
+    destinationStride: number,
+  ): void => {
+    if (transparency === 0 && !forceAlpha)
+      kernel.affine_copy(
+        sourcePointer,
+        destinationPointer,
+        sourceWidth,
+        sourceHeight,
+        sourceStride,
+        width,
+        height,
+        destinationStride,
+        coordinates.startX,
+        coordinates.startY,
+        coordinates.columnX,
+        coordinates.columnY,
+        coordinates.rowX,
+        coordinates.rowY,
+        Number(bilinear),
+      );
+    else
+      kernel.affine_dim_copy(
+        sourcePointer,
+        destinationPointer,
+        sourceWidth,
+        sourceHeight,
+        sourceStride,
+        width,
+        height,
+        destinationStride,
+        coordinates.startX,
+        coordinates.startY,
+        coordinates.columnX,
+        coordinates.columnY,
+        coordinates.rowX,
+        coordinates.rowY,
+        Number(bilinear),
+        forceAlpha ? 0xff000000 | 0 : 0,
+        (256 - transparency) & 65535,
+      );
+  };
+  const addresses = residentAddresses([
+    [output, destination.offset, destination.stride, width * 4, height, 4],
+    [input, source.offset, source.stride, sourceWidth * 4, sourceHeight, 4],
+  ]);
+  if (addresses !== null) {
+    apply(
+      existingBurikoResidentKernel()!.exports,
+      addresses[1]!,
+      addresses[0]!,
+      source.stride >>> 2,
+      destination.stride >>> 2,
+    );
+    return true;
+  }
+  // Small damage rectangles should not stage a disproportionately larger source plane.
+  if (sourceWidth * sourceHeight > pixels * 16) return false;
   return workspace!.transform(
     {
       view: input,
       offset: source.offset,
       pitch: source.stride,
-      rowBytes: (source.width >>> 0) * 4,
-      rows: source.height >>> 0,
+      rowBytes: sourceWidth * 4,
+      rows: sourceHeight,
     },
     {
       view: output,
@@ -311,42 +484,8 @@ export function tryBurikoBitmapAffineWasm(
       rowBytes: width * 4,
       rows: height,
     },
-    (sourcePointer, destinationPointer) => {
-      if (transparency === 0 && !forceAlpha)
-        exports.affine_copy(
-          sourcePointer,
-          destinationPointer,
-          source.width >>> 0,
-          source.height >>> 0,
-          width,
-          height,
-          coordinates.startX,
-          coordinates.startY,
-          coordinates.columnX,
-          coordinates.columnY,
-          coordinates.rowX,
-          coordinates.rowY,
-          Number(bilinear),
-        );
-      else
-        exports.affine_dim_copy(
-          sourcePointer,
-          destinationPointer,
-          source.width >>> 0,
-          source.height >>> 0,
-          width,
-          height,
-          coordinates.startX,
-          coordinates.startY,
-          coordinates.columnX,
-          coordinates.columnY,
-          coordinates.rowX,
-          coordinates.rowY,
-          Number(bilinear),
-          forceAlpha ? 0xff000000 | 0 : 0,
-          (256 - transparency) & 65535,
-        );
-    },
+    (sourcePointer, destinationPointer) =>
+      apply(exports, sourcePointer, destinationPointer, sourceWidth, width),
   );
 }
 
@@ -366,15 +505,39 @@ export function tryBurikoBitmapAlphaWasm(
     width * height < BURIKO_BITMAP_WASM_MIN_PIXELS ||
     (transparency !== null &&
       (!Number.isInteger(transparency) || transparency < 0 || transparency > 256)) ||
-    input.buffer === output.buffer ||
+    viewsOverlap(input, output) ||
     source.stride < width * 4 ||
-    destination.stride < width * 4 ||
-    // Per-row staging can outweigh SIMD for narrow crops in a larger surface.
-    (width < 128 && (source.stride !== width * 4 || destination.stride !== width * 4))
+    destination.stride < width * 4
   )
     return false;
   const exports = getKernel();
   if (exports === null) return false;
+  const packed = source.stride === width * 4 && destination.stride === width * 4;
+  // mix_all reads packed rows; alpha_rgb takes both strides, so any aligned resident crop fits.
+  if (!allChannels || packed) {
+    const addresses = residentAddresses([
+      [output, destination.offset, destination.stride, width * 4, height, 4],
+      [input, source.offset, source.stride, width * 4, height, 4],
+    ]);
+    if (addresses !== null) {
+      const resident = existingBurikoResidentKernel()!.exports;
+      if (allChannels)
+        resident.mix_all(addresses[1]!, addresses[0]!, width * height, transparency! >>> 1);
+      else
+        resident.alpha_rgb(
+          addresses[1]!,
+          addresses[0]!,
+          width,
+          height,
+          transparency === null ? -1 : 256 - transparency,
+          source.stride >>> 2,
+          destination.stride >>> 2,
+        );
+      return true;
+    }
+  }
+  // Per-row staging can outweigh SIMD for narrow crops in a larger surface.
+  if (width < 128 && !packed) return false;
   if (allChannels)
     return workspace!.run(
       input,
@@ -432,18 +595,38 @@ export function tryBurikoBitmapFusedWasm(
     !Number.isInteger(transparency) ||
     transparency < 0 ||
     transparency > 255 ||
-    firstInput.buffer === output.buffer ||
-    secondInput.buffer === output.buffer ||
-    firstInput.buffer === secondInput.buffer ||
+    viewsOverlap(firstInput, output) ||
+    viewsOverlap(secondInput, output) ||
+    viewsOverlap(firstInput, secondInput) ||
     first.stride < rowBytes ||
     second.stride < rowBytes ||
-    destination.stride < rowBytes ||
-    (width < 128 &&
-      (first.stride !== rowBytes || second.stride !== rowBytes || destination.stride !== rowBytes))
+    destination.stride < rowBytes
   )
     return false;
   const exports = getKernel();
   if (exports === null) return false;
+  const packed =
+    first.stride === rowBytes && second.stride === rowBytes && destination.stride === rowBytes;
+  if (packed) {
+    const addresses = residentAddresses([
+      [output, destination.offset, rowBytes, rowBytes, height, 4],
+      [firstInput, first.offset, rowBytes, rowBytes, height, 4],
+      [secondInput, second.offset, rowBytes, rowBytes, height, 4],
+    ]);
+    if (addresses !== null) {
+      existingBurikoResidentKernel()!.exports.fused_rgb(
+        addresses[1]!,
+        addresses[2]!,
+        addresses[0]!,
+        width,
+        height,
+        factor,
+        256 - transparency,
+      );
+      return true;
+    }
+  }
+  if (width < 128 && !packed) return false;
   return workspace!.run(
     firstInput,
     first.offset,
@@ -495,20 +678,36 @@ export function tryBurikoBitmapMixWasm(
       !Number.isInteger(factor) ||
       factor < 0 ||
       factor > 256 ||
-      firstInput.buffer === output.buffer ||
-      secondInput.buffer === output.buffer ||
-      firstInput.buffer === secondInput.buffer ||
+      viewsOverlap(firstInput, output) ||
+      viewsOverlap(secondInput, output) ||
+      viewsOverlap(firstInput, secondInput) ||
       first.stride < rowBytes ||
       second.stride < rowBytes ||
-      destination.stride < rowBytes ||
-      (width < 128 &&
-        (first.stride !== rowBytes ||
-          second.stride !== rowBytes ||
-          destination.stride !== rowBytes))
+      destination.stride < rowBytes
     )
       return false;
     const exports = getKernel();
     if (exports === null) return false;
+    const packed =
+      first.stride === rowBytes && second.stride === rowBytes && destination.stride === rowBytes;
+    if (packed) {
+      const addresses = residentAddresses([
+        [output, destination.offset, rowBytes, rowBytes, height, 4],
+        [firstInput, first.offset, rowBytes, rowBytes, height, 4],
+        [secondInput, second.offset, rowBytes, rowBytes, height, 4],
+      ]);
+      if (addresses !== null) {
+        existingBurikoResidentKernel()!.exports.mix_rgba(
+          addresses[1]!,
+          addresses[2]!,
+          addresses[0]!,
+          width * height,
+          factor,
+        );
+        return (wasmApplied = true);
+      }
+    }
+    if (width < 128 && !packed) return false;
     wasmApplied = workspace!.run(
       firstInput,
       first.offset,
@@ -549,14 +748,28 @@ export function tryBurikoBitmapTransitionWasm(
   const rowBytes = width * 4;
   if (
     width * height < BURIKO_BITMAP_WASM_MIN_PIXELS ||
-    input.buffer === output.buffer ||
-    matte.buffer === output.buffer ||
-    (width < 128 &&
-      (source.stride !== rowBytes || destination.stride !== rowBytes || mask.stride !== width))
+    viewsOverlap(input, output) ||
+    viewsOverlap(matte, output)
   )
     return false;
   const exports = getKernel();
   if (exports === null) return false;
+  const packed =
+    source.stride === rowBytes && destination.stride === rowBytes && mask.stride === width;
+  if (packed) {
+    const addresses = residentAddresses([
+      [output, destination.offset, rowBytes, rowBytes, height, 4],
+      [input, source.offset, rowBytes, rowBytes, height, 4],
+      [matte, mask.offset, width, width, height, 1],
+    ]);
+    if (addresses !== null) {
+      const resident = existingBurikoResidentKernel()!.exports;
+      new Int32Array(resident.memory.buffer, resident.transition_table(), 256).set(actions);
+      resident.transition_rgb(addresses[1]!, addresses[0]!, addresses[2]!, width, height);
+      return true;
+    }
+  }
+  if (width < 128 && !packed) return false;
   return workspace!.run(
     input,
     source.offset,

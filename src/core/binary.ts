@@ -20,6 +20,40 @@ export function byteDataView(bytes: Uint8Array): DataView {
   return view;
 }
 
+/**
+ * Whether two byte spans can share memory: the same buffer and intersecting absolute ranges.
+ * Resident pixel storage shares one buffer between many owners, so buffer identity alone is
+ * not an alias test. Empty spans never overlap.
+ */
+export function byteSpansOverlap(
+  first: ArrayBufferLike,
+  firstStart: number,
+  firstLength: number,
+  second: ArrayBufferLike,
+  secondStart: number,
+  secondLength: number,
+): boolean {
+  return (
+    first === second &&
+    firstLength > 0 &&
+    secondLength > 0 &&
+    firstStart < secondStart + secondLength &&
+    secondStart < firstStart + firstLength
+  );
+}
+
+/** byteSpansOverlap for two whole typed or DataView views. */
+export function viewsOverlap(first: ArrayBufferView, second: ArrayBufferView): boolean {
+  return byteSpansOverlap(
+    first.buffer,
+    first.byteOffset,
+    first.byteLength,
+    second.buffer,
+    second.byteOffset,
+    second.byteLength,
+  );
+}
+
 /** First zero byte in a validity mask or binary span, without per-byte bulk scanning. */
 export function indexOfZeroByte(bytes: Uint8Array): number {
   let index = 0;

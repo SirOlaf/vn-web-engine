@@ -31,7 +31,8 @@ button:hover:not(:disabled) {
 button:focus-visible,
 select:focus-visible,
 a:focus-visible,
-#installation-options > summary:focus-visible {
+#installation-options > summary:focus-visible,
+#bitmap-memory-options > summary:focus-visible {
   outline: 2px solid #a6d7d1;
   outline-offset: 4px;
 }
@@ -316,7 +317,8 @@ a {
 #installation-status {
   overflow-wrap: anywhere;
 }
-#installation-options > summary {
+#installation-options > summary,
+#bitmap-memory-options > summary {
   cursor: pointer;
   min-height: 44px;
   margin-top: 8px;

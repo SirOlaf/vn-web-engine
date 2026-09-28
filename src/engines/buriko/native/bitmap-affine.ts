@@ -1,3 +1,4 @@
+import {viewsOverlap} from '../../../core/binary.js';
 import {withBurikoBitmapText} from './bitmap-dom-text.js';
 import type {BurikoBpAbi} from '../bp/abi.js';
 import {nativeAffineSineCosine} from '../bp/opcodes/native-math.js';
@@ -430,7 +431,7 @@ function affinePixels(
   const input = affineView(source, true),
     writeOnly = input !== null && (mode === 'copy' || mode === 'dim'),
     output = affineView(destination, false, writeOnly);
-  if (mode === 'alpha' && input !== null && output !== null && input.buffer !== output.buffer) {
+  if (mode === 'alpha' && input !== null && output !== null && !viewsOverlap(input, output)) {
     recordRuntimeMetric('buriko.affine.alpha.column-x', coordinates.columnX);
     recordRuntimeMetric('buriko.affine.alpha.column-y', coordinates.columnY);
     if (coordinates.columnX === 65536 && coordinates.columnY === 0)
