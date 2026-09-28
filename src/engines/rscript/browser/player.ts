@@ -75,6 +75,7 @@ export class RScriptBrowserPlayer {
       playMovie: (path) => this.playMovie(path),
       stopMovie: () => this.skipMovie?.(),
       confirm: (caption, text) => this.confirm(caption, text),
+      setFullscreen: (fullscreen) => this.setFullscreen(fullscreen),
       diagnostic: options.diagnostic,
       exit: (error) => options.exit(error),
     });
@@ -237,6 +238,21 @@ export class RScriptBrowserPlayer {
       voice.dispose();
       this.movieCanvas.style.display = 'none';
     }
+  }
+
+  /** The configuration's screen mode; the click that chose it allows the request. */
+  private setFullscreen(fullscreen: boolean): void {
+    const document = this.options.document;
+    const request = fullscreen
+      ? document.fullscreenElement
+        ? null
+        : this.panel.requestFullscreen?.()
+      : document.fullscreenElement
+        ? document.exitFullscreen()
+        : null;
+    void request?.catch((error: unknown) =>
+      this.options.diagnostic(`Fullscreen: ${error instanceof Error ? error.message : error}`),
+    );
   }
 
   /** OK/Cancel confirmation over the game, standing in for the native MessageBox. */

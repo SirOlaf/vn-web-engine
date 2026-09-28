@@ -372,6 +372,8 @@ export class RScriptSprite extends RScriptNode {
   /** A click on the sprite; `at` is the pointer relative to the sprite. */
   onPress: ((sprite: RScriptSprite, at: RScriptPoint) => void) | null = null;
   onRelease: ((sprite: RScriptSprite) => void) | null = null;
+  /** The pointer moved while pressed on the sprite; `at` is relative to the sprite. */
+  onDrag: ((sprite: RScriptSprite, at: RScriptPoint) => void) | null = null;
   onHover: ((sprite: RScriptSprite, inside: boolean) => void) | null = null;
   hovered = false;
 

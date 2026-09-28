@@ -94,11 +94,17 @@ export class RScriptMessageWindow extends RScriptContainer {
     return this.panel.load(this.env.images, this.env.systemDirectory);
   }
 
-  /** sub_418220: the panel shows with box 0 while enabled and not hidden by auto mode. */
-  updatePanel(): void {
+  /**
+   * sub_418220: the panel shows with box 0 while enabled and not hidden by auto mode;
+   * `allowed` is the caller's switch (the configuration's panel option when it changes).
+   */
+  updatePanel(allowed = true): void {
     this.panel.setPosition(this.dword(MessageState.panelX), this.dword(MessageState.panelY));
     this.panel.show(
-      !!this.dword(MessageState.panelEnabled) && this.boxes[0]!.recordVisible && !this.autoHidden,
+      allowed &&
+        !!this.dword(MessageState.panelEnabled) &&
+        this.boxes[0]!.recordVisible &&
+        !this.autoHidden,
     );
   }
   /** sub_418280: input while the script waits for a click, a button or a choice. */

@@ -18,6 +18,7 @@ import {loadFrameAnimation} from './animation.js';
 import {AudioChannel, RScriptAudio} from './audio.js';
 import {RScriptChoiceWindow} from './choice.js';
 import {RScriptSaveScreen} from './save-screen.js';
+import {RScriptConfigScreen, type ConfigChange, type ConfigCommand} from './config-screen.js';
 import {RScriptDisplay, type RScriptPresenter, type RScriptTimer} from './display.js';
 import {RScriptLayer} from './layer.js';
 import {MessageState, RScriptMessageWindow} from './message-window.js';
@@ -48,6 +49,8 @@ export interface RScriptGameHost {
    * custom dialog image use); resolves true for OK.
    */
   confirm(caption: string, text: string): Promise<boolean>;
+  /** The configuration's window/fullscreen option (sub_452990). */
+  setFullscreen?(fullscreen: boolean): void;
   diagnostic(message: string): void;
   /** The script thread ended (the native game closes its window) or failed. */
   exit(error?: unknown): void;
@@ -149,6 +152,8 @@ export class RScriptGame {
   readonly choice: RScriptChoiceWindow;
   /** Save and load screen (dword_485098) over a still of the scene (dword_48524C). */
   readonly saveScreen: RScriptSaveScreen;
+  /** Configuration screen (dword_485240). */
+  readonly configScreen: RScriptConfigScreen;
   private readonly backdrop = new RScriptSprite();
   /** Scaled still of the scene at the last menu opening, saved with slots (dword_4850A0). */
   private thumbnail: RScriptSurface | null = null;
@@ -158,7 +163,8 @@ export class RScriptGame {
     save: false,
     fromMenu: false,
     resume: false,
-    standalone: false,
+    /** The standalone title screen in use (scenes 485306 and 48530E), if any. */
+    standalone: null as 'load' | 'config' | null,
   };
   /** Effect screen image (dword_485080) and full-screen tone overlay (dword_485244). */
   readonly effectScreen = new RScriptSprite();
@@ -254,7 +260,22 @@ export class RScriptGame {
       close: () => void this.closeScreen(),
       sound: (sound) => this.playSystemSound(sound),
     });
+    this.configScreen = new RScriptConfigScreen({
+      memory: this.memory,
+      images: this.images,
+      rasterizer: host.rasterizer,
+      systemDirectory: apini.directories.system,
+      width: apini.width,
+      height: apini.height,
+      palette,
+      sound: (sound) => {
+        if (this.config(Config.soundEnabled)) this.playSystemSound(sound);
+      },
+      changed: (change) => this.configChanged(change),
+      command: (command) => void this.configCommand(command),
+    });
     this.display.screen.add(this.backdrop, 0);
+    this.display.screen.add(this.configScreen, 1);
     this.display.screen.add(this.saveScreen, 3);
     this.overlay.setSurface(createSurface(apini.width, apini.height, 0xffffff));
     this.overlay.setBlendMode(0x6c);
@@ -596,6 +617,13 @@ export class RScriptGame {
     return this.display.screen.pick(x, y);
   }
   pointerMove(x: number, y: number): void {
+    const pressed = this.pressed;
+    if (pressed instanceof RScriptSprite && pressed.onDrag) {
+      const origin = pressed.screenPosition();
+      pressed.onDrag(pressed, {x: x - origin.x, y: y - origin.y});
+      this.display.update();
+      return;
+    }
     const node = this.hit(x, y);
     if (node === this.hovered) return;
     if (this.hovered instanceof RScriptSprite) {
@@ -610,7 +638,13 @@ export class RScriptGame {
     this.display.update();
   }
   pointerDown(x: number, y: number): void {
-    this.pressed = this.hit(x, y);
+    const node = this.hit(x, y);
+    this.pressed = node;
+    if (node instanceof RScriptSprite && node.onDrag) {
+      const origin = node.screenPosition();
+      node.onDrag(node, {x: x - origin.x, y: y - origin.y});
+      this.display.update();
+    }
   }
   /**
    * Left button up (WM_LBUTTONUP): a press on an interactive sprite, otherwise auto mode or
@@ -770,6 +804,9 @@ export class RScriptGame {
       case 'load':
         void this.openSaveScreen(command === 'save');
         return;
+      case 'menu':
+        if (message.dword(MessageState.menuEnabled)) void this.openConfig();
+        return;
       default:
         this.diagnostic(`The ${command} screen is not implemented yet`);
     }
@@ -812,7 +849,11 @@ export class RScriptGame {
         await this.saveSystem();
         return this.returnToTitle();
       case 2:
-        return this.openStandalone();
+        return this.openStandalone('load');
+      case 3:
+        return this.openStandalone('config');
+      case 4:
+        return this.openConfig();
       case 5:
         return this.openSaveScreen(false, true);
       case 6:
@@ -948,11 +989,22 @@ export class RScriptGame {
     this.backdrop.show(true);
   }
 
+  /** sub_41E0D0: the configuration screen over the scene (right button, panel menu). */
+  async openConfig(): Promise<void> {
+    if (this.screens.open) return;
+    await this.enterScreen();
+    this.screens.fromMenu = true;
+    // Save and load appear when the script's panel settings allow them (scene 0x6C).
+    this.configScreen.open(false, this.memory.sceneDword(0x6c) !== 0);
+    this.display.update();
+  }
+
   /** sub_41E1E0: the save or load screen over the scene; `resume` continues a button wait. */
   async openSaveScreen(save: boolean, resume = false): Promise<void> {
     if (this.screens.save) return;
     this.screens.save = true;
-    if (!this.screens.fromMenu) await this.enterScreen();
+    if (this.screens.fromMenu) this.configScreen.close();
+    else await this.enterScreen();
     this.screens.resume = resume;
     await this.saveScreen.open(save);
     this.display.update();
@@ -962,16 +1014,12 @@ export class RScriptGame {
   async closeScreen(): Promise<void> {
     const screens = this.screens;
     if (!screens.open) return;
-    if (screens.standalone) {
-      // The standalone title screens return to the game scene at the start script.
-      this.resetScreens();
-      this.startScene(() => this.newGame(this.apini.startScript));
-      return;
-    }
+    if (screens.standalone) return this.leaveStandalone();
     if (screens.save) {
       screens.save = false;
       this.saveScreen.close();
-      if (!screens.fromMenu) {
+      if (screens.fromMenu) this.configScreen.open(false, this.memory.sceneDword(0x6c) !== 0);
+      else {
         screens.open = false;
         this.backdrop.show(false);
         this.root.show(true);
@@ -984,6 +1032,7 @@ export class RScriptGame {
     } else {
       screens.open = false;
       screens.fromMenu = false;
+      this.configScreen.close();
       this.backdrop.show(false);
       this.root.show(true);
     }
@@ -995,11 +1044,63 @@ export class RScriptGame {
       save: false,
       fromMenu: false,
       resume: false,
-      standalone: false,
+      standalone: null,
     });
     this.saveScreen.close();
+    this.configScreen.close();
     this.backdrop.show(false);
     this.root.show(true);
+  }
+
+  /** Buttons of the configuration screen (0x41EC30..0x41EC70, 0x41C050, 0x41B640). */
+  private async configCommand(command: ConfigCommand): Promise<void> {
+    if (command === 'exit') {
+      this.playSystemSound(1);
+      return this.quit();
+    }
+    this.playSystemSound(1);
+    if (command === 'save' || command === 'load') return this.openSaveScreen(command === 'save');
+    if (command === 'close' || this.screens.standalone) return this.closeScreen();
+    if (await this.host.confirm(RScriptMessages.confirm, RScriptMessages.returnToTitle))
+      await this.returnToTitle();
+  }
+
+  /** Side effects of configuration changes (0x41ED20, 0x41ECE0, 0x41ED90, 0x41EDD0). */
+  private configChanged(change: ConfigChange): void {
+    const memory = this.memory;
+    switch (change) {
+      case 'screen':
+        this.host.setFullscreen?.(this.config(Config.screenMode) !== 0);
+        break;
+      case 'speed':
+        this.message.setSpeed(this.config(Config.messageSpeed));
+        break;
+      case 'sound':
+        if (!this.config(Config.soundEnabled)) {
+          for (let channel = 0; channel < 3; channel++)
+            this.audio.stop(AudioChannel.effect + channel, false);
+          break;
+        }
+        // Looping effects start again.
+        for (let channel = 0; channel < 3; channel++) {
+          const base = Scene.soundChannels + channel * Scene.soundChannelStride;
+          if (!memory.sceneUword(base + 2)) continue;
+          this.loadSound(channel, memory.sceneUword(base));
+          this.playSound(channel, 999, 0, memory.sceneWord(base + 4));
+        }
+        break;
+      case 'music':
+        if (this.config(Config.musicEnabled)) {
+          const track = memory.sceneUword(Scene.music);
+          if (track) this.playMusic(track, true, 0);
+        } else this.audio.stopMusic(false, 0);
+        break;
+      case 'panel':
+        this.message.updatePanel(this.config(0x16) !== 0);
+        break;
+      default:
+        this.applyVolumes();
+    }
   }
 
   /** sub_41EA70 (save) / sub_41EB60 (load) and the standalone load (sub_420200). */
@@ -1024,14 +1125,21 @@ export class RScriptGame {
     await this.loadSlot(slot);
   }
 
-  /** The title's load and config buttons switch to standalone screens (scene 485306). */
-  private async openStandalone(): Promise<void> {
+  /** The title's load and config buttons switch to standalone scenes (485306, 48530E). */
+  private async openStandalone(kind: 'load' | 'config'): Promise<void> {
     await this.stopScene();
     this.screens.open = true;
-    this.screens.standalone = true;
+    this.screens.standalone = kind;
     this.root.show(false);
-    await this.saveScreen.open(false);
+    if (kind === 'load') await this.saveScreen.open(false);
+    else this.configScreen.open(true, false);
     this.display.refresh();
+  }
+  /** Leaving a standalone scene returns to the game scene at the start script. */
+  private async leaveStandalone(): Promise<void> {
+    await this.saveSystem();
+    this.resetScreens();
+    this.startScene(() => this.newGame(this.apini.startScript));
   }
 
   /** WM_CLOSE of the game window: quits after the native confirmation. */
@@ -1106,6 +1214,7 @@ export class RScriptGame {
     this.ticker = setInterval(() => this.tick(), Math.max(1, apini.tickMilliseconds));
     await this.message.loadPanel();
     await this.saveScreen.load();
+    await this.configScreen.load();
     this.startScene(() => this.opening());
   }
 
