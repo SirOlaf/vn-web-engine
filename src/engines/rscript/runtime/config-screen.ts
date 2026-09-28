@@ -109,7 +109,7 @@ export class RScriptConfigScreen extends RScriptContainer {
       this.groups.push({setting, group});
     }
     for (const {name, offset, max, change} of SLIDERS) {
-      const slider = await Slider.create(image, name, max, (value) => {
+      const slider = await Slider.create(image, `${name}_lev`, `${name}_vol`, max, (value) => {
         this.write(offset, value);
         if (change) this.env.changed(change);
       });

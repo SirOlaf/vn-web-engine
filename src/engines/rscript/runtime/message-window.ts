@@ -51,9 +51,10 @@ export interface MessageEnvironment extends TextBoxEnvironment {
   scriptString(script: number, index: number): Promise<Uint8Array>;
   /** Text colour of backlog pages (APINI +502/+504), or null to keep the box colour. */
   readonly backlogColor: number | null;
-  /** Companion panel commands and auto-speed slider (the callbacks at +228..+276). */
+  /** Companion panel commands and the opacity slider (the callbacks at +228..+276). */
   command(command: PanelCommand): void;
-  autoSpeed(value: number): void;
+  /** sub_41F0D0: stores the opacity the slider chose (+264). */
+  windowAlpha(value: number): void;
 }
 
 /**
@@ -85,9 +86,23 @@ export class RScriptMessageWindow extends RScriptContainer {
     for (const box of this.boxes) this.add(box, 1);
     this.panel = new RScriptMessagePanel(
       (command) => env.command(command),
-      (value) => env.autoSpeed(value),
+      (value) => {
+        // sub_417A20: the boxes follow the slider, then the game stores the value.
+        this.setBoxAlpha(value);
+        env.windowAlpha(value);
+      },
     );
     this.add(this.panel, 2);
+  }
+
+  /** sub_418360: the slider position and the boxes' frame opacity. */
+  setWindowAlpha(value: number): void {
+    this.panel.setWindowAlpha(value);
+    this.setBoxAlpha(value);
+  }
+  /** sub_417C50 */
+  private setBoxAlpha(value: number): void {
+    for (const box of this.boxes) box.setBackAlpha(value);
   }
 
   loadPanel(): Promise<void> {

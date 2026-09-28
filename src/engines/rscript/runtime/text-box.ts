@@ -99,6 +99,10 @@ export class RScriptTextBox extends RScriptContainer {
   setDword(field: number, value: number): void {
     this.env.memory.setSceneDword(this.record + field, value);
   }
+  /** sub_41A380: the frame back's opacity, set by the window opacity slider. */
+  setBackAlpha(alpha: number): void {
+    this.back.setAlpha(alpha);
+  }
   get recordVisible(): boolean {
     return this.dword(BoxRecord.visible) !== 0;
   }

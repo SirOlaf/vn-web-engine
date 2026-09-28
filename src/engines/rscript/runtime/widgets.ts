@@ -151,14 +151,16 @@ export class OptionGroup {
 }
 
 /**
- * Slider (0x4517E0): the `name_vol` knob travels across the `name_lev` rectangle for
- * values 0..`max`; pressing or dragging on the rectangle sets the value (0x451B20).
+ * Slider (0x4517E0): the knob travels across the level rectangle, which is only a marker,
+ * for values 0..`max`; pressing or dragging on the rectangle sets the value (0x451B20).
+ * A rectangle taller than it is wide makes a vertical slider (the panel's +224 flag).
  */
 export class Slider {
   readonly knob: ImageButton;
   /** Invisible hit area over the track. */
   readonly track = new RScriptSprite();
   private readonly rect: {x: number; y: number; width: number; height: number};
+  private readonly vertical: boolean;
   value = 0;
 
   private constructor(
@@ -169,44 +171,52 @@ export class Slider {
   ) {
     this.knob = knob;
     this.rect = rect;
+    this.vertical = rect.height > rect.width;
     this.knob.interactive = false;
     this.track.setPosition(rect.x, rect.y);
-    this.track.setSurface(createTrack(rect.width, Math.max(rect.height, knob.height)));
+    this.track.setSurface(
+      this.vertical
+        ? createTrack(Math.max(rect.width, knob.width), rect.height)
+        : createTrack(rect.width, Math.max(rect.height, knob.height)),
+    );
     // Blend mode 23 draws nothing; the sprite only receives the pointer.
     this.track.setBlendMode(23);
     this.track.interactive = true;
-    this.track.onPress = (_, at) => this.drag(at.x);
-    this.track.onDrag = (_, at) => this.drag(at.x);
+    this.track.onPress = (_, at) => this.drag(at);
+    this.track.onDrag = (_, at) => this.drag(at);
     this.track.show(true);
   }
 
+  /** The `level` rectangle and the `knob` button (0x4519C0) with its focus frames. */
   static async create(
     image: ScreenImage,
-    name: string,
+    level: string,
+    knobName: string,
     max: number,
     change: (value: number) => void,
   ): Promise<Slider | null> {
-    const at = image.position(`${name}_lev`);
-    const level = await image.surface(`${name}_lev`);
-    const knob = await image.button(`${name}_vol`, () => {});
-    if (!at || !level || !knob) return null;
-    return new Slider(knob, {...at, width: level.width, height: level.height}, max, change);
+    const rect = await image.rect(level);
+    const knob = await image.button(knobName, () => {});
+    if (!rect || !knob) return null;
+    return new Slider(knob, rect, max, change);
   }
 
   private get travel(): number {
-    return Math.max(1, this.rect.width - this.knob.width);
+    return Math.max(
+      1,
+      this.vertical ? this.rect.height - this.knob.height : this.rect.width - this.knob.width,
+    );
   }
-  private drag(x: number): void {
-    const value = Math.round(((x - (this.knob.width >> 1)) * this.max) / this.travel);
-    this.set(value);
+  private drag(at: {x: number; y: number}): void {
+    const offset = this.vertical ? at.y - (this.knob.height >> 1) : at.x - (this.knob.width >> 1);
+    this.set(Math.round((offset * this.max) / this.travel));
     this.change(this.value);
   }
   set(value: number): void {
     this.value = Math.max(0, Math.min(this.max, value));
-    this.knob.setPosition(
-      this.rect.x + Math.trunc((this.value * this.travel) / this.max),
-      this.rect.y,
-    );
+    const offset = Math.trunc((this.value * this.travel) / this.max);
+    if (this.vertical) this.knob.setPosition(this.rect.x, this.rect.y + offset);
+    else this.knob.setPosition(this.rect.x + offset, this.rect.y);
   }
 }
 

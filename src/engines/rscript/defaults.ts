@@ -23,7 +23,7 @@ export function initializeConfig(memory: RScriptMemory, apini: RScriptApini): vo
   set(Config.voiceVolume, 255);
   set(Config.effectsEnabled, 1);
   set(0x1c, 1);
-  set(Config.autoSpeed, 128);
+  set(Config.windowAlpha, 128);
   set(Config.autoWait, 1500);
   for (let bank = 0; bank < 10; bank++) set(Config.voiceBanks + 2 * bank, 1);
   const font = field(apini.bytes, 360, 32);

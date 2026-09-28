@@ -233,7 +233,7 @@ export class RScriptGame {
       scriptString: (script, index) => this.scriptString(script, index),
       backlogColor: apini.u16(502) ? apini.u32(504) : null,
       command: (command) => this.panelCommand(command),
-      autoSpeed: (value) => this.memory.setConfigWord(Config.autoSpeed, value),
+      windowAlpha: (value) => this.memory.setConfigWord(Config.windowAlpha, value),
     });
     this.root.add(this.overlay, 1);
     this.root.add(this.effectScreen, 1);
@@ -1294,7 +1294,7 @@ export class RScriptGame {
   }
   private async prepareScene(): Promise<void> {
     this.message.setSpeed(this.config(Config.messageSpeed));
-    this.message.panel.setAutoSpeed(this.config(Config.autoSpeed));
+    this.message.setWindowAlpha(this.config(Config.windowAlpha));
     await this.rebuildObjects();
     this.display.refresh();
   }

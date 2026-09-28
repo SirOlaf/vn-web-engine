@@ -1,6 +1,6 @@
 import {RScriptContainer, type RScriptSprite} from '../graphics/sprite.js';
 import type {RScriptImages} from '../images.js';
-import {ScreenImage, type ImageButton} from './widgets.js';
+import {ScreenImage, Slider, type ImageButton} from './widgets.js';
 
 /** Companion panel commands in `compane.lwg` order of construction (0x415750). */
 export const PANEL_COMMANDS = [
@@ -22,18 +22,17 @@ export const PANEL_COMMANDS = [
 export type PanelCommand = (typeof PANEL_COMMANDS)[number];
 
 /**
- * Message companion panel: a background, the command buttons, the auto-speed slider and
- * the voice indicator. Buttons dispatch to the message window's command callbacks.
+ * Message companion panel: a background, the command buttons, the window opacity slider
+ * and the voice indicator. Buttons dispatch to the message window's command callbacks.
  */
 export class RScriptMessagePanel extends RScriptContainer {
   private readonly buttons = new Map<PanelCommand, ImageButton>();
   private voiceOff: RScriptSprite | null = null;
-  private slider: {track: RScriptSprite; knob: RScriptSprite; min: number; range: number} | null =
-    null;
+  private slider: Slider | null = null;
 
   constructor(
     private readonly command: (command: PanelCommand) => void,
-    private readonly autoSpeed: (value: number) => void,
+    private readonly windowAlpha: (value: number) => void,
   ) {
     super();
     this.visible = false;
@@ -54,32 +53,19 @@ export class RScriptMessagePanel extends RScriptContainer {
     }
     this.voiceOff = await image.sprite('voc_off');
     if (this.voiceOff) this.add(this.voiceOff, 1);
-    const track = await image.sprite('slide_lev'),
-      knob = await image.sprite('slide');
-    if (track && knob) {
-      // Horizontal slider: the knob's centre travels across the track (0x4517E0).
-      const min = track.x - (knob.width >> 1);
-      this.slider = {track, knob, min, range: Math.max(1, track.width)};
-      track.interactive = true;
-      track.onPress = (_, at) => this.slide(at.x);
-      this.add(track, 1);
-      this.add(knob, 2);
+    // The `slide_lev` rectangle and `slide` knob (0x415750, sub_4517E0), values 0..255.
+    this.slider = await Slider.create(image, 'slide_lev', 'slide', 255, (value) =>
+      this.windowAlpha(value),
+    );
+    if (this.slider) {
+      this.add(this.slider.track, 1);
+      this.add(this.slider.knob, 1);
     }
   }
 
-  private slide(x: number): void {
-    const slider = this.slider;
-    if (!slider) return;
-    const value = Math.round((255 * Math.max(0, Math.min(slider.range, x))) / slider.range);
-    this.setAutoSpeed(value);
-    this.autoSpeed(value);
-  }
-
-  /** sub_4179F0: places the slider knob for an auto speed of 0..255. */
-  setAutoSpeed(value: number): void {
-    const slider = this.slider;
-    if (!slider) return;
-    slider.knob.setPosition(slider.min + Math.round((value * slider.range) / 255), slider.knob.y);
+  /** sub_418360: places the knob for a window opacity of 0..255. */
+  setWindowAlpha(value: number): void {
+    this.slider?.set(value);
   }
 
   /** sub_416DC0: the voice button replaces its disabled image when the page has a voice. */
@@ -95,5 +81,6 @@ export class RScriptMessagePanel extends RScriptContainer {
       if (!enabled) button.unfocus();
     }
     if (this.slider) this.slider.track.interactive = enabled;
+    if (!enabled) this.slider?.knob.unfocus();
   }
 }

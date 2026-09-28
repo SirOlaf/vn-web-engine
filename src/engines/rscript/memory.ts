@@ -24,7 +24,8 @@ export const Config = {
   voiceVolume: 0x0e,
   effectsEnabled: 0x12,
   skipUnread: 0x14,
-  autoSpeed: 0x1a,
+  /** Message window opacity, 0..255 (the panel slider, sub_41F0D0). */
+  windowAlpha: 0x1a,
   autoWait: 0x1e,
   voiceContinues: 0x20,
   /** Hides the cursor and message window while idle (sub_41E010). */
