@@ -38,6 +38,7 @@ export function createGroup81SharedThreads(
           id: control.allocateThreadId(),
           operandCapacity,
           mode: 0,
+          regions: thread.regions,
         });
         const result = child.initialize(thread, moduleSize, frameSize, initialIp, (value) =>
           scheduler.append(value),

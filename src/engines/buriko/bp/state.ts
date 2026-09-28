@@ -35,7 +35,8 @@ const emptyRegion = (): BurikoBpRegion => new BurikoBpRegion(new Uint8Array());
 /** Storage of the verified Buriko CThread, independent of scheduler list ownership. */
 export class BurikoBpThread {
   readonly id: number;
-  operandStack: Uint32Array;
+  /** Operand stack cells, one 32-bit word each. */
+  stackRegion: BurikoBpRegion;
   stackIndex = 0;
   /** Bank 1: code and module data. */
   moduleRegion: BurikoBpRegion;
@@ -74,17 +75,22 @@ export class BurikoBpThread {
       }
     }
     this.id = options.id >>> 0;
-    this.operandStack = new Uint32Array(options.operandCapacity);
     this.moduleCapacity = options.moduleCapacity;
     this.frameCapacity = options.frameCapacity;
     this.moduleUsableCapacity = options.moduleCapacity;
     this.frameUsableCapacity = options.frameCapacity;
     this.regions = options.regions ?? new BurikoBpRegionTable();
+    this.stackRegion = this.regions.allocate(options.operandCapacity * 4);
     this.moduleRegion = this.regions.allocate(options.moduleCapacity);
     this.frameRegion = this.regions.allocate(options.frameCapacity);
     this.allocatedHeap = options.heapEnabled === false ? null : new BurikoBpHeap(this.regions);
     const mode = (options.mode ?? 0) >>> 0;
     this.mode = mode < 2 ? mode : 0;
+  }
+
+  /** Operand stack cells; see `BurikoBpRegion.view` for validity. */
+  get operandStack(): Uint32Array {
+    return this.stackRegion.view32();
   }
 
   /** Bank 1 bytes; see `BurikoBpRegion.view` for validity. */
@@ -123,7 +129,8 @@ export class BurikoBpThread {
 
   /** Native destruction releases storage before deleting its pending process and borrowers. */
   disposeStorage(): void {
-    this.operandStack = new Uint32Array();
+    this.regions.release(this.stackRegion);
+    this.stackRegion = emptyRegion();
     this.releaseBanks();
     this.moduleRegion = emptyRegion();
     this.frameRegion = emptyRegion();
@@ -146,7 +153,12 @@ export class BurikoBpSharedThread extends BurikoBpThread {
   private owner: BurikoBpThread | null = null;
   private initialized = false;
 
-  constructor(options: {id: number; operandCapacity: number; mode?: number}) {
+  constructor(options: {
+    id: number;
+    operandCapacity: number;
+    mode?: number;
+    regions?: BurikoBpRegionTable;
+  }) {
     super({...options, moduleCapacity: 0, frameCapacity: 0, heapEnabled: false});
   }
 

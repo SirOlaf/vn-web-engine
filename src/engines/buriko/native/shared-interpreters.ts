@@ -157,6 +157,7 @@ export class BurikoSharedInterpreters {
           id: this.control.allocateThreadId(),
           operandCapacity,
           mode: 1,
+          regions: parent.regions,
         });
         const result = child.initialize(parent, moduleSize, frameSize, initialIp, () => {
           throw new Error('Buriko mode-one shared interpreter entered the scheduler list');

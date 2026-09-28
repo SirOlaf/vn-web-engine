@@ -280,6 +280,8 @@ class Materialized {
       moduleCapacity: MODULE_BYTES,
       frameCapacity: FRAME_BYTES,
       heapEnabled: true,
+      // Production threads share their memory's arena; runtimes before the arena ignore it.
+      regions: this.memory.regions,
     }));
     thread.moduleMemory.set(testCase.module);
     thread.moduleMemory.set(testCase.code.slice(0, MODULE_BYTES - CODE_START), CODE_START);

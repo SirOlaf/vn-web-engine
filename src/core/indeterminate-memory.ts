@@ -50,6 +50,20 @@ export function clearIndeterminateMemory(bytes: Uint8Array, offset: number, leng
   if (!cells.size && unwritten.delete(bytes.buffer)) markedBuffers--;
 }
 
+/** Storage reallocated to `to` at the same byte offsets keeps the marks recorded for `from`. */
+export function transferIndeterminateMemory(from: ArrayBufferLike, to: ArrayBufferLike): void {
+  const cells = marksFor(from);
+  if (!cells || from === to) return;
+  unwritten.delete(from);
+  const existing = marksFor(to);
+  if (existing) {
+    for (const [at, reason] of cells) existing.set(at, reason);
+    existing.low = Math.min(existing.low, cells.low);
+    existing.high = Math.max(existing.high, cells.high);
+    markedBuffers--;
+  } else unwritten.set(to, cells);
+}
+
 /** Inspect provenance without observing or clearing the covered bytes. */
 export function hasIndeterminateMemory(bytes: Uint8Array, offset: number, length: number): boolean {
   if (markedBuffers === 0) return false;

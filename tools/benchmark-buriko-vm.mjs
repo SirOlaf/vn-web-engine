@@ -163,7 +163,9 @@ async function pageMain({profile}, options) {
   const cycles = options.smoke ? 1000 : 100000;
   const hash = (thread) => {
     let value = 2166136261;
-    for (const byte of [...new Uint8Array(thread.operandStack.buffer), ...thread.frameMemory])
+    const stack = thread.operandStack;
+    const stackBytes = new Uint8Array(stack.buffer, stack.byteOffset, stack.byteLength);
+    for (const byte of [...stackBytes, ...thread.frameMemory])
       value = Math.imul(value ^ byte, 16777619);
     return (value >>> 0).toString(16).padStart(8, '0');
   };

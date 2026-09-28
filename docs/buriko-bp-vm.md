@@ -8,16 +8,28 @@ A BP address is `bank << addressBits | offset`. The ABI descriptor (`bp/abi.ts`)
 
 | Bank                       | Storage                                   | Owner                                        |
 | -------------------------- | ----------------------------------------- | -------------------------------------------- |
-| 0                          | Global arena                              | `memory.globalRegion`                        |
+| 0                          | Global data bank                          | `memory.globalRegion`                        |
 | 0, `0x0fffS0xx` (1.72 ABI) | Indirect buffer (S = 0) or string (S = 1) | `memory.indirectBanks[S][xx].region`         |
 | 1                          | Module (code and module data)             | `thread.moduleRegion`                        |
 | 2                          | Frames and locals                         | `thread.frameRegion`                         |
 | 3                          | Thread heap                               | `thread.heap.region`                         |
 | Pool banks                 | Pooled allocations                        | `memory.pools[group][slot]` (layout per ABI) |
+| (not addressable)          | Operand stack cells                       | `thread.stackRegion`                         |
 
 Every bank resolves to a `BurikoBpRegion` (`bp/region.ts`): one contiguous allocation with a fixed size. Addresses stay bank-relative, so replacing a bank's region never changes a VM address.
 
-`BurikoBpRegionTable` (`memory.regions`) creates, relocates and retires every bank region. Threads receive the table through the `regions` constructor option; production threads share the table of the memory they run against. A thread created without one owns a private table.
+`BurikoBpRegionTable` (`memory.regions`) creates, relocates and retires every bank region. Threads receive the table through the `regions` constructor option; production threads, shared threads included, use the table of the memory they run against. A thread created without one owns a private table.
+
+### The arena
+
+Each region table places its regions in one `BurikoBpArena`: a single `ArrayBuffer`, allocated first fit at 16-byte aligned offsets. Allocation zero-fills its range and clears its provenance marks.
+
+- **Growth:** when no free block fits, the arena doubles its capacity and reallocates the buffer (`ArrayBuffer.prototype.transfer` where available, which detaches the previous buffer). `arena.generation` advances. Provenance marks move to the new buffer at the same offsets.
+- **Views:** `region.view()` and `region.view32()` re-derive their typed array when the generation has changed. A view obtained before a growth is detached (length 0) or stale, which is why natives never hold views across allocations or awaits.
+- **Whole-arena access:** `memory.memoryViews()` returns `{bytes, words, generation}` over the entire arena. `region.arenaOffset` is a region's byte offset in it. These are the addresses a WebAssembly module sharing the arena would use.
+- **Sizing:** `BurikoBpMemory` reserves `BURIKO_BP_ARENA_BYTES` (1 MiB) initially; the third constructor argument overrides it. Private thread tables start at 4 KiB. `regions.liveBytes` and `arena.capacity` report use for measuring a real title's footprint.
+- **Adopted bytes:** `regions.adopt(bytes)` and the `BurikoBpMemory` constructor copy their input into the arena. The caller's array is not the live bank afterwards; read `memory.globalMemory` instead.
+- **Buffer identity:** all views of one arena share one `buffer`. Code comparing `a.buffer === b.buffer` must treat that as possible aliasing and compare absolute ranges through `byteOffset`, and code building a `DataView` or typed array from a view must pass its `byteOffset` and `byteLength` (`byteDataView` in `src/core/binary.ts`).
 
 ### Relocation and stale pointers
 
@@ -29,7 +41,7 @@ A region never grows. Operations that resize or free storage install a successor
 - `freePooled` and `clearPooled`;
 - thread and heap disposal.
 
-A retired region keeps its final bytes. A pointer resolved before the relocation still reads and writes the retired storage, matching native reads through a stale pointer into freed memory. `region.retired` reports whether that has happened.
+A retired region keeps its final bytes: retiring copies them out of the arena into a private array before the arena range is freed for reuse. A pointer resolved before the relocation still reads and writes the retired storage, matching native reads through a stale pointer into freed memory. `region.retired` reports whether that has happened.
 
 ## Pointers
 
@@ -46,11 +58,11 @@ A retired region keeps its final bytes. A pointer resolved before the relocation
 2. State kept across calls, awaits, process ticks or callbacks holds the pointer or region, never a view. Re-acquire the view after every `await`.
 3. Use `pointerView` (bounds-checked `DataView` with provenance) or the helpers in `bp/opcodes/operands.ts` and `native/text.ts` for access; they apply the provenance checks described below.
 
-These rules let a later storage backend place all regions in one relocatable backing arena without changing native handlers.
+Rule 2 matters because of arena growth: any VM allocation, on any thread, can move every region.
 
 ## Provenance
 
-Bytes that native code leaves unwritten carry an "indeterminate" mark (`src/core/indeterminate-memory.ts`). Reading a marked byte raises the reason recorded when it was marked; the earliest mark among the covered bytes selects the message. Writes clear marks, and `copyMemoryBytes` moves them with the data. Operand stack cells carry the same provenance through `pushIndeterminate32` and `popDeferred32` in `bp/state.ts`.
+Bytes that native code leaves unwritten carry an "indeterminate" mark (`src/core/indeterminate-memory.ts`), keyed by buffer and absolute byte offset. Reading a marked byte raises the reason recorded when it was marked; the earliest mark among the covered bytes selects the message. Writes clear marks, and `copyMemoryBytes` moves them with the data. Operand stack cells carry the same provenance through `pushIndeterminate32` and `popDeferred32` in `bp/state.ts`.
 
 ## Differential harness
 

@@ -7,7 +7,15 @@ import {
   requireDeterminateMemory,
 } from '../../../core/indeterminate-memory.js';
 import {BURIKO_BP_ABI_172, type BurikoBpAbi} from './abi.js';
-import {BurikoBpPointer, BurikoBpRegion, BurikoBpRegionTable} from './region.js';
+import {
+  BurikoBpPointer,
+  BurikoBpRegion,
+  BurikoBpRegionTable,
+  type BurikoBpArena,
+} from './region.js';
+
+/** First arena reservation of a VM memory; the arena doubles on demand. */
+export const BURIKO_BP_ARENA_BYTES = 0x100000;
 
 export {BurikoBpPointer, BurikoBpRegion, BurikoBpRegionTable, hostPointer} from './region.js';
 
@@ -196,7 +204,7 @@ export function pointerView(pointer: BurikoBpPointer, length?: number): DataView
  * cells. Every bank resolves to a region from `regions`; addresses stay bank-relative.
  */
 export class BurikoBpMemory {
-  readonly regions = new BurikoBpRegionTable();
+  readonly regions: BurikoBpRegionTable;
   readonly pools: (BurikoBpRegion | null)[][];
   private readonly poolLayout: typeof BURIKO_BP_POOL_LAYOUT | typeof BURIKO_BP_POOL_LAYOUT_1665;
   readonly indirectBanks: (IndirectRecord | null)[][] = [
@@ -209,10 +217,16 @@ export class BurikoBpMemory {
   /** Offset written by the last `locate`; read immediately by its caller. */
   private located = 0;
 
+  /**
+   * `globalMemory` is copied into the arena; `memory.globalMemory` is the live arena bank.
+   * `arenaBytes` is the arena's first reservation.
+   */
   constructor(
     globalMemory: Uint8Array,
     readonly abi: BurikoBpAbi = BURIKO_BP_ABI_172,
+    arenaBytes = BURIKO_BP_ARENA_BYTES,
   ) {
+    this.regions = new BurikoBpRegionTable(arenaBytes);
     this.globalRegionValue = this.regions.adopt(globalMemory);
     this.poolLayout = abi.revision === '1.665' ? BURIKO_BP_POOL_LAYOUT_1665 : BURIKO_BP_POOL_LAYOUT;
     // 00463800 assigns one complete 26-bit-offset bank per allocation, in first-free order.
@@ -220,6 +234,11 @@ export class BurikoBpMemory {
       abi.revision === '1.520.6'
         ? [Array<BurikoBpRegion | null>(48).fill(null)]
         : this.poolLayout.map((group) => Array<BurikoBpRegion | null>(group.slots).fill(null));
+  }
+
+  /** Whole-arena byte and word views of every live region, for the current arena generation. */
+  memoryViews(): ReturnType<BurikoBpArena['views']> {
+    return this.regions.arena.views();
   }
 
   /** Live DAT1E9080; existing pointers retain their own native allocation identity. */
