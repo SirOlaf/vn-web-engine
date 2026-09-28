@@ -3,6 +3,17 @@ import type {MovieInfo} from './movie-types.js';
 import type {YuvFrame} from './frame.js';
 import type {MovieResponse} from './worker-protocol.js';
 
+/** Decoded frames kept ahead of the clock. */
+const PREFETCH_FRAMES = 8;
+/**
+ * Some streams mux their audio about a second behind the video (Fairytale Requiem's
+ * movies), so keeping audio decoded ahead takes more frames than the normal prefetch.
+ * Decoding continues until this much audio is ahead of the clock, within the frame
+ * bound; a thinner margin underruns whenever one worker round trip is slow.
+ */
+const AUDIO_PREFETCH_SECONDS = 0.5;
+const AUDIO_WAIT_FRAMES = 64;
+
 /** Bounded worker decoding with a Web Audio clock. No VM state or game policy. */
 export class StreamMovieVoice {
   private worker: Worker | undefined;
@@ -42,6 +53,14 @@ export class StreamMovieVoice {
   }
   private availableAudio(info: MovieInfo): number {
     return Math.max(this.audioEnd, this.cycle + (info.audioStartTime ?? 0));
+  }
+  /** Less than the audio prefetch is decoded ahead of `position` and more remains. */
+  private audioShort(info: MovieInfo, position: number): boolean {
+    return (
+      info.channels > 0 &&
+      this.availableAudio(info) - position < AUDIO_PREFETCH_SECONDS &&
+      this.audioEnd < this.cycle + (info.audioEndTime ?? info.sampleCount / info.sampleRate) - 1e-6
+    );
   }
   private open(): void {
     this.worker?.terminate();
@@ -175,7 +194,12 @@ export class StreamMovieVoice {
       this.cycle += info.duration;
       this.open();
     }
-    if (!this.done && !this.pulling && this.frames.length < 8) {
+    if (
+      !this.done &&
+      !this.pulling &&
+      (this.frames.length < PREFETCH_FRAMES ||
+        (this.frames.length < AUDIO_WAIT_FRAMES && info && this.audioShort(info, position)))
+    ) {
       this.pulling = true;
       this.worker!.postMessage({type: 'pull'});
     }

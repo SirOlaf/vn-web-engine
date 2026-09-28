@@ -196,6 +196,54 @@ test('timestamped movie resumes after a video underrun when its delayed audio ha
     globalThis.Worker = old;
   }
 });
+test('movie stream keeps decoding video while its trailing audio is short', () => {
+  const old = globalThis.Worker;
+  globalThis.Worker = WorkerFixture;
+  try {
+    const c = context(),
+      v = new StreamMovieVoice(c, {kind: 'blob', blob: new Blob()}),
+      w = WorkerFixture.all.at(-1);
+    const info = {
+      width: 16,
+      height: 16,
+      frameRate: 30,
+      frameCount: 60,
+      duration: 2,
+      sampleRate: 48000,
+      channels: 1,
+      sampleCount: 96000,
+    };
+    // Audio is muxed behind the video: each batch carries less audio than its frames span.
+    const batch = (start, from, seconds) =>
+      w.onmessage({
+        data: {
+          type: 'batch',
+          info,
+          done: false,
+          frames: Array.from({length: 4}, (_, i) => ({...allocateFrame(16, 16), index: start + i})),
+          audio: seconds
+            ? [{start: from * 48000, channels: [new Float32Array(seconds * 48000)]}]
+            : [],
+        },
+      });
+    const pulls = () => w.requests.filter((r) => r.type === 'pull').length;
+    v.pause(false);
+    batch(0, 0, 0.05);
+    batch(4, 0, 0);
+    batch(8, 0, 0);
+    assert.equal(pulls(), 3, 'a full prefetch without enough audio still pulls');
+    assert.equal(c.nodes.length, 0);
+    batch(12, 0.05, 0.1);
+    assert.equal(v.snapshot().status, 5);
+    assert.equal(c.nodes.length, 2, 'playback starts once the delayed audio arrives');
+    assert.equal(pulls(), 4, 'decoding continues until half a second of audio is ahead');
+    batch(16, 0.15, 0.4);
+    assert.equal(pulls(), 4);
+    v.dispose();
+  } finally {
+    globalThis.Worker = old;
+  }
+});
 test('movie color conversion retains limited-range black/white and opaque output', () => {
   const f = allocateFrame(16, 16);
   f.y.fill(16);
