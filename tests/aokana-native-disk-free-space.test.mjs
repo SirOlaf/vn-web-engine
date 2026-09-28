@@ -34,9 +34,12 @@ test('81 37 normalizes the path and writes truncated caller-available MiB', () =
   assert.equal(definition.execute(context), 0);
   assert.equal(pop32(thread), 1);
   assert.equal(thread.stackIndex, 0);
-  assert.equal(new DataView(bytes.buffer).getUint32(96, true), 5);
-  assert.equal(bytes[95], 0xa5);
-  assert.equal(bytes[100], 0xa5);
+  assert.equal(
+    new DataView(memory.globalMemory.buffer, memory.globalMemory.byteOffset).getUint32(96, true),
+    5,
+  );
+  assert.equal(memory.globalMemory[95], 0xa5);
+  assert.equal(memory.globalMemory[100], 0xa5);
 });
 
 test('disk-free-space failures preserve output and do not query unavailable media', () => {

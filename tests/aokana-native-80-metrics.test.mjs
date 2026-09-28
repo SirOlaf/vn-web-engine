@@ -24,7 +24,7 @@ test('80 06/07 expose the actual committed frame metrics with native stack and D
     moduleCapacity: 16,
     frameCapacity: 0,
   });
-  const memory = new BurikoBpMemory(),
+  const memory = new BurikoBpMemory(new Uint8Array()),
     context = {thread, memory};
   const enable = (value) => {
     push32(thread, value);

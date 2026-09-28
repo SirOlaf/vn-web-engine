@@ -85,20 +85,20 @@ function fixture(platform, entries) {
     assert.equal(thread.stackIndex, 0);
     return result;
   };
-  return {...recording, bytes, invoke};
+  return {...recording, global: () => memory.globalMemory, invoke};
 }
 
 test('81 3E bypasses path/open/output entirely for a non-NT platform', () => {
-  const {bytes, calls, invoke} = fixture(1, [['C:\\device', 1]]);
+  const {global, calls, invoke} = fixture(1, [['C:\\device', 1]]);
   assert.equal(invoke(), 1);
   assert.deepEqual(calls, []);
-  assert.deepEqual([...bytes.subarray(128, 132)], [0xa5, 0xa5, 0xa5, 0xa5]);
+  assert.deepEqual([...global().subarray(128, 132)], [0xa5, 0xa5, 0xa5, 0xa5]);
 });
 
 test('81 3E opens with exact flags, writes successful power state and closes', () => {
-  const {bytes, calls, invoke} = fixture(2, [['C:\\device', 0xf0000001]]);
+  const {global, calls, invoke} = fixture(2, [['C:\\device', 0xf0000001]]);
   assert.equal(invoke(), 1);
-  assert.equal(new DataView(bytes.buffer).getUint32(128, true), 0xf0000001);
+  assert.equal(new DataView(global().buffer, global().byteOffset).getUint32(128, true), 0xf0000001);
   assert.deepEqual(calls, [['open', 'C:\\device', 0x80000000, 1, 3, 0x80], ['query'], ['close']]);
   assert.equal(invoke(0), 1);
   assert.deepEqual(calls.slice(3), [
@@ -112,7 +112,7 @@ test('device-power open and query failures preserve output with distinct results
   const missing = fixture(2, []);
   assert.equal(missing.invoke(), 0);
   assert.deepEqual(missing.calls, [['open', 'C:\\device', 0x80000000, 1, 3, 0x80]]);
-  assert.deepEqual([...missing.bytes.subarray(128, 132)], [0xa5, 0xa5, 0xa5, 0xa5]);
+  assert.deepEqual([...missing.global().subarray(128, 132)], [0xa5, 0xa5, 0xa5, 0xa5]);
 
   const queryFailure = fixture(2, [['C:\\device', null]]);
   assert.equal(queryFailure.invoke(), 1);
@@ -121,5 +121,5 @@ test('device-power open and query failures preserve output with distinct results
     ['query'],
     ['close'],
   ]);
-  assert.deepEqual([...queryFailure.bytes.subarray(128, 132)], [0xa5, 0xa5, 0xa5, 0xa5]);
+  assert.deepEqual([...queryFailure.global().subarray(128, 132)], [0xa5, 0xa5, 0xa5, 0xa5]);
 });

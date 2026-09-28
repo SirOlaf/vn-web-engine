@@ -78,7 +78,7 @@ function setup(packed) {
     const address = nextText;
     const encoded = bytes(value + '\0');
     nextText += encoded.length + 8;
-    memoryBytes.set(encoded, address);
+    memory.globalMemory.set(encoded, address);
     return address;
   };
   const context = {thread, memory, diagnostics: {}};
@@ -89,13 +89,14 @@ function setup(packed) {
     assert.equal(thread.stackIndex, 0);
     return result;
   };
-  return {definition, memoryBytes, name, invoke};
+  return {definition, global: () => memory.globalMemory, name, invoke};
 }
 
 test('81 39 enumerates cached ARC20 and PackFile names in native path and output order', async () => {
   const expected = bytes('zeta\0alpha\0');
   for (const packed of [false, true]) {
-    const state = setup(packed);
+    const state = setup(packed),
+      view = () => new DataView(state.global().buffer, state.global().byteOffset);
     assert.equal(state.definition.primary, 0x81);
     assert.equal(state.definition.secondary, 0x39);
     assert.equal(state.definition.nativeAddress, 0x1400eb870);
@@ -104,17 +105,17 @@ test('81 39 enumerates cached ARC20 and PackFile names in native path and output
     const missing = state.name('missing.arc');
 
     assert.equal(await state.invoke(0, 400, relative), 0);
-    assert.equal(new DataView(state.memoryBytes.buffer).getUint32(400, true), expected.length);
+    assert.equal(view().getUint32(400, true), expected.length);
 
     assert.equal(await state.invoke(512, 404, absolute), 0);
-    assert.equal(new DataView(state.memoryBytes.buffer).getUint32(404, true), 2);
-    assert.deepEqual(state.memoryBytes.slice(512, 512 + expected.length), expected);
-    assert.equal(state.memoryBytes[512 + expected.length], 0xa5);
+    assert.equal(view().getUint32(404, true), 2);
+    assert.deepEqual(state.global().slice(512, 512 + expected.length), expected);
+    assert.equal(state.global()[512 + expected.length], 0xa5);
 
-    new DataView(state.memoryBytes.buffer).setUint32(408, 0x89abcdef, true);
-    state.memoryBytes.fill(0xa5, 640, 656);
+    view().setUint32(408, 0x89abcdef, true);
+    state.global().fill(0xa5, 640, 656);
     assert.equal(await state.invoke(640, 408, missing), 1);
-    assert.equal(new DataView(state.memoryBytes.buffer).getUint32(408, true), 0x89abcdef);
-    assert.deepEqual(state.memoryBytes.slice(640, 656), new Uint8Array(16).fill(0xa5));
+    assert.equal(view().getUint32(408, true), 0x89abcdef);
+    assert.deepEqual(state.global().slice(640, 656), new Uint8Array(16).fill(0xa5));
   }
 });

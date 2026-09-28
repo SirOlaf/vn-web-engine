@@ -119,7 +119,7 @@ test('record overlap uses the derived offset and third property, retaining stale
 });
 
 test('query wrappers consume all arguments in native order and retain lifetime references on output faults', () => {
-  const {bytes, view, words} = fixture(),
+  const {bytes} = fixture(),
     managers = new BurikoLogicalSpatialManagers();
   const thread = new BurikoBpThread({
     id: 1,
@@ -127,7 +127,10 @@ test('query wrappers consume all arguments in native order and retain lifetime r
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const h = {thread, memory: new BurikoBpMemory(bytes)};
+  const h = {thread, memory: new BurikoBpMemory(bytes)},
+    view = () => new DataView(h.memory.globalMemory.buffer, h.memory.globalMemory.byteOffset),
+    words = (offset, count) =>
+      Array.from({length: count}, (_, i) => view().getInt32(offset + i * 4, true));
   const definitions = [
     ...createGroupD0SpatialRecords(managers),
     ...createGroupD0SpatialQueries(managers),
@@ -138,7 +141,7 @@ test('query wrappers consume all arguments in native order and retain lifetime r
     return pop32(thread);
   };
   assert.equal(call(0x40, 16), 0);
-  const id = view.getUint32(16, true);
+  const id = view().getUint32(16, true);
   for (const [index, point] of [
     [0, [10, 20, 30]],
     [1, [13, 24, 30]],
@@ -153,11 +156,11 @@ test('query wrappers consume all arguments in native order and retain lifetime r
   assert.equal(call(0x7a, 100, id, 0, ...[13, 24, 30].map((n) => n * 65536)), 0);
   assert.deepEqual(words(100, 5), [-1, 39322, 52429, 0, 327680]);
   assert.equal(call(0x78, 100, 4, id, 0, 1), 0);
-  assert.equal(view.getUint32(4, true), 1);
+  assert.equal(view().getUint32(4, true), 1);
   assert.equal(call(0x74, 100, 4, id, 0, 1), 0);
-  assert.deepEqual(words(100, view.getUint32(4, true)), [1]);
+  assert.deepEqual(words(100, view().getUint32(4, true)), [1]);
   assert.equal(call(0x75, 100, 4, id, ...[13, 24, 30, 1].map((n) => n * 65536), -1, 1), 0);
-  assert.deepEqual(words(100, view.getUint32(4, true)), [1]);
+  assert.deepEqual(words(100, view().getUint32(4, true)), [1]);
   assert.equal(call(0x79, 0, id, 63, 63), 0x12);
   assert.equal(call(0x79, 0, id, 0, 63), 0x13);
   assert.equal(call(0x79, 0, id + 1, 0, 1), 1);

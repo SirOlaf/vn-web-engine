@@ -147,8 +147,8 @@ test('launch selection shares roots and boot names with mounted ED170 resource a
     assert.equal(launcherSlot.nativeAddress, 0x1400e5f00);
     assert.equal(await launcherSlot.execute({thread: vmThread, memory}), 0);
     assert.equal(pop32(vmThread), 1);
-    bpBytes.set(text.encodeWide('C:\\game\\restart\\next.arc', 1), 0x100);
-    bpBytes.set(text.encodeWide('next._bp', 1), 0x180);
+    memory.globalMemory.set(text.encodeWide('C:\\game\\restart\\next.arc', 1), 0x100);
+    memory.globalMemory.set(text.encodeWide('next._bp', 1), 0x180);
     push32(vmThread, 0x100); // path is below the module in the native stack.
     push32(vmThread, 0x180);
     assert.equal(await restartSlot.execute({thread: vmThread, memory}), 5);

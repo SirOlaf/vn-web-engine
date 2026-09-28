@@ -47,10 +47,10 @@ test('81 36 refreshes the shared 26-drive tables and writes every native classif
     [...media.probeDrives],
     types.map((value) => Number(value >>> 0 !== 3)),
   );
-  const view = new DataView(bytes.buffer, 64, 104),
+  const view = new DataView(memory.globalMemory.buffer, memory.globalMemory.byteOffset + 64, 104),
     classifications = Array.from({length: 26}, (_, index) => view.getUint32(index * 4, true));
   assert.deepEqual(classifications.slice(0, 8), [0, 0, 2, 1, 3, 4, 5, 0]);
   assert.deepEqual(classifications.slice(8), Array(18).fill(0));
-  assert.equal(bytes[63], 0xa5);
-  assert.equal(bytes[168], 0xa5);
+  assert.equal(memory.globalMemory[63], 0xa5);
+  assert.equal(memory.globalMemory[168], 0xa5);
 });

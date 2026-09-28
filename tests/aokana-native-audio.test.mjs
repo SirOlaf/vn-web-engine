@@ -120,7 +120,7 @@ test('CD unavailable paths preserve output memory, while mode mappings retain al
     moduleCapacity: 4,
     frameCapacity: 4,
   });
-  const memory = new BurikoBpMemory();
+  const memory = new BurikoBpMemory(new Uint8Array());
   push32(thread, 0);
   const status = createBurikoCdSlots(cd).find((slot) => slot.secondary === 0x86);
   status.execute({thread, memory});

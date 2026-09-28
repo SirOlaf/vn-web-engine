@@ -188,7 +188,7 @@ test('grid visibility uses spline terrain samples, source flags, threshold bound
 });
 
 test('all nineteen D0 grid wrappers consume the verified native arguments and map statuses', () => {
-  const {bytes, view} = fixture(),
+  const {bytes} = fixture(),
     managers = new BurikoLogicalGridManagers(),
     definitions = createGroupD0Grid(managers),
     thread = new BurikoBpThread({
@@ -198,6 +198,7 @@ test('all nineteen D0 grid wrappers consume the verified native arguments and ma
       frameCapacity: 32,
     }),
     h = {thread, memory: new BurikoBpMemory(bytes)},
+    view = () => new DataView(h.memory.globalMemory.buffer, h.memory.globalMemory.byteOffset),
     call = (secondary, ...args) => {
       for (const arg of args) push32(thread, arg);
       assert.equal(definitions.find((entry) => entry.secondary === secondary).execute(h), 0);
@@ -207,12 +208,12 @@ test('all nineteen D0 grid wrappers consume the verified native arguments and ma
     };
   assert.equal(definitions.length, 19);
   assert.equal(call(0, 16, 0, 1), 1);
-  const id = view.getUint32(16, true);
+  const id = view().getUint32(16, true);
   assert.equal(call(4, id, 3, 3, 1024), 0);
   assert.equal(call(5, 20, id, 1280), 0);
-  const plane = view.getUint32(20, true);
+  const plane = view().getUint32(20, true);
   assert.equal(call(0x10, 24, id), 0);
-  const agent = view.getUint32(24, true);
+  const agent = view().getUint32(24, true);
   assert.equal(call(0x14, id, agent, 1, 1), 0);
   assert.equal(call(0x15, id, agent, 4, 160), 0);
   assert.equal(call(0x16, id, agent, 128), 0);
@@ -220,16 +221,16 @@ test('all nineteen D0 grid wrappers consume the verified native arguments and ma
   assert.equal(call(0x18, id, agent, 2), 0);
   assert.equal(call(0x20, id, agent, 1, 2, -1, -1), 0);
   assert.equal(call(0x21, 256, 28, id, agent, 0, 0), 0);
-  assert.equal(view.getInt32(28, true), 2);
+  assert.equal(view().getInt32(28, true), 2);
   assert.equal(call(0x22, 512, id, agent), 0);
   assert.equal(call(0x23, 256, 28, id, agent), 0);
-  assert.equal(view.getInt32(28, true), 8);
+  assert.equal(view().getInt32(28, true), 8);
   assert.equal(call(0x28, 256, 768, 28, id, 1, 1, 3, 0, 0, 0, 1), 0);
-  assert.equal(view.getInt32(28, true), 8);
+  assert.equal(view().getInt32(28, true), 8);
   assert.equal(call(0x2c, 32, 1, 0, id, agent), 0);
-  assert.equal(view.getInt32(32, true), 0);
+  assert.equal(view().getInt32(32, true), 0);
   assert.equal(call(0x2d, 32, id, 1, 0, 1, 1), 0);
-  assert.equal(view.getInt32(32, true), 2);
+  assert.equal(view().getInt32(32, true), 2);
   assert.equal(call(0x12, id, agent), 0);
   assert.equal(call(0x11, id, agent), 0);
   assert.equal(call(1, id), 1);

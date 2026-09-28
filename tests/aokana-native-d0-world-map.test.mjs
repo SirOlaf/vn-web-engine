@@ -122,7 +122,7 @@ test('world-map positions use signed SIMD conversion and output aliasing writes 
 });
 
 test('all world-map VM leaves preserve argument order, status mappings and early position reads', () => {
-  const {bytes, view, maps} = fixture();
+  const {bytes, maps} = fixture();
   const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 64,
@@ -131,21 +131,22 @@ test('all world-map VM leaves preserve argument order, status mappings and early
   });
   const memory = new BurikoBpMemory(bytes),
     definitions = createGroupD0WorldMap(maps),
-    h = {thread, memory};
+    h = {thread, memory},
+    view = () => new DataView(memory.globalMemory.buffer, memory.globalMemory.byteOffset);
   const call = (secondary, ...args) => {
     for (const arg of args) push32(thread, arg);
     assert.equal(definitions.find((d) => d.secondary === secondary).execute(h), 0);
     return pop32(thread);
   };
   assert.equal(call(0xc0, 16, 8, 4), 0);
-  const id = view.getUint32(16, true);
+  const id = view().getUint32(16, true);
   assert.equal(call(0xc4, id, 0, 200), 0);
-  view.setInt32(200, 65536, true);
+  view().setInt32(200, 65536, true);
   assert.equal(call(0xc4, id, 1, 200), 0);
   assert.equal(call(0xc6, id, 0, 1, 65536, 0, 0), 0);
   assert.equal(call(0xc8, 20, 100, id, 0, 1, 0), 0);
-  assert.equal(view.getUint32(20, true), 1);
-  assert.equal(view.getUint32(100, true), 1);
+  assert.equal(view().getUint32(20, true), 1);
+  assert.equal(view().getUint32(100, true), 1);
   assert.equal(call(0xc7, id, 0, 1), 0);
   assert.equal(call(0xc7, id, 0, 1), 3);
   assert.equal(call(0xc5, id, 1), 0);

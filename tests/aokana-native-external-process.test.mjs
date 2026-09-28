@@ -179,11 +179,12 @@ test('81 E0 uses native command, token fallback, wait/window and output order on
       moduleCapacity: 0,
       frameCapacity: 0,
     }),
-    context = {thread, memory, diagnostics: {}};
-  memoryBytes.set(bytes('D:\\Tools\0'), 16);
-  memoryBytes.set(bytes('helper.exe --flag\0'), 48);
-  memoryBytes.set(bytes('E:\\Current\0'), 80);
-  memoryBytes.set(bytes('Launch failed\0'), 112);
+    context = {thread, memory, diagnostics: {}},
+    global = () => memory.globalMemory;
+  global().set(bytes('D:\\Tools\0'), 16);
+  global().set(bytes('helper.exe --flag\0'), 48);
+  global().set(bytes('E:\\Current\0'), 80);
+  global().set(bytes('Launch failed\0'), 112);
   for (const value of [224, 16, 48, 80, 1, 112, 1]) push32(thread, value);
 
   assert.equal(definition.primary, 0x81);
@@ -192,7 +193,7 @@ test('81 E0 uses native command, token fallback, wait/window and output order on
   assert.equal(await definition.execute(context), 0);
   assert.equal(pop32(thread), 1);
   assert.equal(thread.stackIndex, 0);
-  assert.equal(new DataView(memoryBytes.buffer).getUint32(224, true), 0x89abcdef);
+  assert.equal(new DataView(global().buffer, global().byteOffset).getUint32(224, true), 0x89abcdef);
 
   const request = {
     applicationName: null,

@@ -118,7 +118,7 @@ test('spatial children enumeration stores data first and the count last', () => 
 });
 
 test('spatial VM wrappers preserve float argument order, three-word vectors and release timing', () => {
-  const {bytes, view} = fixture(),
+  const {bytes} = fixture(),
     managers = new BurikoLogicalSpatialManagers();
   const thread = new BurikoBpThread({
     id: 1,
@@ -128,6 +128,8 @@ test('spatial VM wrappers preserve float argument order, three-word vectors and 
   });
   const memory = new BurikoBpMemory(bytes),
     h = {thread, memory},
+    global = () => memory.globalMemory,
+    view = () => new DataView(global().buffer, global().byteOffset),
     definitions = createGroupD0SpatialRecords(managers);
   const call = (secondary, ...args) => {
     for (const arg of args) push32(thread, arg);
@@ -135,30 +137,33 @@ test('spatial VM wrappers preserve float argument order, three-word vectors and 
     return pop32(thread);
   };
   assert.equal(call(0x40, 16), 0);
-  const id = view.getUint32(16, true);
+  const id = view().getUint32(16, true);
   const create = (index) =>
     call(0x60, id, index, ...[10, 20, 30, 1, 0, 0, 2, 3, 4].map((x) => x * 65536), 1, 7);
   assert.equal(create(0), 0);
   assert.equal(create(1), 0);
-  view.setUint32(112, 0x12345678, true);
+  view().setUint32(112, 0x12345678, true);
   assert.equal(call(0x65, 100, id, 0), 0);
   assert.deepEqual(
-    [...new Uint32Array(bytes.buffer, 100, 4)],
+    [...new Uint32Array(global().buffer, global().byteOffset + 100, 4)],
     [655360, 1310720, 1966080, 0x12345678],
   );
   assert.equal(call(0x64, id, 0, 1, 2, 3), 0);
   assert.equal(call(0x66, id, 0, 0, 65536, 0), 0);
   assert.equal(call(0x67, 100, id, 0), 0);
-  assert.deepEqual([...new Uint32Array(bytes.buffer, 100, 3)], [0, 65536, 0]);
+  assert.deepEqual(
+    [...new Uint32Array(global().buffer, global().byteOffset + 100, 3)],
+    [0, 65536, 0],
+  );
   assert.equal(call(0x62, id, 0, 4, 0xabcdef01), 0);
   assert.equal(call(0x63, 100, id, 0, 4), 0);
-  assert.equal(view.getUint32(100, true), 0xabcdef01);
+  assert.equal(view().getUint32(100, true), 0xabcdef01);
   assert.equal(call(0x68, id, 1, 0, 0), 0);
   assert.equal(call(0x69, 100, id, 1, 0), 0);
-  assert.equal(view.getUint32(100, true), 0);
+  assert.equal(view().getUint32(100, true), 0);
   assert.equal(call(0x6a, 100, 20, id, 0, 0), 0);
-  assert.equal(view.getUint32(100, true), 1);
-  assert.equal(view.getUint32(20, true), 1);
+  assert.equal(view().getUint32(100, true), 1);
+  assert.equal(view().getUint32(20, true), 1);
   assert.equal(call(0x61, id, 1), 0);
   assert.throws(() => call(0x65, 0, id, 0), /null vector output/);
   assert.equal(call(0x41, id), 0); // Vector output happens after the native release.

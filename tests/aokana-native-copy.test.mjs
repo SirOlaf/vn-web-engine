@@ -87,8 +87,8 @@ test('80:2f copies real files with independent readonly clearing, persistent ove
     }),
     slot = createGroup80Copy(files)[0];
   const copy = async (source, destination) => {
-    bytes.set(text.encodeWide(source, 1), 32);
-    bytes.set(text.encodeWide(destination, 1), 256);
+    memory.globalMemory.set(text.encodeWide(source, 1), 32);
+    memory.globalMemory.set(text.encodeWide(destination, 1), 256);
     push32(thread, 256);
     push32(thread, 32);
     assert.equal(await slot.execute({thread, memory}), 0);

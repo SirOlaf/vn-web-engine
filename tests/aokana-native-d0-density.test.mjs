@@ -76,7 +76,6 @@ test('coarse cell arithmetic retains signed-word saturation and width truncation
 
 test('D07B consumes twelve scalars plus output and preserves four discarded arguments', () => {
   const {bytes} = fixture(),
-    view = new DataView(bytes.buffer),
     managers = new BurikoLogicalSpatialManagers();
   const thread = new BurikoBpThread({
     id: 1,
@@ -84,7 +83,9 @@ test('D07B consumes twelve scalars plus output and preserves four discarded argu
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const h = {thread, memory: new BurikoBpMemory(bytes)};
+  const h = {thread, memory: new BurikoBpMemory(bytes)},
+    global = () => h.memory.globalMemory,
+    view = () => new DataView(global().buffer, global().byteOffset);
   const definitions = [
     ...createGroupD0SpatialRecords(managers),
     ...createGroupD0SpatialDensity(managers),
@@ -95,14 +96,17 @@ test('D07B consumes twelve scalars plus output and preserves four discarded argu
     return pop32(thread);
   };
   call(0x40, 16);
-  const id = view.getUint32(16, true);
+  const id = view().getUint32(16, true);
   call(0x60, id, 0, ...[2, 2, 0, 0, 0, 0, 1, 0, 0].map((v) => v * 65536), 1, 0);
   call(0x62, id, 0, 6, 65536);
   assert.equal(
     call(0x7b, 100, id, 0xaaaaaaaa, 0xbbbbbbbb, 0xcccccccc, 10, 4, 4, 0xdddddddd, 1, 0, -1, 0),
     0,
   );
-  assert.deepEqual([...new Int32Array(bytes.buffer, 100, 4)], [5 * 65536, 5 * 65536, 0, 0]);
+  assert.deepEqual(
+    [...new Int32Array(global().buffer, global().byteOffset + 100, 4)],
+    [5 * 65536, 5 * 65536, 0, 0],
+  );
   assert.equal(call(0x7b, 0, id, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1, 0), 0x18);
   assert.equal(call(0x7b, 0, id + 1, 0, 0, 0, 10, 4, 4, 0, 1, 0, -1, 0), 1);
   assert.equal(thread.stackIndex, 0);

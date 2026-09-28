@@ -39,8 +39,9 @@ test('coordinate spline controls share scheduled waits, spline sampling, sort li
     ),
     node = scheduler.append(thread),
     bytes = new Uint8Array(128),
-    view = new DataView(bytes.buffer),
     context = {thread, memory: new BurikoBpMemory(bytes), diagnostics: {}},
+    view = () =>
+      new DataView(context.memory.globalMemory.buffer, context.memory.globalMemory.byteOffset),
     slots = createGroup90CoordinateSplineControl(manager, scheduler, procedures, clock, input, {
       files: {text},
       threadFatal() {
@@ -60,9 +61,9 @@ test('coordinate spline controls share scheduled waits, spline sampling, sort li
   const start = (points, blend, packed, depth, capture = 0, limit = 0) => {
     points.forEach((point, index) => {
       point.forEach((coordinate, axis) =>
-        view.setInt32(16 + index * 16 + axis * 4, coordinate, true),
+        view().setInt32(16 + index * 16 + axis * 4, coordinate, true),
       );
-      view.setUint32(16 + index * 16 + 12, 0x12345678, true);
+      view().setUint32(16 + index * 16 + 12, 0x12345678, true);
     });
     const previous = thread.stackIndex;
     [handle, points.length, 16, 0, blend, packed, depth, 100, 50, limit, capture, 1].forEach(

@@ -84,7 +84,7 @@ test('80 enumeration uses the live shared namespace, imported aliases and ordere
       moduleCapacity: 16,
       frameCapacity: 16,
     });
-  const put = (value) => bytes.set(text.encodeWide(value, 1), 32);
+  const put = (value) => memory.globalMemory.set(text.encodeWide(value, 1), 32);
   const invoke = async (slot, ...args) => {
     for (const value of args) push32(thread, value);
     assert.equal(await definitions.find((d) => d.secondary === slot).execute({memory, thread}), 0);
@@ -96,8 +96,8 @@ test('80 enumeration uses the live shared namespace, imported aliases and ordere
     let at = 1024;
     const names = [];
     for (let i = 0; i < count; i++) {
-      const end = bytes.indexOf(0, at);
-      names.push(new TextDecoder().decode(bytes.subarray(at, end)));
+      const end = memory.globalMemory.indexOf(0, at);
+      names.push(new TextDecoder().decode(memory.globalMemory.subarray(at, end)));
       at = end + 1;
     }
     return names;

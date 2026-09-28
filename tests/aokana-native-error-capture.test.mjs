@@ -39,6 +39,6 @@ test('81 6A/6B share first-error capture and preserve optional inclusive-NUL rea
   push32(thread, 32);
   assert.equal(handlers.get(0x6b)(context), 0);
   assert.equal(pop32(thread), 3);
-  assert.deepEqual([...bytes.subarray(32, 36)], [65, 66, 0, 0xa5]);
+  assert.deepEqual([...memory.globalMemory.subarray(32, 36)], [65, 66, 0, 0xa5]);
   assert.equal(thread.stackIndex, 0);
 });

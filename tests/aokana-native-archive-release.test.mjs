@@ -91,7 +91,7 @@ test('81 3C pushes the raw release result and balances the operand stack', async
     }),
     [definition] = createGroup81ArchiveRelease(state.resources);
   state.mount('/game/data.arc');
-  memoryBytes.set(bytes('data.arc\0'), 32);
+  memory.globalMemory.set(bytes('data.arc\0'), 32);
   push32(thread, 32);
   assert.equal(await definition.execute({thread, memory, diagnostics: {}}), 0);
   assert.equal(pop32(thread), 0);

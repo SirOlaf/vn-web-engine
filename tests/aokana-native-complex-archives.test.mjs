@@ -92,7 +92,8 @@ test('80:38 registers ordered real component archives in the shared resource cac
       frameCapacity: 16,
     }),
     slots = [...createGroup80ComplexArchives(archives), ...createGroup80ResourceRead(resources)];
-  const put = (offset, value) => bytes.set(encode(value), offset);
+  const global = () => memory.globalMemory;
+  const put = (offset, value) => global().set(encode(value), offset);
   const invoke = async (slot, ...args) => {
     for (const value of args) push32(thread, value);
     assert.equal(
@@ -106,10 +107,10 @@ test('80:38 registers ordered real component archives in the shared resource cac
   put(32, 'Combined');
   put(128, 'FIRST.ARC');
   put(256, 'Second.arc');
-  const view = new DataView(bytes.buffer);
-  view.setUint32(512, 128, true);
-  view.setUint32(516, 256, true);
-  view.setUint32(520, 0, true);
+  const view = () => new DataView(global().buffer, global().byteOffset);
+  view().setUint32(512, 128, true);
+  view().setUint32(516, 256, true);
+  view().setUint32(520, 0, true);
   assert.equal(await invoke(0x38, 32, 512), 1);
   put(32, 'COMBINED');
   assert.equal(await invoke(0x38, 32, 512), 0);
@@ -132,10 +133,10 @@ test('80:38 registers ordered real component archives in the shared resource cac
   );
   put(768, 'Shared');
   assert.equal(await invoke(0x30, 1024, 32, 768), 3);
-  assert.deepEqual(Array.from(bytes.subarray(1024, 1027)), [3, 5, 7]);
+  assert.deepEqual(Array.from(global().subarray(1024, 1027)), [3, 5, 7]);
   put(768, 'OnlySecond');
   assert.equal(await invoke(0x31, 1056, 32, 768, 1, 2), 0);
-  assert.deepEqual(Array.from(bytes.subarray(1056, 1058)), [11, 12]);
+  assert.deepEqual(Array.from(global().subarray(1056, 1058)), [11, 12]);
   assert.equal(await archives.release(logical), 0x80000010);
   assert.equal(await archives.contains(logical, encode('OnlySecond')), true);
   await fs.commit([

@@ -177,7 +177,7 @@ test('all24 particle wrappers use native slots, stack order and shared concrete 
     moduleCapacity: 64,
     frameCapacity: 0,
   });
-  const memory = new BurikoBpMemory(),
+  const memory = new BurikoBpMemory(new Uint8Array()),
     context = {thread, memory, diagnostics: {}};
   memory.writeU32(thread, 0x10000000, 65536);
   memory.writeU32(thread, 0x10000004, 100);

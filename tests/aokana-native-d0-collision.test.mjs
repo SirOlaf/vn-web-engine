@@ -130,7 +130,7 @@ test('movement category masks require either a shared tag or both sides untagged
 });
 
 test('movement VM leaves retain distinct boolean/status paths and all argument ordering', () => {
-  const {bytes, view} = fixture(),
+  const {bytes} = fixture(),
     managers = new BurikoLogicalSpatialManagers();
   const thread = new BurikoBpThread({
     id: 1,
@@ -138,7 +138,8 @@ test('movement VM leaves retain distinct boolean/status paths and all argument o
     moduleCapacity: 64,
     frameCapacity: 64,
   });
-  const h = {thread, memory: new BurikoBpMemory(bytes)};
+  const h = {thread, memory: new BurikoBpMemory(bytes)},
+    view = () => new DataView(h.memory.globalMemory.buffer, h.memory.globalMemory.byteOffset);
   const definitions = [
     ...createGroupD0SpatialRecords(managers),
     ...createGroupD0SpatialCollision(managers),
@@ -149,7 +150,7 @@ test('movement VM leaves retain distinct boolean/status paths and all argument o
     return pop32(thread);
   };
   call(0x40, 16);
-  const id = view.getUint32(16, true);
+  const id = view().getUint32(16, true);
   for (const [index, point] of [
     [0, [10, 20, 30]],
     [1, [13, 24, 30]],
@@ -160,8 +161,8 @@ test('movement VM leaves retain distinct boolean/status paths and all argument o
     );
   assert.equal(call(0x70, id, 0, ...[13, 24, 30].map((v) => v * 65536), 1, 0), 0);
   assert.equal(call(0x71, 100, 4, id, 0, ...[13, 24, 30].map((v) => v * 65536), 1, 0), 0);
-  assert.equal(view.getUint32(4, true), 1);
-  assert.equal(view.getUint32(100, true), 1);
+  assert.equal(view().getUint32(4, true), 1);
+  assert.equal(view().getUint32(100, true), 1);
   assert.equal(call(0x71, 100, 4, id, 0, ...[10, 20, 30].map((v) => v * 65536), 1, 0), 0x1d);
   assert.equal(call(0x71, 0, 0, id, 0, ...[13, 24, 30].map((v) => v * 65536), 1, 0), 0x1d);
   assert.equal(call(0x70, id, 63, 0, 0, 0, 1, 0), 0x12);
