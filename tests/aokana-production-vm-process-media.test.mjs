@@ -100,7 +100,14 @@ test('selected process and logical-drive slots use the graph resource owner and 
     memory.globalMemory.set(new TextEncoder().encode('helper.exe\0'), 0x400);
     assert.equal(await invoke(0x81, 0xe0, [0x300, 0, 0x400, 0, 1, 0, 0], 0), 1);
     assert.equal(pop32(child.state), 1);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x300, true), 23);
+    assert.equal(
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      ).getUint32(0x300, true),
+      23,
+    );
     assert.deepEqual(received, [0x9001, 0x9002]);
     assert.deepEqual(events, [
       ['create', 'C:\\game'],

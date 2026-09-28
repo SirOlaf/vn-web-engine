@@ -43,7 +43,10 @@ test('mounted immediate BMP load joins its callback and exposes bottom-up pixels
     assert.equal(child.process, null);
     const surface = graph.surfaces.snapshot(1);
     assert.deepEqual([surface.width, surface.height, surface.format], [2, 2, 1]);
-    const output = new DataView(memory.globalMemory.buffer);
+    const output = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     for (const [x, y, expected] of [
       [0, 0, 0xff0000],
       [1, 0, 0x00ff00],
@@ -52,7 +55,7 @@ test('mounted immediate BMP load joins its callback and exposes bottom-up pixels
     ]) {
       assert.equal(await invoke(0x92, 0x17, [0x200, 1, x, y], 0), 1);
       assert.equal(pop32(child.state), 0);
-      assert.equal(output.getUint32(0x200, true), expected);
+      assert.equal(output().getUint32(0x200, true), expected);
       assert.equal(child.state.stackIndex, 0);
     }
     assert.equal(await invoke(0x90, 0x12, [1], 0), 1);

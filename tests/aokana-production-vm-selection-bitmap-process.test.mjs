@@ -8,9 +8,12 @@ import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 test('mounted scheduled bitmap selectors share Window pixels, input and BP completion', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, data, core, child, definitions, invoke, memory} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const words = (offset, values) =>
-    values.forEach((value, index) => view.setInt32(offset + index * 4, value, true));
+    values.forEach((value, index) => view().setInt32(offset + index * 4, value, true));
   const call = async (secondary, args, depth = 0, status = 0) => {
     assert.equal(await invoke(0x90, secondary, args, status), depth);
   };

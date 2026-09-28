@@ -31,6 +31,12 @@ import {BurikoScriptFiles} from '../dist/engines/buriko/native/script-files.js';
 import {BurikoSharedLoaderWorker} from '../dist/engines/buriko/native/shared-loader-worker.js';
 import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
+// A pointer view sits at an arbitrary offset in the shared VM arena.
+const viewOf = (p) => {
+  const bytes = p.view();
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+};
+
 test('per-program script close leaves one mounted loader alive until final stop', async () => {
   const backing = new StoredFileSystem(new MemoryStore(), (path) => path.toLowerCase());
   await backing.commit([{kind: 'write', path: '/game/document', data: Uint8Array.of(11, 22, 33)}]);
@@ -108,7 +114,7 @@ test('per-program script close leaves one mounted loader alive until final stop'
       await scripts.open(handle, hostPointer(encode('C:\\game\\document')), 0, caller),
       0,
     );
-    const id = new DataView(handle.view().buffer).getUint32(0, true);
+    const id = viewOf(handle).getUint32(0, true);
     await worker.closeProgramScripts(caller);
     assert.equal(scripts.find(id), null);
     assert.equal(scripts.hasLiveSection, false);

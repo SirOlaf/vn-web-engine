@@ -80,7 +80,11 @@ test('mounted 81:1B/1D use one explicitly initialized and polled in-memory gamep
 
     assert.equal(await invoke(0x81, 0x1d, [0x200, 1], 0), 1);
     assert.equal(pop32(child.state), 1);
-    const output = new DataView(memory.globalMemory.buffer, 0x200, 24);
+    const output = new DataView(
+      memory.globalMemory.buffer,
+      memory.globalMemory.byteOffset + 0x200,
+      24,
+    );
     assert.deepEqual(
       [
         output.getInt32(0, true),

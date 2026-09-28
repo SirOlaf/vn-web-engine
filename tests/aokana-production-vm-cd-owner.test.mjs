@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('selected CD host shares the native slots, main FIFO and graph close owner', async () => {
   let opens = 0;
@@ -40,7 +42,7 @@ test('selected CD host shares the native slots, main FIFO and graph close owner'
     assert.equal(opens, 1);
     await invoke(0xa0, 0x86, [0x100], 0);
     assert.equal(pop32(child.state), 1);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x100, true), 3);
+    assert.equal(bankView(memory.globalMemory).getUint32(0x100, true), 3);
 
     graph.messages.postCdSuccessfulNotification(17);
     const dispatched = await graph.queuedDispatcher.dispatchNext();

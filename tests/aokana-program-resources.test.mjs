@@ -236,8 +236,18 @@ test('deferred archive pointers are consumed only after a primary loose miss, in
   assert.equal(await createGroupC0Bwef(s.resources)[0].execute({memory, thread}), 0);
   assert.equal(pop32(thread), 0);
   assert.equal(thread.stackIndex, 0);
-  assert.deepEqual([...new Int32Array(memory.globalMemory.buffer, 64, 2)], [123, 17]);
-  assert.equal(new DataView(memory.globalMemory.buffer).getUint32(96, true), 1);
+  assert.deepEqual(
+    [...new Int32Array(memory.globalMemory.buffer, memory.globalMemory.byteOffset + 64, 2)],
+    [123, 17],
+  );
+  assert.equal(
+    new DataView(
+      memory.globalMemory.buffer,
+      memory.globalMemory.byteOffset,
+      memory.globalMemory.byteLength,
+    ).getUint32(96, true),
+    1,
+  );
   s.resources.configuration.secondaryMediaPath = 'D:\\';
   reads = 0;
   await assert.rejects(

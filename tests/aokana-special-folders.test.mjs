@@ -19,6 +19,12 @@ import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js'
 import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 
+// A pointer view sits at an arbitrary offset in the shared VM arena.
+const viewOf = (p) => {
+  const bytes = p.view();
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+};
+
 const ascii = (value) => new TextEncoder().encode(value);
 const pointer = (value = 784) =>
   hostPointer(typeof value === 'number' ? new Uint8Array(value) : ascii(value + '\0'));
@@ -191,7 +197,7 @@ test('E0 count files keep bank order, full hexadecimal widths and signed decimal
   const data = pointer(1028),
     flags = pointer(1028);
   counts.register(0x180, 257, data, flags);
-  const view = new DataView(data.view().buffer);
+  const view = viewOf(data);
   view.setUint32(4, 0xffffffff, true);
   view.setUint32(8, 2, true);
   flags.view()[8] = 1;

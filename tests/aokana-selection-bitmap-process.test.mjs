@@ -93,7 +93,12 @@ function fixture() {
     ),
     node = scheduler.append(thread);
   const memory = new BurikoBpMemory(new Uint8Array(1024)),
-    view = new DataView(memory.globalMemory.buffer);
+    view = () =>
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      );
   const slots = createGroup90SelectionBitmapProcess(
     manager,
     scheduler,
@@ -113,7 +118,7 @@ function fixture() {
     },
   );
   const words = (offset, values) =>
-    values.forEach((value, i) => view.setInt32(offset + i * 4, value, true));
+    values.forEach((value, i) => view().setInt32(offset + i * 4, value, true));
   const call = async (secondary, args, result = 0) => {
     const slot = slots.find((s) => s.secondary === secondary);
     assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][secondary]);

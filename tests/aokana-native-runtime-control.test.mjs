@@ -7,6 +7,8 @@ import {BurikoProcedureState, BurikoWaitTiming} from '../dist/engines/buriko/nat
 import {BurikoNativeNotifications} from '../dist/engines/buriko/native/notification-queue.js';
 import {createGroup80Notifications} from '../dist/engines/buriko/native/group-80-notifications.js';
 import {createGroup80ProcedureControl} from '../dist/engines/buriko/native/group-80-procedure-control.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('80:50 controls an actual shared wait and A1 publishes into the existing A0 notification FIFO', () => {
   const memory = new BurikoBpMemory(new Uint8Array(0x1000)),
@@ -43,7 +45,7 @@ test('80:50 controls an actual shared wait and A1 publishes into the existing A0
     assert.equal(append.execute(context), 0);
     assert.equal(thread.stackIndex, 0);
   }
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => bankView(memory.globalMemory);
   for (const pair of [
     [0x12345678, 0x90abcdef],
     [7, 9],
@@ -52,7 +54,7 @@ test('80:50 controls an actual shared wait and A1 publishes into the existing A0
     assert.equal(take.execute(context), 0);
     assert.equal(pop32(thread), 1);
     assert.deepEqual(
-      [view.getUint32(0x100, true), view.getUint32(0x104, true), view.getUint32(0x108, true)],
+      [view().getUint32(0x100, true), view().getUint32(0x104, true), view().getUint32(0x108, true)],
       [0, ...pair],
     );
   }

@@ -5,6 +5,8 @@ import {createGroupC0Splines} from '../dist/engines/buriko/native/group-c0-splin
 import {decodeBwefPairs} from '../dist/engines/buriko/native/bwef.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 function storage(size) {
   const bytes = new Uint8Array(size),
@@ -65,11 +67,11 @@ test('C0 spline wrappers preserve all four native stack contracts', () => {
     return result;
   };
   const id = call(0xc0),
-    view = new DataView(memory.globalMemory.buffer);
-  view.setInt32(64 + 16, 80, true);
+    view = () => bankView(memory.globalMemory);
+  view().setInt32(64 + 16, 80, true);
   assert.equal(call(0xc2, [id, 2, 64, 4]), 0);
   assert.equal(call(0xc3, [128, id, 3]), 0);
-  assert.equal(view.getInt32(128, true), 60);
+  assert.equal(view().getInt32(128, true), 60);
   assert.equal(call(0xc1, [id]), 0);
 });
 

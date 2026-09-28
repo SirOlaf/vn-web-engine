@@ -97,7 +97,9 @@ test('mounted VM preloads and loads packed bitmap resources into its shared surf
     assert.equal(await invoke(0x90, 0x16, [0x200, 2], 0), 1);
     assert.equal(pop32(child.state), 1);
     assert.deepEqual(
-      Array.from(new Uint32Array(memory.globalMemory.buffer, 0x200, 6)),
+      Array.from(
+        new Uint32Array(memory.globalMemory.buffer, memory.globalMemory.byteOffset + 0x200, 6),
+      ),
       [0, 8, 2, 1, 2, 4],
     );
     assert.equal(await invoke(0x90, 0x11, [3, 2, 1, 2], 0), 0);

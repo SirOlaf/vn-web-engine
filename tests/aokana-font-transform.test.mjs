@@ -60,7 +60,7 @@ test('92 font transforms feed cached glyph layout, measured bearings, and actual
   });
   const memory = new BurikoBpMemory(new Uint8Array(256));
   memory.globalMemory.set(text.encodeWide('Synthetic', 0), 16);
-  const vector = new DataView(memory.globalMemory.buffer, 64, 20);
+  const vector = new DataView(memory.globalMemory.buffer, memory.globalMemory.byteOffset + 64, 20);
   [65536, 65536, 0, 0, 0].forEach((value, index) => vector.setInt32(index * 4, value, true));
   memory.globalMemory.set([0xef, 0x40, 0xef, 0x41, 0], 128);
   const thread = new BurikoBpThread({

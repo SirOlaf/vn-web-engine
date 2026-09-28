@@ -25,6 +25,8 @@ import {BurikoSelectionDialog} from '../dist/engines/buriko/native/selection-dia
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 class Element {
   children = [];
@@ -164,7 +166,9 @@ function vmSlots(definitions) {
     write(at, bytes) {
       memory.globalMemory.set(bytes, at);
     },
-    view: new DataView(memory.globalMemory.buffer),
+    get view() {
+      return bankView(memory.globalMemory);
+    },
   };
 }
 function event(output) {

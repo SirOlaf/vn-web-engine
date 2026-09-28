@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 
+const bankView = (memory) => {
+  const bank = memory.globalMemory;
+  return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+};
+
 test('selected 80:EC/ED/EE registry uses native DLL exports and borrowed callback arguments', async () => {
   const events = [];
   const windowHandle = {nativeWindow: true};
@@ -25,10 +30,7 @@ test('selected 80:EC/ED/EE registry uses native DLL exports and borrowed callbac
     invoke(procedure, args) {
       if (procedure.name === 'SetWindowHandleOfEthornell') {
         assert.deepEqual(args, [{kind: 'handle', value: windowHandle}]);
-        events.push([
-          'set-window',
-          new DataView(fixture.memory.globalMemory.buffer).getUint32(0x100, true),
-        ]);
+        events.push(['set-window', bankView(fixture.memory).getUint32(0x100, true)]);
         return;
       }
       assert.equal(procedure.name, 'CallFunctionForEthornell');
@@ -63,18 +65,18 @@ test('selected 80:EC/ED/EE registry uses native DLL exports and borrowed callbac
     memory.globalMemory.set(new TextEncoder().encode('bad.dll\0'), 0x200);
     assert.equal(await invoke(0x80, 0xec, [0x100, 0x200], 0), 1);
     assert.equal(pop32(child.state), 2);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x100, true), 0);
+    assert.equal(bankView(memory).getUint32(0x100, true), 0);
 
     memory.globalMemory.set(new TextEncoder().encode('plugin.dll\0'), 0x200);
     assert.equal(await invoke(0x80, 0xec, [0x100, 0x200], 0), 1);
     assert.equal(pop32(child.state), 0);
-    const id = new DataView(memory.globalMemory.buffer).getUint32(0x100, true);
+    const id = bankView(memory).getUint32(0x100, true);
     assert.equal(id, 1);
     memory.globalMemory[0x300] = 0x11;
     assert.equal(await invoke(0x80, 0xee, [0x400, id, 0xfffffff9, 0x300, 0xfffffffd, 1], 0), 1);
     assert.equal(pop32(child.state), 4);
     assert.equal(memory.globalMemory[0x300], 0x5a);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x400, true), 0x9abcdef0);
+    assert.equal(bankView(memory).getUint32(0x400, true), 0x9abcdef0);
 
     assert.equal(await invoke(0x80, 0xed, [id], 0), 1);
     assert.equal(pop32(child.state), 0);
@@ -82,7 +84,7 @@ test('selected 80:EC/ED/EE registry uses native DLL exports and borrowed callbac
     assert.equal(pop32(child.state), 3);
     assert.equal(await invoke(0x80, 0xee, [0x400, id, 0, 0, 0, 0], 0), 1);
     assert.equal(pop32(child.state), 3);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x400, true), 0x9abcdef0);
+    assert.equal(bankView(memory).getUint32(0x400, true), 0x9abcdef0);
     assert.deepEqual(events.slice(-3), [
       ['set-window', 1],
       ['call'],

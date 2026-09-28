@@ -8,9 +8,12 @@ import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 test('mounted base Icon callbacks share Window, BP records and the core poll lane', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, data, core, child, definitions, invoke, memory} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const words = (offset, values) =>
-    values.forEach((value, index) => view.setInt32(offset + index * 4, value, true));
+    values.forEach((value, index) => view().setInt32(offset + index * 4, value, true));
   const call = async (primary, secondary, args, pushed = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushed);
     assert.equal(child.process, null);
@@ -100,12 +103,12 @@ test('mounted base Icon callbacks share Window, BP records and the core poll lan
     assert.deepEqual([pixel(2, 2), pixel(8, 2)], [0x000033, 0x002200]);
     memory.globalMemory.fill(0xcc, 0x500, 0x558);
     assert.equal(await result(0x90, 0xbd, [0x500, id]), 1);
-    assert.equal(view.getInt32(0x500, true), 0);
+    assert.equal(view().getInt32(0x500, true), 0);
     assert.equal(await result(0x90, 0xbe, [0x510, id]), 1);
-    assert.equal(view.getInt32(0x510, true), 1);
+    assert.equal(view().getInt32(0x510, true), 1);
     assert.equal(await result(0x90, 0xbf, [0x520, id]), 1);
     assert.deepEqual(
-      [0, 1, 2].map((index) => view.getUint32(0x520 + index * 4, true)),
+      [0, 1, 2].map((index) => view().getUint32(0x520 + index * 4, true)),
       [0x10000002, 0, 1],
     );
 
@@ -114,7 +117,7 @@ test('mounted base Icon callbacks share Window, BP records and the core poll lan
     assert.equal(await core.runIndependentPoll('enabled'), 1);
     assert.equal(await result(0x90, 0xbc, [0x540, id]), 1);
     assert.deepEqual(
-      Array.from({length: 6}, (_, index) => view.getInt32(0x540 + index * 4, true)),
+      Array.from({length: 6}, (_, index) => view().getInt32(0x540 + index * 4, true)),
       [0, 0, 1, 0, 0, 0],
     );
     assert.notDeepEqual(captures(), initialCaptures);

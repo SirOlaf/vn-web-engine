@@ -52,9 +52,14 @@ test('90:B4/B5 draw real text-layer bitmaps using retained insets and native rec
   const slots = createGroup90SelectionBitmaps(manager, null),
     memory = new BurikoBpMemory(new Uint8Array(1024)),
     thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
-    view = new DataView(memory.globalMemory.buffer);
+    view = () =>
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      );
   const words = (offset, values) =>
-    values.forEach((v, i) => view.setInt32(offset + i * 4, v, true));
+    values.forEach((v, i) => view().setInt32(offset + i * 4, v, true));
   // B4's second record begins at+16. B5 copies only the first three words
   // from each+64 record before looking up the Window.
   words(32, [1, 2, 0, -1, 10, 6, 1, -1]);

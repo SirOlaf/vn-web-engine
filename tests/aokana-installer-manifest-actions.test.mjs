@@ -18,6 +18,8 @@ import {
 import {BurikoMountedProgramPaths} from '../dist/engines/buriko/native/program-paths.js';
 import {BurikoProgramResources} from '../dist/engines/buriko/native/program-resources.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const bytes = (value) => new TextEncoder().encode(value);
 
@@ -93,12 +95,12 @@ async function invoke(actions, secondary, root, entries) {
     moduleCapacity: 0,
     frameCapacity: 0,
   });
-  const list = new DataView(memory.globalMemory.buffer);
+  const list = () => bankView(memory.globalMemory);
   memory.globalMemory.set(root, 64);
   entries.forEach((entry, index) => {
     const offset = 256 + index * 128;
     memory.globalMemory.set(entry, offset);
-    list.setUint32(128 + index * 4, offset, true);
+    list().setUint32(128 + index * 4, offset, true);
   });
   const slot = createGroup80InstallerManifest(actions).find((item) => item.secondary === secondary);
   assert.ok(slot);

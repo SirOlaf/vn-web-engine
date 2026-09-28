@@ -73,7 +73,11 @@ test('mounted VM display-base controls mutate its shared graph owners', async ()
 
     await call(0x0f, [0x204060]);
     assert.equal(graph.compositor.importMatteColor, 0x204060);
-    new DataView(memory.globalMemory.buffer).setUint32(0x240, 0x80323c50, true);
+    new DataView(
+      memory.globalMemory.buffer,
+      memory.globalMemory.byteOffset,
+      memory.globalMemory.byteLength,
+    ).setUint32(0x240, 0x80323c50, true);
     await call(0x14, [2, 1, 1, 2, 0x240]);
     assert.equal(graph.surfaces.snapshot(2).storage.view.getUint32(0, true), 0x80453941);
     assert.equal(await invoke(0x90, 0x12, [2], 0), 1);

@@ -17,6 +17,8 @@ import {createGroup90CompressedEncode} from '../dist/engines/buriko/native/group
 import {decodeCompressedBgLegacy} from '../dist/formats/buriko/compressed-bg.js';
 import {decodeBurikoCompressedBgV2} from '../dist/engines/buriko/native/compressed-bg-v2.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('90:CE exports both real surface formats through complete encoders and imports decoded pixels', async () => {
   const allocator = new BurikoDistributedAllocator(2),
@@ -38,7 +40,7 @@ test('90:CE exports both real surface formats through complete encoders and impo
     }),
     memory = new BurikoBpMemory(new Uint8Array(20000)),
     thread = new BurikoBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
-    view = new DataView(memory.globalMemory.buffer);
+    view = () => bankView(memory.globalMemory);
   assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][0xce]);
   for (const mode of [0, 1]) {
     const height = mode === 0 ? 1 : 16,
@@ -56,7 +58,7 @@ test('90:CE exports both real surface formats through complete encoders and impo
     [64, 32, mode, mode, 75].forEach((value) => push32(thread, value));
     assert.equal(slot.execute({thread, memory, diagnostics: {}}), 0);
     assert.equal(thread.stackIndex, 0);
-    const length = view.getUint32(32, true),
+    const length = view().getUint32(32, true),
       encoded = memory.globalMemory.subarray(64, 64 + length);
     let pixels;
     if (mode === 0) {

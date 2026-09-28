@@ -4,6 +4,8 @@ import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoMemorySpeakerBackend} from '../dist/engines/buriko/native/audio/speaker-backend.js';
 import {BrowserWindowsPlaySoundHost} from '../dist/platform/windows-sound.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 function pcm(frames) {
   const bytes = new Uint8Array(64 + frames * 2);
@@ -122,11 +124,11 @@ test('mounted A0 volume, status, and release callbacks share inactive graph PCM 
     assert.equal(backend.buffers[0].core.status().playing, false);
     assert.equal(backend.buffers[1].core.status().playing, false);
 
-    const view = new DataView(memory.globalMemory.buffer);
-    view.setInt32(0x300, 77, true);
+    const view = () => bankView(memory.globalMemory);
+    view().setInt32(0x300, 77, true);
     await callAsync(0x15, [0, 0x300], 1);
     assert.equal(pop32(child.state), 0);
-    assert.equal(view.getInt32(0x300, true), 0);
+    assert.equal(view().getInt32(0x300, true), 0);
     channels.staticHeaders.fill(0xa5, 0, 64);
     channels.staticHeadersInitialized.fill(0, 0, 64);
     await callAsync(0x22, [0]);

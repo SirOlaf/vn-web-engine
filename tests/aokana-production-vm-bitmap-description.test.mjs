@@ -2,23 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('mounted E0:3F formats a BP bitmap description with the shared graph text owner', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, memory, child, definitions, invoke} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => bankView(memory.globalMemory);
   try {
     assert.ok(definitions.some(({primary, secondary}) => primary === 0xe0 && secondary === 0x3f));
     assert.equal(graph.resource.files.text, graph.text);
     memory.globalMemory.fill(0xa5, 0x100, 0x100 + 40);
     memory.globalMemory.fill(0xb6, 0x200, 0x200 + 0x40);
     memory.globalMemory.fill(0xc7, 0x300, 0x300 + 0xc4);
-    view.setUint32(0x100, 1, true);
-    view.setUint32(0x104, 0x200, true);
-    view.setUint32(0x200, 1, true);
-    view.setUint32(0x208, 0x300, true);
+    view().setUint32(0x100, 1, true);
+    view().setUint32(0x104, 0x200, true);
+    view().setUint32(0x200, 1, true);
+    view().setUint32(0x208, 0x300, true);
     [1, 0, -2, 3, -4, 5, 6, -7, 8, 9, 10, 11, -1].forEach((value, index) =>
-      view.setInt32(0x300 + index * 4, value, true),
+      view().setInt32(0x300 + index * 4, value, true),
     );
     const sources = [
       memory.globalMemory.slice(0x100, 0x128),

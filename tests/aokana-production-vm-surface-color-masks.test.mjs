@@ -44,9 +44,12 @@ test('mounted VM luminance masks feed recolor, effect, mask, and duplicate surfa
         [0x92, 0x19],
       ],
     );
-    const view = new DataView(memory.globalMemory.buffer);
+    const view = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     const colorSource = [0xc0abcdef, 0x80abcdef, 0xffabcdef, 0x40abcdef];
-    colorSource.forEach((pixel, index) => view.setUint32(0x200 + index * 4, pixel, true));
+    colorSource.forEach((pixel, index) => view().setUint32(0x200 + index * 4, pixel, true));
     assert.equal(await invoke(0x90, 0x14, [0, 4, 1, 2, 0x200], 0), 0);
     for (const index of [1, 2]) assert.equal(await invoke(0x90, 0x11, [index, 4, 1, 2], 0), 0);
     assert.equal(await invoke(0x91, 0x1a, [1, 0, 0x203040], 0), 0);
@@ -68,8 +71,8 @@ test('mounted VM luminance masks feed recolor, effect, mask, and duplicate surfa
     assert.equal(await invoke(0x92, 0x19, [5], 0), 1);
     assert.equal(pop32(child.state), 1);
     assert.deepEqual(maskBytes(graph.surfaces.snapshot(5)), [0, 179, 105, 228]);
-    view.setUint32(0x260, 0x80ffffff, true);
-    view.setUint32(0x264, 0xffff0000, true);
+    view().setUint32(0x260, 0x80ffffff, true);
+    view().setUint32(0x264, 0xffff0000, true);
     assert.equal(await invoke(0x90, 0x14, [6, 2, 1, 2, 0x260], 0), 0);
     assert.equal(await invoke(0x92, 0x18, [7, 6], 0), 0);
     assert.deepEqual(maskBytes(graph.surfaces.snapshot(7)), [127, 76]);

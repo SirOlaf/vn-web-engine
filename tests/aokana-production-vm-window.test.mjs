@@ -74,9 +74,12 @@ test('mounted VM binds Window lifecycle and capture to its graph', async () => {
     assert.equal(await invoke(0x90, 0x89, [0x601, windowHandle], 0), 1);
     assert.equal(pop32(child.state), 1);
     assert.equal(child.state.stackIndex, 0);
-    const windowOutput = new DataView(memory.globalMemory.buffer);
+    const windowOutput = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     assert.deepEqual(
-      [0, 4, 8, 12].map((offset) => windowOutput.getInt32(0x601 + offset, true)),
+      [0, 4, 8, 12].map((offset) => windowOutput().getInt32(0x601 + offset, true)),
       [1, 2, 4, 6],
     );
     await callWindow(0x83, [5, windowHandle]);

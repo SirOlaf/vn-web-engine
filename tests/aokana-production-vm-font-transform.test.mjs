@@ -50,7 +50,10 @@ test('mounted named font transform changes shared cached draw and measurement sp
   };
   const fixture = await createMountedVmFixture({fontProvider});
   const {graph, child, definitions, memory, invoke} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (primary, secondary, args, pushes = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushes);
     assert.equal(child.state.stackIndex, pushes);
@@ -59,16 +62,19 @@ test('mounted named font transform changes shared cached draw and measurement sp
   const pixel = async (surface, x) => {
     await call(0x92, 0x17, [0x300, surface, x, 0], 1);
     assert.equal(pop32(child.state), 0);
-    return view.getUint32(0x300, true) & 0xffffff;
+    return view().getUint32(0x300, true) & 0xffffff;
   };
   const drawAndMeasure = async (surface, font, expectedCursor, glyphX) => {
     await call(0x91, 0x9c, [surface, 0, 0, 0x180, 0, 0, font, 8, 100, 0, 0, 0, 0, 0x123456], 1);
     assert.equal(pop32(child.state), 1);
     await call(0x92, 0x9b, [0x200, 0x100]);
-    assert.deepEqual([view.getInt32(0x200, true), view.getInt32(0x204, true)], [expectedCursor, 0]);
+    assert.deepEqual(
+      [view().getInt32(0x200, true), view().getInt32(0x204, true)],
+      [expectedCursor, 0],
+    );
     await call(0x91, 0x9b, [0x220, 0x180, font, 8, 100, 0, 0], 1);
     assert.equal(pop32(child.state), 0);
-    assert.equal(view.getInt32(0x220, true), expectedCursor);
+    assert.equal(view().getInt32(0x220, true), expectedCursor);
     assert.equal(await pixel(surface, 0), 0x123456);
     assert.equal(await pixel(surface, glyphX), 0x123456);
     assert.equal(await pixel(surface, expectedCursor), 0);
@@ -99,7 +105,7 @@ test('mounted named font transform changes shared cached draw and measurement sp
     // Two CP932 private-use, full-width glyphs produce the standalone 8-pixel advance.
     memory.globalMemory.set([0xef, 0x40, 0xef, 0x41, 0], 0x180);
     [65536, 65536, 0, 0, 0].forEach((value, index) =>
-      view.setInt32(0x140 + index * 4, value, true),
+      view().setInt32(0x140 + index * 4, value, true),
     );
     await call(0xb0, 0xc1, [0x100, 0], 1);
     const font = pop32(child.state);

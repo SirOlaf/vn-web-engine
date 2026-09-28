@@ -47,8 +47,11 @@ test('mounted VM surface splat accumulates into graph pixels and exports exact B
 
     memory.globalMemory.fill(0xa5, 0x400, 0x440);
     assert.equal(await invoke(0x90, 0x15, [0x400, 0x300, 64, 1], 0), 0);
-    const view = new DataView(memory.globalMemory.buffer);
-    assert.equal(view.getUint32(0x300, true), 48);
+    const view = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
+    assert.equal(view().getUint32(0x300, true), 48);
     assert.deepEqual(
       [...memory.globalMemory.subarray(0x400, 0x430)],
       levels.flatMap((value) => [value, value, value]),

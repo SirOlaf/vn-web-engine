@@ -71,7 +71,11 @@ test('80:F2 runs the mounted file and uninstaller transaction in its progress mo
     };
     const write = (at, value) => memory.globalMemory.set(bytes(value + '\0'), at);
     const dword = (at, value) =>
-      new DataView(memory.globalMemory.buffer).setUint32(at, value, true);
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      ).setUint32(at, value, true);
     write(address.destination, 'C:\\restart\\install');
     write(address.file, 'data.bin');
     dword(address.files, address.file);

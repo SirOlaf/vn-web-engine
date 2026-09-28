@@ -48,7 +48,10 @@ test('mounted registered surface text draws and reports multiline metrics throug
   };
   const fixture = await createMountedVmFixture({fontProvider});
   const {graph, child, definitions, memory, invoke} = fixture;
-  const output = new DataView(memory.globalMemory.buffer);
+  const output = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (primary, secondary, args, pushes = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushes);
     assert.equal(child.state.stackIndex, pushes);
@@ -57,7 +60,7 @@ test('mounted registered surface text draws and reports multiline metrics throug
   const pixel = async (surface, x, y) => {
     await call(0x92, 0x17, [0x300, surface, x, y], 1);
     assert.equal(pop32(child.state), 0);
-    return output.getUint32(0x300, true) & 0xffffff;
+    return output().getUint32(0x300, true) & 0xffffff;
   };
   try {
     assert.deepEqual(

@@ -41,12 +41,15 @@ test('mounted VM timing and displacement callbacks share clock, counter, frame h
     core.frameHistory.record(Number(graph.clock.read()));
     tick = 11;
     core.frameHistory.record(Number(graph.clock.read()));
-    const words = new DataView(memory.globalMemory.buffer);
+    const words = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     assert.equal(await call(0x80, 0x03, [0x300, 2], true), 1);
-    assert.deepEqual([words.getUint32(0x300, true), words.getUint32(0x304, true)], [4, 7]);
+    assert.deepEqual([words().getUint32(0x300, true), words().getUint32(0x304, true)], [4, 7]);
     assert.equal(await call(0x80, 0x04, [], true), 11);
     assert.equal(await call(0x80, 0x05, [0x320], true), 1);
-    assert.equal(words.getBigInt64(0x320, true), 11000000n);
+    assert.equal(words().getBigInt64(0x320, true), 11000000n);
 
     await call(0x80, 0x00, [1]);
     assert.equal(await call(0x80, 0x01, [], true), 41);

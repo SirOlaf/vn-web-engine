@@ -6,7 +6,10 @@ import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 test('mounted VM world maps share the data owner and BP memory', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, data, core, memory, child, definitions, invoke} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (secondary, args) => {
     assert.equal(await invoke(0xd0, secondary, args, 0), 1);
     assert.equal(pop32(child.state), 0);
@@ -14,12 +17,12 @@ test('mounted VM world maps share the data owner and BP memory', async () => {
     assert.equal(child.process, null);
   };
   const path = async (id, expected) => {
-    view.setUint32(0x300, 0xaaaaaaaa, true);
-    view.setUint32(0x310, 0xbbbbbbbb, true);
-    view.setUint32(0x314, 0xcccccccc, true);
+    view().setUint32(0x300, 0xaaaaaaaa, true);
+    view().setUint32(0x310, 0xbbbbbbbb, true);
+    view().setUint32(0x314, 0xcccccccc, true);
     await call(0xc8, [0x300, 0x310, id, 0, 3, -1]);
-    assert.equal(view.getUint32(0x300, true), 2);
-    assert.deepEqual([view.getUint32(0x310, true), view.getUint32(0x314, true)], expected);
+    assert.equal(view().getUint32(0x300, true), 2);
+    assert.deepEqual([view().getUint32(0x310, true), view().getUint32(0x314, true)], expected);
   };
   try {
     assert.equal(data.graph, graph);
@@ -35,9 +38,9 @@ test('mounted VM world maps share the data owner and BP memory', async () => {
       slots,
     );
 
-    view.setUint32(0x100, 0xffffffff, true);
+    view().setUint32(0x100, 0xffffffff, true);
     await call(0xc0, [0x100, 4, 2]);
-    const id = view.getUint32(0x100, true);
+    const id = view().getUint32(0x100, true);
     assert.equal(id, 1);
     const points = [
       [0, 0],
@@ -48,10 +51,10 @@ test('mounted VM world maps share the data owner and BP memory', async () => {
     for (let index = 0; index < points.length; index++) {
       const offset = 0x200 + index * 16;
       const point = points[index];
-      view.setInt32(offset, point[0] * 65536, true);
-      view.setInt32(offset + 4, point[1] * 65536, true);
-      view.setInt32(offset + 8, 0, true);
-      view.setInt32(offset + 12, 0, true);
+      view().setInt32(offset, point[0] * 65536, true);
+      view().setInt32(offset + 4, point[1] * 65536, true);
+      view().setInt32(offset + 8, 0, true);
+      view().setInt32(offset + 12, 0, true);
       await call(0xc4, [id, index, offset]);
     }
     for (const [source, destination] of [

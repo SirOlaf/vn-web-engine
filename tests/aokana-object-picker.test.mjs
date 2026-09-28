@@ -20,6 +20,8 @@ import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const rectangle = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, values = []) => ({
@@ -122,7 +124,7 @@ test('pointer picker follows rendered order, real masks and shared cursor/touch 
     assert.equal(thread.stackIndex, 0);
     return category;
   };
-  const picked = () => new DataView(memory.globalMemory.buffer).getUint32(4, true);
+  const picked = () => bankView(memory.globalMemory).getUint32(4, true);
   assert.equal(pick(1), 2);
   assert.equal(picked(), upper);
   assert.equal(manager.resolve(picked()).getLayer(), 3);

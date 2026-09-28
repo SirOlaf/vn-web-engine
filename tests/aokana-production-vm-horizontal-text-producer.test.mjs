@@ -56,7 +56,10 @@ test('mounted text producers feed shared result callbacks and local pixels', asy
   const fixture = await createMountedVmFixture({fontProvider});
   const {graph, memory, child, definitions, invoke} = fixture;
   const state = graph.windowState.textLayout;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (primary, secondary, args, pushes = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushes);
     assert.equal(child.process, null);
@@ -128,31 +131,31 @@ test('mounted text producers feed shared result callbacks and local pixels', asy
     const createdBeforeMetrics = created.length;
     await call(0x92, 0x99, [0x500, 0x540, 0x280, registeredFont, 8, 100, 0], 1);
     assert.equal(pop32(child.state), 0);
-    assert.equal(view.getUint32(0x540, true), 2);
+    assert.equal(view().getUint32(0x540, true), 2);
     assert.deepEqual(
-      Array.from({length: 6}, (_, index) => view.getInt32(0x500 + index * 4, true)),
+      Array.from({length: 6}, (_, index) => view().getInt32(0x500 + index * 4, true)),
       [0, 5, 1, 0, 5, 1],
     );
     await call(0x91, 0x9b, [0x580, 0x280, registeredFont, 8, 100, 0, 0], 1);
     assert.equal(pop32(child.state), 0);
-    assert.equal(view.getInt32(0x580, true), 8);
+    assert.equal(view().getInt32(0x580, true), 8);
     assert.equal(created.length, createdBeforeMetrics);
 
     await call(0x92, 0x94, [0, lineId], 1);
     assert.equal(pop32(child.state), 1);
     await call(0x92, 0x94, [0x300, lineId], 1);
     assert.equal(pop32(child.state), 1);
-    assert.equal(view.getUint32(0x300, true), 8);
+    assert.equal(view().getUint32(0x300, true), 8);
     await call(0x92, 0x9b, [0x340, 0x100]);
-    assert.deepEqual([view.getInt32(0x340, true), view.getInt32(0x344, true)], [9, 2]);
+    assert.deepEqual([view().getInt32(0x340, true), view().getInt32(0x344, true)], [9, 2]);
     await call(0x92, 0x9b, [0x350, 0x101]);
-    assert.equal(view.getUint32(0x350, true), 0xabcdef);
+    assert.equal(view().getUint32(0x350, true), 0xabcdef);
     await call(0x92, 0x9e, [0x380], 1);
     assert.equal(pop32(child.state), 1);
     assert.equal(memory.globalMemory[0x380], 66);
     assert.ok(memory.globalMemory.subarray(0x381, 0x3e0).every((value) => value === 0));
     assert.ok(memory.globalMemory.subarray(0x3e0, 0x3f8).every((value) => value === 0));
-    assert.deepEqual([view.getInt32(0x3f8, true), view.getInt32(0x3fc, true)], [5, 2]);
+    assert.deepEqual([view().getInt32(0x3f8, true), view().getInt32(0x3fc, true)], [5, 2]);
 
     await call(0x91, 0x99, [2], 1);
     assert.equal(pop32(child.state), 1);

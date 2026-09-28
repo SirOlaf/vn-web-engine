@@ -13,6 +13,8 @@ import {BurikoProductionNativeFragments} from '../dist/engines/buriko/native/pro
 import {BurikoProductionDisplayResourceGraph} from '../dist/engines/buriko/native/production-display-resource-graph.js';
 import {BurikoWaitTiming} from '../dist/engines/buriko/native/procedure.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 class Element {
   constructor(tag) {
@@ -313,10 +315,10 @@ test('one production data bundle binds the actual graph, BP memory and partial w
     thirdWait.dispose();
 
     invoke(0x81, 0xd0, [0x10000040, 2], true);
-    assert.equal(new DataView(thread.moduleMemory.buffer).getUint32(0x40, true), 1);
+    assert.equal(bankView(thread.moduleMemory).getUint32(0x40, true), 1);
     owners.records.clear();
     invoke(0x81, 0xd0, [0x10000040, 2], true);
-    assert.equal(new DataView(thread.moduleMemory.buffer).getUint32(0x40, true), 1);
+    assert.equal(bankView(thread.moduleMemory).getUint32(0x40, true), 1);
 
     // Record-set writes and reads supply the live BP bytes searched by B8/B9.
     const recordId = memory.readU32(thread, 0x10000040);

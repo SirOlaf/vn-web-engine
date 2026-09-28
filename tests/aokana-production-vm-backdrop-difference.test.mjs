@@ -5,6 +5,8 @@ import {allocateBurikoBitmap, burikoBitmapRectangle} from '../dist/engines/burik
 import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
 import {BurikoDifferenceBackdrop} from '../dist/engines/buriko/native/display-backdrop-difference.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('mounted difference backdrop tracks source changes and draws through shared software surfaces', async () => {
   const fixture = await createMountedVmFixture();
@@ -64,9 +66,9 @@ test('mounted difference backdrop tracks source changes and draws through shared
       ],
       [0x112233, 0x112233, 0x445566],
     );
-    const ids = new DataView(memory.globalMemory.buffer);
-    ids.setUint32(0x100, 0, true);
-    ids.setUint32(0x104, 1, true);
+    const ids = () => bankView(memory.globalMemory);
+    ids().setUint32(0x100, 0, true);
+    ids().setUint32(0x104, 1, true);
     await call(0x4c, [1, 1]);
 
     graph.damage.clear();

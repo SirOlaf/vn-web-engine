@@ -8,7 +8,10 @@ test('mounted known simulation tail orders metrics, particle, rain and pre-input
   let now = 0;
   const fixture = await createMountedVmFixture({performanceNow: () => now});
   const {graph, data, core, child, invoke, memory} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (primary, secondary, args, pushed = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushed);
     assert.equal(child.process, null);
@@ -66,8 +69,8 @@ test('mounted known simulation tail orders metrics, particle, rain and pre-input
     await call(0x90, 0xfa, [spriteHandle]);
     const procedure = new BurikoIndependentProcedure(data.procedures, sprite);
     assert.equal(data.procedures.register(procedure), 1);
-    view.setUint32(0x400, 0, true);
-    view.setUint32(0x404, 0, true);
+    view().setUint32(0x400, 0, true);
+    view().setUint32(0x404, 0, true);
     assert.equal(await result(0x80, 0xac, [procedure.id, 2, 0x400]), 1);
     await call(0xb0, 0x05, [20]);
     await call(0x80, 0x1f, [20, 40, 0, 20, 50, 0]);

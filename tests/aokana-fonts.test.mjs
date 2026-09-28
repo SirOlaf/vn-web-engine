@@ -20,6 +20,8 @@ import {
   burikoCrtWideLower,
   burikoCrtWidePrefixEqual,
 } from '../dist/engines/buriko/native/crt-case.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const bytes = (value) => new TextEncoder().encode(value + '\0');
 const pointer = (value) => hostPointer(bytes(value), 0);
@@ -112,19 +114,19 @@ test('font B0 bindings preserve NULL enumeration queries, outputs and cached arc
     return pop32(thread);
   };
   const source = (offset, value) => memory.globalMemory.set(bytes(value), offset);
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => bankView(memory.globalMemory);
   assert.equal(await run(0xc4, [0]), 20);
   assert.equal(await run(0xc4, [128]), 2);
   assert.equal(text.decodeAuto(hostPointer(memory.globalMemory, 128)), 'MS Gothic');
   assert.equal(text.decodeAuto(hostPointer(memory.globalMemory, 138)), 'MS Mincho');
   assert.equal(await run(0xc5, [0, 384]), 0);
   source(1, 'Missing');
-  view.setUint32(64, 0xdeadbeef, true);
+  view().setUint32(64, 0xdeadbeef, true);
   assert.equal(await run(0xc6, [64, 1]), 0);
-  assert.equal(view.getUint32(64, true), 0xdeadbeef);
+  assert.equal(view().getUint32(64, true), 0xdeadbeef);
   source(1, 'Found');
   assert.equal(await run(0xc6, [64, 1]), 1);
-  assert.equal(view.getUint32(64, true), 2);
+  assert.equal(view().getUint32(64, true), 2);
   source(1, 'cache.ttf');
   assert.equal(await run(0xc2, [1]), 1);
   // Address 0x10000 resolves but cannot be read. A cache hit must never scan it.

@@ -19,6 +19,8 @@ import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const rectangle = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, values = []) => ({
@@ -111,8 +113,8 @@ test('object coordinate services preserve real child links, suppression and call
   assert.deepEqual(Array.from(parent.children()), [child]);
   const point = (handle) => {
     call(0x3d, [4, handle]);
-    const view = new DataView(memory.globalMemory.buffer);
-    return [view.getInt32(4, true), view.getInt32(8, true)];
+    const view = () => bankView(memory.globalMemory);
+    return [view().getInt32(4, true), view().getInt32(8, true)];
   };
   assert.deepEqual(point(parentHandle), [1, 1]);
   assert.deepEqual(point(childHandle), [4, 1]);

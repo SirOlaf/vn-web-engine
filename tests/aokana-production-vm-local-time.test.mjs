@@ -18,7 +18,11 @@ test('mounted 80:0C copies the selected local SYSTEMTIME into BP memory', async 
     );
     memory.globalMemory.fill(0xa5, 0x200, 0x220);
     assert.equal(await invoke(0x80, 0x0c, [0x208], 0), 0);
-    const output = new DataView(memory.globalMemory.buffer, 0x208, 16);
+    const output = new DataView(
+      memory.globalMemory.buffer,
+      memory.globalMemory.byteOffset + 0x208,
+      16,
+    );
     assert.deepEqual(
       Array.from({length: 8}, (_, index) => output.getUint16(index * 2, true)),
       [2026, 9, 5, 25, 14, 34, 56, 789],

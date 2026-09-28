@@ -27,9 +27,12 @@ test('mounted VM queries pixels, configures coefficients, and destroys graph obj
     );
     assert.equal(graph.manager.surfaces, graph.surfaces);
     assert.equal(graph.surfaces.coefficientTables.capacity, 8);
-    const memoryView = new DataView(memory.globalMemory.buffer);
+    const memoryView = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     for (const [index, pixel] of [0x40224466, 0x80224466, 0xc0112233].entries())
-      memoryView.setUint32(0x280 + index * 4, pixel, true);
+      memoryView().setUint32(0x280 + index * 4, pixel, true);
     assert.equal(await invoke(0x90, 0x14, [2, 3, 1, 2, 0x280], 0), 0);
     assert.deepEqual(pixels(graph.surfaces.snapshot(2)), [0x40224466, 0x80224466, 0xc0112233]);
 
@@ -38,7 +41,7 @@ test('mounted VM queries pixels, configures coefficients, and destroys graph obj
     assert.equal(await invoke(0x92, 0x16, [0x220, 2], 0), 1);
     assert.equal(pop32(child.state), 1);
     assert.deepEqual(
-      [memoryView.getInt32(0x220, true), memoryView.getInt32(0x224, true)],
+      [memoryView().getInt32(0x220, true), memoryView().getInt32(0x224, true)],
       [-3, 19],
     );
     assert.equal(await invoke(0x92, 0x13, [2, 0x00224466, 0xeeaabbcc], 0), 1);
@@ -51,7 +54,7 @@ test('mounted VM queries pixels, configures coefficients, and destroys graph obj
     ]) {
       assert.equal(await invoke(0x92, 0x17, [0x230, 2, x, 0], 0), 1);
       assert.equal(pop32(child.state), 0);
-      assert.equal(memoryView.getUint32(0x230, true), expected);
+      assert.equal(memoryView().getUint32(0x230, true), expected);
       assert.equal(child.state.stackIndex, 0);
     }
 

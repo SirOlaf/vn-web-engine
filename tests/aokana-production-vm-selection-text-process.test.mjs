@@ -50,7 +50,10 @@ test('mounted text selections draw and complete through one graph Window and sha
   };
   const fixture = await createMountedVmFixture({fontProvider, performanceNow: () => tick});
   const {graph, data, child, definitions, memory, invoke} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (primary, secondary, args, status = 0, pushes = 0) => {
     assert.equal(await invoke(primary, secondary, args, status), pushes);
     assert.equal(child.state.stackIndex, pushes);
@@ -98,11 +101,11 @@ test('mounted text selections draw and complete through one graph Window and sha
     for (let index = 0; index < 3; index++) {
       const address = 0x120 + index * 0x10;
       memory.globalMemory.set(graph.text.encodeWide(String.fromCharCode(65 + index), 1), address);
-      view.setUint32(0x180 + index * 4, address, true);
+      view().setUint32(0x180 + index * 4, address, true);
     }
     const colors = [0xff0000, 0x00ff00, 0x0000ff];
     for (let index = 0; index < 16; index++) {
-      view.setUint32(0x200 + index * 4, colors[index % 3], true);
+      view().setUint32(0x200 + index * 4, colors[index % 3], true);
     }
     await call(0x90, 0xa7, [handle, 0x200]);
     await call(0x90, 0xa1, [handle, 3, 0x180, 2, 0, 0xffffff]);

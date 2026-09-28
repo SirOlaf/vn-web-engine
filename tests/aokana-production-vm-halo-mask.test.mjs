@@ -30,9 +30,12 @@ test('mounted VM halo mask feeds a graph surface transition', async () => {
     assert.equal(fragments.nativeDefinitions().length, definitions.length);
 
     const sourcePixels = [128, 128, 64].map((alpha) => ((alpha << 24) | 0x123456) >>> 0);
-    const raw = new DataView(memory.globalMemory.buffer);
+    const raw = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     for (let x = 0; x < sourcePixels.length; x++)
-      raw.setUint32(0x400 + x * 4, sourcePixels[x], true);
+      raw().setUint32(0x400 + x * 4, sourcePixels[x], true);
     await call(0x90, 0x14, [0, 3, 1, 2, 0x400]);
     const source = graph.surfaces.snapshot(0);
     assert.deepEqual(

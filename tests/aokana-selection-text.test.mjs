@@ -82,13 +82,18 @@ test('immediate selection text uses real address arrays, window colors and colum
     frameCapacity: 0,
   });
   const memory = new BurikoBpMemory(new Uint8Array(1024)),
-    view = new DataView(memory.globalMemory.buffer);
+    view = () =>
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      );
   for (let i = 0; i < 3; i++) {
     memory.globalMemory.set(text.encodeWide(String.fromCharCode(65 + i), 1), 32 + i * 8);
-    view.setUint32(128 + i * 4, 32 + i * 8, true);
+    view().setUint32(128 + i * 4, 32 + i * 8, true);
   }
   const colors = [0xff0000, 0x00ff00, 0x0000ff];
-  for (let i = 0; i < 16; i++) view.setUint32(256 + i * 4, colors[i % 3], true);
+  for (let i = 0; i < 16; i++) view().setUint32(256 + i * 4, colors[i % 3], true);
   const context = {thread, memory, diagnostics: {}};
   const slots = createGroup90SelectionText(windows, {
     threadFatal() {

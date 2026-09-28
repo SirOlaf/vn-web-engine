@@ -41,7 +41,14 @@ test('mounted 81:32 reads a real file with the selected sector geometry', async 
     assert.equal(child.state.stackIndex, 0);
     assert.equal(child.process, null);
     assert.deepEqual(roots, ['c:\\']);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x200, true), 5);
+    assert.equal(
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      ).getUint32(0x200, true),
+      5,
+    );
     assert.deepEqual([...memory.globalMemory.subarray(0x300, 0x305)], [1, 2, 3, 4, 5]);
     assert.deepEqual(
       [...memory.globalMemory.subarray(0x100, 0x100 + pathBytes.length)],

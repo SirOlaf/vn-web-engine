@@ -90,10 +90,15 @@ test('91 annotation collection and registered text measurement share drawing own
 
   const measured = 1024,
     phrase = put('AB'),
-    view = new DataView(memory.globalMemory.buffer);
+    view = () =>
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      );
   assert.equal(await call(0x9b, measured, phrase, registered, 8, 100, 0, 0), 0);
   assert.equal(pop32(thread), 0);
-  assert.equal(view.getInt32(measured, true), 8);
+  assert.equal(view().getInt32(measured, true), 8);
   assert.equal(await call(0x99, 2), 0);
   assert.equal(pop32(thread), 1);
   assert.equal(state.proportionalSideBearing, 32768);
@@ -101,12 +106,12 @@ test('91 annotation collection and registered text measurement share drawing own
   assert.equal(pop32(thread), 0);
   // The filled raster spans all16 scratch columns. Cell8 gives margin4, left/right2:
   // two glyphs total2*(16+2+2), then native third metric excludes final right2.
-  assert.equal(view.getInt32(measured, true), 38);
+  assert.equal(view().getInt32(measured, true), 38);
   assert.equal(await call(0x99, 0), 0);
   assert.equal(pop32(thread), 1);
   assert.equal(await call(0x9b, measured, phrase, registered, 8, 100, 0, 1), 0);
   assert.equal(pop32(thread), 0);
-  assert.equal(view.getInt32(measured, true), 8);
+  assert.equal(view().getInt32(measured, true), 8);
   assert.equal(created, 1);
   assert.equal(thread.stackIndex, 0);
 });

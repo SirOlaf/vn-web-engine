@@ -33,7 +33,10 @@ test('mounted system callbacks share one explicit host and lazy version record',
   };
   const fixture = await createMountedVmFixture({systemProfileHost});
   const {graph, core, child, memory, definitions, diagnostics} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = (primary, secondary, args, pushes = 0) => {
     const slot = definitions.find(
       (entry) => entry.primary === primary && entry.secondary === secondary,
@@ -71,7 +74,7 @@ test('mounted system callbacks share one explicit host and lazy version record',
     call(0x81, 0x0c, [0x180, 0x1a0]);
     for (const address of [0x140, 0x180]) {
       assert.deepEqual(
-        Array.from({length: 4}, (_, index) => view.getUint32(address + index * 4, true)),
+        Array.from({length: 4}, (_, index) => view().getUint32(address + index * 4, true)),
         [6, 1, 7601, 2],
       );
     }
@@ -82,8 +85,8 @@ test('mounted system callbacks share one explicit host and lazy version record',
       );
 
     call(0x81, 0x0d, [0x1c0, 0x1c4]);
-    assert.equal(view.getUint32(0x1c0, true), 8192);
-    assert.equal(view.getUint32(0x1c4, true), 1536);
+    assert.equal(view().getUint32(0x1c0, true), 8192);
+    assert.equal(view().getUint32(0x1c4, true), 1536);
     for (const address of [
       0xff, 0x107, 0x11f, 0x128, 0x13f, 0x150, 0x15f, 0x16f, 0x17f, 0x190, 0x19f, 0x1af, 0x1bf,
       0x1c8,

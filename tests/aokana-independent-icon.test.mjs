@@ -24,6 +24,8 @@ import {BurikoIndependentProcedures} from '../dist/engines/buriko/native/indepen
 import {BurikoIndependentIconState} from '../dist/engines/buriko/native/independent-icon.js';
 import {createGroup90IndependentIcons} from '../dist/engines/buriko/native/group-90-independent-icons.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('independent Icon owns actual Window children, VM records, capture, selection and notification lifecycle', async () => {
   const text = new BurikoNativeText(),
@@ -92,10 +94,10 @@ test('independent Icon owns actual Window children, VM records, capture, selecti
       frameCapacity: 0,
     }),
     memory = new BurikoBpMemory(new Uint8Array(1024));
-  const view = new DataView(memory.globalMemory.buffer),
+  const view = () => bankView(memory.globalMemory),
     context = {thread, memory, diagnostics: {}};
   const words = (offset, values) =>
-    values.forEach((v, i) => view.setInt32(offset + i * 4, v, true));
+    values.forEach((v, i) => view().setInt32(offset + i * 4, v, true));
   const invoke = (secondary, args) => {
     const slot = slots.find((s) => s.secondary === secondary);
     assert.deepEqual(
@@ -132,7 +134,7 @@ test('independent Icon owns actual Window children, VM records, capture, selecti
   const actual = shared.find(id);
   assert.equal(invoke(0xbc, [544, id]), 1);
   assert.deepEqual(
-    Array.from({length: 6}, (_, i) => view.getInt32(544 + i * 4, true)),
+    Array.from({length: 6}, (_, i) => view().getInt32(544 + i * 4, true)),
     [1, 0, 0, 0, 0, 0],
   );
   assert.equal(actual.enqueue(Uint32Array.of(0x10000002, 0, 1)), 1);
@@ -141,12 +143,12 @@ test('independent Icon owns actual Window children, VM records, capture, selecti
   // uses its blue hover bitmap and the second icon uses the green selected bitmap.
   assert.deepEqual([pixel(2, 2), pixel(8, 2)], [0x000033, 0x002200]);
   assert.equal(invoke(0xbd, [512, id]), 1);
-  assert.equal(view.getInt32(512, true), 0);
+  assert.equal(view().getInt32(512, true), 0);
   assert.equal(invoke(0xbe, [516, id]), 1);
-  assert.equal(view.getInt32(516, true), 1);
+  assert.equal(view().getInt32(516, true), 1);
   assert.equal(invoke(0xbf, [528, id]), 1);
   assert.deepEqual(
-    [0, 1, 2].map((i) => view.getUint32(528 + i * 4, true)),
+    [0, 1, 2].map((i) => view().getUint32(528 + i * 4, true)),
     [0x10000002, 0, 1],
   );
   // Native 08F790 leaves its output scratch unwritten on a miss. 08F990 still
@@ -160,7 +162,7 @@ test('independent Icon owns actual Window children, VM records, capture, selecti
   assert.equal(await shared.pollEnabled(), 1);
   assert.equal(invoke(0xbc, [544, id]), 1);
   assert.deepEqual(
-    Array.from({length: 6}, (_, i) => view.getInt32(544 + i * 4, true)),
+    Array.from({length: 6}, (_, i) => view().getInt32(544 + i * 4, true)),
     [0, 0, 1, 0, 0, 0],
   );
   assert.equal(invoke(0xb9, [id]), 1);

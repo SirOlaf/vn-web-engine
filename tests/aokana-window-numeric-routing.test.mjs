@@ -14,6 +14,12 @@ import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoBitmapText} from '../dist/engines/buriko/native/font-bitmap.js';
 import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
+// A pointer view sits at an arbitrary offset in the shared VM arena.
+const viewOf = (p) => {
+  const bytes = p.view();
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+};
+
 class Element {
   constructor(tagName, document) {
     this.tagName = tagName.toUpperCase();
@@ -146,7 +152,7 @@ test('queued numeric messages reach live inline, child, and property owners; syn
     children.create(childOutput, hostPointer(text.encodeWide('Child')), 10, 20, 32, 32, 0),
     0,
   );
-  const childId = new DataView(childOutput.view().buffer).getUint32(0, true),
+  const childId = viewOf(childOutput).getUint32(0, true),
     childTarget = inlineTarget + 1;
   assert.equal(messages.hasTarget(childTarget), true);
 
@@ -159,7 +165,7 @@ test('queued numeric messages reach live inline, child, and property owners; syn
   );
   const propertyOutput = word();
   assert.equal(properties.create(propertyOutput, null, null, null, 100, 200), 0);
-  const propertyId = new DataView(propertyOutput.view().buffer).getUint32(0, true),
+  const propertyId = viewOf(propertyOutput).getUint32(0, true),
     propertyTarget = childTarget + 1;
   assert.equal(messages.hasTarget(propertyTarget), true);
 

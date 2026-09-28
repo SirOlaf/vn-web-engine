@@ -27,6 +27,8 @@ import {BurikoProcedureState} from '../dist/engines/buriko/native/procedure.js';
 import {BurikoResourceLoadingState} from '../dist/engines/buriko/native/resource-loading.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoNativeRegistry} from '../dist/engines/buriko/native/windows-registry.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const bytes = (value) => new TextEncoder().encode(value);
 const ticks = (iso) => BigInt(Date.parse(iso)) * 10000n + 116444736000000000n;
@@ -163,7 +165,7 @@ test('81 F2 installs one ordinary mounted file and completes through the real wa
     },
     writeString = (address, value) => memory.globalMemory.set(bytes(value + '\0'), address),
     writeDword = (address, value) =>
-      new DataView(memory.globalMemory.buffer).setUint32(address, value >>> 0, true);
+      bankView(memory.globalMemory).setUint32(address, value >>> 0, true);
   media.setDriveType(2, 3);
   writeString(addresses.destination, 'C:\\install');
   writeString(addresses.fileName, 'data.bin');

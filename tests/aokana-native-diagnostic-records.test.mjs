@@ -27,6 +27,8 @@ import {
   formatBurikoBitmapGroups,
 } from '../dist/engines/buriko/native/bitmap-group-description.js';
 import {createGroupE0BitmapDescription} from '../dist/engines/buriko/native/group-e0-bitmap-description.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const pointer = (size) => hostPointer(new Uint8Array(size), 0);
 const view = (p) => new DataView(p.view().buffer, p.view().byteOffset + p.offset);
@@ -217,13 +219,13 @@ test('module list formatting reverses the borrowed dump and retains the modal ou
 function groupsFixture() {
   const memory = new BurikoBpMemory(new Uint8Array(4096)),
     owner = thread();
-  const data = new DataView(memory.globalMemory.buffer);
-  data.setUint32(64, 1, true);
-  data.setUint32(68, 128, true);
-  data.setUint32(128, 1, true);
-  data.setUint32(136, 256, true);
+  const data = () => bankView(memory.globalMemory);
+  data().setUint32(64, 1, true);
+  data().setUint32(68, 128, true);
+  data().setUint32(128, 1, true);
+  data().setUint32(136, 256, true);
   [1, 0, -2, 3, -4, 5, 6, -7, 8, 9, 10, 11, -1].forEach((value, index) =>
-    data.setInt32(256 + index * 4, value, true),
+    data().setInt32(256 + index * 4, value, true),
   );
   return {memory, owner, data, source: memory.resolve(owner, 64)};
 }
@@ -232,7 +234,7 @@ test('grouped bitmap descriptions copy all units before formatting and preserve 
   const {memory, owner, data, source} = groupsFixture();
   const result = copyBurikoBitmapGroupDescription(source, memory, owner);
   assert.equal(result.result, 0);
-  data.setInt32(256, 0, true);
+  data().setInt32(256, 0, true);
   const output = memory.resolve(owner, 512),
     text = new BurikoNativeText();
   const size = formatBurikoBitmapGroups(output, result.description, text);
@@ -253,7 +255,7 @@ test('grouped bitmap descriptions copy all units before formatting and preserve 
 test('bitmap group allocation uses low16 counts but formatter consumes full signed counts', () => {
   const {memory, owner, data, source} = groupsFixture(),
     text = new BurikoNativeText();
-  data.setUint32(128, 0x80000001, true);
+  data().setUint32(128, 0x80000001, true);
   const skipped = copyBurikoBitmapGroupDescription(source, memory, owner);
   assert.equal(skipped.result, 0);
   const destination = pointer(2048);
@@ -263,7 +265,7 @@ test('bitmap group allocation uses low16 counts but formatter consumes full sign
     new TextDecoder().decode(destination.view().subarray(0, length)),
     '- Group [ 0 ] -\n\n\n',
   );
-  data.setUint32(128, 0x10001, true);
+  data().setUint32(128, 0x10001, true);
   const overread = copyBurikoBitmapGroupDescription(source, memory, owner);
   assert.equal(overread.result, 0);
   destination.view().fill(0xcc);
@@ -276,14 +278,14 @@ test('bitmap group allocation uses low16 counts but formatter consumes full sign
 
 test('bitmap descriptor validation resolves addresses before counts and skips later groups after failure', () => {
   const {memory, owner, data, source} = groupsFixture();
-  data.setUint32(64, 0, true);
-  data.setUint32(68, 0x80000001, true);
+  data().setUint32(64, 0, true);
+  data().setUint32(68, 0x80000001, true);
   assert.throws(() => copyBurikoBitmapGroupDescription(source, memory, owner), /pooled allocation/);
-  data.setUint32(64, 2, true);
-  data.setUint32(68, 128, true);
-  data.setUint32(128, 0, true);
-  data.setUint32(136, 256, true);
-  data.setUint32(128 + 0x40 + 8, 0x80000001, true);
+  data().setUint32(64, 2, true);
+  data().setUint32(68, 128, true);
+  data().setUint32(128, 0, true);
+  data().setUint32(136, 256, true);
+  data().setUint32(128 + 0x40 + 8, 0x80000001, true);
   assert.deepEqual(copyBurikoBitmapGroupDescription(source, memory, owner), {result: 3});
   assert.throws(() => copyBurikoBitmapGroupDescription(null, memory, owner), /null description/);
 });

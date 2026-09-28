@@ -11,6 +11,8 @@ import {BurikoChildWindows} from '../dist/engines/buriko/native/child-windows.js
 import {BurikoBitmapText} from '../dist/engines/buriko/native/font-bitmap.js';
 import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BurikoKeyboardMessages} from '../dist/engines/buriko/native/keyboard-messages.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 // DOM storage primitives only; no browser or image presentation is executed.
 class Element {
@@ -85,7 +87,7 @@ test('80:66 updates actual caption and shared default property-window title', ()
   const output = hostPointer(memory.globalMemory, 512);
   assert.equal(properties.create(output, null, null, null, 120, 180), 0);
   assert.equal(parent.children[0].children[0].textContent, '蒼空');
-  const id = new DataView(memory.globalMemory.buffer).getUint32(512, true);
+  const id = bankView(memory.globalMemory).getUint32(512, true);
   assert.equal(properties.destroy(id), 0);
   assert.equal(parent.children.length, 0);
 });

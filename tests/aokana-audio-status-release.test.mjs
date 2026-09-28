@@ -27,6 +27,8 @@ import {BurikoBpMemory} from '../dist/engines/buriko/bp/memory.js';
 import {BurikoBpThread, push32, pop32} from '../dist/engines/buriko/bp/state.js';
 import {createGroupA0AudioStatusRelease} from '../dist/engines/buriko/native/group-a0-audio-status-release.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 test('A0 queries the actual playing stream and loop output then releases an actual static voice', async () => {
   const actors = {currentActor: {}},
     locks = new BurikoNativeLocks(actors);
@@ -75,9 +77,9 @@ test('A0 queries the actual playing stream and loop output then releases an actu
     await new Promise((resolve) => setTimeout(resolve, 0));
     close(backend.buffers[0].render(8)[0], 0.5);
     close(backend.buffers[1].render(8)[0], 0.5);
-    new DataView(memory.globalMemory.buffer).setInt32(16, 77, true);
+    bankView(memory.globalMemory).setInt32(16, 77, true);
     assert.equal(await invoke(0x15, [0, 16]), 1);
-    assert.equal(new DataView(memory.globalMemory.buffer).getInt32(16, true), 0);
+    assert.equal(bankView(memory.globalMemory).getInt32(16, true), 0);
     assert.equal(await invoke(0x15, [0, 0]), 1);
     await invoke(0x22, [0]);
     assert.equal(channels.static[0].active, 0);

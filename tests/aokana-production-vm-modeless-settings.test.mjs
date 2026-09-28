@@ -19,7 +19,10 @@ test('mounted B0 settings windows share dialog transitions, BP events, and graph
     transitions.push(enter);
     originalTransition(enter);
   };
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (secondary, args, expected) => {
     assert.equal(await invoke(0xb0, secondary, args, 0), 1);
     assert.equal(pop32(child.state), expected);
@@ -45,11 +48,11 @@ test('mounted B0 settings windows share dialog transitions, BP events, and graph
     assert.equal(graph.modelessSettings.dialogs, graph.dialogs);
 
     [5, 6, 70, 80, 90, 0, 1, 1, 0].forEach((value, index) =>
-      view.setInt32(0x100 + index * 4, value, true),
+      view().setInt32(0x100 + index * 4, value, true),
     );
     memory.globalMemory.fill(0xa5, 0x200, 0x210);
     await call(0xa0, [0x200, 0, 0x100], 1);
-    const firstId = view.getInt32(0x200, true);
+    const firstId = view().getInt32(0x200, true);
     assert.equal(firstId, 1);
     assert.deepEqual([...memory.globalMemory.subarray(0x204, 0x210)], Array(12).fill(0xa5));
     const first = panel();
@@ -66,17 +69,17 @@ test('mounted B0 settings windows share dialog transitions, BP events, and graph
     slider.listeners.get('input')();
     memory.globalMemory.fill(0xa5, 0x300, 0x310);
     await call(0xa3, [0x300, firstId], 0);
-    assert.deepEqual([view.getInt32(0x300, true), view.getInt32(0x304, true)], [0, 37]);
+    assert.deepEqual([view().getInt32(0x300, true), view().getInt32(0x304, true)], [0, 37]);
     assert.deepEqual([...memory.globalMemory.subarray(0x308, 0x310)], Array(8).fill(0xa5));
     await call(0xa3, [0x300, firstId], 1);
-    assert.deepEqual([view.getInt32(0x300, true), view.getInt32(0x304, true)], [0, 37]);
+    assert.deepEqual([view().getInt32(0x300, true), view().getInt32(0x304, true)], [0, 37]);
     await call(0xa1, [firstId], 1);
     assert.equal(first.parent, null);
     assert.deepEqual(transitions, [true, false]);
 
     memory.globalMemory.fill(0xa5, 0x220, 0x224);
     await call(0xa0, [0x220, 0, 0x100], 1);
-    const secondId = view.getInt32(0x220, true);
+    const secondId = view().getInt32(0x220, true);
     assert.equal(secondId, 2);
     const second = panel();
     assert.ok(second);

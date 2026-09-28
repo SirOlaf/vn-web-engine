@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 function encodedFrame(alpha) {
   const header = new Uint8Array(200);
@@ -35,7 +37,7 @@ function encodedMovie() {
 test('mounted BMV load, alias, partial source and sync/async frame work share graph owners', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, memory, definitions, encode, invoke} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => bankView(memory.globalMemory);
   const name = 0x200;
   const fullHandle = 0x300;
   const partialHandle = 0x304;
@@ -71,12 +73,12 @@ test('mounted BMV load, alias, partial source and sync/async frame work share gr
     assert.equal(await graph.resource.worker.processOne(), 'resource');
     assert.equal(await child.pollProcess(false), 1);
     assert.equal(pop32(child.state), 0);
-    const full = view.getUint32(fullHandle, true);
+    const full = view().getUint32(fullHandle, true);
     assert.equal(graph.bmvRegistry.find(full).resource.bytes.length, movie.length);
 
     await invoke(0x90, 0xf7, [aliasHandle, full], 0);
     assert.equal(pop32(child.state), 0);
-    const alias = view.getUint32(aliasHandle, true);
+    const alias = view().getUint32(aliasHandle, true);
     assert.equal(graph.bmvRegistry.find(alias).resource, graph.bmvRegistry.find(full).resource);
     await invoke(0x90, 0xf5, [alias], 0);
     assert.equal(pop32(child.state), 0);
@@ -88,7 +90,7 @@ test('mounted BMV load, alias, partial source and sync/async frame work share gr
     assert.equal(await graph.resource.worker.processOne(), 'resource');
     assert.equal(await child.pollProcess(false), 1);
     assert.equal(pop32(child.state), 0);
-    const partial = view.getUint32(partialHandle, true);
+    const partial = view().getUint32(partialHandle, true);
     assert.equal(graph.bmvRegistry.find(partial).resource.provenance.length, movie.length);
 
     await invoke(0x90, 0xf6, [0, partial, 0], 0);

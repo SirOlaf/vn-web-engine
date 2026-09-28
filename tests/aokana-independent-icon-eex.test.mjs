@@ -27,6 +27,8 @@ import {createGroup91IndependentIconEx} from '../dist/engines/buriko/native/grou
 import {createGroup91IndependentIconMotion} from '../dist/engines/buriko/native/group-91-independent-icon-motion.js';
 import {BurikoNativeSplines} from '../dist/engines/buriko/native/spline-registry.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('IconEEx spline motion, visibility and custom input map drive actual Window owners', async () => {
   const text = new BurikoNativeText(),
@@ -122,10 +124,10 @@ test('IconEEx spline motion, visibility and custom input map drive actual Window
       frameCapacity: 0,
     }),
     memory = new BurikoBpMemory(new Uint8Array(1024));
-  const view = new DataView(memory.globalMemory.buffer),
+  const view = () => bankView(memory.globalMemory),
     context = {thread, memory, diagnostics: {}};
   const words = (offset, values) =>
-    values.forEach((v, i) => view.setInt32(offset + i * 4, v, true));
+    values.forEach((v, i) => view().setInt32(offset + i * 4, v, true));
   const invoke = (primary, secondary, args, pushed = true) => {
     const slot = (primary === 0x91 ? [...exSlots, ...motionSlots] : slots).find(
       (s) => s.secondary === secondary,
@@ -190,7 +192,7 @@ test('IconEEx spline motion, visibility and custom input map drive actual Window
   input.recordKeyDown(39);
   assert.equal(await shared.pollEnabled(), 1);
   assert.equal(invoke(0x90, 0xbe, [768, id]), 1);
-  assert.equal(view.getInt32(768, true), 1);
+  assert.equal(view().getInt32(768, true), 1);
   assert.equal(pixel(20, 3), 0x00ff00);
   assert.equal(invoke(0x90, 0xb9, [id]), 1);
   assert.equal(window.getOwner(), null);

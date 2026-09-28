@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 import {BrowserWindowCoordinatesHost} from '../dist/platform/browser-window-coordinates.js';
 import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('mounted graph keeps child screen positions and dragging consistent through host scaling and teardown', async () => {
   const mapping = {originX: -50, originY: -100, nativePixelsPerCssX: 2, nativePixelsPerCssY: 2},
@@ -37,7 +39,7 @@ test('mounted graph keeps child screen positions and dragging consistent through
     assert.deepEqual(liveTargets(), []);
     const output = hostPointer(memory.globalMemory, 0x100);
     assert.equal(graph.children.create(output, hostPointer(encode('Child')), 10, 20, 32, 32, 0), 0);
-    const handle = new DataView(memory.globalMemory.buffer).getUint32(0x100, true);
+    const handle = bankView(memory.globalMemory).getUint32(0x100, true);
     assert.equal(handle, 0xf8000000);
     const panel = graph.children.parent.children.find((item) => item.tagName === 'SECTION');
     assert.ok(panel);
@@ -52,8 +54,8 @@ test('mounted graph keeps child screen positions and dragging consistent through
     assert.equal(graph.children.getPosition(output, handle), 1);
     assert.deepEqual(
       [
-        new DataView(memory.globalMemory.buffer).getInt32(0x100, true),
-        new DataView(memory.globalMemory.buffer).getInt32(0x104, true),
+        bankView(memory.globalMemory).getInt32(0x100, true),
+        bankView(memory.globalMemory).getInt32(0x104, true),
       ],
       [10, 20],
     );
@@ -73,8 +75,8 @@ test('mounted graph keeps child screen positions and dragging consistent through
     graph.children.getPosition(output, handle);
     assert.deepEqual(
       [
-        new DataView(memory.globalMemory.buffer).getInt32(0x100, true),
-        new DataView(memory.globalMemory.buffer).getInt32(0x104, true),
+        bankView(memory.globalMemory).getInt32(0x100, true),
+        bankView(memory.globalMemory).getInt32(0x104, true),
       ],
       [130, 260],
     );

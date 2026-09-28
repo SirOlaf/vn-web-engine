@@ -2,15 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('mounted disk pixel lower imports GDI rows into graph surfaces and borrows Scan0 backing', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke, memory} = fixture;
-  const output = new DataView(memory.globalMemory.buffer);
+  const output = () => bankView(memory.globalMemory);
   const callPixel = async (surface, x, y, expected) => {
     assert.equal(await invoke(0x92, 0x17, [0x300, surface, x, y], 0), 1);
     assert.equal(pop32(child.state), 0);
-    assert.equal(output.getUint32(0x300, true), expected);
+    assert.equal(output().getUint32(0x300, true), expected);
   };
   try {
     assert.equal(graph.diskImagePixels.surfaces, graph.surfaces);

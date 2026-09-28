@@ -22,6 +22,8 @@ import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const bytes = (value) => new TextEncoder().encode(value);
 
@@ -111,7 +113,7 @@ test('90 F4 F7 F5 load an encoded movie through the shared FIFO and manage ordin
     output = 512,
     info = 544,
     aliasOutput = 576,
-    memory = new DataView(state.memory.globalMemory.buffer);
+    memory = () => bankView(state.memory.globalMemory);
   for (const slot of state.slots)
     assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[slot.primary][slot.secondary]);
   assert.equal(
@@ -129,10 +131,10 @@ test('90 F4 F7 F5 load an encoded movie through the shared FIFO and manage ordin
   assert.equal(state.scheduler.root.process, null);
   assert.equal(state.loading.activeProcedures, 0);
   assert.equal(state.loading.hasPending, false);
-  const first = memory.getUint32(output, true);
+  const first = memory().getUint32(output, true);
   assert.equal(first, 1);
   assert.deepEqual(
-    Array.from({length: 5}, (_, index) => memory.getUint32(info + index * 4, true)),
+    Array.from({length: 5}, (_, index) => memory().getUint32(info + index * 4, true)),
     metadata,
   );
   assert.deepEqual(state.registry.find(first).resource.bytes, payload);
@@ -141,12 +143,12 @@ test('90 F4 F7 F5 load an encoded movie through the shared FIFO and manage ordin
 
   assert.equal(await state.call(0xf7, aliasOutput, first), 0);
   assert.equal(pop32(state.thread), 0);
-  const second = memory.getUint32(aliasOutput, true);
+  const second = memory().getUint32(aliasOutput, true);
   assert.equal(second, 2);
   assert.equal(state.registry.find(second).resource, state.registry.find(first).resource);
   assert.equal(await state.call(0xf7, aliasOutput, second), 0);
   assert.equal(pop32(state.thread), 0);
-  const third = memory.getUint32(aliasOutput, true);
+  const third = memory().getUint32(aliasOutput, true);
   assert.equal(third, 3);
   assert.equal(state.registry.find(first).nextAlias, second);
   assert.equal(state.registry.find(second).nextAlias, third);

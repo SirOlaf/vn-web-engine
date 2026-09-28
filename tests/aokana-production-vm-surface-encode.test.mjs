@@ -21,7 +21,10 @@ test('mounted VM raw-exports and compresses graph surfaces into BP output buffer
     );
     assert.equal(fragments.nativeDefinitions().length, definitions.length);
     assert.ok(memory.globalMemory.length >= 0x10000);
-    const view = new DataView(memory.globalMemory.buffer);
+    const view = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     const original = Array.from(
       {length: 64},
       (_, index) => (index + 1) | ((2 * (index + 1)) << 8) | ((3 * (index + 1)) << 16),
@@ -39,7 +42,7 @@ test('mounted VM raw-exports and compresses graph surfaces into BP output buffer
     );
     memory.globalMemory.fill(0xa5, 0x800, 0x900);
     assert.equal(await invoke(0x90, 0x15, [0x800, 0x280, 256, 0], 0), 0);
-    assert.equal(view.getUint32(0x280, true), bgr.length);
+    assert.equal(view().getUint32(0x280, true), bgr.length);
     assert.deepEqual(memory.globalMemory.subarray(0x800, 0x800 + bgr.length), bgr);
     assert.equal(memory.globalMemory[0x800 + bgr.length], 0xa5);
     assert.equal(child.state.stackIndex, 0);
@@ -47,7 +50,7 @@ test('mounted VM raw-exports and compresses graph surfaces into BP output buffer
     // 90:CE publishes the count after synchronously encoding into ample BP space.
     memory.globalMemory.fill(0x5a, 0x1000, 0x4000);
     assert.equal(await invoke(0x90, 0xce, [0x1000, 0x284, 0, 0, 75], 0), 0);
-    const legacyLength = view.getUint32(0x284, true);
+    const legacyLength = view().getUint32(0x284, true);
     assert.ok(legacyLength > 48 && legacyLength < 0x3000);
     const legacy = memory.globalMemory.subarray(0x1000, 0x1000 + legacyLength);
     const restored = decodeCompressedBgLegacy(legacy);
@@ -63,13 +66,16 @@ test('mounted VM raw-exports and compresses graph surfaces into BP output buffer
     assert.equal(child.state.stackIndex, 0);
 
     memory.globalMemory.fill(0x40, 0x4000, 0x5000);
-    const modernInput = new DataView(memory.globalMemory.buffer);
+    const modernInput = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     for (let index = 0; index < 64 * 16; index++)
-      modernInput.setUint32(0x4000 + index * 4, 0x80404040, true);
+      modernInput().setUint32(0x4000 + index * 4, 0x80404040, true);
     assert.equal(await invoke(0x90, 0x14, [1, 64, 16, 2, 0x4000], 0), 0);
     memory.globalMemory.fill(0x7b, 0x6000, 0xf000);
     assert.equal(await invoke(0x90, 0xce, [0x6000, 0x288, 1, 1, 75], 0), 0);
-    const modernLength = view.getUint32(0x288, true);
+    const modernLength = view().getUint32(0x288, true);
     assert.ok(modernLength > 48 && modernLength < 0x9000);
     const modern = memory.globalMemory.subarray(0x6000, 0x6000 + modernLength);
     const decoded = await decodeBurikoCompressedBgV2(modern, graph.resource.processing);

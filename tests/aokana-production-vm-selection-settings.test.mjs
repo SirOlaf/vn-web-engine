@@ -7,7 +7,10 @@ import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 test('mounted selection settings share the policy owner and copy Window item colors', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, data, child, definitions, memory, invoke} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (secondary, args) => {
     assert.equal(await invoke(0x90, secondary, args, 0), 0);
     assert.equal(child.state.stackIndex, 0);
@@ -54,13 +57,13 @@ test('mounted selection settings share the policy owner and copy Window item col
 
     const colors = Array.from({length: 16}, (_, index) => 0x01020300 + index);
     for (let index = 0; index < colors.length; index++) {
-      view.setUint32(0x200 + index * 4, colors[index], true);
+      view().setUint32(0x200 + index * 4, colors[index], true);
     }
     await call(0xa7, [handle, 0x200]);
     const retained = new Uint32Array(16);
     assert.equal(window.getTextParameters(retained), 1);
     assert.deepEqual([...retained], colors);
-    view.setUint32(0x200, 0xdeadbeef, true);
+    view().setUint32(0x200, 0xdeadbeef, true);
     const copied = new Uint32Array(16);
     assert.equal(window.getTextParameters(copied), 1);
     assert.deepEqual([...copied], colors);

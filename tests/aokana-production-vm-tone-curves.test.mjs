@@ -26,16 +26,19 @@ test('mounted VM tone curves copy BP control points and transform RGB/RGBA surfa
       [0xcc, 0xcd],
     );
     assert.equal(fragments.nativeDefinitions().length, definitions.length);
-    const view = new DataView(memory.globalMemory.buffer);
+    const view = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     [63, 96, 127, 160, 191, 224].forEach((value, index) =>
-      view.setUint32(0x100 + index * 4, value, true),
+      view().setUint32(0x100 + index * 4, value, true),
     );
     assert.equal(await invoke(0x90, 0xcc, [17, 0x100], 0), 0);
     assert.ok(graph.surfaces.toneCurves.find(17));
     memory.globalMemory.set([255, 255, 255, 0, 0, 0, 255, 255, 255], 0x180);
     assert.equal(await invoke(0x90, 0x14, [0, 3, 1, 1, 0x180], 0), 0);
     [0xffffffff, 0x80000000, 0x40ffffff].forEach((pixel, index) =>
-      view.setUint32(0x1c0 + index * 4, pixel, true),
+      view().setUint32(0x1c0 + index * 4, pixel, true),
     );
     assert.equal(await invoke(0x90, 0x14, [1, 3, 1, 2, 0x1c0], 0), 0);
     assert.deepEqual(pixels(graph.surfaces.snapshot(0)), [0xffffff, 0, 0xffffff]);
@@ -55,7 +58,7 @@ test('mounted VM tone curves copy BP control points and transform RGB/RGBA surfa
     assert.deepEqual(pixels(graph.surfaces.snapshot(2)), [0x1872e1, 0, 0x1872e1]);
     assert.deepEqual(pixels(graph.surfaces.snapshot(3)), [0xff1872e1, 0x80000000, 0x401872e1]);
     // The live key holds copied points; changing the BP table does not change it yet.
-    for (const offset of [0x104, 0x10c, 0x114]) view.setUint32(offset, 128, true);
+    for (const offset of [0x104, 0x10c, 0x114]) view().setUint32(offset, 128, true);
     assert.equal(await invoke(0x90, 0xcd, effect(5, 1), 0), 0);
     assert.deepEqual(pixels(graph.surfaces.snapshot(5)), [0xff1872e1, 0x80000000, 0x401872e1]);
     assert.equal(await invoke(0x90, 0xcc, [17, 0x100], 0), 0);
@@ -63,7 +66,7 @@ test('mounted VM tone curves copy BP control points and transform RGB/RGBA surfa
     assert.deepEqual(pixels(graph.surfaces.snapshot(4)), [0xff224281, 0x80000000, 0x40224281]);
     memory.globalMemory.fill(0xa5, 0x300, 0x340);
     assert.equal(await invoke(0x90, 0x15, [0x300, 0x280, 64, 4], 0), 0);
-    assert.equal(view.getUint32(0x280, true), 12);
+    assert.equal(view().getUint32(0x280, true), 12);
     assert.deepEqual(
       memory.globalMemory.subarray(0x300, 0x30c),
       Uint8Array.from([129, 66, 34, 255, 0, 0, 0, 128, 129, 66, 34, 64]),

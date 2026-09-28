@@ -19,6 +19,8 @@ import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const rectangle = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, values = []) => ({
@@ -67,7 +69,7 @@ test('property query writes a packed caller record consumed by real Sprite rende
     frameCapacity: 0,
   });
   const memory = new BurikoBpMemory(new Uint8Array(64));
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => bankView(memory.globalMemory);
   const context = {thread, memory, diagnostics: {}};
   const [slot] = createGroup91ObjectProperty(manager, {
     files: {text},
@@ -91,14 +93,14 @@ test('property query writes a packed caller record consumed by real Sprite rende
   sprite.setCoordinates(1 << 16, 1 << 16, 2 << 16);
   assert.equal(sprite.setCustom(3, 73), true);
   // A one-byte record kind precedes the native DWORD payload.
-  view.setUint8(0, 7);
+  view().setUint8(0, 7);
   const query = (selector) => {
     [1, handle, selector].forEach((value) => push32(thread, value));
     assert.equal(slot.execute(context), 0);
     assert.equal(thread.stackIndex, 0);
   };
   const values = (count) =>
-    Array.from({length: count}, (_, index) => view.getInt32(1 + 4 * index, true));
+    Array.from({length: count}, (_, index) => view().getInt32(1 + 4 * index, true));
   query(0x20);
   assert.deepEqual(values(3), [1 << 16, 1 << 16, 2 << 16]);
   query(0);
@@ -120,7 +122,7 @@ test('property query writes a packed caller record consumed by real Sprite rende
     ),
     [0, 0x204060, 0x6080a0, 0, 0x204060, 0x6080a0, 0, 0],
   );
-  view.setUint32(1, 3, true);
+  view().setUint32(1, 3, true);
   query(0x7fffffff);
   assert.deepEqual(values(1), [73]);
   query(0x10);
@@ -128,5 +130,5 @@ test('property query writes a packed caller record consumed by real Sprite rende
   const existingCaller = new Uint32Array(4);
   assert.equal(sprite.getProperty(0x10000100, existingCaller), 0);
   assert.deepEqual(Array.from(existingCaller), [2, 1, 2, 1]);
-  assert.equal(view.getUint8(0), 7);
+  assert.equal(view().getUint8(0), 7);
 });

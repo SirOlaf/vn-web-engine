@@ -6,7 +6,10 @@ import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 test('mounted D0 spatial search shares the registry and completes its native seed-only worker path', async () => {
   const fixture = await createMountedVmFixture({resourceWorkerCount: 3});
   const {graph, data, memory, child, definitions, invoke} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (secondary, args, expected) => {
     assert.equal(await invoke(0xd0, secondary, args, 0), 1);
     assert.equal(pop32(child.state), expected);
@@ -31,9 +34,9 @@ test('mounted D0 spatial search shares the registry and completes its native see
       1,
     );
 
-    view.setUint32(0x100, 0xffffffff, true);
+    view().setUint32(0x100, 0xffffffff, true);
     await call(0x40, [0x100], 0);
-    const id = view.getUint32(0x100, true);
+    const id = view().getUint32(0x100, true);
     assert.equal(id, 1);
     const record = (x) => [x * 65536, 0, 0, 65536, 0, 0, 65536, 0, 0];
     await call(0x60, [id, 0, ...record(0), 1, 7], 0);

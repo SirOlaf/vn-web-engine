@@ -13,8 +13,11 @@ test('mounted Landscape callbacks own terrain, cells, overlays, and surface read
     assert.equal(child.process, null);
   };
   const put = (address, values) =>
-    values.forEach((value, index) => bp.setUint32(address + index * 4, value, true));
-  const bp = new DataView(memory.globalMemory.buffer);
+    values.forEach((value, index) => bp().setUint32(address + index * 4, value, true));
+  const bp = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const red = 0xff0000e0;
   const blue = 0xffd00000;
   const bounds = {left: 0, top: 0, right: 11, bottom: 9};
@@ -38,9 +41,9 @@ test('mounted Landscape callbacks own terrain, cells, overlays, and surface read
     atlas.storage.written(0, 128);
     put(0x100, [0, 0, 4, 4, 0, 4, 0, 4, 4, 0]);
     put(0x200, [1, 0]);
-    bp.setUint32(0x200 + 33 * 4, 1, true);
+    bp().setUint32(0x200 + 33 * 4, 1, true);
     put(0x288, [2, 0, 1]);
-    bp.setUint32(0x288 + 33 * 4, 1, true);
+    bp().setUint32(0x288 + 33 * 4, 1, true);
     put(0x400, [0, 1, 1, 0]);
 
     await call(0x91, 0x70, [4, 2, 2, 6, 1, 1], 1);
@@ -53,7 +56,7 @@ test('mounted Landscape callbacks own terrain, cells, overlays, and surface read
     await call(0x91, 0x75, [handle, 0, 0, 0x80, 0, 2]);
     await call(0x91, 0x78, [handle, 3, 2, 0x100, 1, 2, 0x200]);
     await call(0x91, 0x79, [handle, 2, 2, 0x400]);
-    bp.setUint32(0x400, 1, true); // The graph owns a copy of the BP cell record.
+    bp().setUint32(0x400, 1, true); // The graph owns a copy of the BP cell record.
     await call(0x91, 0x74, [handle, 1]);
     const keys = new Uint32Array(landscape.copyExpandedSortKeys(null));
     landscape.copyExpandedSortKeys(keys);
@@ -71,7 +74,7 @@ test('mounted Landscape callbacks own terrain, cells, overlays, and surface read
     assert.equal(pixel(5, 5), red);
     await call(0x91, 0x7e, [0x500, handle, 0, 1], 1);
     assert.equal(pop32(child.state), 1);
-    assert.equal(bp.getUint32(0x500, true), 3);
+    assert.equal(bp().getUint32(0x500, true), 3);
     await call(0x91, 0x7f, [5, handle, 0, 1], 1);
     assert.equal(pop32(child.state), 1);
     assert.equal(graph.surfaces.descriptor(5).storage.view.getUint32(0, true), red);
@@ -80,11 +83,11 @@ test('mounted Landscape callbacks own terrain, cells, overlays, and surface read
     graph.input.touchPositions = [[5, 1]];
     await call(0x91, 0x73, [0x504, handle, 0], 1);
     assert.equal(pop32(child.state), 1);
-    assert.deepEqual([bp.getUint32(0x504, true), bp.getUint32(0x508, true)], [1, 0]);
+    assert.deepEqual([bp().getUint32(0x504, true), bp().getUint32(0x508, true)], [1, 0]);
     put(0x504, [77, 88]);
     await call(0x91, 0x73, [0x504, handle, 1], 1);
     assert.equal(pop32(child.state), 0);
-    assert.deepEqual([bp.getUint32(0x504, true), bp.getUint32(0x508, true)], [77, 88]);
+    assert.deepEqual([bp().getUint32(0x504, true), bp().getUint32(0x508, true)], [77, 88]);
     await call(0x91, 0x76, [handle, 0, 0, 1, 256, 0x00a0b0c0]);
     draw(0x22000);
     assert.equal(pixel(1, 3), 0xffa0b0c0);
@@ -107,7 +110,7 @@ test('mounted Landscape callbacks own terrain, cells, overlays, and surface read
     await call(0x91, 0x7d, [handle, 1, 1, 1]);
     await call(0x91, 0x7e, [0x500, handle, 1, 1], 1);
     assert.equal(pop32(child.state), 1);
-    assert.equal(bp.getUint32(0x500, true), 4);
+    assert.equal(bp().getUint32(0x500, true), 4);
     await call(0x91, 0x71, [handle]);
     assert.equal(graph.manager.find('landscape', handle), null);
     assert.equal(graph.manager.categoryCount(4), 0);

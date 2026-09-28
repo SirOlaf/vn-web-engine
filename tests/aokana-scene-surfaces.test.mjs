@@ -157,7 +157,7 @@ test('twelve native90 wrappers share the actual surface table, native descriptor
   await run(0x16, [32, 5]);
   assert.equal(pop32(thread), 1);
   assert.deepEqual(
-    Array.from(new Uint32Array(memory.globalMemory.buffer, 32, 6)),
+    Array.from(new Uint32Array(memory.globalMemory.buffer, memory.globalMemory.byteOffset + 32, 6)),
     [0, 8, 2, 1, 1, 4],
   );
   await run(0x17, [5, 2]);

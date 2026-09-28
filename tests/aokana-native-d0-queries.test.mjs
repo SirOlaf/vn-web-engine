@@ -128,7 +128,10 @@ test('query wrappers consume all arguments in native order and retain lifetime r
     frameCapacity: 64,
   });
   const h = {thread, memory: new BurikoBpMemory(bytes)},
-    view = () => new DataView(h.memory.globalMemory.buffer, h.memory.globalMemory.byteOffset),
+    view = () => {
+      const bank = h.memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    },
     words = (offset, count) =>
       Array.from({length: count}, (_, i) => view().getInt32(offset + i * 4, true));
   const definitions = [

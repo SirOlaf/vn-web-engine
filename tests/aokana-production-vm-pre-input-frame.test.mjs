@@ -8,7 +8,10 @@ test('mounted pre-input frame polls independent work before Sprite targets and c
   let now = 0;
   const fixture = await createMountedVmFixture({performanceNow: () => now});
   const {graph, data, core, child, definitions, invoke, memory} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (primary, secondary, args, pushed = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushed);
     assert.equal(child.process, null);
@@ -68,8 +71,8 @@ test('mounted pre-input frame polls independent work before Sprite targets and c
     assert.equal(await result(0x90, 0xfd, [0]), 0);
     const procedure = new BurikoIndependentProcedure(data.procedures, target);
     assert.equal(data.procedures.register(procedure), 1);
-    view.setUint32(0x400, 0, true);
-    view.setUint32(0x404, 0, true);
+    view().setUint32(0x400, 0, true);
+    view().setUint32(0x404, 0, true);
     assert.equal(await result(0x80, 0xac, [procedure.id, 2, 0x400]), 1);
     await call(0xb0, 0x04, [customHandle, -2, -7]);
     await call(0xb0, 0x05, [100]);

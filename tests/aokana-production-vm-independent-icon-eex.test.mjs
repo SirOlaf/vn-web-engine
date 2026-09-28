@@ -11,9 +11,12 @@ test('mounted IconEEx moves Window children along the shared spline registry', a
   let now = 100;
   const fixture = await createMountedVmFixture({performanceNow: () => now});
   const {graph, data, core, child, definitions, invoke, memory} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const words = (offset, values) =>
-    values.forEach((value, index) => view.setInt32(offset + index * 4, value, true));
+    values.forEach((value, index) => view().setInt32(offset + index * 4, value, true));
   const call = async (primary, secondary, args, pushed = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushed);
     assert.equal(child.process, null);
@@ -127,7 +130,7 @@ test('mounted IconEEx moves Window children along the shared spline registry', a
     assert.equal(await core.runIndependentPoll('enabled'), 1);
     memory.globalMemory.fill(0xcc, 0x700, 0x708);
     assert.equal(await result(0x90, 0xbe, [0x700, id]), 1);
-    assert.equal(view.getInt32(0x700, true), 1);
+    assert.equal(view().getInt32(0x700, true), 1);
     assert.deepEqual(
       Array.from(memory.globalMemory.subarray(0x704, 0x708)),
       [0xcc, 0xcc, 0xcc, 0xcc],

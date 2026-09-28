@@ -23,7 +23,13 @@ import {
   hostPointer,
 } from '../dist/engines/buriko/bp/memory.js';
 import {attachModule, detachLastModule} from '../dist/engines/buriko/bp/modules.js';
-import {markIndeterminateMemory} from '../dist/core/indeterminate-memory.js';
+import {
+  copyMemoryBytes,
+  clearIndeterminateMemory,
+  hasIndeterminateMemory,
+  markIndeterminateMemory,
+  requireDeterminateMemory,
+} from '../dist/core/indeterminate-memory.js';
 
 const thread = (options = {}) =>
   new BurikoBpThread({
@@ -423,4 +429,61 @@ test('Buriko arena growth keeps addresses, provenance and stale-pointer contents
   assert.equal(m.allocatePooled(0x3000), pooled);
   assert.equal(m.readU8(t, pooled + 3), 0);
   assert.equal(stale.view()[3], 9);
+});
+
+test('arena provenance bitmap reports the same faults as host-buffer provenance', () => {
+  let state = 7;
+  const random = (limit) => {
+    state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+    return (state >>> 8) % limit;
+  };
+  const table = new BurikoBpRegionTable(0x100);
+  const arena = [table.allocate(64), table.allocate(64)].map((region) => () => region.view());
+  const host = [new Uint8Array(64), new Uint8Array(64)].map((bytes) => () => bytes);
+  const outcome = (action) => {
+    try {
+      return String(action());
+    } catch (error) {
+      return error.message;
+    }
+  };
+  for (let step = 0; step < 4000; step++) {
+    const kind = random(6),
+      which = random(2),
+      offset = random(60),
+      length = 1 + random(12),
+      reason = `reason ${random(4)}`,
+      target = random(52);
+    const results = [arena, host].map((banks) => {
+      const bytes = banks[which]();
+      const other = banks[which ^ 1]();
+      switch (kind) {
+        case 0:
+          return outcome(() =>
+            markIndeterminateMemory(bytes, offset, Math.min(length, 64 - offset), reason),
+          );
+        case 1:
+          return outcome(() =>
+            clearIndeterminateMemory(bytes, offset, Math.min(length, 64 - offset)),
+          );
+        case 2:
+          return outcome(() =>
+            copyMemoryBytes(other, target, bytes, offset, Math.min(length, 12, 64 - offset)),
+          );
+        case 3:
+          return outcome(() =>
+            copyMemoryBytes(bytes, target, bytes, offset, Math.min(length, 12, 64 - offset)),
+          );
+        case 4:
+          return outcome(() =>
+            hasIndeterminateMemory(bytes, offset, Math.min(length, 64 - offset)),
+          );
+        default:
+          return outcome(() =>
+            requireDeterminateMemory(bytes, offset, Math.min(length, 64 - offset)),
+          );
+      }
+    });
+    assert.equal(results[0], results[1], `step ${step}`);
+  }
 });

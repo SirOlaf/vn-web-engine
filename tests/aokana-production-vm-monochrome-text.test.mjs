@@ -40,7 +40,10 @@ test('mounted monochrome text draws packed glyphs through the graph surface and 
   };
   const fixture = await createMountedVmFixture({fontProvider});
   const {graph, child, definitions, memory, invoke} = fixture;
-  const output = new DataView(memory.globalMemory.buffer);
+  const output = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (primary, secondary, args, pushes = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushes);
     assert.equal(child.state.stackIndex, pushes);
@@ -86,7 +89,7 @@ test('mounted monochrome text draws packed glyphs through the graph surface and 
       for (let x = 0; x < 16; x++) {
         await call(0x92, 0x17, [0x300, 1, x, y], 1);
         assert.equal(pop32(child.state), 0);
-        assert.equal(output.getUint32(0x300, true), colored.has(y * 16 + x) ? 0x203040 : 0);
+        assert.equal(output().getUint32(0x300, true), colored.has(y * 16 + x) ? 0x203040 : 0);
       }
     assert.equal(graph.device.isPresent(), false);
     await call(0x90, 0x12, [1], 1);

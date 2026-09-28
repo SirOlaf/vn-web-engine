@@ -31,9 +31,12 @@ test('mounted VM binds object coordinates, properties, and parentage to its grap
     sprite.setCoordinates(0x10000, 0x20000, 0x30000);
     memory.globalMemory.fill(0xa5, 0x500, 0x510);
     assert.equal(await invoke(0x91, 0x38, [0x501, spriteHandle, 0x20], 0), 0);
-    const propertyOutput = new DataView(memory.globalMemory.buffer);
+    const propertyOutput = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     assert.deepEqual(
-      [0, 1, 2].map((index) => propertyOutput.getUint32(0x501 + index * 4, true)),
+      [0, 1, 2].map((index) => propertyOutput().getUint32(0x501 + index * 4, true)),
       [0x10000, 0x20000, 0x30000],
     );
     assert.equal(memory.globalMemory[0x500], 0xa5);
@@ -60,7 +63,7 @@ test('mounted VM binds object coordinates, properties, and parentage to its grap
     assert.deepEqual(Array.from(sprite.children()), [spriteChild]);
     const effectivePosition = async (handle) => {
       assert.equal(await invoke(0x91, 0x3d, [0x520, handle], 0), 0);
-      return [propertyOutput.getInt32(0x520, true), propertyOutput.getInt32(0x524, true)];
+      return [propertyOutput().getInt32(0x520, true), propertyOutput().getInt32(0x524, true)];
     };
     assert.deepEqual(await effectivePosition(spriteHandle), [1, 1]);
     assert.deepEqual(await effectivePosition(childHandle), [4, 1]);

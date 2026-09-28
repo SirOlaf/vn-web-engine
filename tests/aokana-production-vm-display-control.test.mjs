@@ -116,11 +116,14 @@ test('mounted VM display and coordinate controls update one graph Sprite through
     sprite.setValueD8(0, 2);
     sprite.setBlendValue(0);
     graph.manager.lists.resort(sprite);
-    const points = new DataView(memory.globalMemory.buffer);
-    points.setInt32(0x300, 100 << 16, true);
-    points.setInt32(0x304, 80 << 16, true);
-    points.setInt32(0x308, 32 << 16, true);
-    points.setUint32(0x30c, 0x12345678, true);
+    const points = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
+    points().setInt32(0x300, 100 << 16, true);
+    points().setInt32(0x304, 80 << 16, true);
+    points().setInt32(0x308, 32 << 16, true);
+    points().setUint32(0x30c, 0x12345678, true);
     await start(0x29, [handle, 1, 0x300, 0, 128, 0x80000000, 10, 100, 50, 0, 0, 1]);
     tick = 485;
     assert.equal(await child.pollProcess(false), 0);

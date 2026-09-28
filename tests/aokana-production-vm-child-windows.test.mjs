@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('mounted B0 child state callbacks share DOM, scroll, clipboard, and close owners', async () => {
   const fixture = await createMountedVmFixture();
@@ -91,7 +93,7 @@ test('mounted B0 child state callbacks share DOM, scroll, clipboard, and close o
     const scrollbars = all(secondPanel).filter((item) => item.role === 'scrollbar');
     assert.equal(scrollbars.length, 2);
     assert.ok(scrollbars.every((bar) => bar.disabled === false));
-    const output = new DataView(memory.globalMemory.buffer);
+    const output = () => bankView(memory.globalMemory);
     for (const [selector, expected] of [
       [0, 20],
       [1, 10],
@@ -100,7 +102,7 @@ test('mounted B0 child state callbacks share DOM, scroll, clipboard, and close o
       memory.globalMemory.fill(0xa5, 0x200, 0x208);
       await call(0x1f, [0x200, second, selector], 1);
       assert.equal(pop32(child.state), 0);
-      assert.equal(output.getInt32(0x200, true), expected);
+      assert.equal(output().getInt32(0x200, true), expected);
       assert.deepEqual([...memory.globalMemory.subarray(0x204, 0x208)], [0xa5, 0xa5, 0xa5, 0xa5]);
     }
     assert.equal(child.state.stackIndex, 0);

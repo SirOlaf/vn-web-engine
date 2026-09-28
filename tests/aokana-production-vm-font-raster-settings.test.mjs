@@ -46,7 +46,10 @@ test('mounted font raster settings change ordinary upright and italic glyph layo
   };
   const fixture = await createMountedVmFixture({fontProvider});
   const {graph, child, definitions, memory, invoke} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const call = async (primary, secondary, args, pushes = 0) => {
     assert.equal(await invoke(primary, secondary, args, 0), pushes);
     assert.equal(child.state.stackIndex, pushes);
@@ -55,13 +58,16 @@ test('mounted font raster settings change ordinary upright and italic glyph layo
   const pixel = async (surface, x) => {
     await call(0x92, 0x17, [0x280, surface, x, 0], 1);
     assert.equal(pop32(child.state), 0);
-    return view.getUint32(0x280, true) & 0xffffff;
+    return view().getUint32(0x280, true) & 0xffffff;
   };
   const draw = async (surface, source, font, expectedSecondX, expectedCursor) => {
     await call(0x91, 0x9c, [surface, 0, 0, source, 0, 0, font, 8, 100, 0, 0, 0, 0, 0x445566], 1);
     assert.equal(pop32(child.state), 1);
     await call(0x92, 0x9b, [0x240, 0x100]);
-    assert.deepEqual([view.getInt32(0x240, true), view.getInt32(0x244, true)], [expectedCursor, 0]);
+    assert.deepEqual(
+      [view().getInt32(0x240, true), view().getInt32(0x244, true)],
+      [expectedCursor, 0],
+    );
     assert.equal(await pixel(surface, 0), 0x445566);
     assert.equal(await pixel(surface, expectedSecondX), 0x445566);
     assert.equal(await pixel(surface, 30), 0);

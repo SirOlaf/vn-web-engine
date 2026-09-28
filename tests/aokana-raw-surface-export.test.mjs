@@ -35,7 +35,14 @@ test('90:15 exports packed BGR pixels into BP memory for a real raw surface impo
   [64, 32, 64, 0].forEach((value) => push32(thread, value));
   assert.equal(slot.execute({thread, memory, diagnostics: {}}), 0);
   assert.equal(thread.stackIndex, 0);
-  assert.equal(new DataView(memory.globalMemory.buffer).getUint32(32, true), 12);
+  assert.equal(
+    new DataView(
+      memory.globalMemory.buffer,
+      memory.globalMemory.byteOffset,
+      memory.globalMemory.byteLength,
+    ).getUint32(32, true),
+    12,
+  );
   assert.deepEqual(
     Array.from(memory.globalMemory.subarray(64, 76)),
     [0x33, 0x22, 0x11, 0x66, 0x55, 0x44, 0x99, 0x88, 0x77, 0xcc, 0xbb, 0xaa],

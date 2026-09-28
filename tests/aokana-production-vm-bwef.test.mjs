@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('mounted C0:F0 reads loose BWEF pairs through shared resources and BP memory', async () => {
   const fixture = await createMountedVmFixture();
@@ -22,9 +24,10 @@ test('mounted C0:F0 reads loose BWEF pairs through shared resources and BP memor
     header.setInt32(0x124, -10, true);
     await graph.resource.files.write(encode('C:\\game\\pairs.bwef'), bytes);
     memory.globalMemory.set(new TextEncoder().encode('pairs.bwef\0'), 0x100);
-    const view = new DataView(memory.globalMemory.buffer);
-    view.setUint32(0x290, 0xaaaaaaaa, true);
-    for (let offset = 0; offset < 20; offset += 4) view.setUint32(0x300 + offset, 0xbbbbbbbb, true);
+    const view = () => bankView(memory.globalMemory);
+    view().setUint32(0x290, 0xaaaaaaaa, true);
+    for (let offset = 0; offset < 20; offset += 4)
+      view().setUint32(0x300 + offset, 0xbbbbbbbb, true);
 
     for (const value of [0x300, 0x290, 0, 0x100, 2]) push32(child.state, value);
     const pending = definition.execute({thread: child.state, memory, diagnostics});
@@ -38,12 +41,12 @@ test('mounted C0:F0 reads loose BWEF pairs through shared resources and BP memor
     assert.equal(pop32(child.state), 0);
     assert.equal(child.state.stackIndex, 0);
     assert.equal(child.process, null);
-    assert.equal(view.getUint32(0x290, true), 2);
+    assert.equal(view().getUint32(0x290, true), 2);
     assert.deepEqual(
-      [0, 4, 8, 12].map((offset) => view.getInt32(0x300 + offset, true)),
+      [0, 4, 8, 12].map((offset) => view().getInt32(0x300 + offset, true)),
       [-2147483647, -7, -8, -7],
     );
-    assert.equal(view.getUint32(0x310, true), 0xbbbbbbbb);
+    assert.equal(view().getUint32(0x310, true), 0xbbbbbbbb);
   } finally {
     await fixture.close();
   }

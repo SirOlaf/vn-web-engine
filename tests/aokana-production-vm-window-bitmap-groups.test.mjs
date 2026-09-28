@@ -8,9 +8,12 @@ import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 test('mounted VM bitmap groups compose and replace real Window inner Sprites', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke, memory} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const words = (offset, values) => {
-    values.forEach((value, index) => view.setInt32(offset + index * 4, value, true));
+    values.forEach((value, index) => view().setInt32(offset + index * 4, value, true));
   };
   const call = async (secondary, args) => {
     assert.equal(await invoke(0x90, secondary, args, 0), 0);
@@ -70,7 +73,7 @@ test('mounted VM bitmap groups compose and replace real Window inner Sprites', a
 
     await drawGroups();
     assert.deepEqual([pixel(3, 4), pixel(11, 4), pixel(19, 4)], [0x800000, 0x008000, 0]);
-    view.setInt32(128 + 3 * 4, 0, true);
+    view().setInt32(128 + 3 * 4, 0, true);
     await drawGroups();
     assert.equal(graph.manager.find('window', handle), window);
     assert.deepEqual([pixel(3, 4), pixel(11, 4), pixel(19, 4)], [0x008000, 0x800000, 0]);

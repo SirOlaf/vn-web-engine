@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('mounted CPU callbacks read one explicitly initialized graph CPU profile', async () => {
   const words = (bytes) => {
@@ -73,9 +75,9 @@ test('mounted CPU callbacks read one explicitly initialized graph CPU profile', 
     assert.deepEqual(affinity, [1n, 3n]);
     memory.globalMemory.fill(0xcc, 0x1ff, 0x242);
     assert.equal(await invoke(0x80, 0x0a, [0x200], 0), 0);
-    const view = new DataView(memory.globalMemory.buffer);
+    const view = () => bankView(memory.globalMemory);
     assert.deepEqual(
-      Array.from({length: 16}, (_, index) => view.getUint32(0x200 + index * 4, true)),
+      Array.from({length: 16}, (_, index) => view().getUint32(0x200 + index * 4, true)),
       [0, 6, 0xa7, 5, 0xab, 0x40080020, 0x40080100, 0x40082000, 2500, 12, 3, 0, 0, 0, 0, 0],
     );
     assert.equal(memory.globalMemory[0x1ff], 0xcc);

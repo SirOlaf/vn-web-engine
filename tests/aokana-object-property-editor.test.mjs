@@ -8,6 +8,8 @@ import {BurikoPropertyEditors} from '../dist/engines/buriko/native/property-edit
 import {createGroupE0ObjectProperties} from '../dist/engines/buriko/native/group-e0-object-properties.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {bitmapWrite32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 // Synthetic DOM storage and event primitives only; no browser presentation.
 class Element {
@@ -131,13 +133,13 @@ test('E0:20 binds actual Sprite fields and routes modal row edits through the di
       text.encodeWide('Objects'),
     ),
     memory = new BurikoBpMemory(new Uint8Array(512)),
-    view = new DataView(memory.globalMemory.buffer),
+    view = () => bankView(memory.globalMemory),
     pointer = (offset) => hostPointer(memory.globalMemory, offset),
     thread = new BurikoBpThread({id: 1, operandCapacity: 16, moduleCapacity: 0, frameCapacity: 0}),
     [slot] = createGroupE0ObjectProperties(editors, manager);
   assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0xe0][0x20]);
   assert.equal(editors.create(pointer(16), null, null, null, 180, 140), 0);
-  const editorId = view.getUint32(16, true);
+  const editorId = view().getUint32(16, true);
   assert.equal(manager.surfaces.allocate(0, 3, 3, 1), 1);
   const source = manager.surfaces.snapshot(0);
   for (let y = 0; y < 3; y++)
@@ -152,10 +154,10 @@ test('E0:20 binds actual Sprite fields and routes modal row edits through the di
   [32, editorId, handle, 64].forEach((value) => push32(thread, value));
   assert.equal(slot.execute({thread, memory}), 0);
   assert.equal(pop32(thread), 0);
-  assert.equal(view.getUint32(32, true), 0);
+  assert.equal(view().getUint32(32, true), 0);
   const value = (row) => {
     assert.equal(editors.getValue(pointer(40), pointer(44), editorId, 0, row), 0);
-    return [view.getInt32(40, true), view.getInt32(44, true)];
+    return [view().getInt32(40, true), view().getInt32(44, true)];
   };
   assert.deepEqual(value(0), [handle | 0, 2]);
   assert.deepEqual(value(2), [1, 4]);
@@ -202,7 +204,7 @@ test('E0:20 binds actual Sprite fields and routes modal row edits through the di
   [36, editorId, affineHandle, 64].forEach((value) => push32(thread, value));
   assert.equal(slot.execute({thread, memory}), 0);
   assert.equal(pop32(thread), 0);
-  assert.equal(view.getUint32(36, true), 1);
+  assert.equal(view().getUint32(36, true), 1);
   for (const [row, expected] of [
     [13, 65536],
     [16, 32768],
@@ -210,7 +212,7 @@ test('E0:20 binds actual Sprite fields and routes modal row edits through the di
     [21, 49152],
   ]) {
     assert.equal(editors.getValue(pointer(40), pointer(44), editorId, 1, row), 0);
-    assert.deepEqual([view.getInt32(40, true), view.getInt32(44, true)], [expected, 3]);
+    assert.deepEqual([view().getInt32(40, true), view().getInt32(44, true)], [expected, 3]);
   }
   assert.equal(editors.destroy(editorId), 0);
 });

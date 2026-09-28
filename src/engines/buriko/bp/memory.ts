@@ -11,7 +11,7 @@ import {
   BurikoBpPointer,
   BurikoBpRegion,
   BurikoBpRegionTable,
-  type BurikoBpArena,
+  type BurikoBpArenaViews,
 } from './region.js';
 
 /** First arena reservation of a VM memory; the arena doubles on demand. */
@@ -237,7 +237,7 @@ export class BurikoBpMemory {
   }
 
   /** Whole-arena byte and word views of every live region, for the current arena generation. */
-  memoryViews(): ReturnType<BurikoBpArena['views']> {
+  memoryViews(): BurikoBpArenaViews {
     return this.regions.arena.views();
   }
 

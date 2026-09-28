@@ -77,9 +77,12 @@ test('mounted VM surface effects transition, vector-map, and blur shared graph p
       Uint8Array.from({length: 18}, (_, index) => (index < 9 ? 64 : 128)),
       0x280,
     );
-    const vectorBytes = new DataView(memory.globalMemory.buffer);
+    const vectorBytes = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     for (let index = 0; index < 6; index++)
-      vectorBytes.setUint32(0x2c0 + index * 4, 0x00100000, true);
+      vectorBytes().setUint32(0x2c0 + index * 4, 0x00100000, true);
     await call(0x11, [5, 3, 2, 1]);
     await call(0x13, [5, gray(32)]);
     await call(0x14, [6, 3, 2, 1, 0x280]);

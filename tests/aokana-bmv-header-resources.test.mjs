@@ -22,6 +22,8 @@ import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
 import {SourceFileSystem} from '../dist/platform/filesystem.js';
 import {WindowsFileSystem, windowsFileKey} from '../dist/platform/windows-filesystem.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const bytes = (value) => new TextEncoder().encode(value);
 
@@ -112,7 +114,7 @@ test('92 F1 uses full loading or two staged FIFO reads with real partial-resourc
   const name = state.name('SaMpLe.BmV'),
     output = 512,
     info = 544;
-  const view = new DataView(state.memory.globalMemory.buffer);
+  const view = () => bankView(state.memory.globalMemory);
   const slot = state.slots[0];
   assert.equal(slot.primary, 0x92);
   assert.equal(slot.secondary, 0xf1);
@@ -136,10 +138,10 @@ test('92 F1 uses full loading or two staged FIFO reads with real partial-resourc
     assert.equal(state.loading.activeProcedures, 0);
     assert.equal(state.loading.hasPending, false);
     assert.equal(state.scheduler.root.process, null);
-    const id = view.getUint32(output, true),
+    const id = view().getUint32(output, true),
       resource = state.registry.find(id).resource;
     assert.deepEqual(
-      Array.from({length: 5}, (_, index) => view.getUint32(info + index * 4, true)),
+      Array.from({length: 5}, (_, index) => view().getUint32(info + index * 4, true)),
       [8, 8, 2, 40, 2],
     );
     assert.deepEqual(resource.bytes, mode === 0 ? payload : payload.subarray(0, 200));

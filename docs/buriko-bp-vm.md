@@ -14,7 +14,7 @@ A BP address is `bank << addressBits | offset`. The ABI descriptor (`bp/abi.ts`)
 | 2                          | Frames and locals                         | `thread.frameRegion`                         |
 | 3                          | Thread heap                               | `thread.heap.region`                         |
 | Pool banks                 | Pooled allocations                        | `memory.pools[group][slot]` (layout per ABI) |
-| (not addressable)          | Operand stack cells                       | `thread.stackRegion`                         |
+| (not addressable)          | Operand stack cells and their tags        | `thread.stackRegion`                         |
 
 Every bank resolves to a `BurikoBpRegion` (`bp/region.ts`): one contiguous allocation with a fixed size. Addresses stay bank-relative, so replacing a bank's region never changes a VM address.
 
@@ -26,7 +26,8 @@ Each region table places its regions in one `BurikoBpArena`: a single `ArrayBuff
 
 - **Growth:** when no free block fits, the arena doubles its capacity and reallocates the buffer (`ArrayBuffer.prototype.transfer` where available, which detaches the previous buffer). `arena.generation` advances. Provenance marks move to the new buffer at the same offsets.
 - **Views:** after a growth the region table re-derives the views of every live region before the allocation returns, so `region.view()` and `region.view32()` are plain field reads. A region's `onRebase` callback lets its owner refresh views it caches in its own fields; `thread.operandStack` uses it. A view obtained before a growth is detached (length 0) or stale, which is why natives never hold views across allocations or awaits.
-- **Whole-arena access:** `memory.memoryViews()` returns `{bytes, words, generation}` over the entire arena. `region.arenaOffset` is a region's byte offset in it. These are the addresses a WebAssembly module sharing the arena would use.
+- **Layout:** the first `arena.capacity` bytes hold regions; the next `capacity / 8` bytes are the provenance bitmap for them (see [Provenance](#provenance)). Growth moves the bitmap to the new end of the data area.
+- **Whole-arena access:** `memory.memoryViews()` returns `{bytes, words, bitmapOffset, generation}` over the entire arena. `region.arenaOffset` is a region's byte offset in it. These are the addresses a WebAssembly module sharing the arena would use.
 - **Sizing:** `BurikoBpMemory` reserves `BURIKO_BP_ARENA_BYTES` (1 MiB) initially; the third constructor argument overrides it. Private thread tables start at 4 KiB. `regions.liveBytes` and `arena.capacity` report use for measuring a real title's footprint.
 - **Adopted bytes:** `regions.adopt(bytes)` and the `BurikoBpMemory` constructor copy their input into the arena. The caller's array is not the live bank afterwards; read `memory.globalMemory` instead.
 - **Buffer identity:** all views of one arena share one `buffer`. Code comparing `a.buffer === b.buffer` must treat that as possible aliasing and compare absolute ranges through `byteOffset`, and code building a `DataView` or typed array from a view must pass its `byteOffset` and `byteLength` (`byteDataView` in `src/core/binary.ts`).
@@ -62,7 +63,22 @@ Rule 2 matters because of arena growth: any VM allocation, on any thread, can mo
 
 ## Provenance
 
-Bytes that native code leaves unwritten carry an "indeterminate" mark (`src/core/indeterminate-memory.ts`), keyed by buffer and absolute byte offset. Reading a marked byte raises the reason recorded when it was marked; the earliest mark among the covered bytes selects the message. Writes clear marks, and `copyMemoryBytes` moves them with the data. Operand stack cells carry the same provenance through `pushIndeterminate32` and `popDeferred32` in `bp/state.ts`.
+Bytes that native code leaves unwritten carry an "indeterminate" mark (`src/core/indeterminate-memory.ts`). Reading a marked byte faults with a reason string. Writes clear marks, and `copyMemoryBytes` moves them with the data.
+
+### Mark order
+
+Every mark has a sequence number. A read covering several marked bytes faults with the reason of the byte marked earliest. Re-marking a byte replaces its reason but keeps its sequence; clearing it discards both. `copyMemoryBytes` collects the source marks in sequence order, copies the bytes, clears the destination range, then re-marks the destination in that order, so overlapping copies keep the source's relative order.
+
+### Stores
+
+- **Arena store (`IndeterminateBitmap`):** registered for each arena buffer. The arena's bitmap holds one bit per data byte (bit `a & 7` of byte `bitmapOffset + (a >> 3)`); a side `Map` holds `sequence * 2^20 + reasonId` for marked bytes only. Checks on unmarked memory read only bitmap bytes, skipping whole zero bytes. Marking never allocates, so it never moves the arena.
+- **Host store:** buffers outside any arena (decoder output, file data, retired regions) get a per-buffer `Map` of the same packed values on their first mark, deleted when their last mark clears.
+- **Reason table:** `internIndeterminateReason(reason)` maps a reason string to a small id (0 means determinate); `indeterminateReason(id)` maps it back.
+- **Fast path:** while no store holds a mark, every query returns without a lookup.
+
+### Operand stack tags
+
+`thread.stackRegion` holds the operand cells followed by one 32-bit tag per cell (`thread.operandStack`, `thread.operandTags`). A tag is the reason id of an unwritten value moved onto the stack by `pushIndeterminate32`, or 0. `push32` clears the tag; `pop32` faults on a nonzero tag; `popDeferred32` returns the value and the reason without faulting, for opcodes that move the value on (`writeDeferredScalar` marks the destination memory with it).
 
 ## Differential harness
 

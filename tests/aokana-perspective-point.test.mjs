@@ -14,6 +14,8 @@ import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/invent
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 const rectangle = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, values = []) => ({
   storage: new BurikoBitmapStorage(
@@ -59,7 +61,7 @@ test('perspective point coordinates move a real Sprite through shared display ge
   const handle = manager.createSprite();
   assert.equal(manager.initializeSimpleSprite(handle, 0, 0, 0, 0, 0, 1), 0);
   const memory = new BurikoBpMemory(new Uint8Array(64));
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => bankView(memory.globalMemory);
   const thread = new BurikoBpThread({
     id: 1,
     operandCapacity: 8,
@@ -83,12 +85,12 @@ test('perspective point coordinates move a real Sprite through shared display ge
       [4, 3],
     ],
   ]) {
-    point.forEach((value, index) => view.setInt32(16 + index * 4, value, true));
+    point.forEach((value, index) => view().setInt32(16 + index * 4, value, true));
     [32, 16, ...scales].forEach((value) => push32(thread, value));
     assert.equal(slot.execute({thread, memory}), 0);
     assert.equal(thread.stackIndex, 0);
-    const x = view.getInt32(32, true),
-      y = view.getInt32(36, true);
+    const x = view().getInt32(32, true),
+      y = view().getInt32(36, true);
     assert.deepEqual([x, y], expected);
     assert.equal(manager.move(handle, x, y), true);
     assert.deepEqual(manager.resolve(handle).inputRectangle(0), {

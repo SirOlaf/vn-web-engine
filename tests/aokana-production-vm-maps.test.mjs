@@ -29,8 +29,11 @@ test('mounted map callbacks copy BP cells and scroll graph-owned tile surfaces',
     const tilePixels = [0x0011, 0x0012, 0x0021, 0x0022, 0x0031, 0x0032];
     tilePixels.forEach((pixel, index) => tiles.storage.view.setUint16(index * 2, pixel, true));
     tiles.storage.written(0, 12);
-    const source = new DataView(memory.globalMemory.buffer);
-    [0, 1, 2, 2, 1, 0].forEach((cell, index) => source.setUint16(0x400 + index * 2, cell, true));
+    const source = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
+    [0, 1, 2, 2, 1, 0].forEach((cell, index) => source().setUint16(0x400 + index * 2, cell, true));
 
     await call(0x70, [], 1);
     const handle = pop32(child.state);
@@ -42,7 +45,7 @@ test('mounted map callbacks copy BP cells and scroll graph-owned tile surfaces',
     await call(0x76, [handle, 2, 1, 2, 1]);
     await call(0x75, [handle, 0, 0, 3, 0x80, 0, 2]);
     await call(0x78, [handle, 3, 2, 0x400]);
-    source.setUint16(0x400, 2, true);
+    source().setUint16(0x400, 2, true);
     await call(0x74, [handle, 1]);
     const output = graph.surfaces.snapshot(4);
     assert.ok(output);

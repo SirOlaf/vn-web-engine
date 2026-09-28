@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {pop32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoDevicePowerProfile} from '../dist/engines/buriko/native/device-power.js';
 import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('mounted 81:3E reads selected in-memory device power through one system profile', async () => {
   const calls = [];
@@ -53,7 +55,7 @@ test('mounted 81:3E reads selected in-memory device power through one system pro
     memory.globalMemory.set(encode('C:\\device'), 0x180);
     assert.equal(await invoke(0x81, 0x3e, [0x200, 0x180], 0), 1);
     assert.equal(pop32(child.state), 1);
-    assert.equal(new DataView(memory.globalMemory.buffer).getUint32(0x200, true), 0xf0000001);
+    assert.equal(bankView(memory.globalMemory).getUint32(0x200, true), 0xf0000001);
     assert.deepEqual(calls, [
       ['version'],
       ['open', 'C:\\device', 0x80000000, 1, 3, 0x80],

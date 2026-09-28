@@ -43,7 +43,11 @@ test('mounted 81:F2 installs through the VM scheduler and shared graph owners', 
     };
     const write = (address, value) => memory.globalMemory.set(bytes(value + '\0'), address);
     const dword = (address, value) =>
-      new DataView(memory.globalMemory.buffer).setUint32(address, value, true);
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      ).setUint32(address, value, true);
     write(addresses.destination, 'C:\\restart\\install');
     write(addresses.file, 'data.bin');
     dword(addresses.files, addresses.file);

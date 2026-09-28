@@ -58,7 +58,11 @@ test('surface mask opcodes convert RGB and RGBA, invert and feed actual alpha-ma
     Array.from({length: count}, (_, x) => {
       const output = hostPointer(memory.globalMemory, 8);
       assert.equal(surfaces.readPixel(output, surface, x, 0), 0);
-      return new DataView(memory.globalMemory.buffer).getUint32(8, true);
+      return new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      ).getUint32(8, true);
     });
 
   // BGR input: white, red, green, blue. Weights are77R+151G+28B, divided256.

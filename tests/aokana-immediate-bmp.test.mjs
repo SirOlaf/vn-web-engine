@@ -22,6 +22,8 @@ import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {createGroup92ImmediateBmp} from '../dist/engines/buriko/native/group-92-immediate-bmp.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('immediate BMP opcode loads a qualified mounted file and copies its bottom-up padded pixels', async () => {
   const bmp = new Uint8Array(70),
@@ -94,7 +96,7 @@ test('immediate BMP opcode loads a qualified mounted file and copies its bottom-
         surfaces.readPixel(hostPointer(memory.globalMemory, 8), surface, index % 2, index >> 1),
         0,
       );
-      return new DataView(memory.globalMemory.buffer).getUint32(8, true);
+      return bankView(memory.globalMemory).getUint32(8, true);
     });
   assert.deepEqual(pixels(1), [0xff0000, 0x00ff00, 0x0000ff, 0xffffff]);
   assert.equal(surfaces.importRaw(2, 2, 2, 1, hostPointer(new Uint8Array(12), 0)), 1);

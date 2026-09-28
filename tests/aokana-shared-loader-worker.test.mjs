@@ -33,6 +33,12 @@ import {BurikoBpScheduler} from '../dist/engines/buriko/bp/scheduler.js';
 import {BurikoBpThread} from '../dist/engines/buriko/bp/state.js';
 import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
+// A pointer view sits at an arbitrary offset in the shared VM arena.
+const viewOf = (p) => {
+  const bytes = p.view();
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+};
+
 function wave(sample) {
   const bytes = new Uint8Array(64 + 5000 * 2),
     view = new DataView(bytes.buffer);
@@ -145,7 +151,7 @@ test('one shared loader actor restarts priority after each real resource, music,
       await scripts.open(handle, hostPointer(encode('C:\\game\\document')), 0, caller),
       0,
     );
-    const id = new DataView(handle.view().buffer).getUint32(0, true);
+    const id = viewOf(handle).getUint32(0, true);
     assert.equal(await scripts.queueTransfer(completion, id, scriptBuffer, 4, caller), 0);
     loading.enqueueOwned(first, firstResult, null, encode('document'), 0, 0, caller);
     audio.enqueueMusic(musicResult, 0, encode('unused.arc'), encode('loose.bw'), 128, 64, caller);
@@ -172,7 +178,7 @@ test('one shared loader actor restarts priority after each real resource, music,
     assert.equal(staticResult.value, 0);
     assert.equal(await worker.processOne(), 'script');
     assert.deepEqual([...scriptBuffer.view()], [11, 22, 33, 44]);
-    assert.equal(new DataView(completion.view().buffer).getUint32(0, true), 4);
+    assert.equal(viewOf(completion).getUint32(0, true), 4);
     assert.equal(await channels.stream[0].speaker.start(0), 0);
     assert.equal(await channels.startStatic(0, 128, 64), 0);
     assert.deepEqual([...backend.buffers[0].render(8)[0]], Array(8).fill(0.5));

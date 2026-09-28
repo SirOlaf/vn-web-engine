@@ -50,9 +50,12 @@ test('80:F0/F1 use the selected modal form owner and preserve native outputs', a
       1,
     );
     assert.equal(pop32(child.state), 1);
-    const view = new DataView(memory.globalMemory.buffer);
-    assert.equal(view.getUint32(0x100, true), 1);
-    assert.equal(view.getUint32(0x104, true), 0);
+    const view = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
+    assert.equal(view().getUint32(0x100, true), 1);
+    assert.equal(view().getUint32(0x104, true), 0);
     assert.equal(requests[0][1].path, 'C:\\game');
     assert.equal(requests[0][1].pathEditable, false);
     assert.equal(requests[0][1].optionA, 0);

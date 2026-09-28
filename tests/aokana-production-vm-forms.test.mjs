@@ -161,9 +161,12 @@ test('mounted B0 forms share the graph ANSI host, product-key state and BP outpu
     const names = ['山田', '太郎', '花子', '私'];
     const nameOffsets = [0x980, 0x9c0, 0xa00, 0xa40];
     names.forEach((name, index) => writeAnsi(nameOffsets[index], name));
-    const view = new DataView(memory.globalMemory.buffer);
-    view.setInt32(0xa80, 0, true);
-    view.setInt32(0xa84, 0, true);
+    const view = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
+    view().setInt32(0xa80, 0, true);
+    view().setInt32(0xa84, 0, true);
     await invoke(0x8f, [...nameOffsets, 0xa80, 0xa84], (dialog) => {
       const inputs = descendants(dialog, 'INPUT', 'text');
       assert.deepEqual(
@@ -178,7 +181,7 @@ test('mounted B0 forms share the graph ANSI host, product-key state and BP outpu
       day.selectedIndex = 11;
     });
     assert.deepEqual(nameOffsets.map(readAnsi), names);
-    assert.deepEqual([view.getInt32(0xa80, true), view.getInt32(0xa84, true)], [3, 11]);
+    assert.deepEqual([view().getInt32(0xa80, true), view().getInt32(0xa84, true)], [3, 11]);
     assert.equal(child.process, null);
   } finally {
     for (const dialog of graph.host.parent.children.filter(

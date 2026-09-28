@@ -88,7 +88,11 @@ test('registered surface text draws multiline width and wrapped line metrics thr
   };
   const pixel = (surface, x, y) => {
     assert.equal(surfaces.readPixel(hostPointer(memory.globalMemory, 8), surface, x, y), 0);
-    return new DataView(memory.globalMemory.buffer).getUint32(8, true);
+    return new DataView(
+      memory.globalMemory.buffer,
+      memory.globalMemory.byteOffset,
+      memory.globalMemory.byteLength,
+    ).getUint32(8, true);
   };
   await run(0x1c, [1, 1, 1, 32, font, 8, 100, 0, 0, 0xff0000], 8);
   // Maximum width is max(4,8); newline moves by exactly size8.

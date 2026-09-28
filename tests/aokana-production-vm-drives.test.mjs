@@ -67,9 +67,12 @@ test('mounted drive callbacks share the selected media, files and volume-label h
     );
     assert.deepEqual([...media.driveTypes], [0, 0, 3, 5, ...Array(22).fill(0)]);
     assert.deepEqual([...media.probeDrives], [1, 1, 0, 1, ...Array(22).fill(1)]);
-    const view = new DataView(memory.globalMemory.buffer);
+    const view = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
     assert.deepEqual(
-      Array.from({length: 26}, (_, index) => view.getUint32(0x400 + index * 4, true)),
+      Array.from({length: 26}, (_, index) => view().getUint32(0x400 + index * 4, true)),
       [0, 0, 1, 4, ...Array(22).fill(0)],
     );
     assert.equal(memory.globalMemory[0x3ff], 0xa5);
@@ -79,7 +82,7 @@ test('mounted drive callbacks share the selected media, files and volume-label h
     memory.globalMemory.fill(0xa5, 0x4ff, 0x505);
     assert.equal(call(0x37, [0x500, 0x100]), 1);
     assert.deepEqual(freePaths, ['C:\\game\\']);
-    assert.equal(view.getUint32(0x500, true), 5);
+    assert.equal(view().getUint32(0x500, true), 5);
     assert.equal(memory.globalMemory[0x4ff], 0xa5);
     assert.equal(memory.globalMemory[0x504], 0xa5);
 

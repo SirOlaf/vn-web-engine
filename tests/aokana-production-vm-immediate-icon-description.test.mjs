@@ -8,9 +8,12 @@ import {createMountedVmFixture} from './aokana-production-vm-fixture.mjs';
 test('mounted VM draws an immediate icon description into the shared Window text layer', async () => {
   const fixture = await createMountedVmFixture();
   const {graph, child, definitions, invoke, memory} = fixture;
-  const view = new DataView(memory.globalMemory.buffer);
+  const view = () => {
+    const bank = memory.globalMemory;
+    return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+  };
   const words = (offset, values) =>
-    values.forEach((value, index) => view.setInt32(offset + index * 4, value, true));
+    values.forEach((value, index) => view().setInt32(offset + index * 4, value, true));
   const call = async (secondary, args) => {
     assert.equal(await invoke(0x90, secondary, args, 0), 0);
     assert.equal(child.state.stackIndex, 0);

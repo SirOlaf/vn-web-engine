@@ -46,8 +46,11 @@ test('mounted text layout settings clone overlay frames and share reading font p
     await call(0x90, 0x13, [5, 0xff804020]);
     await call(0x90, 0x11, [6, 1, 3, 1]);
     await call(0x90, 0x13, [6, 0x102030]);
-    const bp = new DataView(memory.globalMemory.buffer);
-    [5, 0xffffffff, 6].forEach((id, index) => bp.setUint32(0x100 + index * 4, id, true));
+    const bp = () => {
+      const bank = memory.globalMemory;
+      return new DataView(bank.buffer, bank.byteOffset, bank.byteLength);
+    };
+    [5, 0xffffffff, 6].forEach((id, index) => bp().setUint32(0x100 + index * 4, id, true));
     await call(0x90, 0x98, [3, 0x100]);
     assert.equal(state.overlayFrameCount, 3);
     assert.deepEqual(

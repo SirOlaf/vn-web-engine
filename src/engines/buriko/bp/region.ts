@@ -1,7 +1,7 @@
 import {
   clearIndeterminateMemory,
   copyMemoryBytes,
-  transferIndeterminateMemory,
+  IndeterminateBitmap,
 } from '../../../core/indeterminate-memory.js';
 
 /** Region bases are aligned for 32/64-bit typed views and wasm loads. */
@@ -15,40 +15,67 @@ interface FreeBlock {
 /** `ArrayBuffer.prototype.transfer` (ES2024) reallocates in place where possible and detaches the source. */
 type TransferableBuffer = ArrayBuffer & {transfer?: (length: number) => ArrayBuffer};
 
+/** Whole-arena access for code that addresses the arena directly, such as a wasm module. */
+export interface BurikoBpArenaViews {
+  readonly bytes: Uint8Array;
+  readonly words: Uint32Array;
+  /** Byte offset of the indeterminate-byte bitmap: bit `a & 7` of byte `bitmapOffset + (a >> 3)`
+   * is set while arena byte `a` holds an unwritten value. */
+  readonly bitmapOffset: number;
+  readonly generation: number;
+}
+
 /**
  * One growable `ArrayBuffer` holding every live region of a region table. Regions are placed
- * first fit at 16-byte aligned offsets. Growth reallocates the buffer, detaching the previous
- * one where the platform supports it, and advances `generation`; the owning table then
- * re-derives every live region's views.
+ * first fit at 16-byte aligned offsets within the first `capacity` bytes; the remaining
+ * `capacity / 8` bytes are the provenance bitmap for those bytes. Growth reallocates the buffer,
+ * detaching the previous one where the platform supports it, moves the bitmap to the new data
+ * end and advances `generation`; the owning table then re-derives every live region's views.
  */
 export class BurikoBpArena {
   buffer: ArrayBuffer;
   generation = 0;
+  private dataBytes: number;
   private readonly free: FreeBlock[];
-  private wholeBytes: Uint8Array;
-  private wholeWords: Uint32Array;
-  private viewsGeneration = 0;
+  private readonly provenance: IndeterminateBitmap;
+  private wholeViews: BurikoBpArenaViews;
 
   constructor(initialBytes: number) {
     const capacity = Math.max(ALIGNMENT, roundUp(initialBytes));
-    this.buffer = new ArrayBuffer(capacity);
+    this.dataBytes = capacity;
+    this.buffer = new ArrayBuffer(capacity + capacity / 8);
     this.free = [{offset: 0, size: capacity}];
-    this.wholeBytes = new Uint8Array(this.buffer);
-    this.wholeWords = new Uint32Array(this.buffer);
+    this.provenance = new IndeterminateBitmap(this.buffer, this.bitmap(), capacity);
+    this.wholeViews = this.createViews();
   }
 
+  /** Bytes available to regions. */
   get capacity(): number {
-    return this.buffer.byteLength;
+    return this.dataBytes;
+  }
+
+  /** Arena bytes currently holding an unwritten value. */
+  get indeterminateBytes(): number {
+    return this.provenance.size;
+  }
+
+  private bitmap(): Uint8Array {
+    return new Uint8Array(this.buffer, this.dataBytes, this.dataBytes / 8);
+  }
+
+  private createViews(): BurikoBpArenaViews {
+    return {
+      bytes: new Uint8Array(this.buffer),
+      words: new Uint32Array(this.buffer),
+      bitmapOffset: this.dataBytes,
+      generation: this.generation,
+    };
   }
 
   /** Whole-arena views for the current generation. Invalid after any VM allocation. */
-  views(): {readonly bytes: Uint8Array; readonly words: Uint32Array; readonly generation: number} {
-    if (this.viewsGeneration !== this.generation) {
-      this.wholeBytes = new Uint8Array(this.buffer);
-      this.wholeWords = new Uint32Array(this.buffer);
-      this.viewsGeneration = this.generation;
-    }
-    return {bytes: this.wholeBytes, words: this.wholeWords, generation: this.generation};
+  views(): BurikoBpArenaViews {
+    if (this.wholeViews.generation !== this.generation) this.wholeViews = this.createViews();
+    return this.wholeViews;
   }
 
   /** Returns the base of a zero-filled, provenance-free range of `size` bytes. */
@@ -92,20 +119,27 @@ export class BurikoBpArena {
   /** Doubles capacity until `reserved` bytes fit at the end; returns the free block there. */
   private grow(reserved: number): number {
     const previous = this.buffer,
-      oldCapacity = previous.byteLength;
+      oldCapacity = this.dataBytes;
     const last = this.free.at(-1);
     const tail = last && last.offset + last.size === oldCapacity ? last.size : 0;
     let capacity = oldCapacity * 2;
     while (capacity - oldCapacity + tail < reserved) capacity *= 2;
+    const length = capacity + capacity / 8;
     const transfer = (previous as TransferableBuffer).transfer;
     let next: ArrayBuffer;
-    if (typeof transfer === 'function') next = transfer.call(previous, capacity);
+    if (typeof transfer === 'function') next = transfer.call(previous, length);
     else {
-      next = new ArrayBuffer(capacity);
+      next = new ArrayBuffer(length);
       new Uint8Array(next).set(new Uint8Array(previous));
     }
-    transferIndeterminateMemory(previous, next);
+    // The old bitmap now lies in free data space; it moves to the new data end, and the bits
+    // for the added bytes are the zeroed tail of the new buffer.
+    const bytes = new Uint8Array(next);
+    bytes.copyWithin(capacity, oldCapacity, oldCapacity + oldCapacity / 8);
+    bytes.fill(0, oldCapacity, oldCapacity + oldCapacity / 8);
     this.buffer = next;
+    this.dataBytes = capacity;
+    this.provenance.rebind(next, this.bitmap(), capacity);
     this.generation++;
     if (tail !== 0) last!.size += capacity - oldCapacity;
     else this.free.push({offset: oldCapacity, size: capacity - oldCapacity});

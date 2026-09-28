@@ -48,7 +48,13 @@ test('mounted Sprite dynamic mask aligns shared surfaces and detaches before des
       assert.equal(await invoke(0x92, 0x17, [0x200, 2, x, y], 0), 1);
       assert.equal(pop32(child.state), 0);
       assert.equal(child.state.stackIndex, 0);
-      return new DataView(memory.globalMemory.buffer).getUint32(0x200, true) & 0xffffff;
+      return (
+        new DataView(
+          memory.globalMemory.buffer,
+          memory.globalMemory.byteOffset,
+          memory.globalMemory.byteLength,
+        ).getUint32(0x200, true) & 0xffffff
+      );
     };
     draw();
     assert.equal(await read(0, 0), 0x3f3f3f);

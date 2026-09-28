@@ -87,7 +87,12 @@ test('text result services consume actual layout registries and cached glyph ABC
     frameCapacity: 0,
   });
   const memory = new BurikoBpMemory(new Uint8Array(4096)),
-    view = new DataView(memory.globalMemory.buffer);
+    view = () =>
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      );
   memory.globalMemory.set(text.encodeWide('A<l>B</l>', 1), 32);
   memory.globalMemory.set(text.encodeWide('AB', 1), 64);
   const context = {thread, memory, diagnostics: {}};
@@ -136,27 +141,27 @@ test('text result services consume actual layout registries and cached glyph ABC
   assert.ok(createdFonts.some((font) => font.name === 'Alternate' && font.size === 12));
   assert.equal(await call(0x94, [0, lineOutput.value]), 1);
   assert.equal(await call(0x94, [256, lineOutput.value]), 1);
-  assert.equal(view.getUint32(256, true), 8);
+  assert.equal(view().getUint32(256, true), 8);
   assert.equal(await call(0x94, [0, lineOutput.value]), 0);
   assert.equal(await call(0x95, [created.handle]), 8);
   await call(0x9b, [272, 0x100], false);
-  assert.deepEqual([view.getInt32(272, true), view.getInt32(276, true)], [9, 2]);
+  assert.deepEqual([view().getInt32(272, true), view().getInt32(276, true)], [9, 2]);
   await call(0x9b, [280, 0x101], false);
-  assert.equal(view.getUint32(280, true), 0xabcdef);
+  assert.equal(view().getUint32(280, true), 0xabcdef);
   assert.equal(await call(0x9e, [512]), 1);
   assert.equal(memory.globalMemory[512], 66);
   assert.ok(memory.globalMemory.subarray(513, 608).every((value) => value === 0));
   assert.ok(memory.globalMemory.subarray(608, 632).every((value) => value === 0));
-  assert.deepEqual([view.getInt32(632, true), view.getInt32(636, true)], [5, 2]);
+  assert.deepEqual([view().getInt32(632, true), view().getInt32(636, true)], [5, 2]);
   assert.equal(await call(0x9e, [0]), 0);
   assert.equal(state.linkRegions.length, 0);
   assert.equal(await call(0x99, [768, 800, 64, registered, 8, 100, 0]), 0);
-  assert.equal(view.getUint32(800, true), 2);
+  assert.equal(view().getUint32(800, true), 2);
   assert.deepEqual(
-    Array.from({length: 6}, (_, index) => view.getInt32(768 + index * 4, true)),
+    Array.from({length: 6}, (_, index) => view().getInt32(768 + index * 4, true)),
     [0, 5, 1, 0, 5, 1],
   );
   assert.equal(await call(0x99, [0, 804, 64, registered, 8, 100, 0]), 0);
-  assert.equal(view.getUint32(804, true), 0);
+  assert.equal(view().getUint32(804, true), 0);
   assert.equal(thread.stackIndex, 0);
 });

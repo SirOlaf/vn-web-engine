@@ -349,7 +349,10 @@ test('all nine window wrappers preserve native stack order and use the shared po
   await call(0x87, [handle, 1]);
   await call(0x88, [handle, 1, 2, 4, 5]);
   assert.equal(await call(0x89, [16, handle], true), 1);
-  assert.deepEqual(Array.from(new Int32Array(memory.globalMemory.buffer, 16, 4)), [1, 2, 4, 6]);
+  assert.deepEqual(
+    Array.from(new Int32Array(memory.globalMemory.buffer, memory.globalMemory.byteOffset + 16, 4)),
+    [1, 2, 4, 6],
+  );
   await call(0x83, [5, handle]);
   assert.equal(surfaces.descriptor(5).format, 2);
   assert.equal(pixel(surfaces.descriptor(5), 0, 0), 0xff224466);

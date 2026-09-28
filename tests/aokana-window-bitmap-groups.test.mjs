@@ -51,10 +51,15 @@ test('90:B7 composes real inner Sprites from VM bitmap groups and replaces the o
   const [slot] = createGroup90WindowBitmapGroups(manager),
     memory = new BurikoBpMemory(new Uint8Array(1024)),
     thread = new BurikoBpThread({id: 1, operandCapacity: 8, moduleCapacity: 0, frameCapacity: 0}),
-    view = new DataView(memory.globalMemory.buffer);
+    view = () =>
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      );
   assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][0xb7]);
   const words = (offset, values) =>
-    values.forEach((v, i) => view.setInt32(offset + i * 4, v, true));
+    values.forEach((v, i) => view().setInt32(offset + i * 4, v, true));
   words(32, [1, 128, 0, 0, 0, 0, 0, 0, 0, 0]);
   words(128, [3, 3, 256, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   for (let i = 0; i < 3; i++) {
@@ -85,7 +90,7 @@ test('90:B7 composes real inner Sprites from VM bitmap groups and replaces the o
   // Selected unit1 uses green; unit2's40 flag suppresses inner-Sprite creation.
   draw();
   assert.deepEqual([pixel(3, 4), pixel(11, 4), pixel(19, 4)], [0x800000, 0x008000, 0]);
-  view.setInt32(128 + 3 * 4, 0, true);
+  view().setInt32(128 + 3 * 4, 0, true);
   draw();
   assert.deepEqual([pixel(3, 4), pixel(11, 4), pixel(19, 4)], [0x008000, 0x800000, 0]);
 });

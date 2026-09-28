@@ -25,6 +25,8 @@ import {BurikoIndependentIconState} from '../dist/engines/buriko/native/independ
 import {createGroup90IndependentIcons} from '../dist/engines/buriko/native/group-90-independent-icons.js';
 import {createGroup91IndependentIconEx} from '../dist/engines/buriko/native/group-91-independent-icon-ex.js';
 import {BURIKO_NATIVE_SLOT_ADDRESSES} from '../dist/engines/buriko/native/inventory.js';
+// VM banks share one arena buffer; always build views with their byteOffset/byteLength.
+const bankView = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 test('IconEx animates and moves actual Window inner Sprites through VM groups and independent messages', async () => {
   const text = new BurikoNativeText(),
@@ -110,10 +112,10 @@ test('IconEx animates and moves actual Window inner Sprites through VM groups an
       frameCapacity: 0,
     }),
     memory = new BurikoBpMemory(new Uint8Array(1024));
-  const view = new DataView(memory.globalMemory.buffer),
+  const view = () => bankView(memory.globalMemory),
     context = {thread, memory, diagnostics: {}};
   const words = (offset, values) =>
-    values.forEach((v, i) => view.setInt32(offset + i * 4, v, true));
+    values.forEach((v, i) => view().setInt32(offset + i * 4, v, true));
   const invoke = (primary, secondary, args) => {
     const slot = (primary === 0x91 ? exSlots : slots).find((s) => s.secondary === secondary);
     assert.deepEqual(
@@ -164,7 +166,7 @@ test('IconEx animates and moves actual Window inner Sprites through VM groups an
   assert.equal(await shared.pollEnabled(), 1);
   assert.deepEqual([pixel(10, 3), pixel(16, 3)], [0, 0x00ff00]);
   assert.equal(invoke(0x90, 0xbe, [768, id]), 1);
-  assert.equal(view.getInt32(768, true), 1);
+  assert.equal(view().getInt32(768, true), 1);
   assert.equal(invoke(0x90, 0xb9, [id]), 1);
   assert.equal(window.getOwner(), null);
   assert.equal([...window.children()].length, 0);

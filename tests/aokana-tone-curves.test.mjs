@@ -26,7 +26,12 @@ test('90:CC/CD live tone curves transform RGB and RGBA pair/tail pixels consumed
         assert.fail('ordinary tone curve');
       },
     }),
-    view = new DataView(memory.globalMemory.buffer),
+    view = () =>
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      ),
     call = (secondary, args) => {
       const slot = slots.find((item) => item.secondary === secondary);
       assert.equal(slot.nativeAddress, BURIKO_NATIVE_SLOT_ADDRESSES[0x90][secondary]);
@@ -38,7 +43,7 @@ test('90:CC/CD live tone curves transform RGB and RGBA pair/tail pixels consumed
       const b = surfaces.snapshot(index);
       return [0, 1, 2].map((i) => bitmapRead32(b, b.offset + i * 4));
     };
-  [63, 96, 127, 160, 191, 224].forEach((n, i) => view.setUint32(32 + i * 4, n, true));
+  [63, 96, 127, 160, 191, 224].forEach((n, i) => view().setUint32(32 + i * 4, n, true));
   call(0xcc, [17, 32]);
   const rgb = [0x11ffffff, 0x22000000, 0x33ffffff],
     rgba = [0xffffffff, 0x80000000, 0x40ffffff];
@@ -59,7 +64,7 @@ test('90:CC/CD live tone curves transform RGB and RGBA pair/tail pixels consumed
   assert.deepEqual(pixels(0), rgb);
   assert.deepEqual(pixels(1), rgba);
   // Updating this live key to ordinates128 gives film RGB(34,66,129).
-  for (const offset of [36, 44, 52]) view.setUint32(offset, 128, true);
+  for (const offset of [36, 44, 52]) view().setUint32(offset, 128, true);
   call(0xcc, [17, 32]);
   call(0xcd, [4, 1, 0x4080c0, 256, 17, 0x204080, 8, 256]);
   assert.deepEqual(pixels(4), [0xff224281, 0x80000000, 0x40224281]);
@@ -72,7 +77,7 @@ test('90:CC/CD live tone curves transform RGB and RGBA pair/tail pixels consumed
     ),
     0,
   );
-  assert.equal(view.getUint32(112, true), 12);
+  assert.equal(view().getUint32(112, true), 12);
   assert.deepEqual(
     Array.from(memory.globalMemory.subarray(128, 140)),
     [129, 66, 34, 255, 0, 0, 0, 128, 129, 66, 34, 64],

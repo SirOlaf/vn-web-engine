@@ -121,10 +121,15 @@ test('selection procedure uses real capture, timed highlighting, cursor motion a
   );
   const node = scheduler.append(thread),
     memory = new BurikoBpMemory(new Uint8Array(512)),
-    view = new DataView(memory.globalMemory.buffer);
+    view = () =>
+      new DataView(
+        memory.globalMemory.buffer,
+        memory.globalMemory.byteOffset,
+        memory.globalMemory.byteLength,
+      );
   for (let i = 0; i < 3; i++) {
     memory.globalMemory.set(text.encodeWide(String.fromCharCode(65 + i), 1), 32 + i * 8);
-    view.setUint32(128 + i * 4, 32 + i * 8, true);
+    view().setUint32(128 + i * 4, 32 + i * 8, true);
   }
   const slots = createGroup90SelectionProcess(
     windows,
