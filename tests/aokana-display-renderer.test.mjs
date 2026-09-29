@@ -18,7 +18,7 @@ import {
 import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
-import {setRuntimeProfile} from '../dist/platform/runtime-profile.js';
+import {getRuntimeProfile, setRuntimeProfile} from '../dist/platform/runtime-profile.js';
 
 const rect = (left, top, right, bottom) => ({left, top, right, bottom});
 const bitmap = (width, height, initial = 0) => ({
@@ -59,6 +59,13 @@ function setup(pixelBudget = 8, external = false) {
   return {compositor, environment, allocator, manager, renderer, context};
 }
 
+/** Selects a runtime profile for one test and restores the previous one afterwards. */
+function useRuntimeProfile(t, profile) {
+  const previous = getRuntimeProfile();
+  setRuntimeProfile(profile);
+  t.after(() => setRuntimeProfile(previous));
+}
+
 test('selected pre-device budget initializes one shared renderer for ordinary traversal', () => {
   const compositor = new BurikoBitmapCompositor();
   const environment = new BurikoDisplayObjectEnvironment(
@@ -87,7 +94,8 @@ test('selected pre-device budget initializes one shared renderer for ordinary tr
   manager.dispose();
 });
 
-test('full and partial traversals preserve native strip boundaries, recorded keys and notification order', () => {
+test('full and partial traversals preserve native strip boundaries, recorded keys and notification order', (t) => {
+  useRuntimeProfile(t, 'native');
   const {manager, renderer, environment} = setup();
   const calls = [];
   class Observed extends BurikoDisplayObject {
@@ -162,6 +170,7 @@ test('browser draw jobs retain damage keys, completion notifications and the nat
     object = manager.resolve(handle);
   object.configureGeometry(4, 4);
   object.setActivation(1);
+  const previousProfile = getRuntimeProfile();
   try {
     setRuntimeProfile('browser-optimized');
     renderer.drawFull();
@@ -186,7 +195,7 @@ test('browser draw jobs retain damage keys, completion notifications and the nat
       ['notify', 0xf0000000, 0, 0, 0],
     ]);
   } finally {
-    setRuntimeProfile('native');
+    setRuntimeProfile(previousProfile);
     manager.dispose();
   }
 });
@@ -266,7 +275,8 @@ test('CObjectManager teardown owns its private workers and preserves an external
   shared.renderer.processing.dispose();
 });
 
-test('object-manager callbacks preserve same-actor recursive lock ownership across native nesting', () => {
+test('object-manager callbacks preserve same-actor recursive lock ownership across native nesting', (t) => {
+  useRuntimeProfile(t, 'native');
   const {manager, renderer, environment, allocator} = setup();
   const seen = [];
   class Observed extends BurikoDisplayObject {

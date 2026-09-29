@@ -36,13 +36,21 @@ import {
   stopRuntimePerformanceRecording,
 } from '../dist/platform/runtime-performance.js';
 
-import {setRuntimeProfile} from '../dist/platform/runtime-profile.js';
+import {getRuntimeProfile, setRuntimeProfile} from '../dist/platform/runtime-profile.js';
 
 const thread = (id = 1, moduleCapacity = 256, frameCapacity = 256) =>
   new BurikoBpThread({id, operandCapacity: 16, moduleCapacity, frameCapacity, heapEnabled: false});
 const root = () => thread(0, 0, 0);
 
-test('native evaluator tasks progress between immediate VM bursts without status-query pumping', async () => {
+/** Selects a runtime profile for one test and restores the previous one afterwards. */
+function useRuntimeProfile(t, profile) {
+  const previous = getRuntimeProfile();
+  setRuntimeProfile(profile);
+  t.after(() => setRuntimeProfile(previous));
+}
+
+test('native evaluator tasks progress between immediate VM bursts without status-query pumping', async (t) => {
+  useRuntimeProfile(t, 'native');
   const allocator = new BurikoDistributedAllocator(1),
     pool = new BurikoDistributedProcessing(allocator, 1);
   const workers = new BurikoGridEvaluationWorkers(allocator, pool, new BurikoLogicalGridManagers());
@@ -477,8 +485,7 @@ test('only native slots that opt into batching amortize clock reads', async (t) 
 
 for (const profile of ['native', 'browser-optimized']) {
   test(`${profile}: real bytecode amortizes small work without delaying native or replacement handlers`, async (t) => {
-    setRuntimeProfile(profile);
-    t.after(() => setRuntimeProfile('native'));
+    useRuntimeProfile(t, profile);
     let now = 0,
       clockReads = 0,
       executed = 0;
@@ -591,8 +598,7 @@ for (const profile of ['native', 'browser-optimized']) {
   });
 
   test(`${profile}: expensive polls and short instruction sequences service host tasks without changing traversal`, async (t) => {
-    setRuntimeProfile(profile);
-    t.after(() => setRuntimeProfile('native'));
+    useRuntimeProfile(t, profile);
     let now = 0;
     t.mock.method(performance, 'now', () => now);
     const order = [],
@@ -688,8 +694,7 @@ for (const profile of ['native', 'browser-optimized']) {
 }
 
 test('browser profile services background work after a cheap complete traversal, including polling-only passes', async (t) => {
-  setRuntimeProfile('browser-optimized');
-  t.after(() => setRuntimeProfile('native'));
+  useRuntimeProfile(t, 'browser-optimized');
   t.mock.method(performance, 'now', () => 0);
   const order = [];
   let calls = 0;
