@@ -1,4 +1,5 @@
 import {decodeBrowserImage} from '../../../../../graphics/browser-image.js';
+import {decodeImageOffThread} from '../../../../../graphics/image-decode-offload.js';
 import {checkRange} from '../../../../../core/binary.js';
 import {decodePng} from '../../../../../formats/png/decode.js';
 import type {DecodedPng} from '../../../../../formats/png/decode.js';
@@ -21,7 +22,8 @@ export interface TextureResource {
   /** Native staging upload; texture visibility is committed by the graphics host. */
   pending: TextureImage | undefined;
 }
-/** Image preparation does not publish VM state. PNG is decoded locally; opaque WebP uses the pixel-verified browser codec. */
+/** Image preparation does not publish VM state. PNG uses the engine decoder; opaque WebP uses
+ * the pixel-verified browser codec. Both run on a worker when available, in-thread otherwise. */
 export async function prepareTexture(bytes: Uint8Array): Promise<DecodedPng> {
   if (
     bytes.length >= 12 &&
@@ -29,9 +31,12 @@ export async function prepareTexture(bytes: Uint8Array): Promise<DecodedPng> {
       0x46464952 &&
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(8, true) === 0x50424557
   ) {
-    return {...(await decodeBrowserImage(bytes, 'image/webp')), colorType: 6, bitDepth: 8};
+    const image =
+      (await decodeImageOffThread(bytes, 'image/webp')) ??
+      (await decodeBrowserImage(bytes, 'image/webp'));
+    return {...image, colorType: 6, bitDepth: 8};
   }
-  return decodePng(bytes);
+  return (await decodeImageOffThread(bytes, 'png')) ?? decodePng(bytes);
 }
 
 /** Noah texture ownership and metadata. GPU objects are replaced with real CPU resources.

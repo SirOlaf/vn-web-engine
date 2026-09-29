@@ -6,6 +6,10 @@ import {nativeVideoProfiles} from './native-video-shaders.js';
 import type {TextureImage} from './textures.js';
 import type {YuvFrame} from '../../../../../video/frame.js';
 const images = new WeakMap<YuvFrame, Map<string, TextureImage[]>>();
+/** RGBA (0, 0, 0, 255) as a host-order word, and the shift that places a byte in red. */
+const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1,
+  OPAQUE = LITTLE_ENDIAN ? 0xff000000 : 0x000000ff,
+  RED_SHIFT = LITTLE_ENDIAN ? 0 : 24;
 /** 14006dc00 / 1400738e0: upload into the surface's allocated planes. Decoder
  * macroblock stride is a source pitch, never the GPU image width or height. */
 function moviePlanes(frame: YuvFrame, width: number, height: number): TextureImage[] {
@@ -25,12 +29,17 @@ function moviePlanes(frame: YuvFrame, width: number, height: number): TextureIma
     sourceHeight: number,
     stride: number,
   ) => {
-    const pixels = new Uint8Array(w * h * 4);
-    for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255;
-    for (let y = 0; y < Math.min(h, sourceHeight); y++)
-      for (let x = 0; x < Math.min(w, sourceWidth); x++)
-        pixels[(y * w + x) * 4] = bytes[y * stride + x]!;
-    return {width: w, height: h, pixels};
+    // Sample in red, opaque alpha; texels outside the decoded picture stay (0, 0, 0, 255).
+    const words = new Uint32Array(w * h).fill(OPAQUE),
+      rows = Math.min(h, sourceHeight),
+      columns = Math.min(w, sourceWidth);
+    for (let y = 0; y < rows; y++) {
+      const source = y * stride,
+        target = y * w;
+      for (let x = 0; x < columns; x++)
+        words[target + x] = OPAQUE | (bytes[source + x]! << RED_SHIFT);
+    }
+    return {width: w, height: h, pixels: new Uint8Array(words.buffer)};
   };
   result = [
     plane(frame.y, width, height, frame.width, frame.height, frame.stride),

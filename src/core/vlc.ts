@@ -27,7 +27,7 @@ export class Vlc {
   read(bits: BitReader): number {
     let node = 0;
     for (;;) {
-      node = (bits.read(1) ? this.one : this.zero)[node]!;
+      node = (bits.readBit() ? this.one : this.zero)[node]!;
       if (!node) throw new Error(`Invalid VLC at bit ${bits.position}`);
       const value = this.value[node];
       if (value !== undefined) return value;

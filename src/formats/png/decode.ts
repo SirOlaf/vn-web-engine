@@ -16,16 +16,45 @@ const crcTable = Uint32Array.from({length: 256}, (_, i) => {
 });
 export function pngCrc(bytes: Uint8Array): number {
   let c = 0xffffffff;
-  for (const b of bytes) c = crcTable[(c ^ b) & 255]! ^ (c >>> 8);
+  for (let i = 0; i < bytes.length; i++) c = crcTable[(c ^ bytes[i]!) & 255]! ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
-const paeth = (a: number, b: number, c: number) => {
-  const p = a + b - c,
-    pa = Math.abs(p - a),
-    pb = Math.abs(p - b),
-    pc = Math.abs(p - c);
-  return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-};
+/** Reverse one scanline filter into `row`; bytes left of the first pixel read as zero. */
+function unfilter(
+  filter: number,
+  raw: Uint8Array,
+  start: number,
+  row: Uint8Array,
+  previous: Uint8Array,
+  bpp: number,
+): void {
+  const length = row.length,
+    head = Math.min(bpp, length);
+  if (filter === 0) row.set(raw.subarray(start, start + length));
+  else if (filter === 1) {
+    for (let i = 0; i < head; i++) row[i] = raw[start + i]!;
+    for (let i = head; i < length; i++) row[i] = (raw[start + i]! + row[i - bpp]!) & 255;
+  } else if (filter === 2)
+    for (let i = 0; i < length; i++) row[i] = (raw[start + i]! + previous[i]!) & 255;
+  else if (filter === 3) {
+    for (let i = 0; i < head; i++) row[i] = (raw[start + i]! + (previous[i]! >>> 1)) & 255;
+    for (let i = head; i < length; i++)
+      row[i] = (raw[start + i]! + ((row[i - bpp]! + previous[i]!) >>> 1)) & 255;
+  } else {
+    // Paeth with a = c = 0 selects b.
+    for (let i = 0; i < head; i++) row[i] = (raw[start + i]! + previous[i]!) & 255;
+    for (let i = head; i < length; i++) {
+      // paeth(a, b, c), with p - a = b - c, p - b = a - c and p - c = a + b - 2c.
+      const a = row[i - bpp]!,
+        b = previous[i]!,
+        c = previous[i - bpp]!,
+        pa = Math.abs(b - c),
+        pb = Math.abs(a - c),
+        pc = Math.abs(a + b - 2 * c);
+      row[i] = (raw[start + i]! + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 255;
+    }
+  }
+}
 /** PNG scanline decoding; the platform supplies only the zlib/DEFLATE primitive.
  * No browser color-management or alpha premultiplication is applied to stored samples. */
 export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
@@ -164,22 +193,36 @@ export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
     for (let y = 0; y < p.h; y++) {
       const filter = raw[cursor++]!;
       if (filter > 4) throw new Error(`Invalid PNG filter ${filter}`);
-      for (let i = 0; i < p.row; i++) {
-        const a = i >= bpp ? row[i - bpp]! : 0,
-          b = previous[i]!,
-          c = i >= bpp ? previous[i - bpp]! : 0;
-        row[i] =
-          (raw[cursor++]! +
-            (filter === 0
-              ? 0
-              : filter === 1
-                ? a
-                : filter === 2
-                  ? b
-                  : filter === 3
-                    ? (a + b) >>> 1
-                    : paeth(a, b, c))) &
-          255;
+      unfilter(filter, raw, cursor, row, previous, bpp);
+      cursor += p.row;
+      if (depth === 8 && (type === 4 || (type === 0 && !transparent))) {
+        // Direct 8-bit gray rows: toByte is the identity for 8-bit samples.
+        const out = (p.y + y * p.dy) * width * 4;
+        for (let x = 0, n = 0; x < p.w; x++, n += channels) {
+          const o = out + (p.x + x * p.dx) * 4,
+            gray = row[n]!;
+          pixels[o] = gray;
+          pixels[o + 1] = gray;
+          pixels[o + 2] = gray;
+          pixels[o + 3] = type === 4 ? row[n + 1]! : 255;
+        }
+        [previous, row] = [row, previous];
+        continue;
+      }
+      if (depth === 8 && (type === 6 || (type === 2 && !transparent))) {
+        // Direct 8-bit truecolor rows: the generic expansion below is the identity per sample.
+        const out = (p.y + y * p.dy) * width * 4;
+        if (type === 6 && p.dx === 1) pixels.set(row, out);
+        else
+          for (let x = 0, n = 0; x < p.w; x++, n += channels) {
+            const o = out + (p.x + x * p.dx) * 4;
+            pixels[o] = row[n]!;
+            pixels[o + 1] = row[n + 1]!;
+            pixels[o + 2] = row[n + 2]!;
+            pixels[o + 3] = type === 6 ? row[n + 3]! : 255;
+          }
+        [previous, row] = [row, previous];
+        continue;
       }
       const sample = (index: number) =>
         depth === 16

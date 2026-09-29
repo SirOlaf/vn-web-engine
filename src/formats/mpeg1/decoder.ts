@@ -21,6 +21,51 @@ const INTRA = new Uint8Array([
   27, 29, 34, 38, 46, 56, 69, 27, 29, 35, 38, 46, 56, 69, 83,
 ]);
 const RATES = [0, 24000 / 1001, 24, 25, 30000 / 1001, 30, 50, 60000 / 1001, 60];
+/** Half-sample prediction for a block whose reference samples all lie inside the picture,
+ * where edge clamping is the identity. */
+function predictInside(
+  src: Uint8Array,
+  dst: Uint8Array,
+  stride: number,
+  x0: number,
+  y0: number,
+  ix: number,
+  iy: number,
+  hx: number,
+  hy: number,
+  size: number,
+  average: boolean,
+): void {
+  const mode = hx * 2 + hy;
+  let s = (y0 + iy) * stride + x0 + ix,
+    d = y0 * stride + x0;
+  for (let y = 0; y < size; y++, s += stride, d += stride) {
+    const b = s + stride;
+    if (mode === 0) {
+      if (average) for (let x = 0; x < size; x++) dst[d + x] = (dst[d + x]! + src[s + x]! + 1) >> 1;
+      else for (let x = 0; x < size; x++) dst[d + x] = src[s + x]!;
+    } else if (mode === 1) {
+      if (average)
+        for (let x = 0; x < size; x++)
+          dst[d + x] = (dst[d + x]! + ((src[s + x]! + src[b + x]! + 1) >> 1) + 1) >> 1;
+      else for (let x = 0; x < size; x++) dst[d + x] = (src[s + x]! + src[b + x]! + 1) >> 1;
+    } else if (mode === 2) {
+      if (average)
+        for (let x = 0; x < size; x++)
+          dst[d + x] = (dst[d + x]! + ((src[s + x]! + src[s + x + 1]! + 1) >> 1) + 1) >> 1;
+      else for (let x = 0; x < size; x++) dst[d + x] = (src[s + x]! + src[s + x + 1]! + 1) >> 1;
+    } else if (average)
+      for (let x = 0; x < size; x++)
+        dst[d + x] =
+          (dst[d + x]! +
+            ((src[s + x]! + src[s + x + 1]! + src[b + x]! + src[b + x + 1]! + 2) >> 2) +
+            1) >>
+          1;
+    else
+      for (let x = 0; x < size; x++)
+        dst[d + x] = (src[s + x]! + src[s + x + 1]! + src[b + x]! + src[b + x + 1]! + 2) >> 2;
+  }
+}
 export interface MpegSequence {
   width: number;
   height: number;
@@ -325,6 +370,15 @@ export class Mpeg1Decoder {
             y0 = Math.floor(this.address / (frame.stride / 16)) * size;
           const src = p === 0 ? ref.y : p === 1 ? ref.cb : ref.cr,
             dst = p === 0 ? frame.y : p === 1 ? frame.cb : frame.cr;
+          if (
+            x0 + ix >= 0 &&
+            y0 + iy >= 0 &&
+            x0 + ix + size + hx <= stride &&
+            y0 + iy + size + hy <= height
+          ) {
+            predictInside(src, dst, stride, x0, y0, ix, iy, hx, hy, size, average);
+            continue;
+          }
           for (let y = 0; y < size; y++) {
             const sy = Math.max(0, Math.min(height - 1, y0 + y + iy)),
               sy1 = Math.max(0, Math.min(height - 1, y0 + y + iy + 1)),
