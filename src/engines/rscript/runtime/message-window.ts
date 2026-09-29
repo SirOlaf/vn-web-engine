@@ -73,6 +73,8 @@ export class RScriptMessageWindow extends RScriptContainer {
   /** A backlog page is shown instead of the current page (+208), from entry +204. */
   browsing = false;
   private browseIndex: number = MessageState.backlogCount;
+  /** Box 0 showed the click-wait icon when the backlog opened (+216). */
+  private waitingBeforeBacklog = false;
   /** Scene offset of the page record in view, for voice replay (+200). */
   private pageRecord: number = Scene.message + MessageState.page;
 
@@ -331,6 +333,7 @@ export class RScriptMessageWindow extends RScriptContainer {
     this.browseIndex = this.lastPage();
     if (this.previousPageStart()) {
       this.browsing = true;
+      this.waitingBeforeBacklog = this.boxes[0]!.waiting;
       this.setWaiting(false);
       await this.showBacklogPage(this.browseIndex);
     }
@@ -360,6 +363,7 @@ export class RScriptMessageWindow extends RScriptContainer {
     box.text.finishReveal();
     await this.showEntryName(start);
     this.panel.setVoice(this.currentVoice().voice !== 0);
+    if (this.waitingBeforeBacklog) this.setWaiting(true);
     return true;
   }
   private async showEntryName(index: number): Promise<void> {
