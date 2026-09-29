@@ -2,7 +2,7 @@ import {decodeCp932} from '../text.js';
 import {LayerRecord, Scene, type RScriptMemory} from '../memory.js';
 import type {RScriptImages} from '../images.js';
 import {filterLayerImage} from '../graphics/filters.js';
-import {colorrefPixel, createSurface, type RScriptSurface} from '../graphics/pixels.js';
+import {createSurface, type RScriptSurface} from '../graphics/pixels.js';
 import {RScriptContainer, RScriptSprite, type RScriptPoint} from '../graphics/sprite.js';
 import {FramePlayer, type AnimationFrame, type FrameAnimation} from './animation.js';
 
@@ -200,7 +200,8 @@ export class RScriptLayer extends RScriptContainer {
       surface = createSurface(
         this.env.width,
         this.env.height,
-        colorrefPixel(this.dword(LayerRecord.color)),
+        // sub_40CC60 fills through sub_442390, which takes a raw 0xRRGGBB pixel.
+        this.dword(LayerRecord.color) & 0xffffff,
       );
     } else if (source === LayerSource.Text) {
       const text = this.env.memory.sceneString(this.record + LayerRecord.name, 81);
@@ -310,12 +311,12 @@ export class RScriptLayer extends RScriptContainer {
     if (await this.loadSource()) this.appear(effect, x, y, previousVisible);
   }
 
-  /** sub_406F20: full-screen colour. */
-  async fill(colorref: number, skipping: boolean): Promise<void> {
+  /** sub_406F20: full-screen colour, as 0xRRGGBB. */
+  async fill(color: number, skipping: boolean): Promise<void> {
     this.stopButton(true, skipping);
     this.setWord(LayerRecord.image, 0);
     this.setWord(LayerRecord.source, LayerSource.Fill);
-    this.setDword(LayerRecord.color, colorref);
+    this.setDword(LayerRecord.color, color);
     this.setWord(LayerRecord.pattern, 0);
     if (skipping) return;
     if (await this.loadSource()) this.appear(0, 0, 0, false);
