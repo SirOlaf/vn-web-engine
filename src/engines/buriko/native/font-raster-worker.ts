@@ -17,7 +17,8 @@ export interface BurikoFontRasterWorkerRequest {
   readonly texts: readonly string[];
 }
 
-export type BurikoFontRasterWorkerResponse = {readonly missingFont: true} | {readonly dibs: Uint8Array[]};
+export type BurikoFontRasterWorkerResponse =
+  {readonly missingFont: true} | {readonly dibs: Uint8Array[]};
 
 const fonts = (globalThis as unknown as {fonts: FontFaceSet}).fonts;
 const loaded = new Map<string, {id: number; face: FontFace}>();

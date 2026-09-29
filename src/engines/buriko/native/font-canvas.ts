@@ -8,10 +8,7 @@ export interface BurikoFontCanvasStyle {
 
 const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
-export function burikoFontCanvas(
-  width: number,
-  height: number,
-): OffscreenCanvasRenderingContext2D {
+export function burikoFontCanvas(width: number, height: number): OffscreenCanvasRenderingContext2D {
   if (width < 1 || height < 1 || !Number.isSafeInteger(width) || !Number.isSafeInteger(height))
     throw new RangeError('Buriko font raster dimensions are invalid');
   const canvas = new OffscreenCanvas(width, height);

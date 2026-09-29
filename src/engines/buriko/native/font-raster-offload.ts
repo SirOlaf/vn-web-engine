@@ -41,10 +41,9 @@ async function rasterChunk(
   // A worker loads a resource font once; the first job it sees for that font gets the bytes.
   if (response !== undefined && 'missingFont' in response && source.kind === 'bytes') {
     const bytes = source.bytes.slice();
-    response = await workers.run(
-      {...request, font: {...request.font, bytes: bytes.buffer}},
-      [bytes.buffer],
-    );
+    response = await workers.run({...request, font: {...request.font, bytes: bytes.buffer}}, [
+      bytes.buffer,
+    ]);
   }
   if (response === undefined || !('dibs' in response)) return null;
   const size = Math.ceil(request.width / 4) * 4 * request.height;
@@ -82,7 +81,12 @@ export function rasterBurikoFontTextOffThread(
     jobs.push(
       rasterChunk(
         {
-          font: {family, id, kind: source.kind, descriptors: source.kind === 'bytes' ? source.descriptors : null},
+          font: {
+            family,
+            id,
+            kind: source.kind,
+            descriptors: source.kind === 'bytes' ? source.descriptors : null,
+          },
           style,
           width,
           height,
