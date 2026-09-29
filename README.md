@@ -32,7 +32,7 @@ npm start
 
 Open the [library](http://127.0.0.1:8000), select a game, and open its player. Choose the installation folder from your device, then use **Play** to start the loaded game. The library also manages browser save files. Direct player links: [BGI / Buriko](http://127.0.0.1:8000/buriko.html) and [CHAOS;HEAD NOAH](http://127.0.0.1:8000/noah.html).
 
-- **CHAOS;HEAD NOAH:** Choose the installation folder containing `Game.exe` and `Data/*.cpk`.
+- **CHAOS;HEAD NOAH:** Choose the installation folder containing `Data/*.cpk`. The game executable (`Game.exe`, or `Game_Steam.exe` on Steam) is optional and supplies the original cursors; without it the system cursor is used.
 - **BGI / Buriko:** Choose the game folder containing `system.arc`, the other archives, and the game interpreter executable. Auxiliary executables may remain in the folder. Existing saves, executable cursor resources, and matching process dumps are optional. When executable product metadata is unavailable, the player can recover it from a provable boot-script comparison. Native revisions 1.520.6 / compatibility 1.69, 1.665 / compatibility 1.72, and 1.685.3 / compatibility 1.72 select separate bytecode ABIs. Unknown revisions still require verification, and archive files should come from a readable installation or mounted disc.
 
 Game files selected through the browser stay on your device. The website serves only the engine; it does not upload or stream your installation.

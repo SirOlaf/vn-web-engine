@@ -4,6 +4,7 @@ import {SourceFileSystem} from '../../src/platform/filesystem.js';
 import {windowsFileKey} from '../../src/platform/windows-filesystem.js';
 import {openBrowserPlatform} from '../../src/platform/services.js';
 import {NOAH_WINDOWS} from '../../src/engines/mages/games/chaos-head-noah/paths.js';
+import {isMagesExecutablePath, selectMagesExecutable} from '../../src/engines/mages/executable.js';
 import {openNoahPlayer} from '../../src/engines/mages/games/chaos-head-noah/sc3/browser-player.js';
 import {mountInstallationControls} from '../player/installation-controls.js';
 import type {CachedInstallation, InstallationFile} from '../../src/platform/installation-cache.js';
@@ -46,6 +47,7 @@ let platform: ReturnType<typeof openBrowserPlatform> | undefined,
   started = false,
   saveBusy = false;
 let selectedInstallation: CachedInstallation | null = null;
+let executablePath: string | undefined;
 const services = () =>
   (platform ??= openBrowserPlatform(
     'chaos-head-noah-gog',
@@ -80,15 +82,11 @@ function prepareLoad() {
 async function ready() {
   if (!archives.has('script.cpk') || !archives.has('mes00.cpk'))
     throw new Error('Choose the game’s CPK archives, including script.cpk and mes00.cpk.');
-  try {
-    await gameFiles.stat('/Game.exe');
-  } catch {
-    throw new Error('Choose Game.exe as well, for the original game cursors.');
-  }
   player?.dispose();
   player = undefined;
   player = await openNoahPlayer(
     await services(),
+    executablePath,
     (name) => archives.get(name.toLowerCase()),
     report,
     'game',
@@ -110,15 +108,17 @@ async function ready() {
 }
 async function loadInstallation(installation: CachedInstallation): Promise<void> {
   const byPath = new Map(installation.files.map((entry) => [entry.path.toLowerCase(), entry]));
-  if (!byPath.has('/game.exe') || !byPath.has('/data/script.cpk') || !byPath.has('/data/mes00.cpk'))
+  if (!byPath.has('/data/script.cpk') || !byPath.has('/data/mes00.cpk'))
     throw new Error(
-      'Choose Game.exe and Data/*.cpk, including script.cpk and mes00.cpk. Add the executable and archives in separate selections if needed.',
+      'Choose Data/*.cpk, including script.cpk and mes00.cpk. Add the game executable (Game.exe or Game_Steam.exe) for the original cursors.',
     );
+  const executable = await selectMagesExecutable(installation.files);
   prepareLoad();
   selectedInstallation = null;
   archives.clear();
   gameFiles.clear();
-  gameFiles.attach('/Game.exe', byPath.get('/game.exe')!.source);
+  executablePath = executable?.path;
+  if (executable) gameFiles.attach(executable.path, executable.source);
   for (const path of installation.directories ?? []) gameFiles.attachDirectory(path);
   for (const entry of installation.files) {
     if (!/^\/data\/[^/]+\.cpk$/i.test(entry.path)) continue;
@@ -135,16 +135,18 @@ async function selectInstallation(selection: InstallationSelection): Promise<voi
   selectedInstallation = null;
   const files: InstallationFile[] = [];
   for (const {path, file} of selection.files) {
-    if (path.toLowerCase() !== '/game.exe' && !/^\/data\/[^/]+\.cpk$/i.test(path)) continue;
+    if (!isMagesExecutablePath(path) && !/^\/data\/[^/]+\.cpk$/i.test(path)) continue;
     files.push({
       path,
       source: new BlobSource(file),
       lastModifiedMs: file.lastModified,
     });
   }
+  // Keep only the game image; uninstallers and helpers are never mounted or cached.
+  const executable = await selectMagesExecutable(files);
   await loadInstallation({
     directories: selection.directories,
-    files,
+    files: files.filter((entry) => !isMagesExecutablePath(entry.path) || entry === executable),
     metadata: {},
     attachments: {},
   });
@@ -167,6 +169,7 @@ const installationControls = mountInstallationControls({
   clear: () => {
     prepareLoad();
     selectedInstallation = null;
+    executablePath = undefined;
     archives.clear();
     gameFiles.clear();
   },

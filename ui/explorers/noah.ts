@@ -12,6 +12,7 @@ import {mountStoragePanel} from './storage-panel.js';
 import {windowsFileKey} from '../../src/platform/windows-filesystem.js';
 import {NOAH_WINDOWS} from '../../src/engines/mages/games/chaos-head-noah/paths.js';
 import {gameDirectoryFiles} from '../../src/game-directory.js';
+import {selectMagesExecutable} from '../../src/engines/mages/executable.js';
 function element<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing ${id}`);
@@ -26,6 +27,7 @@ const archives = new Map<string, CpkArchive>();
 let generation = 0,
   url: string | undefined;
 let disposePreview: (() => void) | undefined;
+let executablePath: string | undefined;
 const gameFiles = new SourceFileSystem(windowsFileKey);
 let platform: ReturnType<typeof openBrowserPlatform> | undefined;
 element<HTMLButtonElement>('vm-boot').onclick = async () => {
@@ -37,12 +39,7 @@ element<HTMLButtonElement>('vm-boot').onclick = async () => {
     const scripts = lookup('script.cpk'),
       messages = lookup('mes00.cpk');
     if (!scripts || !messages)
-      throw new Error('Choose script.cpk, mes00.cpk and Game.exe in the game folder first.');
-    try {
-      await gameFiles.stat('/Game.exe');
-    } catch {
-      throw new Error('Choose the installed Game.exe to load its original cursors.');
-    }
+      throw new Error('Choose the game folder with script.cpk and mes00.cpk first.');
     const services = await (platform ??= openBrowserPlatform(
       'chaos-head-noah-gog',
       'default',
@@ -53,7 +50,7 @@ element<HTMLButtonElement>('vm-boot').onclick = async () => {
       throw error;
     }));
     if (token !== generation) return;
-    const result = await openNoahPlayer(services, lookup, report);
+    const result = await openNoahPlayer(services, executablePath, lookup, report);
     if (token !== generation) {
       result.dispose();
       return;
@@ -239,10 +236,14 @@ element<HTMLInputElement>('files').onchange = async (event) => {
     const selectedFiles = Array.from(input.files);
     input.value = '';
     const selected = gameDirectoryFiles(selectedFiles);
+    const executable = await selectMagesExecutable(
+      selected.executables.map((file) => ({path: '/' + file.name, source: new BlobSource(file)})),
+    );
     archives.clear();
     gameFiles.clear();
     select.replaceChildren();
-    gameFiles.attach('/Game.exe', new BlobSource(selected.executable));
+    executablePath = executable?.path;
+    if (executable) gameFiles.attach(executable.path, executable.source);
     for (const file of selected.archives) {
       const path = '/Data/' + file.name;
       gameFiles.attach(path, new BlobSource(file));

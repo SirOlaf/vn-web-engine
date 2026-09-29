@@ -16,7 +16,9 @@ export async function readNoahCursors(executable: Uint8Array): Promise<NoahCurso
   const read = async (role: keyof NoahCursorResources) => {
     const cursor = await reader.readByHash(NOAH_CURSOR_HASHES[role]);
     if (!cursor)
-      throw new Error(`Game.exe is missing the known ${role} cursor (${NOAH_CURSOR_HASHES[role]})`);
+      throw new Error(
+        `The game executable is missing the known ${role} cursor (${NOAH_CURSOR_HASHES[role]})`,
+      );
     if (cursor.kind !== 'static') throw new Error(`Unexpected animated Noah ${role} cursor`);
     return cursor.bytes;
   };
@@ -24,22 +26,41 @@ export async function readNoahCursors(executable: Uint8Array): Promise<NoahCurso
   return {normal, active};
 }
 
+/** Cursor images are optional presentation data, as for BGI: a missing executable or
+ * unrecognised cursor resources are reported and the system cursor stands in. */
+export async function readOptionalNoahCursors(
+  executable: Promise<Uint8Array> | undefined,
+): Promise<NoahCursorResources | null> {
+  if (!executable) {
+    console.info('CHAOS;HEAD NOAH: no game executable selected; using the system cursor.');
+    return null;
+  }
+  try {
+    return await readNoahCursors(await executable);
+  } catch (error) {
+    console.info('CHAOS;HEAD NOAH: game cursors unavailable; using the system cursor.', error);
+    return null;
+  }
+}
+
 /** Browser SetCursor boundary. CUR retains the executable's hotspot and mask;
- * its OS-sized image is independent of the framebuffer's CSS scaling. */
+ * its OS-sized image is independent of the framebuffer's CSS scaling.
+ * Without resources every image presents as the system arrow. */
 export class BrowserNoahCursor {
-  private readonly urls: Record<'normal' | 'active', string>;
+  private readonly urls: Record<'normal' | 'active', string> | null = null;
   private readonly original: string;
   private current: NoahCursor | undefined;
   private disposed = false;
   private readonly show = (image: NoahCursorImage) => {
     this.element.style.cursor =
-      image === 'system' ? 'default' : `url("${this.urls[image]}"), default`;
+      image === 'system' || !this.urls ? 'default' : `url("${this.urls[image]}"), default`;
   };
   constructor(
     readonly element: HTMLElement,
-    resources: NoahCursorResources,
+    resources: NoahCursorResources | null,
   ) {
     this.original = element.style.cursor;
+    if (!resources) return;
     const normal = URL.createObjectURL(
       new Blob([resources.normal.slice().buffer], {type: 'image/x-icon'}),
     );
@@ -71,6 +92,7 @@ export class BrowserNoahCursor {
     if (this.disposed) return;
     this.clear();
     this.disposed = true;
+    if (!this.urls) return;
     URL.revokeObjectURL(this.urls.normal);
     URL.revokeObjectURL(this.urls.active);
   }

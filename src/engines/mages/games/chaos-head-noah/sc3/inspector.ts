@@ -1,5 +1,5 @@
 import {readFile} from '../../../../../platform/filesystem.js';
-import {readNoahCursors} from './browser-cursor.js';
+import {readOptionalNoahCursors} from './browser-cursor.js';
 import {captureStartupFrame} from './startup-frame.js';
 import type {PlatformServices} from '../../../../../platform/services.js';
 import {Sc3Runtime, type Sc3Assets} from './runtime.js';
@@ -10,6 +10,8 @@ import type {BrowserAudioTransport} from '../../../../../audio/transport.js';
 /** Live interpreter; offline boot verification remains in the command-line tools. */
 export async function inspectBoot(
   services: PlatformServices,
+  /** Installation-relative executable path, e.g. `/Game.exe`; only its cursors are read. */
+  executablePath: string | undefined,
   assets: Sc3Assets,
   sound?: SoundPlayer,
   audio?: BrowserAudioTransport,
@@ -23,7 +25,9 @@ export async function inspectBoot(
   setTextMode(mode: 'native' | 'dom'): void;
   dispose(): void;
 }> {
-  const cursors = await readNoahCursors(await readFile(services.files, '/game/Game.exe'));
+  const cursors = await readOptionalNoahCursors(
+    executablePath === undefined ? undefined : readFile(services.files, '/game' + executablePath),
+  );
   return mountLivePlayer(
     () => {
       movies?.reset();

@@ -11,6 +11,8 @@ import type {PlatformServices} from '../../../../../platform/services.js';
 /** NOAH-specific browser transports, shared by the game page and diagnostic player. */
 export async function openNoahPlayer(
   services: PlatformServices,
+  /** Installation-relative executable path, e.g. `/Game.exe`; optional, supplies cursors. */
+  executablePath: string | undefined,
   lookup: (name: string) => CpkArchive | undefined,
   report: (error: unknown) => void,
   presentation: 'diagnostic' | 'game' = 'diagnostic',
@@ -55,6 +57,7 @@ export async function openNoahPlayer(
     };
     const result = await inspectBoot(
       services,
+      executablePath,
       {
         movies,
         audio,

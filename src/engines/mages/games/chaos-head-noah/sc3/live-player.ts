@@ -13,7 +13,7 @@ export function mountLivePlayer(
   create: () => Sc3Runtime,
   compose: (vm: Sc3Runtime, pass: number) => CapturedDialogFrame,
   unlock: () => Promise<void>,
-  cursors: NoahCursorResources,
+  cursors: NoahCursorResources | null,
   presentation: 'diagnostic' | 'game' = 'diagnostic',
   onSidebarAvailability?: (available: boolean) => void,
   onStopped?: (message: string) => void,

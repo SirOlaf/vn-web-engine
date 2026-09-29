@@ -16,7 +16,7 @@ original loading order.
 3. If folder selection omits files, try **Use browser folder picker**, where offered, or
    **Add files**. **Add one file** uses a single-file picker for managers without multiple
    selection. Added files accumulate; a new folder replaces the selection. For Aokana include
-   the root archives, `BGI.gdb` and game executable. For NOAH include `Game.exe` and `Data/*.cpk`.
+   the root archives, `BGI.gdb` and game executable. For NOAH include `Data/*.cpk`, plus the game executable (`Game.exe` or `Game_Steam.exe`) for the original cursors.
    Expand **selected files** to see the exact paths the browser returned if files are missing.
    macOS `._` sidecars and `.DS_Store` metadata are ignored during installation selection.
 4. To retain an installation in the browser, choose device files,
