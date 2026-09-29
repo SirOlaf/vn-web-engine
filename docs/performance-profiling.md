@@ -99,6 +99,8 @@ Read-only paths use accessors that do not count as writes: `readOnlyBytes()` set
 
 `node tools/benchmark-buriko-sprite-control.mjs --output /tmp/sprite-control.json` compares both profiles using generated pixel buffers and fixed-clock coordinate-spline updates. Setup, mipmap generation, and output hashing are outside the timed process polls. The probe checks complete mixed-pixel hashes and final control state without displaying images; its control-step durations are not game frame times.
 
+Browser optimized also rasterizes a horizontal text layout's new glyphs on workers before the layout runs; see "Glyph rasterization" below. The layout native call then crosses a host turn where Native completes it synchronously. Glyph bytes are identical.
+
 The shared installed-font catalog snapshots this profile before enumeration. Native reads one font at a time; Browser optimized admits up to four independent Blob/metadata jobs. Both return the browser's record order and each collection's face order, skip unreadable records, and retain only metadata. Profile changes affect the next catalog request. This policy changes read scheduling without changing font selection or cache lifetime.
 
 A generated background computation and ordered BP children can compare scheduling without game assets:
@@ -303,6 +305,17 @@ The Wasm run stage stores runs of up to 32 bytes with two 16-byte vector stores 
 - **A/B switch.** `?decode-worker=0` keeps all decoding on the main thread.
 
 In a 6× throttled Aokana slot 3 capture, main-thread legacy decoding fell from 719 ms to zero. The eight decodes took 129 ms of worker round trips. Main-thread work that remains on the loading path is copying: the codec worker's all-initialized mask for direct images, the preload cache's validity scan and copy of each decoded image (`bitmap-preload-cache.ts`), and repeated 34 MB raw loose-file reads, each copied by `decodeBurikoResource`.
+
+### Glyph rasterization
+
+Buriko text uses the native NONANTIALIASED DIB path: `BurikoBrowserFontFace.rasterText` (`src/engines/buriko/native/font-browser.ts`) fills one glyph into a supersampled canvas, reads it back, and thresholds alpha at 128. `BurikoFontRaster` then box-filters that to coverage. At Aokana's text quality the DIB is 16× the glyph cell, about 530–670 × 780–1010 samples. Each uncached glyph therefore reads back about 2.7 MB of RGBA. In slot 3 no character was rasterized twice, so a cache across layouts would not help. Batching readbacks would not help either, because the cost scales with pixels, not calls.
+
+- **Both profiles.** `BurikoFontTextCanvas` (`font-canvas.ts`) keeps one configured context per DIB size. It clears in device space, because the face's horizontal scale can be below 1, and thresholds alpha as the sign of each 32-bit pixel. The old path created a canvas per glyph and resolved the CSS font on its first draw (`configure` and `scale` in profiles).
+- **Browser optimized.** Before `buildBurikoHorizontalTextLayout` starts, `BurikoFontRaster.prefetch` collects the text's characters that are missing from the native glyph cache. It does not touch the cache or its order. The face sends them to at most two workers (`font-raster-worker.ts`), which rasterize with the same `BurikoFontTextCanvas`. The layout awaits the results, then runs unchanged, and its synchronous `rasterText` calls consume the stored DIBs. Only reads happen before the await, and the layout re-reads its text and font state afterwards. Resource fonts reach a worker as their own bytes and descriptors, sent once per worker. Faces loaded with `local()` stay in-thread. One prefetch holds at most 64 DIBs. Characters beyond that, in fonts other than the base font, or evicted within one layout rasterize in-thread as before. A failed job disables the offload for the session.
+- **Diagnostics.** `buriko.text.raster.worker` times the round trip, and `.worker-applied` records 1 per successful prefetch and 0 per failure. `buriko.text.raster.prefetched` counts DIBs served from a prefetch.
+- **A/B switch.** `?text-worker=0` keeps glyph rasterization on the main thread.
+- **Measurements.** These are Aokana slot 3 captures at 6×, run under Browser optimized with `--frames --no-profile`. Before the change, main-thread gaps over 100 ms were 216, 208 and 124 ms, and `buriko.text.glyph.raster` totaled 816 ms. With the canvas reuse only (`?text-worker=0`), the gaps were 158 and 151 ms, and raster time was 566 ms. With workers, no gap exceeded 100 ms and raster time was 86 ms. All nine prefetches succeeded and served 78 of the 81 new glyphs. Worker round trips totaled 59 ms. Under Native, most slot 3 frames at 6× already take 100–135 ms. There the two glyph hitches fell from 217 and 208 ms to 150 and 149 ms, and raster time fell from 800 to 590 ms.
+- **Verification.** `node tools/probe-buriko-font-raster.mjs` compares both paths with a fresh-canvas reference, byte for byte. It uses a resource font loaded from bytes (`--font`, macOS Arial Unicode by default) and the generic fallback family, sizes 18–42, width percentages 50–140 and sample scales 1, 4 and 16. It also reports worker results that were not consumed.
 
 ## Local profiling build
 

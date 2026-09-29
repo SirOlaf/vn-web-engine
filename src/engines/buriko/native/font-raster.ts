@@ -183,6 +183,9 @@ export function burikoGlyphText(value: number): {character: number; text: string
   return text === undefined ? {character: 0x20, text: null} : {character: value, text};
 }
 
+/** Most glyph DIBs one prefetch holds until the layout consumes them. */
+const PREFETCH_LIMIT = 64;
+
 /** Engine glyph cache and postprocessing, downstream of actual browser font rasterization. */
 export class BurikoFontRaster {
   private readonly cache: BurikoGlyph[] = [];
@@ -226,6 +229,30 @@ export class BurikoFontRaster {
   }
   clear(): void {
     this.cache.length = 0;
+  }
+  /**
+   * Starts off-thread rasterization of the DIBs that `glyph` would request for the characters
+   * of `text` missing from the cache. Neither the cache nor its order changes, and a later
+   * `glyph` call finds identical DIB bytes. Returns null when nothing can be prepared.
+   */
+  prefetch(text: string): Promise<void> | null {
+    if (!this.settings.textOut || this.face.prefetchText === undefined) return null;
+    const texts = new Set<string>();
+    for (const point of text) {
+      const character = point.codePointAt(0)!;
+      if (this.cache.some((glyph) => glyph.character === character)) continue;
+      const mapped = burikoGlyphText(character);
+      if (mapped.text === null || mapped.character === 0x20 || mapped.character === 0x3000)
+        continue;
+      texts.add(mapped.text);
+      // A 16x DIB is up to ~1 MB; later characters rasterize in-thread as before.
+      if (texts.size === PREFETCH_LIMIT) break;
+    }
+    return this.face.prefetchText(
+      [...texts],
+      this.geometry.dibWidth,
+      this.geometry.dibHeight,
+    );
   }
   setExtra(value: number): void {
     this.extra = value | 0;

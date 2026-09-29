@@ -27,6 +27,7 @@ import {setBurikoBitmapResidencyEnabled} from '../../src/engines/buriko/native/b
 import {setBurikoGpuPresentationEnabled} from '../../src/engines/buriko/native/display-gpu-presenter.js';
 import {setBurikoGpuCompositingMode} from '../../src/engines/buriko/native/display-gpu-compositor.js';
 import {setBurikoDecodeWorkersEnabled} from '../../src/engines/buriko/native/resource-decode-offload.js';
+import {setBurikoTextWorkersEnabled} from '../../src/engines/buriko/native/font-raster-offload.js';
 import {
   BurikoBrowserSpeakerBackend,
   BurikoMemorySpeakerBackend,
@@ -381,6 +382,8 @@ async function launch(
     setBurikoDecodeWorkersEnabled(
       new URLSearchParams(location.search).get('decode-worker') !== '0',
     );
+    // `?text-worker=0` keeps browser-optimized glyph rasterization on the main thread.
+    setBurikoTextWorkersEnabled(new URLSearchParams(location.search).get('text-worker') !== '0');
     const memory = new BurikoBpMemory(new Uint8Array(0x10000), graph.engineVersion.bpAbi);
     const data = new BurikoProductionDataOwners(graph, memory);
     const diagnostics = new BurikoBpDiagnostics((notice) => {

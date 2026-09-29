@@ -109,19 +109,23 @@ export function defaultWorkerPoolSize(): number {
 
 /**
  * Worker-side counterpart of `WorkerPool`: answers each request with the handler's result and
- * its transfer list. A thrown handler exception is reported as a failed job.
+ * its transfer list. A thrown exception or rejected promise is reported as a failed job.
  */
 export function serveWorkerPool<Request, Response>(
-  handler: (request: Request) => {response: Response; transfer?: Transferable[]},
+  handler: (
+    request: Request,
+  ) =>
+    | {response: Response; transfer?: Transferable[]}
+    | Promise<{response: Response; transfer?: Transferable[]}>,
 ): void {
   const scope = globalThis as unknown as {
     onmessage: ((event: MessageEvent<WorkerPoolRequest<Request>>) => void) | null;
     postMessage(message: WorkerPoolResponse<Response>, transfer?: Transferable[]): void;
   };
-  scope.onmessage = ({data: {id, request}}) => {
+  scope.onmessage = async ({data: {id, request}}) => {
     let result: {response: Response; transfer?: Transferable[]};
     try {
-      result = handler(request);
+      result = await handler(request);
     } catch {
       scope.postMessage({id, failed: true});
       return;

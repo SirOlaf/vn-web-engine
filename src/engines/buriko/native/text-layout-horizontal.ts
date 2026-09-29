@@ -1,4 +1,5 @@
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
+import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
 import {recolorBurikoBitmapAlpha as recolorAlpha} from './bitmap-recolor.js';
 import {hostPointer, type BurikoBpPointer} from '../bp/memory.js';
 import {
@@ -483,6 +484,20 @@ export async function buildBurikoHorizontalTextLayout(
     operationActor = operationAllocator.currentActor;
   const runAsActor = <T>(operation: () => T): T =>
     operationAllocator.withActor(operationActor, operation);
+
+  // Browser optimized: rasterize the text's uncached glyphs on workers before the synchronous
+  // pass, which then reads identical DIBs. Only reads happen before the await; the pass below
+  // runs unchanged afterwards, re-reading its text and font state.
+  if (getRuntimeProfile() === 'browser-optimized') {
+    let pending: Promise<void> | null = null;
+    try {
+      const raster = state.surfaces.fonts.find(options.fontId)?.raster;
+      pending = raster?.prefetch(state.customGlyphs.decode(options.source)) ?? null;
+    } catch {
+      // The pass below raises any native fault at its original point.
+    }
+    if (pending !== null) await pending;
+  }
 
   const base = state.surfaces.fonts.find(options.fontId);
   if (base === null)

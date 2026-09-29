@@ -9,7 +9,14 @@ import {
 } from '../../../text/browser-local-fonts.js';
 import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
 import {burikoCrtWideLower} from './crt-case.js';
-import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
+import {beginRuntimeSpan, recordRuntimeMetric} from '../../../platform/runtime-performance.js';
+import {
+  BurikoFontTextCanvas,
+  burikoFontCanvas,
+  configureBurikoFontCanvas,
+  type BurikoFontCanvasStyle,
+} from './font-canvas.js';
+import {rasterBurikoFontTextOffThread, type BurikoFontWorkerSource} from './font-raster-offload.js';
 
 export interface BurikoBrowserFontParameters {
   readonly face: string;
@@ -50,6 +57,8 @@ export interface BurikoFontFace {
   rasterText(text: string, width: number, height: number): BurikoFontDib;
   rasterMonochrome(text: string, width: number, height: number): BurikoFontDib;
   outline(character: number, bits: 2 | 4 | 6): BurikoFontOutline;
+  /** Optional off-thread preparation of later `rasterText` results with identical bytes. */
+  prefetchText?(texts: readonly string[], width: number, height: number): Promise<void> | null;
 }
 
 export interface BurikoFontProvider {
@@ -66,6 +75,7 @@ interface LoadedFace {
   /** AddFontMemResourceEx fonts cannot be discovered by EnumFontFamiliesEx. */
   readonly enumerable: boolean;
   readonly cssFamily: string;
+  readonly descriptors: {readonly weight: string; readonly style: string};
   readonly browserFace: FontFace;
   readonly data: BurikoFontData;
   readonly names: readonly string[];
@@ -114,15 +124,6 @@ function fontSet(): FontFaceSet {
   return document.fonts;
 }
 
-function context(width: number, height: number): OffscreenCanvasRenderingContext2D {
-  if (width < 1 || height < 1 || !Number.isSafeInteger(width) || !Number.isSafeInteger(height))
-    throw new RangeError('Buriko font raster dimensions are invalid');
-  const canvas = new OffscreenCanvas(width, height);
-  const result = canvas.getContext('2d', {willReadFrequently: true});
-  if (!result) throw new Error('Buriko browser font raster context is unavailable');
-  return result;
-}
-
 function selectName(data: SfntFontMetadata, id: number): string | null {
   const records = data.names.filter((name) => name.id === id && name.unicode !== null);
   const english = records.find((name) => name.platform === 3 && name.language === 0x409);
@@ -142,14 +143,19 @@ export class BurikoBrowserFontFace implements BurikoFontFace {
   readonly horizontalScale: number;
   readonly emSize: number;
   private readonly metricsContext: OffscreenCanvasRenderingContext2D;
+  private textCanvas: BurikoFontTextCanvas | null = null;
+  /** Worker rasters awaiting their first synchronous request, keyed by DIB size and text. */
+  private readonly prefetched = new Map<string, BurikoFontDib>();
   constructor(
     readonly parameters: BurikoBrowserFontParameters,
     readonly cssFamily: string,
     readonly faceName: string,
     readonly familyName: string,
     readonly data: SfntFontMetadata | null,
+    /** How a raster worker can reproduce `cssFamily`; null keeps rasterization in-thread. */
+    readonly workerSource: BurikoFontWorkerSource | null = null,
   ) {
-    const probe = context(1, 1);
+    const probe = burikoFontCanvas(1, 1);
     const height = Math.abs(parameters.height);
     if (height === 0) throw new RangeError('Buriko browser font height is zero');
     const descriptor = `${parameters.italic ? 'italic ' : ''}${parameters.weight} `;
@@ -190,12 +196,12 @@ export class BurikoBrowserFontFace implements BurikoFontFace {
     this.averageWidth = Math.round(average * this.horizontalScale);
     this.metricsContext = probe;
   }
-  private configure(target: OffscreenCanvasRenderingContext2D): void {
-    target.font = this.metricsContext.font;
-    target.fontKerning = 'none';
-    target.textBaseline = 'alphabetic';
-    target.fillStyle = '#000';
-    target.scale(this.horizontalScale, 1);
+  private get canvasStyle(): BurikoFontCanvasStyle {
+    return {
+      font: this.metricsContext.font,
+      horizontalScale: this.horizontalScale,
+      ascent: this.ascent,
+    };
   }
   abc(character: number): readonly [number, number, number] {
     const metrics = this.metricsContext.measureText(String.fromCharCode(character & 0xffff));
@@ -213,16 +219,43 @@ export class BurikoBrowserFontFace implements BurikoFontFace {
   }
   /** Native NONANTIALIASED_QUALITY DIB path is monochrome before engine supersampling. */
   rasterText(text: string, width: number, height: number): BurikoFontDib {
-    const target = context(width, height);
-    this.configure(target);
-    target.fillText(text, 0, this.ascent);
-    const rgba = target.getImageData(0, 0, width, height).data;
-    const stride = Math.ceil(width / 4) * 4;
-    const bytes = new Uint8Array(stride * height);
-    for (let y = 0; y < height; y++)
-      for (let x = 0; x < width; x++)
-        bytes[y * stride + x] = rgba[(y * width + x) * 4 + 3]! >= 128 ? 255 : 0;
-    return {bytes, stride};
+    const key = `${width}x${height}:${text}`,
+      prefetched = this.prefetched.get(key);
+    if (prefetched !== undefined) {
+      this.prefetched.delete(key);
+      recordRuntimeMetric('buriko.text.raster.prefetched', 1);
+      return prefetched;
+    }
+    return (this.textCanvas ??= new BurikoFontTextCanvas(this.canvasStyle)).raster(
+      text,
+      width,
+      height,
+    );
+  }
+  /**
+   * Rasterizes `texts` on workers so the following synchronous `rasterText` calls find them.
+   * Returns null, without starting work, when this face cannot be reproduced on a worker.
+   * Earlier unused results are dropped.
+   */
+  prefetchText(texts: readonly string[], width: number, height: number): Promise<void> | null {
+    this.prefetched.clear();
+    if (this.workerSource === null || texts.length === 0) return null;
+    const pending = rasterBurikoFontTextOffThread(
+      this.cssFamily,
+      this.workerSource,
+      this.canvasStyle,
+      texts,
+      width,
+      height,
+    );
+    if (pending === null) return null;
+    return pending.then((dibs) => {
+      if (dibs === null) return;
+      const stride = Math.ceil(width / 4) * 4;
+      texts.forEach((text, index) =>
+        this.prefetched.set(`${width}x${height}:${text}`, {bytes: dibs[index]!, stride}),
+      );
+    });
   }
   /** Top-down monochrome DIB boundary used by the separate CDsp mono-font cache. */
   rasterMonochrome(text: string, width: number, height: number): BurikoFontDib {
@@ -248,8 +281,8 @@ export class BurikoBrowserFontFace implements BurikoFontFace {
     const stride = Math.ceil(width / 4) * 4;
     const bytes = new Uint8Array(stride * height);
     if (width > 0 && height > 0) {
-      const target = context(width, height);
-      this.configure(target);
+      const target = burikoFontCanvas(width, height);
+      configureBurikoFontCanvas(target, this.canvasStyle);
       target.fillText(text, -left / this.horizontalScale, top);
       const rgba = target.getImageData(0, 0, width, height).data;
       for (let y = 0; y < height; y++)
@@ -436,15 +469,14 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
         if (family === null || fullName === null)
           throw new RangeError('Buriko resource font has no usable family name');
         const cssFamily = `BurikoResourceFont${this.nextFamily++}`;
-        const browserFace = new FontFace(cssFamily, face.bytes.slice().buffer, {
-          weight: String(face.weight),
-          style: face.italic ? 'italic' : 'normal',
-        });
+        const descriptors = {weight: String(face.weight), style: face.italic ? 'italic' : 'normal'};
+        const browserFace = new FontFace(cssFamily, face.bytes.slice().buffer, descriptors);
         await browserFace.load();
         fontSet().add(browserFace);
         loaded.push({
           data: face,
           cssFamily,
+          descriptors,
           browserFace,
           family,
           fullName,
@@ -496,6 +528,7 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
           selected.fullName,
           selected.family,
           selected.data,
+          {kind: 'bytes', bytes: selected.data.bytes, descriptors: selected.descriptors},
         );
       }
       const key = parameters.face.toLowerCase();
@@ -529,7 +562,9 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
       }
       // GDI can select a fallback face. The platform equivalent is the browser's sans-serif family.
       source = 3;
-      return new BurikoBrowserFontFace(parameters, 'sans-serif', 'sans-serif', 'sans-serif', null);
+      return new BurikoBrowserFontFace(parameters, 'sans-serif', 'sans-serif', 'sans-serif', null, {
+        kind: 'generic',
+      });
     } finally {
       finishCreate?.({source});
     }
