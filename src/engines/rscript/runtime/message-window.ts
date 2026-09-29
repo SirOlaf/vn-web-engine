@@ -356,6 +356,7 @@ export class RScriptMessageWindow extends RScriptContainer {
     this.pageRecord = this.at(MessageState.page);
     const box = this.boxes[0]!;
     box.record = this.at(MessageState.boxes);
+    box.colorOverride = null;
     box.clearText();
     await box.apply();
     const start = this.lastPage();
@@ -378,7 +379,7 @@ export class RScriptMessageWindow extends RScriptContainer {
     const entry = this.entryOffset(index);
     box.clearText();
     box.record = entry + Entry.box;
-    if (this.env.backlogColor !== null) box.setDword(BoxRecord.color, this.env.backlogColor);
+    box.colorOverride = this.env.backlogColor;
     await box.apply();
     box.appendText(await this.backlogPage(index));
     box.text.finishReveal();
@@ -393,6 +394,7 @@ export class RScriptMessageWindow extends RScriptContainer {
     this.browsing = false;
     this.pageRecord = this.at(MessageState.page);
     this.boxes[0]!.record = this.at(MessageState.boxes);
+    this.boxes[0]!.colorOverride = null;
     for (let i = 0; i < 4; i++) {
       const box = this.boxes[i]!;
       box.clearText();

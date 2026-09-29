@@ -64,6 +64,8 @@ export class RScriptTextBox extends RScriptContainer {
   private frameLoaded = -1;
   private waitLoaded = -1;
   waiting = false;
+  /** sub_419620: backlog pages draw in the APINI colour without touching the record. */
+  colorOverride: number | null = null;
 
   constructor(
     private readonly env: TextBoxEnvironment,
@@ -112,7 +114,7 @@ export class RScriptTextBox extends RScriptContainer {
     return {
       face: this.word(r.face),
       size: this.word(r.size) || 24,
-      color: this.dword(r.color),
+      color: this.colorOverride ?? this.dword(r.color),
       palette: this.env.palette,
       shadow: this.env.shadow,
       speed: this.word(r.speed),
