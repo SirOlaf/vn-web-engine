@@ -136,7 +136,9 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
     const width = code > 0xff ? size : size >> 1,
       height = size;
     const levels = new Uint8Array(width * height);
-    if (!width || !height) return {width, height, levels};
+    // MS Gothic's tmAscent is 0.86 of its height; GDI rounds it to whole pixels.
+    const ascent = Math.round(size * 0.86);
+    if (!width || !height) return {width, height, levels, ascent};
     const scale = Math.max(1, Math.min(SUPERSAMPLE, Math.floor(SUPERSAMPLE_LIMIT / size)));
     const bytes = code > 0xff ? Uint8Array.of(code >>> 8, code & 0xff) : Uint8Array.of(code);
     const text = this.decoder.decode(bytes);
@@ -157,7 +159,7 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
     // Keep proportional fallback fonts inside the fixed native cell.
     if (measured > width) context.setTransform(width / measured, 0, 0, 1, 0, 0);
     else context.translate(Math.round((width - measured) / 2) * scale, 0);
-    context.fillText(text, 0, Math.round(size * 0.86) * scale);
+    context.fillText(text, 0, ascent * scale);
     const pixels = context.getImageData(0, 0, w, h).data;
     const full = 255 * scale * scale;
     for (let y = 0; y < height; y++)
@@ -169,6 +171,6 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
         }
         levels[y * width + x] = Math.round((sum * 64) / full);
       }
-    return {width, height, levels};
+    return {width, height, levels, ascent};
   }
 }

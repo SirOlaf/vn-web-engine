@@ -97,6 +97,7 @@ class SlotPanel extends RScriptContainer {
       rubyFace: 0,
       rubySize: 12,
       rubyRaise: 0,
+      baselineAtBottom: true,
     };
   }
 

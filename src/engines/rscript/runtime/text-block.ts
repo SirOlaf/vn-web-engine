@@ -8,6 +8,8 @@ export interface GlyphCoverage {
   readonly width: number;
   readonly height: number;
   readonly levels: Uint8Array;
+  /** Rows above the baseline (the font's tmAscent); the whole cell when omitted. */
+  readonly ascent?: number;
 }
 
 /**
@@ -75,6 +77,12 @@ export interface TextStyle {
   rubyFace: number;
   rubySize: number;
   rubyRaise: number;
+  /**
+   * The plain text object (0x44BD50, laid out by 0x44D490) sits each glyph's baseline on
+   * the bottom of its `size`-high line, `size - ascent` pixels below where message text
+   * (0x45AF80) puts it.
+   */
+  baselineAtBottom?: boolean;
 }
 
 /** A revealed glyph in block coordinates, for selectable browser text. */
@@ -94,6 +102,8 @@ interface Glyph {
   text: string;
   advance: number;
   height: number;
+  /** Extra downward offset from `baselineAtBottom`. */
+  drop: number;
   newline: boolean;
   kinsoku: 0 | 1 | 2;
   delay: number;
@@ -190,11 +200,17 @@ export class RScriptTextBlock extends RScriptContainer {
     const sprite = new RScriptSprite();
     sprite.setSurface(this.glyphSurface(code, size, face, bold, italic, color));
     this.add(sprite, 0);
+    let drop = 0;
+    if (this.style.baselineAtBottom) {
+      const lead = PAIRS.has(code) ? code >>> 8 : code;
+      drop = size - (this.rasterizer.rasterize(lead, size, face, bold, italic).ascent ?? size);
+    }
     this.glyphs.push({
       sprite,
       text: decodeCp932(code > 0xff ? Uint8Array.of(code >>> 8, code & 0xff) : Uint8Array.of(code)),
       advance: code < 0x100 && !PAIRS.has(code) ? size >> 1 : size,
       height: size,
+      drop,
       newline: this.newlineNext,
       kinsoku: HANGING.has(code) ? 1 : OPENING.has(code) ? 2 : 0,
       delay,
@@ -366,7 +382,7 @@ export class RScriptTextBlock extends RScriptContainer {
         left + (align === 1 ? (width - lineWidth) >> 1 : align === 2 ? width - lineWidth : 0);
       for (let i = start; i < index; i++) {
         const glyph = glyphs[i]!;
-        glyph.sprite.setPosition(cursor, y + lineHeight - glyph.height);
+        glyph.sprite.setPosition(cursor, y + lineHeight - glyph.height + glyph.drop);
         cursor += glyph.advance + charSpacing;
       }
       if (index >= glyphs.length) break;
