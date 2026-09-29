@@ -23,7 +23,7 @@ export function withBurikoBitmapText<T extends Kernel>(
   const destination = textOptions.destination ?? 0;
   return function (this: unknown, ...args: Parameters<T>): ReturnType<T> {
     const target = burikoGpuTarget(args[destination]);
-    if (target !== null) return target.dispatch(gpu, args) as ReturnType<T>;
+    if (target !== null) return target.dispatch(gpu, args, kernel.name) as ReturnType<T>;
     if (
       gpu !== undefined &&
       burikoGpuDeferrer()?.defer(gpu, args, (copied) =>

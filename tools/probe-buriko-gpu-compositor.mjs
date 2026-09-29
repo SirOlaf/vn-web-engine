@@ -24,6 +24,7 @@ async function pageMain(_fixture, options) {
     gpu,
     mix,
     gpuTarget,
+    transition,
   ] = await Promise.all([
     load('bitmap.js'),
     load('bitmap-compositor.js'),
@@ -36,6 +37,7 @@ async function pageMain(_fixture, options) {
     load('display-gpu-compositor.js'),
     load('bitmap-mix.js'),
     load('bitmap-gpu-target.js'),
+    load('bitmap-transition.js'),
   ]);
   const target = presenter.BurikoGpuPresenter.create(document);
   if (target === null) return {available: false, reason: 'WebGL 2 unavailable'};
@@ -166,6 +168,77 @@ async function pageMain(_fixture, options) {
         compositor.composite(d, s, 1, 64, true);
         flip(s);
         alpha.blendBurikoAlphaIntoRgb(d, s);
+      },
+      2,
+    ]);
+  // Masked transitions: small and triangle parameters, with and without `extra`, both mask
+  // placements, and offsets that clip against the destination.
+  const masks = new WeakMap(),
+    seconds2 = new WeakMap();
+  const maskFor = (s) => {
+    if (!masks.has(s)) {
+      const stride = s.width + (random() % 5);
+      const storage = bitmap.BurikoBitmapStorage.allocate(stride * s.height + 8, true);
+      const bytes = storage.bytes;
+      for (let i = 0; i < bytes.length; i++) bytes[i] = random() & 255;
+      masks.set(s, {
+        storage,
+        offset: 0,
+        stride,
+        width: s.width,
+        height: s.height,
+        format: 3,
+        bytesPerPixel: 1,
+      });
+    }
+    return masks.get(s);
+  };
+  for (const [parameter, blend, extra] of [
+    [0, 0, 0],
+    [0, 128, 0],
+    [3, 200, 0],
+    [7, 256, 0],
+    [2, 90, 40],
+    [9, 60, 0],
+    [12, 128, 3],
+    [30, 250, 200],
+  ])
+    for (const [atDestination, dx, dy] of [
+      [false, 0, 0],
+      [false, -7, 5],
+      [true, 3, -2],
+    ])
+      cases.push([
+        `transition p${parameter} b${blend} e${extra} ${atDestination ? 'at destination' : 'at source'} ${dx},${dy}`,
+        (d, s) =>
+          transition.transitionBurikoBitmap(
+            d,
+            dx,
+            dy,
+            s,
+            maskFor(s),
+            parameter,
+            blend,
+            extra,
+            atDestination,
+            '1.72',
+          ),
+        1,
+      ]);
+  for (const [factor, transparency] of [
+    [0, 0],
+    [1, 0],
+    [128, 0],
+    [128, 90],
+    [200, 255],
+    [256, 0],
+    [256, 30],
+  ])
+    cases.push([
+      `mixed into rgb f${factor} t${transparency}`,
+      (d, s) => {
+        if (!seconds2.has(s)) seconds2.set(s, source(s.width, s.height, 2));
+        mix.blendMixedBurikoBitmapsIntoRgb(d, s, seconds2.get(s), factor, transparency);
       },
       2,
     ]);

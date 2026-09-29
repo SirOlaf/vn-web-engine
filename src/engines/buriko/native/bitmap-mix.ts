@@ -543,6 +543,7 @@ function mixBurikoBitmapsPixels(
 export const blendMixedBurikoBitmapsIntoRgb = withBurikoBitmapText(
   blendMixedBurikoBitmapsIntoRgbPixels,
   {
+    gpu: 'mixed-into-rgb',
     sourceOpacity: (source, args) =>
       args[1].storage === args[2].storage &&
       args[1].offset === args[2].offset &&

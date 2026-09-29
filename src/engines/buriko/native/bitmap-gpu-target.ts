@@ -12,12 +12,14 @@ export type BurikoGpuKernel =
   | 'copy-rows'
   | 'clear'
   | 'affine-blend'
-  | 'mix';
+  | 'mix'
+  | 'mixed-into-rgb'
+  | 'transition';
 
 /** Receives kernels whose destination is the display during a browser-optimized GPU frame. */
 export interface BurikoGpuKernelTarget {
   /** Execute a kernel on the GPU. Unsupported arguments mark the frame failed instead. */
-  dispatch(kernel: BurikoGpuKernel | undefined, args: readonly unknown[]): unknown;
+  dispatch(kernel: BurikoGpuKernel | undefined, args: readonly unknown[], name: string): unknown;
   /** Any direct access to display pixels fails the frame; software then redraws it. */
   fail(reason: string): void;
 }

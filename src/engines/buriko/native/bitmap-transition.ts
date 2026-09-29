@@ -113,6 +113,47 @@ function transition32Fast(
   return true;
 }
 
+/**
+ * transition32's per-mask-byte actions: skip, copy, or a signed coefficient k applied as
+ * delta = ((difference << 4) * k) >> 16. Shared by the Wasm and GPU kernels.
+ */
+export function burikoTransitionActions(
+  parameter: number,
+  blend: number,
+  extra: number,
+): Int32Array {
+  const small = parameter >>> 0 < 8;
+  let coefficients: number[] = [];
+  if (!small) coefficients = triangleTable(parameter, extra);
+  else if (extra !== 0) {
+    let accumulator = 0;
+    for (let index = 0; index <= 128; index++) {
+      coefficients.push((accumulator >>> 3) & 65535);
+      accumulator = (accumulator + 256 - extra) >>> 0;
+    }
+  }
+  const bias = small ? (Math.imul(~(1 << parameter), blend) + 256) | 0 : Math.imul(128 - blend, 2);
+  // Every per-pixel decision depends only on the mask byte. The small, extra-free
+  // Q7 product is rescaled: (d * c) >> 7 === ((d << 4) * (c * 32)) >> 16 for c < 128.
+  const actions = new Int32Array(256);
+  for (let byte = 0; byte < 256; byte++) {
+    const coverage = ((small ? byte << parameter : byte) + bias) | 0;
+    actions[byte] =
+      coverage <= 0
+        ? TRANSITION_SKIP
+        : extra === 0 && coverage >= 256
+          ? TRANSITION_COPY
+          : small && extra === 0
+            ? (coverage >> 1) * 32
+            : (coefficients[small ? Math.min(128, coverage >> 1) : Math.min(256, coverage)]! <<
+                16) >>
+              16;
+  }
+  return actions;
+}
+export const BURIKO_TRANSITION_COPY = TRANSITION_COPY;
+export const BURIKO_TRANSITION_SKIP = TRANSITION_SKIP;
+
 /** Exact04BC40/04B860/04BA70/04B660 scalar MOVD traversal on shared storage. */
 function transition32(
   destination: BurikoBitmap,
@@ -134,22 +175,7 @@ function transition32(
   }
   const bounds = small && extra === 0 ? destination : source;
   const bias = small ? (Math.imul(~(1 << parameter), blend) + 256) | 0 : Math.imul(128 - blend, 2);
-  // Every per-pixel decision depends only on the mask byte. The small, extra-free
-  // Q7 product is rescaled: (d * c) >> 7 === ((d << 4) * (c * 32)) >> 16 for c < 128.
-  const actions = new Int32Array(256);
-  for (let byte = 0; byte < 256; byte++) {
-    const coverage = ((small ? byte << parameter : byte) + bias) | 0;
-    actions[byte] =
-      coverage <= 0
-        ? TRANSITION_SKIP
-        : extra === 0 && coverage >= 256
-          ? TRANSITION_COPY
-          : small && extra === 0
-            ? (coverage >> 1) * 32
-            : (coefficients[small ? Math.min(128, coverage >> 1) : Math.min(256, coverage)]! <<
-                16) >>
-              16;
-  }
+  const actions = burikoTransitionActions(parameter, blend, extra);
   if (transition32Fast(destination, source, mask, bounds.width >>> 0, bounds.height >>> 0, actions))
     return;
   for (let y = 0; y < bounds.height >>> 0; y++) {
@@ -185,6 +211,50 @@ function transition32(
   }
 }
 
+/**
+ * 04E3A0's clipping of the destination, source and mask. Status zero carries the three cropped
+ * descriptors, which share one extent; other statuses end the call without writing.
+ */
+export function burikoTransitionOperands(
+  destination: BurikoBitmap,
+  x: number,
+  y: number,
+  source: BurikoBitmap,
+  mask: BurikoBitmap,
+  blend: number,
+  maskAtDestination: boolean,
+):
+  | {status: 0; output: BurikoBitmap; input: BurikoBitmap; matte: BurikoBitmap}
+  | {status: 1 | 3 | 4 | 7 | 8} {
+  const output = {...destination},
+    input = {...source},
+    matte = {...mask};
+  if (matte.format !== 3) return {status: 7};
+  if (!maskAtDestination && (input.width !== matte.width || input.height !== matte.height))
+    return {status: 8};
+  if (blend >>> 0 > 256) return {status: 3};
+  const area = burikoBitmapRectangle(input),
+    outputArea = burikoBitmapRectangle(output);
+  translateBurikoBitmapRectangle(outputArea, -x, -y);
+  if (!intersectBurikoBitmapRectangle(area, outputArea)) return {status: 4};
+  if (!maskAtDestination) {
+    cropBurikoBitmap(input, area);
+    cropBurikoBitmap(matte, area);
+    translateBurikoBitmapRectangle(area, x, y);
+  } else {
+    const maskArea = burikoBitmapRectangle(matte);
+    translateBurikoBitmapRectangle(maskArea, -x, -y);
+    if (!intersectBurikoBitmapRectangle(area, maskArea)) return {status: 4};
+    cropBurikoBitmap(input, area);
+    translateBurikoBitmapRectangle(area, x, y);
+    intersectBurikoBitmapRectangle(area, burikoBitmapRectangle(matte));
+    cropBurikoBitmap(matte, area);
+  }
+  cropBurikoBitmap(output, area);
+  if (output.format !== input.format) return {status: 1};
+  return {status: 0, output, input, matte};
+}
+
 /** 04E3A0 clips three descriptors before actual04BA00/04BD70 format dispatch. */
 function transitionBurikoBitmapPixels(
   destination: BurikoBitmap,
@@ -198,32 +268,17 @@ function transitionBurikoBitmapPixels(
   maskAtDestination: boolean,
   compatibility: '1.69' | '1.72' = '1.72',
 ): 0 | 1 | 3 | 4 | 7 | 8 {
-  const output = {...destination},
-    input = {...source},
-    matte = {...mask};
-  if (matte.format !== 3) return 7;
-  if (!maskAtDestination && (input.width !== matte.width || input.height !== matte.height))
-    return 8;
-  if (blend >>> 0 > 256) return 3;
-  const area = burikoBitmapRectangle(input),
-    outputArea = burikoBitmapRectangle(output);
-  translateBurikoBitmapRectangle(outputArea, -x, -y);
-  if (!intersectBurikoBitmapRectangle(area, outputArea)) return 4;
-  if (!maskAtDestination) {
-    cropBurikoBitmap(input, area);
-    cropBurikoBitmap(matte, area);
-    translateBurikoBitmapRectangle(area, x, y);
-  } else {
-    const maskArea = burikoBitmapRectangle(matte);
-    translateBurikoBitmapRectangle(maskArea, -x, -y);
-    if (!intersectBurikoBitmapRectangle(area, maskArea)) return 4;
-    cropBurikoBitmap(input, area);
-    translateBurikoBitmapRectangle(area, x, y);
-    intersectBurikoBitmapRectangle(area, burikoBitmapRectangle(matte));
-    cropBurikoBitmap(matte, area);
-  }
-  cropBurikoBitmap(output, area);
-  if (output.format !== input.format) return 1;
+  const operands = burikoTransitionOperands(
+    destination,
+    x,
+    y,
+    source,
+    mask,
+    blend,
+    maskAtDestination,
+  );
+  if (operands.status !== 0) return operands.status;
+  const {output, input, matte} = operands;
   if (input.format === 1) {
     const transition = compatibility === '1.69' ? transitionLegacy169BitmapPixels : transition32;
     transition(output, input, matte, parameter >>> 0, blend >>> 0, extra >>> 0);
@@ -233,6 +288,7 @@ function transitionBurikoBitmapPixels(
 
 export const transitionBurikoBitmap = withBurikoBitmapText(transitionBurikoBitmapPixels, {
   source: 3,
+  gpu: 'transition',
   applied: (result, args) => result === 0 && args[3].format === 1,
   map: (x, y, args) => [x + args[1], y + args[2]],
 });

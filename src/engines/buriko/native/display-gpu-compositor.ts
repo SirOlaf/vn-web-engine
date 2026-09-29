@@ -6,6 +6,12 @@ import {
   type BurikoPendingWrite,
 } from './bitmap.js';
 import {burikoMixAlphaCoefficient} from './bitmap-mix.js';
+import {
+  BURIKO_TRANSITION_COPY,
+  BURIKO_TRANSITION_SKIP,
+  burikoTransitionActions,
+  burikoTransitionOperands,
+} from './bitmap-transition.js';
 import {hasRasterText, type RasterTextBitmap} from '../../../text/raster-text.js';
 import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import {
@@ -130,6 +136,54 @@ void main(){
   uint green=(((((s>>8)&255u)*coefficient+((d>>8)&255u)*inverse)>>7)&255u)<<8;
   store((d&0xff000000u)|redBlue|green);
 }`,
+  /**
+   * bitmap-transition.ts transition32 through its per-mask-byte action table: skip, copy the
+   * whole source pixel, or a signed Q16 step per RGB byte, saturated, keeping old alpha.
+   */
+  transition: `uniform sampler2D mask;uniform highp isampler2D actions;uniform ivec2 maskOrigin;
+void main(){
+  ivec2 p=ivec2(gl_FragCoord.xy)-origin;
+  uint d=pixel(destination,p);
+  int level=int(texelFetch(mask,p+maskOrigin,0).r*255.+.5);
+  int k=texelFetch(actions,ivec2(level,0),0).r;
+  if(k==${BURIKO_TRANSITION_SKIP}){store(d);return;}
+  uint s=pixel(source,p+sourceOrigin);
+  if(k==${BURIKO_TRANSITION_COPY}){store(s);return;}
+  uint r=d&0xff000000u;
+  for(uint shift=0u;shift<24u;shift+=8u){
+    int previous=int((d>>shift)&255u);
+    int delta=(((int((s>>shift)&255u)-previous)<<4)*k)>>16;
+    r|=uint(clamp(previous+delta,0,255))<<shift;
+  }
+  store(r);
+}`,
+  /**
+   * bitmap-mix.ts blendInitializedMixedIntoRgb: opacity-scaled alphas, premultiplied channels,
+   * their Q8 crossfade and the retained destination, each floored. A pair is skipped only when
+   * both mixed alphas are zero; processed pixels clear alpha.
+   */
+  fused: `uniform sampler2D second;uniform ivec2 secondOrigin;uniform uint factor;
+uniform uint transparency;
+uint scaled(uint p){return ((p>>24)*(256u-transparency))>>8;}
+uint mixed(uint a,uint b){return (scaled(a)*(256u-factor)+scaled(b)*factor)>>8;}
+void main(){
+  ivec2 p=ivec2(gl_FragCoord.xy)-origin;
+  uint a=pixel(source,p+sourceOrigin),b=pixel(second,p+secondOrigin),d=pixel(destination,p);
+  uint alpha=mixed(a,b);
+  if((size.x&1)==1&&p.x==size.x-1){
+    if(alpha==0u){store(d);return;}
+  }else{
+    ivec2 q=ivec2(p.x^1,p.y);
+    if(alpha==0u&&mixed(pixel(source,q+sourceOrigin),pixel(second,q+secondOrigin))==0u){store(d);return;}
+  }
+  uint fa=scaled(a),sa=scaled(b),inverse=256u-factor,retained=256u-alpha;
+  uint firstRedBlue=(((a&0xff00ffu)*fa)>>8)&0xff00ffu,secondRedBlue=(((b&0xff00ffu)*sa)>>8)&0xff00ffu;
+  uint redBlue=((firstRedBlue*inverse+secondRedBlue*factor)>>8)&0xff00ffu;
+  uint oldRedBlue=(((d&0xff00ffu)*retained)>>8)&0xff00ffu;
+  uint firstGreen=(((a>>8)&255u)*fa)>>8,secondGreen=(((b>>8)&255u)*sa)>>8;
+  uint green=(firstGreen*inverse+secondGreen*factor)>>8,oldGreen=(((d>>8)&255u)*retained)>>8;
+  store(redBlue+oldRedBlue+((green+oldGreen)<<8));
+}`,
   /** bitmap-mix.ts mixRgbBounded: all four bytes, Q8 factor. */
   mixRgb: `uniform sampler2D second;uniform ivec2 secondOrigin;uniform uint factor;
 void main(){
@@ -236,6 +290,8 @@ const COEFFICIENT_TABLES = 64,
 interface SourceTexture {
   texture: WebGLTexture;
   stride: number;
+  /** Bytes per pixel: RGBA8 texels, or R8 for masks. */
+  size: 1 | 4;
   /** The storage generation the valid area was uploaded at. */
   generation: number;
   /** Uploaded texels, in storage row-grid coordinates. */
@@ -278,6 +334,8 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
   private sourceBytes = 0;
   /** The texture bindSource selected for the next run; other runs sample a placeholder. */
   private boundSource: WebGLTexture | null = null;
+  /** Transition action table, one signed entry per mask byte. */
+  private actions: WebGLTexture | null = null;
   private frames = 0;
   private readonly maximumTextureSize: number;
   private readonly backup: Scratch = {texture: null, width: 0, height: 0};
@@ -285,6 +343,7 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
   private attachedImage: WebGLTexture | null = null;
   private frame: {texture: BurikoDisplayTexture; bounds: BurikoBitmapRectangle} | null = null;
   private failure: string | null = null;
+  private failureStack: string | null = null;
   private cooldown = 0;
   private penalty = FIRST_COOLDOWN;
 
@@ -364,8 +423,14 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
       recordRuntimeMetric('buriko.display.gpu-compose.frames', 1);
       return true;
     }
+    const reason = this.failure ?? 'context lost';
     recordRuntimeMetric('buriko.display.gpu-compose.fallbacks', 1);
-    console.info('Buriko GPU compositing fell back to software:', this.failure ?? 'context lost');
+    recordRuntimeMetric(`buriko.display.gpu-compose.fallback.${reason}`, 1);
+    console.info(
+      'Buriko GPU compositing fell back to software:',
+      reason,
+      ...(this.failureStack === null ? [] : [this.failureStack]),
+    );
     this.cooldown = this.penalty;
     this.penalty = Math.min(MAXIMUM_COOLDOWN, this.penalty * 2);
     if (!presenter.available) {
@@ -465,10 +530,15 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
   }
 
   fail(reason: string): void {
-    if (this.frame !== null) this.failure ??= reason;
+    if (this.frame === null || this.failure !== null) return;
+    this.failure = reason;
+    // A direct pixel access names no kernel; its caller identifies the missing GPU path.
+    if (!reason.startsWith('kernel ') && !reason.includes(' '))
+      this.failureStack = new Error().stack?.split('\n').slice(3, 9).join(' < ') ?? null;
+    else this.failureStack = null;
   }
 
-  dispatch(kernel: BurikoGpuKernel | undefined, args: readonly unknown[]): unknown {
+  dispatch(kernel: BurikoGpuKernel | undefined, args: readonly unknown[], name = ''): unknown {
     if (this.frame === null || this.failure !== null) {
       this.fail('inactive');
       return 0;
@@ -498,8 +568,18 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
           args[5] as number,
           args[6] as boolean,
         );
+      case 'transition':
+        return this.transition(args);
+      case 'mixed-into-rgb':
+        return this.mixedIntoRgb(
+          args[0] as BurikoBitmap,
+          args[1] as BurikoBitmap,
+          args[2] as BurikoBitmap,
+          args[3] as number,
+          args[4] as number,
+        );
       default:
-        this.fail(`kernel ${kernel ?? 'without GPU support'}`);
+        this.fail(`kernel ${kernel ?? name ?? 'without GPU support'}`);
         return 0;
     }
   }
@@ -596,22 +676,24 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     width: number,
     height: number,
   ): {texture: WebGLTexture; origin: readonly [number, number]} | null {
-    const storage = bitmap.storage;
+    const storage = bitmap.storage,
+      size = bitmap.bytesPerPixel;
+    // Four-byte pixels, or the one-byte masks of format three.
     if (
       storage === null ||
       storage instanceof BurikoGpuTargetStorage ||
-      bitmap.bytesPerPixel !== 4 ||
-      (bitmap.stride & 3) !== 0 ||
-      bitmap.stride < bitmap.width * 4 ||
-      (bitmap.offset & 3) !== 0 ||
+      (size !== 4 && size !== 1) ||
+      bitmap.stride % size !== 0 ||
+      bitmap.stride < bitmap.width * size ||
+      bitmap.offset % size !== 0 ||
       bitmap.offset < 0
     ) {
       this.fail('source descriptor');
       return null;
     }
     const stride = bitmap.stride,
-      columns = stride >>> 2,
-      origin = [(bitmap.offset % stride) >>> 2, Math.floor(bitmap.offset / stride)] as const;
+      columns = stride / size,
+      origin = [(bitmap.offset % stride) / size, Math.floor(bitmap.offset / stride)] as const;
     const needed = {x: origin[0] + x, y: origin[1] + y, width, height};
     if (needed.x + width > columns) {
       this.fail('source wraps rows');
@@ -622,7 +704,7 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
       const texture = this.renderMix(pending);
       if (texture !== null) return {texture, origin};
     }
-    const entry = this.sourceEntry(storage, stride);
+    const entry = this.sourceEntry(storage, stride, size);
     if (entry === null) return null;
     const gl = this.gl,
       valid = entry.valid;
@@ -630,8 +712,8 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     gl.bindTexture(gl.TEXTURE_2D, entry.texture);
     if (valid === null || !contains(valid, needed)) {
       const region = valid === null ? needed : union(valid, needed);
-      const offset = region.y * stride + region.x * 4,
-        length = (region.height - 1) * stride + region.width * 4;
+      const offset = region.y * stride + region.x * size,
+        length = (region.height - 1) * stride + region.width * size;
       // Reading settles a pending write first, whose software run advances the generation.
       const bytes = storage.readOnlyBytes();
       if (!storage.isInitialized(offset, length)) {
@@ -640,7 +722,7 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
       }
       if (entry.generation !== storage.generation)
         return this.sourceTexture(bitmap, x, y, width, height);
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, size);
       gl.pixelStorei(gl.UNPACK_ROW_LENGTH, columns);
       gl.texSubImage2D(
         gl.TEXTURE_2D,
@@ -649,12 +731,13 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
         region.y,
         region.width,
         region.height,
-        gl.RGBA,
+        size === 4 ? gl.RGBA : gl.RED,
         gl.UNSIGNED_BYTE,
         bytes,
         offset,
       );
       gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
       entry.valid = region;
       recordRuntimeMetric('buriko.display.gpu-compose.upload-pixels', region.width * region.height);
     } else recordRuntimeMetric('buriko.display.gpu-compose.cached-pixels', width * height);
@@ -662,13 +745,17 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
   }
 
   /** The cache entry for a storage's row grid, emptied when its generation has moved on. */
-  private sourceEntry(storage: BurikoBitmapStorage, stride: number): SourceTexture | null {
+  private sourceEntry(
+    storage: BurikoBitmapStorage,
+    stride: number,
+    size: 1 | 4 = 4,
+  ): SourceTexture | null {
     const gl = this.gl,
-      columns = stride >>> 2,
+      columns = stride / size,
       rows = Math.ceil(storage.byteLength / stride),
       maximum = this.maximumTextureSize;
     let entry = this.sources.get(storage);
-    if (entry !== undefined && entry.stride !== stride) {
+    if (entry !== undefined && (entry.stride !== stride || entry.size !== size)) {
       this.evict(storage, entry);
       entry = undefined;
     }
@@ -681,12 +768,13 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
       entry = {
         texture: burikoGpuTexture(gl),
         stride,
+        size,
         generation: storage.generation,
         valid: null,
         used: this.frames,
-        bytes: columns * rows * 4,
+        bytes: columns * rows * size,
       };
-      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, columns, rows);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, size === 4 ? gl.RGBA8 : gl.R8, columns, rows);
       this.sources.set(storage, entry);
       this.sourceBytes += entry.bytes;
     } else if (entry.generation !== storage.generation) {
@@ -904,6 +992,7 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     area: Area,
     integers: Record<string, number | readonly number[]> = {},
     unsigned: Record<string, number> = {},
+    textures: readonly (readonly [unit: number, texture: WebGLTexture])[] = [],
   ): void {
     const gl = this.gl,
       {program, uniforms} = this.compiled(name);
@@ -920,6 +1009,10 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.boundSource ?? this.source.texture);
     this.boundSource = null;
+    for (const [unit, texture] of textures) {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+    }
     gl.useProgram(program);
     gl.bindVertexArray(this.vertexArray);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebuffer);
@@ -973,6 +1066,123 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     if (width === 0 || height === 0) return 0;
     const area = this.target(destination, width, height);
     if (area !== null) this.run('clear', area);
+    return 0;
+  }
+
+  /** bitmap-transition.ts transitionBurikoBitmap for RGB32 surfaces, with its own clipping. */
+  private transition(args: readonly unknown[]): number {
+    const [destination, x, y, source, mask, parameter, blend, extra, maskAtDestination] = args as [
+      BurikoBitmap,
+      number,
+      number,
+      BurikoBitmap,
+      BurikoBitmap,
+      number,
+      number,
+      number,
+      boolean,
+    ];
+    const operands = burikoTransitionOperands(
+      destination,
+      x,
+      y,
+      source,
+      mask,
+      blend,
+      maskAtDestination,
+    );
+    if (operands.status !== 0) return operands.status;
+    const {output, input, matte} = operands;
+    if (input.format !== 1) return 0;
+    if ((args[9] ?? '1.72') !== '1.72') {
+      this.fail('legacy transition');
+      return 0;
+    }
+    const width = input.width >>> 0,
+      height = input.height >>> 0;
+    if (width === 0 || height === 0) return 0;
+    if (
+      output.width >>> 0 !== width ||
+      output.height >>> 0 !== height ||
+      matte.width >>> 0 !== width ||
+      matte.height >>> 0 !== height
+    ) {
+      this.fail('transition extents');
+      return 0;
+    }
+    const area = this.target(output, width, height);
+    if (area === null) return 0;
+    const levels = this.sourceTexture(matte, 0, 0, width, height);
+    if (levels === null) return 0;
+    const origin = this.bindSource(input, 0, 0, width, height);
+    if (origin === null) return 0;
+    const gl = this.gl;
+    if (this.actions === null) {
+      gl.activeTexture(gl.TEXTURE3);
+      this.actions = burikoGpuTexture(gl);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R32I, 256, 1);
+    }
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, this.actions);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      0,
+      0,
+      256,
+      1,
+      gl.RED_INTEGER,
+      gl.INT,
+      burikoTransitionActions(parameter >>> 0, blend >>> 0, extra >>> 0),
+    );
+    this.snapshot(area);
+    this.run(
+      'transition',
+      area,
+      {sourceOrigin: origin, maskOrigin: levels.origin, mask: 2, actions: 3},
+      {},
+      [
+        [2, levels.texture],
+        [3, this.actions],
+      ],
+    );
+    return 0;
+  }
+
+  /** bitmap-mix.ts blendMixedBurikoBitmapsIntoRgb on its bounded, initialized path. */
+  private mixedIntoRgb(
+    destination: BurikoBitmap,
+    first: BurikoBitmap,
+    second: BurikoBitmap,
+    factorValue: number,
+    transparencyValue: number,
+  ): 0 | 9 | 10 {
+    if (destination.format !== 1) return 10;
+    if (first.format !== 2 || second.format !== 2) return 9;
+    if (transparencyValue >>> 0 >= 256) return 0;
+    const width = Math.min(destination.width >>> 0, first.width >>> 0, second.width >>> 0),
+      height = Math.min(destination.height >>> 0, first.height >>> 0, second.height >>> 0),
+      factor = (factorValue << 16) >> 16,
+      transparency = transparencyValue | 0;
+    if (factor < 0 || factor > 256) {
+      this.fail('mixed factor');
+      return 0;
+    }
+    if (width === 0 || height === 0) return 0;
+    const area = this.target(destination, width, height);
+    if (area === null) return 0;
+    const other = this.sourceTexture(second, 0, 0, width, height);
+    if (other === null) return 0;
+    const origin = this.bindSource(first, 0, 0, width, height);
+    if (origin === null) return 0;
+    this.snapshot(area);
+    this.run(
+      'fused',
+      area,
+      {sourceOrigin: origin, secondOrigin: other.origin, second: 2},
+      {factor, transparency},
+      [[2, other.texture]],
+    );
     return 0;
   }
 
@@ -1112,6 +1322,7 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     gl.deleteFramebuffer(this.backupFramebuffer);
     gl.deleteFramebuffer(this.mixFramebuffer);
     for (const texture of this.coefficients.values()) gl.deleteTexture(texture);
+    if (this.actions !== null) gl.deleteTexture(this.actions);
     this.coefficients.clear();
     this.programs.clear();
   }
