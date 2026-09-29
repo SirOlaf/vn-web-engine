@@ -312,6 +312,8 @@ Three copies on the loading path are now skipped in both profiles. None of them 
 - **Preload adoption.** `RegisterBitmapProcess` releases the decoder's private output right after preloading it. When no import ran first, the preload cache now adopts that buffer (`insertPointer(..., owned)`) instead of copying it. Masked sources are still validated before adoption. Slot 3's eight preload inserts fell from 183 ms to 0.3 ms (`buriko.bitmap.register-cache`).
 - **Owned raw reads.** Aokana's script loads `system.arc`, a 34 MB archive, whole as a loose resource, eight times in the slot 3 window. `looseFile` passes ownership of its fresh whole-file read (`readsFreshBytes`, true for blob-backed sources), so raw output returns that array instead of copying it.
 
+- **Size query cache.** Aokana's `scrmsg._bp` queries the decoded size of `C:\game\system.arc` (80:35 `ReadDecodedResourceSize`) before every message. It then reads 4 bytes of the file with 81:32 `ReadDriveFile` and ignores both results. Native 1400bd6b0 loads and decodes the whole resource to answer, so each message read 34 MB. `BurikoProgramResources` now remembers successful loose decoded sizes by opened `ByteSource`. Installed files reopen as the same immutable source. Written or shadowing files open as new sources and are measured again, and failed reads are not remembered. Loads still read the file. In slot 3, one of eight queries read the file, and bytes read in the window fell from 282 MB to 44 MB. `buriko.resource.size-cache-hit` records 1 per hit and 0 per miss.
+
 Importing a preloaded image into a bitmap still copies it, because the resource cache adopts the same bytes afterwards (`bitmap-loading.ts`). Native keeps both copies too.
 
 ### Streamed Vorbis music

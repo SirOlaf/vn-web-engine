@@ -543,3 +543,36 @@ test('resource BF final short codes do not consume speculative lookahead outside
     BurikoUndefinedResourceRead,
   );
 });
+test('loose decoded sizes are measured once per installed source and re-measured after replacement', async () => {
+  const s = setup();
+  const counted = (data, failures = 0) => {
+    const blob = new BlobSource(new Blob([data]));
+    const source = {
+      size: blob.size,
+      reads: 0,
+      read(offset, length) {
+        source.reads++;
+        if (failures-- > 0) return Promise.reject(new DOMException('busy', 'NotReadableError'));
+        return blob.read(offset, length);
+      },
+    };
+    return source;
+  };
+  const first = counted(new Uint8Array(40).fill(7));
+  s.sources.attach('/game/system.arc', first);
+  for (let i = 0; i < 3; i++) assert.equal(await s.resources.size(null, bytes('system.arc')), 40);
+  assert.equal(first.reads, 1);
+  // Loads still read the file; only size queries use the cache.
+  assert.equal((await s.resources.load(null, bytes('system.arc'), false)).result, 40);
+  assert.equal(first.reads, 2);
+
+  s.sources.clear();
+  s.sources.attachDirectory('/game');
+  const replaced = counted(new Uint8Array(24), 1);
+  s.sources.attach('/game/system.arc', replaced);
+  // A failed read reports size zero and is not remembered.
+  assert.equal(await s.resources.size(null, bytes('system.arc')), 0);
+  assert.equal(await s.resources.size(null, bytes('system.arc')), 24);
+  assert.equal(await s.resources.size(null, bytes('system.arc')), 24);
+  assert.equal(replaced.reads, 2);
+});

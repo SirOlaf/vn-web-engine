@@ -1,5 +1,6 @@
 import {FileError} from '../../../platform/filesystem.js';
-import {readsFreshBytes} from '../../../core/source.js';
+import {readsFreshBytes, type ByteSource} from '../../../core/source.js';
+import {recordRuntimeMetric} from '../../../platform/runtime-performance.js';
 import type {BurikoBpModuleResourceSource} from './types.js';
 import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoProgramArchives, type BurikoArchiveResource} from './program-archives.js';
@@ -63,6 +64,8 @@ export interface BurikoProgramResourceConfiguration {
 /** Native resource lookup shared by FF, module loading, and title resource services. */
 export class BurikoProgramResources implements BurikoBpModuleResourceSource {
   readonly archives: BurikoProgramArchives;
+  /** Successful loose decoded sizes by opened source; see `looseFileSize`. */
+  private readonly decodedSizes = new WeakMap<ByteSource, {result: number; length: number}>();
   constructor(
     readonly files: BurikoProgramFiles,
     readonly configuration: BurikoProgramResourceConfiguration,
@@ -143,11 +146,43 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
     if (!this.files.isAvailable(path)) return {result: 1, bytes: null};
     const opened = await this.files.open(path);
     if (opened.source === null) return {result: 1, bytes: null};
-    const size = opened.source.size >>> 0;
+    return this.decodeLoose(opened.source, offset, length, destination, actor);
+  }
+
+  /**
+   * bd6b0's decoded size of one loose file. Successful sizes are cached by opened source:
+   * installed files reopen as the same immutable source, while written or shadowing files
+   * open as new sources and are measured again.
+   */
+  private async looseFileSize(
+    path: Uint8Array,
+    actor: object,
+  ): Promise<{readonly result: number; readonly length: number}> {
+    if (!this.files.isAvailable(path)) return {result: 1, length: 0};
+    const opened = await this.files.open(path);
+    if (opened.source === null) return {result: 1, length: 0};
+    const cached = this.decodedSizes.get(opened.source);
+    recordRuntimeMetric('buriko.resource.size-cache-hit', Number(cached !== undefined));
+    if (cached !== undefined) return cached;
+    const decoded = await this.decodeLoose(opened.source, 0, 0, undefined, actor);
+    const measured = {result: decoded.result, length: decoded.bytes?.length ?? 0};
+    // Read failures may be transient; only successful decodes are remembered.
+    if (measured.result === 0) this.decodedSizes.set(opened.source, measured);
+    return measured;
+  }
+
+  private async decodeLoose(
+    source: ByteSource,
+    offset: number,
+    length: number,
+    destination: BurikoResourceDestination | null | undefined,
+    actor: object,
+  ): Promise<BurikoArchiveResource> {
+    const size = source.size >>> 0;
     if (size > 0x4000000) return {result: 6, bytes: null};
     let stored: Uint8Array;
     try {
-      stored = await this.files.read(opened.source, 0, size);
+      stored = await this.files.read(source, 0, size);
     } catch (error) {
       if (error instanceof FileError || error instanceof DOMException)
         return {result: 5, bytes: null};
@@ -164,7 +199,7 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
       undefined,
       actor,
       undefined,
-      readsFreshBytes(opened.source),
+      readsFreshBytes(source),
     );
     return {
       result: decoded.status,
@@ -175,34 +210,44 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
     };
   }
 
+  /** The root path, then each search directory while the file is missing (status 1). */
+  private async searchLoose<T extends {readonly result: number}>(
+    root: Uint8Array,
+    name: BurikoNativeString,
+    file: (path: Uint8Array) => Promise<T>,
+  ): Promise<T> {
+    const terminated = terminatedName(name),
+      initial = terminated();
+    const absolute = initial[0] === 92 || initial[1] === 58;
+    let result = await file(absolute ? initial : this.loosePath(root, initial));
+    if (!absolute && result.result === 1 && this.configuration.searchDirectoriesEnabled !== 0) {
+      for (const directory of this.configuration.searchDirectories) {
+        result = await file(this.loosePath(this.loosePath(root, directory), terminated(), true));
+        if (result.result !== 1) break;
+      }
+    }
+    return result;
+  }
+
+  /** bda60's loose size alone, without retaining the decoded bytes. */
+  private async looseSize(
+    root: Uint8Array,
+    name: BurikoNativeString,
+    actor: object,
+  ): Promise<number | null> {
+    const result = await this.searchLoose(root, name, (path) => this.looseFileSize(path, actor));
+    return result.result === 0 && result.length !== 0 ? result.length : null;
+  }
+
   private async loose(
     root: Uint8Array,
     name: BurikoNativeString,
     destination?: BurikoResourceDestination | null,
     actor = this.mainProcessing.allocator.currentActor,
   ): Promise<BurikoArchiveResource | null> {
-    const terminated = terminatedName(name),
-      initial = terminated();
-    const absolute = initial[0] === 92 || initial[1] === 58;
-    let result = await this.looseFile(
-      absolute ? initial : this.loosePath(root, initial),
-      0,
-      0,
-      destination,
-      actor,
+    const result = await this.searchLoose(root, name, (path) =>
+      this.looseFile(path, 0, 0, destination, actor),
     );
-    if (!absolute && result.result === 1 && this.configuration.searchDirectoriesEnabled !== 0) {
-      for (const directory of this.configuration.searchDirectories) {
-        result = await this.looseFile(
-          this.loosePath(this.loosePath(root, directory), terminated(), true),
-          0,
-          0,
-          destination,
-          actor,
-        );
-        if (result.result !== 1) break;
-      }
-    }
     // bda60 collapses every loose decoder failure (including empty files) into size zero.
     return result.result === 0 && result.bytes !== null && result.bytes.length !== 0
       ? {
@@ -580,12 +625,10 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
     name: BurikoNativeString,
     actor = this.mainProcessing.allocator.currentActor,
   ): Promise<number> {
-    const primary = await this.loose(this.configuration.primaryRoot, name, undefined, actor);
-    if (primary !== null) return primary.result;
+    const primary = await this.looseSize(this.configuration.primaryRoot, name, actor);
+    if (primary !== null) return primary;
     if (archive === null)
-      return (
-        (await this.loose(this.configuration.secondaryRoot, name, undefined, actor))?.result ?? 0
-      );
+      return (await this.looseSize(this.configuration.secondaryRoot, name, actor)) ?? 0;
     let result = await this.archives.resource(
       this.archivePath(this.configuration.primaryRoot, archiveBytes(archive)),
       name,
