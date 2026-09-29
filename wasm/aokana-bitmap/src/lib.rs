@@ -1094,6 +1094,158 @@ pub unsafe extern "C" fn mix_rgba(
     }
 }
 
+/// Callers alternate weights (window text at its transparency, composition at zero), so a
+/// few lazily filled tables stay cached, replaced round robin.
+const RGBA_TABLES: usize = 4;
+static mut RGBA_WEIGHTS: [u32; RGBA_TABLES] = [u32::MAX; RGBA_TABLES];
+static mut RGBA_NEXT_TABLE: usize = 0;
+static mut RGBA_COEFFICIENTS: [u32; RGBA_TABLES * 256 * 256] = [0; RGBA_TABLES * 256 * 256];
+
+unsafe fn rgba_table(weight: u32) -> *mut u32 {
+    let base = core::ptr::addr_of_mut!(RGBA_COEFFICIENTS).cast::<u32>();
+    let weights = &mut *core::ptr::addr_of_mut!(RGBA_WEIGHTS);
+    for (slot, cached) in weights.iter().enumerate() {
+        if *cached == weight {
+            return base.add(slot * 256 * 256);
+        }
+    }
+    let slot = RGBA_NEXT_TABLE;
+    RGBA_NEXT_TABLE = (slot + 1) % RGBA_TABLES;
+    weights[slot] = weight;
+    let table = base.add(slot * 256 * 256);
+    core::ptr::write_bytes(table, 0, 256 * 256);
+    table
+}
+
+/// The measured Rosetta RCPSS seed for a positive normal binary32 input.
+#[inline]
+fn rosetta_reciprocal(value: f32) -> f32 {
+    let bits = value.to_bits();
+    let exponent = (bits >> 23) & 255;
+    let index = (bits >> 12) & 2047;
+    let rounded = (8192.0_f64 / (1.0 + (index as f64 + 0.5) / 2048.0) + 0.5) as u32;
+    (rounded as f32 / 8192.0) * f32::from_bits((254 - exponent) << 23)
+}
+
+/// bitmap-alpha.ts cachedRgbaPairPixel's entry: flag, truncated alpha, and both Q8 weights.
+/// Every binary32 stage rounds once, as the TypeScript reference's Math.fround does.
+#[inline]
+fn rgba_pair_entry(source_alpha: u32, destination_alpha: u32, weight: u32) -> u32 {
+    let source = source_alpha as f32 * ((256 - weight) as f32 / 256.0);
+    let destination = (destination_alpha as f32 / 256.0) * (256.0 - source);
+    let alpha = source + destination;
+    let reciprocal = rosetta_reciprocal(if alpha == 0.0 { 1.0 } else { alpha });
+    let first = ((reciprocal * source) * 256.0) as u32;
+    let second = ((reciprocal * destination) * 256.0) as u32;
+    0x8000_0000 | ((alpha as u32) << 18) | (second << 9) | first
+}
+
+/// bitmap-alpha.ts weightedRgb: each channel keeps the low product word before the shift.
+#[inline]
+fn rgba_weighted(source: u32, destination: u32, source_weight: u32, destination_weight: u32, alpha: u32) -> u32 {
+    let mut pixel = alpha << 24;
+    for shift in (0..24).step_by(8) {
+        let product = ((source >> shift) & 255) * source_weight
+            + ((destination >> shift) & 255) * destination_weight;
+        pixel |= ((product & 65535) >> 8) << shift;
+    }
+    pixel
+}
+
+#[inline]
+unsafe fn rgba_pair(coefficients: *mut u32, source: u32, destination: u32, weight: u32) -> u32 {
+    let entry = coefficients.add((((source >> 24) << 8) | (destination >> 24)) as usize);
+    if *entry == 0 {
+        *entry = rgba_pair_entry(source >> 24, destination >> 24, weight);
+    }
+    let value = *entry;
+    rgba_weighted(source, destination, value & 511, (value >> 9) & 511, (value >> 18) & 255)
+}
+
+/// bitmap-alpha.ts burikoAlphaTailPixel for a positive denominator (weight below 256).
+#[inline]
+fn rgba_tail(source: u32, destination: u32, weight: u32) -> u32 {
+    let source_alpha = (source >> 24) * (256 - weight);
+    let destination_alpha = ((destination >> 24) * (65536 - source_alpha)) >> 8;
+    let denominator = source_alpha + destination_alpha;
+    rgba_weighted(
+        source,
+        destination,
+        (source_alpha << 8) / denominator,
+        (destination_alpha << 8) / denominator,
+        denominator >> 8,
+    )
+}
+
+/// bitmap-alpha.ts blendInitializedRgba, native RGBA-over-RGBA 14003c720/14003ca70: MOVQ
+/// pairs from the left edge, then one MOVD tail. `opaque` enables the fully opaque copies of
+/// the untransparent path. Weights 0..255; strides count pixels between row starts.
+#[no_mangle]
+pub unsafe extern "C" fn alpha_rgba(
+    source: *const u32,
+    destination: *mut u32,
+    width: usize,
+    height: usize,
+    weight: u32,
+    opaque: u32,
+    source_stride: usize,
+    destination_stride: usize,
+) {
+    let coefficients = rgba_table(weight);
+    let opaque = opaque != 0;
+    for row in 0..height {
+        let input = source.add(row * source_stride);
+        let output = destination.add(row * destination_stride);
+        let mut column = 0;
+        while column + 1 < width {
+            // Four pixels are two native pairs: skip wholly transparent groups and copy wholly
+            // opaque ones under the opaque shortcut, exactly as each pair would.
+            if column + 3 < width {
+                let pixels = v128_load(input.add(column) as *const v128);
+                let alphas = u32x4_shr(pixels, 24);
+                if !v128_any_true(alphas) {
+                    column += 4;
+                    continue;
+                }
+                if opaque && u32x4_all_true(i32x4_eq(alphas, u32x4_splat(255))) {
+                    v128_store(output.add(column) as *mut v128, pixels);
+                    column += 4;
+                    continue;
+                }
+            }
+            let first = *input.add(column);
+            let second = *input.add(column + 1);
+            let first_alpha = first >> 24;
+            let second_alpha = second >> 24;
+            if first_alpha == 0 && second_alpha == 0 {
+                column += 2;
+                continue;
+            }
+            if opaque && first_alpha == 255 && second_alpha == 255 {
+                *output.add(column) = first;
+                *output.add(column + 1) = second;
+            } else {
+                let old_first = *output.add(column);
+                let old_second = *output.add(column + 1);
+                *output.add(column) = rgba_pair(coefficients, first, old_first, weight);
+                *output.add(column + 1) = rgba_pair(coefficients, second, old_second, weight);
+            }
+            column += 2;
+        }
+        if column < width {
+            let pixel = *input.add(column);
+            let alpha = pixel >> 24;
+            if alpha != 0 {
+                *output.add(column) = if opaque && alpha == 255 {
+                    pixel
+                } else {
+                    rgba_tail(pixel, *output.add(column), weight)
+                };
+            }
+        }
+    }
+}
+
 #[inline]
 unsafe fn fused_half<const ENDPOINT: bool>(
     first: v128,

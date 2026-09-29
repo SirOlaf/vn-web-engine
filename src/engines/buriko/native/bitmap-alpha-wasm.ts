@@ -82,6 +82,16 @@ export interface BurikoBitmapExports extends WasmPixelExports {
     width: number,
     height: number,
   ) => void;
+  alpha_rgba: (
+    source: number,
+    destination: number,
+    width: number,
+    height: number,
+    weight: number,
+    opaque: number,
+    sourceStride: number,
+    destinationStride: number,
+  ) => void;
   alpha_rgb: (
     source: number,
     destination: number,
@@ -567,6 +577,123 @@ export function tryBurikoBitmapAlphaWasm(
         width,
         height,
         transparency === null ? -1 : 256 - transparency,
+        sourceStride,
+        destinationStride,
+      ),
+  );
+}
+
+const BURIKO_RGBA_RESIDENT_MIN_PIXELS = 64;
+const RGBA_SCRATCH_LIMIT = 1024 * 1024;
+let rgbaScratch: Uint8Array | null = null;
+
+/** Reusable resident bytes for a nonresident RGBA source of at most 1 MiB. */
+function rgbaSourceScratch(length: number): Uint8Array | null {
+  if (length > RGBA_SCRATCH_LIMIT) return null;
+  if (rgbaScratch !== null && rgbaScratch.length >= length) return rgbaScratch;
+  const heap = existingBurikoResidentKernel()?.heap;
+  if (heap === undefined) return null;
+  if (rgbaScratch !== null) heap.release(rgbaScratch);
+  rgbaScratch = heap.allocate(Math.max(length, 64 * 1024));
+  return rgbaScratch;
+}
+
+/**
+ * Native RGBA-over-RGBA pair/tail blending (bitmap-alpha.ts blendInitializedRgba) for
+ * initialized, nonoverlapping spans and integral weights 0..255. Weight 256 keeps JavaScript,
+ * whose tail can divide by zero.
+ */
+export function tryBurikoBitmapRgbaWasm(
+  destination: BurikoBitmap,
+  source: BurikoBitmap,
+  output: DataView,
+  input: DataView,
+  width: number,
+  height: number,
+  weight: number,
+  opaque: boolean,
+): boolean {
+  // Resident rows are addressed in place, so only staged spans need the larger minimum.
+  if (
+    width * height < BURIKO_RGBA_RESIDENT_MIN_PIXELS ||
+    !Number.isInteger(weight) ||
+    weight < 0 ||
+    weight > 255 ||
+    viewsOverlap(input, output) ||
+    source.stride < width * 4 ||
+    destination.stride < width * 4
+  )
+    return false;
+  const exports = getKernel();
+  if (exports === null) return false;
+  const addresses = residentAddresses([
+    [output, destination.offset, destination.stride, width * 4, height, 4],
+    [input, source.offset, source.stride, width * 4, height, 4],
+  ]);
+  if (addresses !== null) {
+    existingBurikoResidentKernel()!.exports.alpha_rgba(
+      addresses[1]!,
+      addresses[0]!,
+      width,
+      height,
+      weight,
+      opaque ? 1 : 0,
+      source.stride >>> 2,
+      destination.stride >>> 2,
+    );
+    return true;
+  }
+  // Small sources, such as glyphs, stay outside the resident heap. Copy one into resident
+  // scratch and still blend the resident destination in place.
+  const target = residentAddresses([
+    [output, destination.offset, destination.stride, width * 4, height, 4],
+  ]);
+  const scratch = target === null ? null : rgbaSourceScratch(width * height * 4);
+  if (scratch !== null) {
+    const rowBytes = width * 4,
+      at = input.byteOffset + source.offset;
+    if (source.stride === rowBytes)
+      scratch.set(new Uint8Array(input.buffer, at, rowBytes * height));
+    else
+      for (let row = 0; row < height; row++)
+        scratch.set(
+          new Uint8Array(input.buffer, at + row * source.stride, rowBytes),
+          row * rowBytes,
+        );
+    existingBurikoResidentKernel()!.exports.alpha_rgba(
+      scratch.byteOffset,
+      target![0]!,
+      width,
+      height,
+      weight,
+      opaque ? 1 : 0,
+      width,
+      destination.stride >>> 2,
+    );
+    return true;
+  }
+  if (
+    width * height < BURIKO_BITMAP_WASM_MIN_PIXELS ||
+    (width < 128 && !(source.stride === width * 4 && destination.stride === width * 4))
+  )
+    return false;
+  return workspace!.runStrided(
+    input,
+    source.offset,
+    source.stride,
+    output,
+    destination.offset,
+    destination.stride,
+    width * 4,
+    height,
+    (sourcePointer, destinationPointer, sourceStride, destinationStride) =>
+      exports.alpha_rgba(
+        sourcePointer,
+        destinationPointer,
+        width,
+        height,
+        weight,
+        opaque ? 1 : 0,
         sourceStride,
         destinationStride,
       ),

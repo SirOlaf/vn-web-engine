@@ -10,6 +10,10 @@ native floors and the alpha table's 254/255 entries. Fully opaque pixel pairs co
 source alpha, a fully opaque odd tail clears alpha, and zero-alpha pairs and
 alpha-zero/one tails retain their existing bytes.
 
+`alpha_rgba` implements RGBA-over-RGBA blending (bitmap-alpha.ts `blendInitializedRgba`, native 14003c720/14003ca70). Pixel pairs from the left edge use a per-(source alpha, destination alpha) entry: binary32 coverage products rounded once each, the measured RCPSS seed, and truncated Q8 weights. The entries are filled lazily in four tables, one per recent weight, because window text and composition alternate weights. The odd tail uses the integer division path. Groups of four pixels, which are two native pairs, are skipped when wholly transparent and copied when wholly opaque under the opaque shortcut. Weight 256 stays in TypeScript, because its tail can divide by zero.
+
+When only the destination is resident, the host copies a small ordinary-buffer source, such as a glyph, into a reusable resident scratch buffer of at most 1 MiB. It then blends the destination in place, so resident spans need only 64 pixels.
+
 The fused kernel truncates opacity-scaled alpha, premultiplied channels, their
 crossfade, and retained destination channels at exactly the original stages.
 Processed pixels clear output alpha. A pair whose two mixed alphas are zero

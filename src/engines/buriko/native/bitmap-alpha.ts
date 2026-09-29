@@ -2,7 +2,11 @@ import {isRasterTextPresentation} from '../../../text/raster-text.js';
 import {withBurikoBitmapText} from './bitmap-dom-text.js';
 import {initializedBurikoBitmapView, type BurikoBitmap} from './bitmap.js';
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
-import {BURIKO_BITMAP_WASM_MIN_PIXELS, tryBurikoBitmapAlphaWasm} from './bitmap-alpha-wasm.js';
+import {
+  BURIKO_BITMAP_WASM_MIN_PIXELS,
+  tryBurikoBitmapAlphaWasm,
+  tryBurikoBitmapRgbaWasm,
+} from './bitmap-alpha-wasm.js';
 import {
   burikoAlphaHalfCoefficient,
   burikoSignedProduct16,
@@ -127,6 +131,19 @@ function blendInitializedRgba(
   // Requiring initialized output permits direct stores without changing any validity
   // metadata. Missing or partially initialized storage retains checked fault order.
   if (input === null || output === null) return false;
+  if (
+    tryBurikoBitmapRgbaWasm(
+      destination,
+      source,
+      output,
+      input,
+      width,
+      height,
+      weight,
+      opaqueShortcut,
+    )
+  )
+    return true;
   const coefficients = rgbaPairCoefficients(weight);
   for (let y = 0; y < height; y++) {
     const sourceRow = source.offset + y * source.stride,

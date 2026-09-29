@@ -15,6 +15,7 @@ import {
   tryBurikoBitmapFusedWasm,
   tryBurikoBitmapMixWasm,
   tryBurikoBitmapReduceWasm,
+  tryBurikoBitmapRgbaWasm,
   tryBurikoBitmapTransitionWasm,
 } from '../dist/engines/buriko/native/bitmap-alpha-wasm.js';
 import {
@@ -254,6 +255,29 @@ test(
             150,
             40,
             transparency,
+          ),
+      );
+    for (const [weight, opaque] of [
+      [0, true],
+      [0, false],
+      [120, false],
+    ])
+      compare(
+        `alpha rgba ${weight} ${opaque}`,
+        (resident) => ({
+          destination: surface(resident, 151, 40, 2),
+          source: surface(resident, 151, 40, 2, {left: 5, top: 2, padding: 20}),
+        }),
+        ({destination, source}) =>
+          tryBurikoBitmapRgbaWasm(
+            destination,
+            source,
+            destination.storage.view,
+            source.storage.view,
+            151,
+            40,
+            weight,
+            opaque,
           ),
       );
     compare(
