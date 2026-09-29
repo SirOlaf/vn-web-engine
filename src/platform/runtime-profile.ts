@@ -1,7 +1,7 @@
 /** Shared runtime policy; engines decide where each profile affects scheduling. */
 export type RuntimeProfile = 'native' | 'browser-optimized';
 
-let profile: RuntimeProfile = 'native';
+let profile: RuntimeProfile = 'browser-optimized';
 const listeners = new Set<(profile: RuntimeProfile) => void>();
 
 export function getRuntimeProfile(): RuntimeProfile {
