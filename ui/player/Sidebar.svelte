@@ -24,6 +24,7 @@
     </svg><span>Game options</span>
   </button>
   <div id="sidebar-body">
+    <p id="status" role="status">No game loaded.</p>
     <section>
       <h2>Game</h2>
       <a class="sidebar-library-link" href="./">← Library</a>
@@ -75,7 +76,6 @@
         >
       </section>
     {/if}
-    <p id="status" role="status">No game loaded.</p>
     <AudioDiagnostics />
     <PerformanceDiagnostics />
   </div>

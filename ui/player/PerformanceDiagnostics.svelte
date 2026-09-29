@@ -9,6 +9,7 @@
   } from '../../src/platform/runtime-performance.js';
   import {downloadBytes} from '../library.js';
   import {RUNTIME_BUILD_ID} from '../../src/platform/runtime-build.js';
+  import {loadingIndicatorShown, setLoadingIndicatorShown} from './loading-indicator.js';
 
   let status = getRuntimePerformanceStatus();
   onMount(() => {
@@ -59,6 +60,14 @@
     text and images are excluded. Timings stay in memory until downloaded. Starting again replaces
     the previous recording.
   </p>
+  <label for="loading-indicator">Loading indicator</label>
+  <select
+    id="loading-indicator"
+    value={$loadingIndicatorShown ? 'shown' : 'hidden'}
+    onchange={(event) => setLoadingIndicatorShown(event.currentTarget.value === 'shown')}
+  >
+    <option value="hidden">Hidden</option><option value="shown">Shown</option>
+  </select>
 </details>
 
 <style>
@@ -72,8 +81,14 @@
     font-size: 12px;
     line-height: 1.5;
   }
-  .download {
+  .download,
+  select {
     width: 100%;
     margin-top: 8px;
+  }
+  label {
+    display: block;
+    margin-top: 12px;
+    color: #a9b0bb;
   }
 </style>
