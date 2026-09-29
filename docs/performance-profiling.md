@@ -314,6 +314,16 @@ Three copies on the loading path are now skipped in both profiles. None of them 
 
 Importing a preloaded image into a bitmap still copies it, because the resource cache adopts the same bytes afterwards (`bitmap-loading.ts`). Native keeps both copies too.
 
+### Streamed Vorbis music
+
+Native BGI decodes Ogg Vorbis with `ov_read` in each 100 ms stream refill. The browser path used to decode a whole track before its stream opened, and the VM waits on that call. In Aokana slot 4, the first click changes the soundtrack. The new track is 3.95 MB of Ogg, 98 s at 44.1 kHz, and decoding it took about 211 ms. For that long, the game presented no frames and neither track played, in both runtime profiles.
+
+- **Streaming.** `createBurikoLiveOggWaveStream` now opens single-link tracks through `BurikoProgressiveOggDecoder` (`src/engines/buriko/native/audio/progressive-ogg.ts`). A reused worker (`src/audio/vorbis-stream-worker.ts`) decodes the track in chunks: first 5 s, which covers the stream's 4 s prefill, then 10 s at a time. libvorbis keeps its state between chunks, so their concatenation equals a single decode. With an EOS granule, planes are allocated to that bound. Each read and loop seek waits until the frames it needs are final, then runs the complete-PCM reader unchanged, so the produced bytes are identical.
+- **Error timing.** A decode error in a later packet now surfaces at the first read that needs those frames, as a native refill would see it, instead of when the stream opens.
+- **Complete decoding.** These keep it: chained links, tracks without a plausible EOS granule (reads wait for completion), static sounds, paired exchange streams, and the diagnostic `OfflineAudioContext` profile.
+- **Measurement.** The slot 4 freeze fell from about 265 ms to 50–58 ms at 1× in both profiles, measured as the longest gap between presents across the click. rAF gaps do not show it, because the main thread is idle while the VM waits.
+- **Other Vorbis decodes.** Complete decodes run on reused `WorkerPool` workers. Creating a worker, loading libvorbis and compiling it per decode made an 89 KB clip take 68 ms for 12 ms of decoding. It now takes 22–24 ms.
+
 ### Glyph rasterization
 
 Buriko text uses the native NONANTIALIASED DIB path: `BurikoBrowserFontFace.rasterText` (`src/engines/buriko/native/font-browser.ts`) fills one glyph into a supersampled canvas, reads it back, and thresholds alpha at 128. `BurikoFontRaster` then box-filters that to coverage. At Aokana's text quality the DIB is 16× the glyph cell, about 530–670 × 780–1010 samples. Each uncached glyph therefore reads back about 2.7 MB of RGBA. In slot 3 no character was rasterized twice, so a cache across layouts would not help. Batching readbacks would not help either, because the cost scales with pixels, not calls.

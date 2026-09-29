@@ -64,7 +64,6 @@ export class BurikoWaveBoxOggDecoder {
   private sourcePosition = 0;
   private enabled: number;
   private loopStart: number;
-  readonly totalVorbisFrames: number;
   constructor(
     readonly header: BurikoWaveBoxHeader,
     readonly links: readonly BurikoVorbisPcmLink[],
@@ -78,7 +77,16 @@ export class BurikoWaveBoxOggDecoder {
       throw new RangeError('Buriko 1.69 Vorbis output is signed 16-bit PCM');
     this.enabled = header.loopEnabled;
     this.loopStart = header.loopStartFrame;
-    this.totalVorbisFrames = links.reduce((sum, link) => sum + link.frames, 0);
+  }
+  /** Read per call: a progressive link's frame count becomes exact when its decode finishes. */
+  get totalVorbisFrames(): number {
+    let total = 0;
+    for (const link of this.links) total += link.frames;
+    return total;
+  }
+  /** ov_pcm position of the next Vorbis frame read, separate from the native frame counter. */
+  get sourceFramePosition(): number {
+    return this.sourcePosition;
   }
   get sourceFrameCount(): number {
     return this.header.sourceFrameCount;

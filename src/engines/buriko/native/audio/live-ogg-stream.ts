@@ -8,6 +8,7 @@ import {
   type BurikoWaveBoxOggOptions,
 } from './wavebox-ogg.js';
 import {BurikoWaveStream} from './wave-stream.js';
+import {BurikoProgressiveOggDecoder} from './progressive-ogg.js';
 
 /** Selected browser Vorbis profile: PCM is materialized, actual input ownership is retained. */
 class OwnedBrowserOggDecoder extends BurikoWaveBoxOggDecoder {
@@ -32,7 +33,11 @@ class OwnedBrowserOggDecoder extends BurikoWaveBoxOggDecoder {
   }
 }
 
-/**118940 header order with explicit complete-link browser decoding, not native callback timing. */
+/**
+ * 118940 header order. Like native ov_read refills, a single-link track streams: the call
+ * returns once the prefill's PCM is decoded, and later reads wait for their frames. Chained
+ * links and the diagnostic OfflineAudioContext profile decode completely first.
+ */
 export async function createBurikoLiveOggWaveStream(
   input: BurikoLiveAudioStorage,
   options: BurikoWaveBoxOggOptions,
@@ -43,8 +48,15 @@ export async function createBurikoLiveOggWaveStream(
 ): Promise<BurikoWaveStream> {
   let stream: BurikoWaveStream | undefined;
   try {
-    const decoded = await materializeBurikoLiveOgg(input, options, actor, Context);
-    const decoder = new OwnedBrowserOggDecoder(decoded, input);
+    const bytes = await readBurikoLiveOggBytes(input, actor);
+    const decoder =
+      (Context === undefined
+        ? await BurikoProgressiveOggDecoder.open(bytes, options, input)
+        : null) ??
+      new OwnedBrowserOggDecoder(
+        await createBurikoWaveBoxOggDecoder(bytes, options, Context),
+        input,
+      );
     stream = new BurikoWaveStream(decoder, rawMilliseconds, actors, options.abi);
     await stream.initialize(actor);
     return stream;
@@ -65,6 +77,18 @@ export async function materializeBurikoLiveOgg(
   actor: object,
   Context?: typeof OfflineAudioContext,
 ): Promise<BurikoWaveBoxOggDecoder> {
+  return createBurikoWaveBoxOggDecoder(
+    await readBurikoLiveOggBytes(input, actor),
+    options,
+    Context,
+  );
+}
+
+/** Validated WaveBox header followed by the Ogg payload read from physical offset 64. */
+async function readBurikoLiveOggBytes(
+  input: BurikoLiveAudioStorage,
+  actor: object,
+): Promise<Uint8Array> {
   if (input.size >>> 0 < 64)
     throw new BurikoWaveBoxError(0x10000003, 'Buriko Ogg input is shorter than model header');
   const header = new Uint8Array(64),
@@ -91,5 +115,5 @@ export async function materializeBurikoLiveOgg(
   const bytes = new Uint8Array(64 + transferred);
   bytes.set(header);
   bytes.set(payload.subarray(0, transferred), 64);
-  return createBurikoWaveBoxOggDecoder(bytes, options, Context);
+  return bytes;
 }

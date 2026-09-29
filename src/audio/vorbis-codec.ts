@@ -99,8 +99,16 @@ function vorbisPackets(bytes: Uint8Array): {packets: Uint8Array[]; finalGranule:
   return {packets, finalGranule: ended ? finalGranule : null};
 }
 
-/** libvorbis supplies actual PCM; browser decodeAudioData may discard boundary samples. */
-export async function decodeVorbisFile(bytes: Uint8Array): Promise<VorbisPcm> {
+interface OpenedVorbis {
+  readonly decoder: PacketDecoder;
+  readonly packets: Uint8Array[];
+  readonly finalGranule: number | null;
+  readonly channels: number;
+  readonly sampleRate: number;
+}
+
+/** Validates the identification header and primes libvorbis; the caller frees the decoder. */
+async function openVorbis(bytes: Uint8Array): Promise<OpenedVorbis> {
   const {packets, finalGranule} = vorbisPackets(bytes);
   const identification = packets[0]!;
   if (identification.length < 30) throw new VorbisDecodeError('Incomplete Vorbis identification');
@@ -133,26 +141,131 @@ export async function decodeVorbisFile(bytes: Uint8Array): Promise<VorbisPcm> {
     // libvorbis receives an empty comment packet internally; comments do not affect PCM.
     decoder.sendSetupHeader(packets[2]!);
     decoder.initDsp();
-    const result = decoder.decodePackets(packets.slice(3));
-    if (result.errors.length)
-      throw new VorbisDecodeError(result.errors.map((error) => error.message).join('; '));
-    if (
-      result.sampleRate !== sampleRate ||
-      result.channelData.length !== channels ||
-      !Number.isSafeInteger(result.samplesDecoded) ||
-      result.samplesDecoded < 0 ||
-      result.channelData.some((plane) => plane.length !== result.samplesDecoded)
-    )
-      throw new VorbisDecodeError('Vorbis decoder returned invalid PCM dimensions');
+  } catch (error) {
+    decoder.free();
+    throw error;
+  }
+  return {decoder, packets, finalGranule, channels, sampleRate};
+}
+
+function decodeBatch(opened: OpenedVorbis, packets: Uint8Array[]) {
+  const result = opened.decoder.decodePackets(packets);
+  if (result.errors.length)
+    throw new VorbisDecodeError(result.errors.map((error) => error.message).join('; '));
+  if (
+    result.sampleRate !== opened.sampleRate ||
+    result.channelData.length !== opened.channels ||
+    !Number.isSafeInteger(result.samplesDecoded) ||
+    result.samplesDecoded < 0 ||
+    result.channelData.some((plane) => plane.length !== result.samplesDecoded)
+  )
+    throw new VorbisDecodeError('Vorbis decoder returned invalid PCM dimensions');
+  return result;
+}
+
+/** libvorbis supplies actual PCM; browser decodeAudioData may discard boundary samples. */
+export async function decodeVorbisFile(bytes: Uint8Array): Promise<VorbisPcm> {
+  const opened = await openVorbis(bytes);
+  try {
+    const result = decodeBatch(opened, opened.packets.slice(3));
     // Ogg's EOS granule removes the encoder's final overlap; it never creates samples.
-    const frames =
-      finalGranule === null ? result.samplesDecoded : Math.min(finalGranule, result.samplesDecoded);
+    const finalGranule = opened.finalGranule,
+      frames =
+        finalGranule === null
+          ? result.samplesDecoded
+          : Math.min(finalGranule, result.samplesDecoded);
     return {
-      sampleRate,
+      sampleRate: opened.sampleRate,
       frames,
       planes: result.channelData.map((plane) => plane.subarray(0, frames)),
     };
   } finally {
-    decoder.free();
+    opened.decoder.free();
+  }
+}
+
+/** Completion of `decodeVorbisChunks`: untrimmed output count and the EOS-trimmed length. */
+export interface VorbisStreamSummary {
+  readonly sampleRate: number;
+  readonly channels: number;
+  readonly samplesDecoded: number;
+  readonly frames: number;
+}
+
+/** Header facts known before any PCM; `finalGranule` is the EOS trim bound, if any. */
+export interface VorbisStreamOpen {
+  readonly sampleRate: number;
+  readonly channels: number;
+  readonly finalGranule: number | null;
+}
+export interface VorbisStreamCallbacks {
+  onOpen?(open: VorbisStreamOpen): void;
+  onChunk(planes: Float32Array[], frames: number): void;
+}
+
+/**
+ * Decodes like `decodeVorbisFile`, but reports consecutive untrimmed PCM batches as they are
+ * decoded. libvorbis keeps its synthesis state between batches, so their concatenation equals
+ * the single-call output. The first batch holds at least `firstFrames` frames when the stream
+ * has them; later batches hold at least `chunkFrames`. A packet error ends decoding with the
+ * error after the batches before it were reported.
+ */
+export async function decodeVorbisChunks(
+  bytes: Uint8Array,
+  firstFrames: number,
+  chunkFrames: number,
+  callbacks: VorbisStreamCallbacks,
+  packetsPerBatch = 8,
+): Promise<VorbisStreamSummary> {
+  const opened = await openVorbis(bytes);
+  try {
+    callbacks.onOpen?.({
+      sampleRate: opened.sampleRate,
+      channels: opened.channels,
+      finalGranule: opened.finalGranule,
+    });
+    let samplesDecoded = 0,
+      target = firstFrames,
+      pending: Float32Array[][] = [],
+      pendingFrames = 0;
+    const flush = (): void => {
+      if (pendingFrames === 0) return;
+      const planes = Array.from({length: opened.channels}, (_, channel) => {
+        if (pending.length === 1) return pending[0]![channel]!;
+        const plane = new Float32Array(pendingFrames);
+        let at = 0;
+        for (const batch of pending) {
+          plane.set(batch[channel]!, at);
+          at += batch[channel]!.length;
+        }
+        return plane;
+      });
+      callbacks.onChunk(planes, pendingFrames);
+      pending = [];
+      pendingFrames = 0;
+      target = chunkFrames;
+    };
+    // Small packet batches keep chunks close to their targets; libvorbis still decodes one
+    // packet at a time, and a block is at most 4,096 frames.
+    const packets = opened.packets;
+    for (let index = 3; index < packets.length; index += packetsPerBatch) {
+      const result = decodeBatch(opened, packets.slice(index, index + packetsPerBatch));
+      samplesDecoded += result.samplesDecoded;
+      if (result.samplesDecoded !== 0) {
+        pending.push(result.channelData);
+        pendingFrames += result.samplesDecoded;
+      }
+      if (pendingFrames >= target) flush();
+    }
+    flush();
+    const finalGranule = opened.finalGranule;
+    return {
+      sampleRate: opened.sampleRate,
+      channels: opened.channels,
+      samplesDecoded,
+      frames: finalGranule === null ? samplesDecoded : Math.min(finalGranule, samplesDecoded),
+    };
+  } finally {
+    opened.decoder.free();
   }
 }

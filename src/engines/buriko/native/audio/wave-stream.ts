@@ -10,12 +10,14 @@ import {
 import {parseBurikoWaveBoxHeader} from './wavebox-header.js';
 import {createBurikoWaveBoxOggDecoder, type BurikoWaveBoxOggDecoder} from './wavebox-ogg.js';
 import type {BurikoOggExchangeDecoder} from './ogg-exchange-stream.js';
+import type {BurikoProgressiveOggDecoder} from './progressive-ogg.js';
 
 export type BurikoWaveDecoder =
   | BurikoWaveBoxDecoder
   | BurikoWaveBoxOggDecoder
   | BurikoLiveWaveBoxDecoder
-  | BurikoOggExchangeDecoder;
+  | BurikoOggExchangeDecoder
+  | BurikoProgressiveOggDecoder;
 
 /** CRotateBuffer/CRotateBufferSecurity: independently wrapping read/write positions and byte fill count. */
 export class BurikoWaveFifo {
