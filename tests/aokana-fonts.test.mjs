@@ -4,6 +4,7 @@ import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BurikoFontResources} from '../dist/engines/buriko/native/font-resources.js';
 import {BurikoBrowserFonts} from '../dist/engines/buriko/native/font-browser.js';
+import {setRuntimeProfile} from '../dist/platform/runtime-profile.js';
 import {createGroupB0Fonts} from '../dist/engines/buriko/native/group-b0-fonts.js';
 import {BurikoBpThread, pop32, push32} from '../dist/engines/buriko/bp/state.js';
 import {BurikoBpMemory, hostPointer} from '../dist/engines/buriko/bp/memory.js';
@@ -60,6 +61,53 @@ test('font pitch callback keeps character-set precedence, family names and ASCII
   assert.equal(await browser.queryPitch('Shared Bold'), null);
   assert.equal(await browser.queryPitch('Absent'), null);
   await assert.rejects(browser.queryPitch('x'.repeat(32)), /LOGFONT/);
+});
+
+test('browser-optimized font queries read only common and name-matched installed records', async () => {
+  const read = [];
+  const record = (family, fullName = family, postscriptName = family.replaceAll(' ', '')) => ({
+    family,
+    fullName,
+    postscriptName,
+    async blob() {
+      read.push(family);
+      // Unreadable metadata keeps the test independent of sfnt fixtures.
+      return new Blob([new Uint8Array(12)]);
+    },
+  });
+  const records = [
+    record('MS Gothic'),
+    record('Huge Collection'),
+    record('Custom Face', 'Custom Face Regular', 'CustomFace-Regular'),
+    record('Meiryo'),
+  ];
+  const previousQuery = globalThis.queryLocalFonts;
+  let queries = 0;
+  globalThis.queryLocalFonts = async () => {
+    queries++;
+    return records;
+  };
+  try {
+    setRuntimeProfile('browser-optimized');
+    const browser = new BurikoBrowserFonts();
+    assert.deepEqual(await browser.enumerate(1, false), []);
+    assert.deepEqual(read, ['MS Gothic', 'Meiryo']);
+    assert.equal(await browser.queryPitch('customface-regular'), null);
+    assert.deepEqual(read, ['MS Gothic', 'Meiryo', 'Custom Face']);
+    // Metadata is read once per record and the query once per provider.
+    await browser.queryCharset('Custom Face');
+    assert.deepEqual(read, ['MS Gothic', 'Meiryo', 'Custom Face']);
+    assert.equal(queries, 1);
+
+    setRuntimeProfile('native');
+    read.length = 0;
+    await new BurikoBrowserFonts().enumerate(1, false);
+    assert.deepEqual(read, ['MS Gothic', 'Huge Collection', 'Custom Face', 'Meiryo']);
+  } finally {
+    setRuntimeProfile('native');
+    if (previousQuery === undefined) delete globalThis.queryLocalFonts;
+    else globalThis.queryLocalFonts = previousQuery;
+  }
 });
 
 test('font B0 bindings preserve NULL enumeration queries, outputs and cached archive pointer laziness', async () => {

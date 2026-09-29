@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readSfntFontData, readSfntFontMetadata} from '../dist/formats/sfnt.js';
 import {readBurikoFontData} from '../dist/engines/buriko/native/font-data.js';
-import {readBrowserLocalFontMetadata} from '../dist/text/browser-local-fonts.js';
+import {
+  readBrowserLocalFontMetadata,
+  readBrowserLocalFontRecords,
+} from '../dist/text/browser-local-fonts.js';
+import {subscribeRuntimeActivity} from '../dist/platform/runtime-activity.js';
 import {setRuntimeProfile} from '../dist/platform/runtime-profile.js';
 
 const tag = (value) =>
@@ -297,5 +301,77 @@ test('font catalog bounds concurrent metadata jobs and preserves query and colle
       for (const gate of gates) gate.resolve();
       setRuntimeProfile('native');
     }
+  }
+});
+
+test('font metadata cache skips cached reads, keeps failures uncached and reports progress', async () => {
+  const stored = new Map();
+  const cache = {
+    async getMany(keys) {
+      return new Map(keys.filter((key) => stored.has(key)).map((key) => [key, stored.get(key)]));
+    },
+    async putMany(entries) {
+      for (const [key, faces] of entries) stored.set(key, faces);
+    },
+  };
+  const read = [];
+  const record = (family, readable = true) => ({
+    family,
+    fullName: `${family} Regular`,
+    postscriptName: `${family}-Regular`,
+    async blob() {
+      read.push(family);
+      if (!readable) throw new Error('Denied');
+      const source = fixture();
+      return {
+        size: source.size,
+        slice(start, end) {
+          return {
+            async arrayBuffer() {
+              return (await source.read(start, end - start)).slice().buffer;
+            },
+          };
+        },
+      };
+    },
+  });
+  const records = [record('First'), record('Denied', false), record('Second')];
+  const activity = [];
+  const unsubscribe = subscribeRuntimeActivity((activities) =>
+    activity.push(
+      activities
+        .filter(({label}) => label === 'Processing installed fonts')
+        .map(({essential, progress}) => ({essential, ...progress})),
+    ),
+  );
+  try {
+    const first = await readBrowserLocalFontRecords(records, 1, cache);
+    assert.deepEqual(read, ['First', 'Denied', 'Second']);
+    assert.deepEqual([...stored.keys()].length, 2);
+    assert.deepEqual(
+      activity.flat().map(({essential, done, total}) => [essential, done, total]),
+      [
+        [true, 0, 3],
+        [true, 1, 3],
+        [true, 2, 3],
+        [true, 3, 3],
+      ],
+    );
+    assert.deepEqual(activity.at(-1), []);
+
+    read.length = activity.length = 0;
+    const second = await readBrowserLocalFontRecords(records, 4, cache);
+    // Cached records keep their own names; only the uncached failure is retried.
+    assert.deepEqual(read, ['Denied']);
+    assert.deepEqual(second, first);
+    assert.equal(second[2][0].family, 'Second');
+    assert.equal(second[1].length, 0);
+
+    read.length = activity.length = 0;
+    await readBrowserLocalFontRecords([records[0], records[2]], 4, cache);
+    assert.deepEqual(read, []);
+    assert.deepEqual(activity.flat(), []);
+  } finally {
+    unsubscribe();
   }
 });

@@ -4,9 +4,13 @@ import {
   type RuntimeActivity,
 } from '../../src/platform/runtime-activity.js';
 
-/** Host loading feedback stays outside the game's canvas and native presentation. */
+/**
+ * Host loading feedback stays outside the game's canvas and native presentation.
+ * `essentialOnly` limits it to activities that would otherwise look like a frozen game.
+ */
 export function subscribePlayerActivity(
   changed: (state: {hidden: boolean; label: string}) => void,
+  {essentialOnly = false}: {essentialOnly?: boolean} = {},
 ): () => void {
   const status = {hidden: true, label: ''};
   let source: SourceActivity | undefined;
@@ -19,7 +23,10 @@ export function subscribePlayerActivity(
   let idleSince: number | null = null;
   const elapsed = (startedAt: number) => `${Math.floor((performance.now() - startedAt) / 1000)} s`;
   function render(): void {
-    const labels = activities.map(({label, startedAt}) => `${label}… ${elapsed(startedAt)}`);
+    const labels = activities.map(
+      ({label, startedAt, progress}) =>
+        `${label}${progress ? ` ${progress.done}/${progress.total}` : ''}… ${elapsed(startedAt)}`,
+    );
     if (source?.pending) {
       const locations = [source.pendingLocal ? 'device' : '', source.pendingRemote ? 'server' : '']
         .filter(Boolean)
@@ -81,12 +88,14 @@ export function subscribePlayerActivity(
       if (hide === undefined) hide = setTimeout(hideAfterIdle, 200);
     }
   }
-  const unsubscribeSource = subscribeSourceActivity((value) => {
-    source = value;
-    update();
-  });
+  const unsubscribeSource = essentialOnly
+    ? () => {}
+    : subscribeSourceActivity((value) => {
+        source = value;
+        update();
+      });
   const unsubscribeRuntime = subscribeRuntimeActivity((value) => {
-    activities = value;
+    activities = essentialOnly ? value.filter(({essential}) => essential) : value;
     update();
   });
   return () => {

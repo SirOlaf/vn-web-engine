@@ -4,15 +4,17 @@
   import {loadingIndicatorShown} from './loading-indicator.js';
   let state = {hidden: true, label: ''};
   let unsubscribe: (() => void) | undefined;
-  // Observe activity only while the indicator is enabled, so a hidden indicator keeps no timers.
+  // A hidden indicator still reports essential activities, such as a first-run font scan
+  // that would otherwise look like a frozen game; it keeps timers only while one is pending.
   const unsubscribeSetting = loadingIndicatorShown.subscribe((shown) => {
     unsubscribe?.();
-    unsubscribe = undefined;
     state = {hidden: true, label: ''};
-    if (shown)
-      unsubscribe = subscribePlayerActivity((value) => {
+    unsubscribe = subscribePlayerActivity(
+      (value) => {
         state = value;
-      });
+      },
+      {essentialOnly: !shown},
+    );
   });
   onDestroy(() => {
     unsubscribeSetting();

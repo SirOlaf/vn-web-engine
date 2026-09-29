@@ -66,7 +66,7 @@
     value={$loadingIndicatorShown ? 'shown' : 'hidden'}
     onchange={(event) => setLoadingIndicatorShown(event.currentTarget.value === 'shown')}
   >
-    <option value="hidden">Hidden</option><option value="shown">Shown</option>
+    <option value="hidden">Essential only</option><option value="shown">Shown</option>
   </select>
 </details>
 

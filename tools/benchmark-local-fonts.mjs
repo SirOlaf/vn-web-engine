@@ -141,7 +141,11 @@ async function pageMain({profile}, options) {
   for (let pass = 0; pass < options.iterations + 2; pass++) {
     blobCalls = sliceReads = readBytes = 0;
     const start = performance.now();
-    const catalog = await readBrowserLocalFontMetadata({queryLocalFonts: async () => records});
+    // The installed-font cache would turn later passes into cache hits; measure reads only.
+    const catalog = await readBrowserLocalFontMetadata(
+      {queryLocalFonts: async () => records},
+      {getMany: async () => new Map(), putMany: async () => {}},
+    );
     const elapsed = performance.now() - start;
     const found = new Set(catalog.map(({family}) => family));
     const missing = records.flatMap(({family}, index) => (found.has(family) ? [] : [index]));

@@ -1,6 +1,13 @@
 import {readBurikoFontData, type BurikoFontData} from './font-data.js';
 import type {SfntFontMetadata} from '../../../formats/sfnt.js';
-import {readBrowserLocalFontMetadata} from '../../../text/browser-local-fonts.js';
+import {
+  queryBrowserLocalFonts,
+  readBrowserLocalFontMetadata,
+  readBrowserLocalFontRecords,
+  type BrowserLocalFontMetadata,
+  type BrowserLocalFontRecord,
+} from '../../../text/browser-local-fonts.js';
+import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
 import {burikoCrtWideLower} from './crt-case.js';
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 
@@ -253,35 +260,106 @@ export class BurikoBrowserFontFace implements BurikoFontFace {
   }
 }
 
+/** Windows-bundled families that Japanese and English titles commonly request. */
+const commonInstalledFamilies = new Set(
+  [
+    'MS Gothic',
+    'MS PGothic',
+    'MS UI Gothic',
+    'MS Mincho',
+    'MS PMincho',
+    'Meiryo',
+    'Meiryo UI',
+    'Yu Gothic',
+    'Yu Gothic UI',
+    'Yu Mincho',
+    'Segoe UI',
+    'Arial',
+    'Times New Roman',
+    'Courier New',
+    'Tahoma',
+    'Verdana',
+    'Microsoft Sans Serif',
+  ].map((family) => family.toLowerCase()),
+);
+
+function installedFace({
+  data,
+  family,
+  fullName,
+  postscriptName,
+}: BrowserLocalFontMetadata): InstalledFace {
+  return {
+    data,
+    family,
+    fullName,
+    names: [
+      family,
+      fullName,
+      postscriptName,
+      ...data.names
+        .filter((name) => [1, 4, 6, 16, 21].includes(name.id) && name.unicode !== null)
+        .map((name) => name.unicode!),
+    ],
+  };
+}
+
 export class BurikoBrowserFonts implements BurikoFontProvider {
   private readonly resources = new Map<number, readonly LoadedFace[]>();
   private readonly localFaces = new Map<string, FontFace | null>();
   private nextResource = 1;
   private nextFamily = 1;
+  /** Complete installed catalog (native profile). */
   private installed: Promise<readonly InstalledFace[]> | null = null;
-  private installedFonts(): Promise<readonly InstalledFace[]> {
-    return (this.installed ??= readBrowserLocalFontMetadata().then((faces) =>
-      faces.map(({data, family, fullName, postscriptName}) => ({
-        data,
-        family,
-        fullName,
-        names: [
-          family,
-          fullName,
-          postscriptName,
-          ...data.names
-            .filter((name) => [1, 4, 6, 16, 21].includes(name.id) && name.unicode !== null)
-            .map((name) => name.unicode!),
-        ],
-      })),
+  private localRecords: Promise<readonly BrowserLocalFontRecord[]> | null = null;
+  private readonly recordFaces = new Map<
+    BrowserLocalFontRecord,
+    Promise<readonly InstalledFace[]>
+  >();
+  /**
+   * GDI answers EnumFontFamiliesEx from its resident font table; a browser can only rebuild it
+   * by reading every installed font file, which takes many seconds on hosts with large font
+   * collections. Browser optimized therefore reads only common system families and records
+   * whose browser-reported names equal the queried name. Other installed fonts are absent
+   * from enumeration and from pitch/charset queries, though local() rendering can still
+   * select them.
+   */
+  private installedFonts(name?: string): Promise<readonly InstalledFace[]> {
+    if (this.installed) return this.installed;
+    if (getRuntimeProfile() === 'browser-optimized') return this.selectedInstalledFonts(name);
+    return (this.installed = readBrowserLocalFontMetadata().then((faces) =>
+      faces.map(installedFace),
     ));
+  }
+  private async selectedInstalledFonts(name?: string): Promise<readonly InstalledFace[]> {
+    const records = await (this.localRecords ??= queryBrowserLocalFonts());
+    const folded = name?.toLowerCase();
+    const selected = records.filter(
+      (record) =>
+        commonInstalledFamilies.has(record.family.toLowerCase()) ||
+        (folded !== undefined &&
+          [record.family, record.fullName, record.postscriptName].some(
+            (candidate) => candidate.toLowerCase() === folded,
+          )),
+    );
+    const unread = selected.filter((record) => !this.recordFaces.has(record));
+    if (unread.length !== 0) {
+      const pending = readBrowserLocalFontRecords(unread);
+      unread.forEach((record, index) =>
+        this.recordFaces.set(
+          record,
+          pending.then((results) => results[index]!.map(installedFace)),
+        ),
+      );
+    }
+    return (await Promise.all(selected.map((record) => this.recordFaces.get(record)!))).flat();
   }
   async inspect(name: string, enumerableOnly = false): Promise<InstalledFace | LoadedFace | null> {
     const resource = this.candidates(name).find((face) => !enumerableOnly || face.enumerable);
     if (resource) return resource;
     const folded = name.toLowerCase();
     return (
-      (await this.installedFonts()).find((face) =>
+      (await this.installedFonts(name)).find((face) =>
         face.names.some((candidate) => candidate.toLowerCase() === folded),
       ) ?? null
     );
@@ -293,7 +371,7 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
     if (name.length > 31)
       throw new RangeError('Buriko font pitch query overwrites its native LOGFONT stack object');
     const available: (InstalledFace | LoadedFace)[] = [
-      ...(await this.installedFonts()),
+      ...(await this.installedFonts(name)),
       ...[...this.resources.values()].flat().filter((face) => face.enumerable),
     ];
     const folded = burikoCrtWideLower(name);
@@ -460,6 +538,7 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
     for (const token of this.resources.keys()) this.unloadResource(token);
     for (const face of this.localFaces.values()) if (face) fontSet().delete(face);
     this.localFaces.clear();
-    this.installed = null;
+    this.installed = this.localRecords = null;
+    this.recordFaces.clear();
   }
 }

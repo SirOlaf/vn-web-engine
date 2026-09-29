@@ -3,6 +3,11 @@ import {beginLocalRead} from '../core/source-activity.js';
 import {readSfntFontMetadata, type SfntFontMetadata} from '../formats/sfnt.js';
 import {beginRuntimeSpan} from '../platform/runtime-performance.js';
 import {getRuntimeProfile} from '../platform/runtime-profile.js';
+import {beginRuntimeActivity} from '../platform/runtime-activity.js';
+import {
+  IndexedDbLocalFontMetadataCache,
+  type LocalFontMetadataCache,
+} from './local-font-metadata-cache.js';
 import type {
   LocalFontMetadataRequest,
   LocalFontMetadataResponse,
@@ -86,11 +91,11 @@ class MetadataWorker {
   }
 }
 
+/** Parsed faces of one record; empty when the font is denied or unreadable. */
 async function readRecord(
   record: BrowserLocalFontRecord,
   parse: MetadataParser,
-): Promise<BrowserLocalFontMetadata[]> {
-  const faces: BrowserLocalFontMetadata[] = [];
+): Promise<readonly SfntFontMetadata[]> {
   try {
     // Metadata reads cover only the header, directory and needed tables (nearby tables
     // share one read; see readSfntFontMetadata). The complete font Blob stays local to
@@ -103,46 +108,79 @@ async function readRecord(
       finishBlob?.();
     }
     const finishMetadata = beginRuntimeSpan('text.font.local-metadata');
-    let data: readonly SfntFontMetadata[];
     try {
-      data = await parse(blob);
+      return await parse(blob);
     } finally {
       finishMetadata?.();
     }
-    for (const face of data)
-      faces.push({
-        data: face,
-        family: record.family,
-        fullName: record.fullName,
-        postscriptName: record.postscriptName,
-      });
   } catch {
     // Denied or unreadable installed faces are unavailable to this host.
+    return [];
   }
-  return faces;
 }
 
-/** Enumerate installed font metadata without retaining glyph data or rebuilding collection faces. */
-export async function readBrowserLocalFontMetadata(
+function withRecordNames(
+  record: BrowserLocalFontRecord,
+  faces: readonly SfntFontMetadata[],
+): BrowserLocalFontMetadata[] {
+  return faces.map((data) => ({
+    data,
+    family: record.family,
+    fullName: record.fullName,
+    postscriptName: record.postscriptName,
+  }));
+}
+
+/** Cache identity; the browser reports no file version without reading the Blob. */
+function recordKey({family, fullName, postscriptName}: BrowserLocalFontRecord): string {
+  return JSON.stringify([postscriptName, fullName, family]);
+}
+
+let defaultCache: LocalFontMetadataCache | undefined;
+
+/** Query installed font records; a missing API or a denied query yields no records. */
+export async function queryBrowserLocalFonts(
   host: BrowserLocalFontHost = globalThis as BrowserLocalFontHost,
-): Promise<readonly BrowserLocalFontMetadata[]> {
-  const concurrency = getRuntimeProfile() === 'browser-optimized' ? 4 : 1;
-  const finishCatalog = beginRuntimeSpan('text.font.local-catalog');
-  let metadataWorker: MetadataWorker | null = null;
+): Promise<readonly BrowserLocalFontRecord[]> {
+  if (!host.queryLocalFonts) return [];
+  const finishQuery = beginRuntimeSpan('text.font.local-query');
   try {
-    if (!host.queryLocalFonts) return [];
-    let records: readonly BrowserLocalFontRecord[];
-    try {
-      const finishQuery = beginRuntimeSpan('text.font.local-query');
-      try {
-        records = await host.queryLocalFonts();
-      } finally {
-        finishQuery?.();
-      }
-    } catch {
-      return [];
-    }
-    if (records.length !== 0 && typeof Worker !== 'undefined') {
+    return await host.queryLocalFonts();
+  } catch {
+    return [];
+  } finally {
+    finishQuery?.();
+  }
+}
+
+/**
+ * Read metadata for the given records, one result per record in record order. Unreadable
+ * records yield no faces; collections keep their face order. Cached records skip their
+ * Blob and table reads; newly readable records are added to the cache.
+ */
+export async function readBrowserLocalFontRecords(
+  records: readonly BrowserLocalFontRecord[],
+  concurrency: number = getRuntimeProfile() === 'browser-optimized' ? 4 : 1,
+  cache: LocalFontMetadataCache = (defaultCache ??= new IndexedDbLocalFontMetadataCache()),
+): Promise<BrowserLocalFontMetadata[][]> {
+  const finishCatalog = beginRuntimeSpan('text.font.local-catalog');
+  const results: BrowserLocalFontMetadata[][] = new Array(records.length);
+  const keys = records.map(recordKey);
+  const cached = await cache.getMany([...new Set(keys)]);
+  const unread: number[] = [];
+  records.forEach((record, index) => {
+    const faces = cached.get(keys[index]!);
+    if (faces) results[index] = withRecordNames(record, faces);
+    else unread.push(index);
+  });
+  let metadataWorker: MetadataWorker | null = null;
+  const finishActivity =
+    unread.length === 0
+      ? undefined
+      : beginRuntimeActivity('Processing installed fonts', {total: unread.length, essential: true});
+  const fresh = new Map<string, readonly SfntFontMetadata[]>();
+  try {
+    if (unread.length !== 0 && typeof Worker !== 'undefined') {
       try {
         metadataWorker = new MetadataWorker();
       } catch {
@@ -150,26 +188,46 @@ export async function readBrowserLocalFontMetadata(
       }
     }
     const parse = metadataWorker?.parse ?? parseInThread;
-    if (concurrency === 1) {
-      const faces: BrowserLocalFontMetadata[] = [];
-      for (const record of records)
-        for (const face of await readRecord(record, parse)) faces.push(face);
-      return faces;
+    const read = async (index: number): Promise<void> => {
+      const record = records[index]!;
+      const faces = await readRecord(record, parse);
+      // Failures may be transient permission or I/O errors; only parsed fonts are kept.
+      if (faces.length !== 0) fresh.set(keys[index]!, faces);
+      results[index] = withRecordNames(record, faces);
+      finishActivity?.advance();
+    };
+    if (concurrency === 1) for (const index of unread) await read(index);
+    else {
+      // Reads may finish out of order; results stay indexed by record. Limit live
+      // Blob/table-read jobs to bound memory and I/O.
+      let next = 0;
+      const job = async (): Promise<void> => {
+        while (next < unread.length) await read(unread[next++]!);
+      };
+      await Promise.all(Array.from({length: Math.min(concurrency, unread.length)}, job));
     }
-    // Keep query order and each collection's face order even if reads finish
-    // out of order. Limit live Blob/table-read jobs to bound memory and I/O.
-    const results: BrowserLocalFontMetadata[][] = new Array(records.length);
-    let next = 0;
-    async function job(): Promise<void> {
-      while (next < records.length) {
-        const index = next++;
-        results[index] = await readRecord(records[index]!, parse);
-      }
-    }
-    await Promise.all(Array.from({length: Math.min(concurrency, records.length)}, job));
-    return results.flat();
+    await cache.putMany(fresh);
+    return results;
   } finally {
     metadataWorker?.close();
-    finishCatalog?.({concurrency, worker: metadataWorker !== null});
+    finishActivity?.();
+    finishCatalog?.({
+      concurrency,
+      records: records.length,
+      cached: records.length - unread.length,
+      worker: metadataWorker !== null,
+    });
   }
+}
+
+/** Enumerate installed font metadata without retaining glyph data or rebuilding collection faces. */
+export async function readBrowserLocalFontMetadata(
+  host: BrowserLocalFontHost = globalThis as BrowserLocalFontHost,
+  cache?: LocalFontMetadataCache,
+): Promise<readonly BrowserLocalFontMetadata[]> {
+  // Snapshot the job limit before the query; a policy change while it is pending
+  // applies to the next catalog.
+  const concurrency = getRuntimeProfile() === 'browser-optimized' ? 4 : 1;
+  const records = await queryBrowserLocalFonts(host);
+  return (await readBrowserLocalFontRecords(records, concurrency, cache)).flat();
 }
