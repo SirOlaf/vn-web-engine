@@ -247,7 +247,6 @@ export class RScriptGame {
       palette,
       textSize: apini.u16(494),
       textColor: apini.u32(484),
-      shadow: apini.u16(500) !== 0,
       answered: () => this.choiceAnswered(),
     });
     this.root.add(this.choice, 100);

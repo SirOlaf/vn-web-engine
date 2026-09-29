@@ -12,8 +12,8 @@ export interface ChoiceEnvironment {
   /** Choice text defaults from the APINI block: palette (+440), size (+494), colour (+484). */
   readonly palette: readonly number[];
   readonly textSize: number;
+  /** 0xRRGGBB, stored as the text colour itself (sub_40FA00), not a palette index. */
   readonly textColor: number;
-  readonly shadow: boolean;
   /** An answer was clicked while the window accepted input (0x41EDF0). */
   answered(): void;
 }
@@ -61,9 +61,10 @@ export class RScriptChoiceWindow extends RScriptContainer {
     return {
       face: 0,
       size: env.textSize,
-      color: env.palette[env.textColor] ?? 0xffffff,
+      color: env.textColor,
       palette: env.palette,
-      shadow: env.shadow,
+      // The plain text object (0x44BEE0) keeps its default unshadowed glyph style.
+      shadow: false,
       speed: 0,
       lineSpacing: 0,
       charSpacing: 0,
@@ -75,6 +76,7 @@ export class RScriptChoiceWindow extends RScriptContainer {
       rubyFace: 0,
       rubySize: 12,
       rubyRaise: 0,
+      baselineAtBottom: true,
     };
   }
 
