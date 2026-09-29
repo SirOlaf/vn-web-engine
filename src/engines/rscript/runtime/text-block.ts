@@ -1,6 +1,6 @@
 import {decodeCp932, isCp932LeadByte} from '../text.js';
 import {compositeOver} from '../graphics/blend.js';
-import {colorrefPixel, createSurface, type RScriptSurface} from '../graphics/pixels.js';
+import {createSurface, type RScriptSurface} from '../graphics/pixels.js';
 import {RScriptContainer, RScriptSprite} from '../graphics/sprite.js';
 
 /** Rasterized glyph coverage in GetGlyphOutline GGO_GRAY8 levels (0..64). */
@@ -27,7 +27,7 @@ export interface GlyphRasterizer {
   ): GlyphCoverage;
 }
 
-/** Colours selected by `^C` letters (0x459EC0), as COLORREF values. */
+/** Colours selected by `^C` letters (0x459EC0), as 0xRRGGBB pixels. */
 const NAMED_COLORS: Readonly<Record<string, number>> = {
   B: 0x2020ff,
   G: 0x7fdfa5,
@@ -59,8 +59,9 @@ const PAIRS = new Set([0x213f, 0x3f21, 0x2121]);
 export interface TextStyle {
   face: number;
   size: number;
+  /** 0xRRGGBB, as the text object stores it (+412). */
   color: number;
-  /** Palette for `^C0`..`^C9` (the APINI +440 COLORREFs). */
+  /** Palette for `^C0`..`^C9` (the APINI +440 colours). */
   palette: readonly number[];
   /** Drop shadow renderer selected by text style +444 (0x456C00). */
   shadow: boolean;
@@ -163,7 +164,8 @@ export class RScriptTextBlock extends RScriptContainer {
     const pair = PAIRS.has(code);
     const width = code < 0x100 ? size >> 1 : size;
     const cell = createSurface(width, size, 0xff000000);
-    const pixel = colorrefPixel(color) & 0xffffff;
+    // sub_442390 fills the glyph with the colour as a raw 0xRRGGBB pixel, not a COLORREF.
+    const pixel = color & 0xffffff;
     const draw = (coverage: GlyphCoverage, offset: number): void => {
       for (let y = 0; y < Math.min(coverage.height, size); y++)
         for (let x = 0; x < coverage.width && x + offset < width; x++) {
