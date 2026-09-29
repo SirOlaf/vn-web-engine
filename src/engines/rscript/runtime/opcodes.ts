@@ -346,7 +346,11 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
       await game.rebuild();
       game.display.refresh();
     }
-    if (flags.skip && !skipUnread && unread) game.setSkip(false);
+    // sub_426590 clears the held key and the running skip, so this page stops for a click.
+    if (flags.skip && !skipUnread && unread) {
+      game.setSkip(false);
+      flags.skip = false;
+    }
     memory.readText.add(script, text);
     snapshot();
     const mode = memory.sceneWord(Scene.messageMode);
