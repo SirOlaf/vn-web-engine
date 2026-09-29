@@ -304,7 +304,15 @@ The Wasm run stage stores runs of up to 32 bytes with two 16-byte vector stores 
 - **Diagnostics.** `buriko.decode.dsc.worker` and `buriko.decode.cbg-legacy.worker` time the round trip. `.worker-applied` records 1 per worker result and 0 per fallback. `buriko.decode.cbg-legacy.publish` covers writes into caller storage.
 - **A/B switch.** `?decode-worker=0` keeps all decoding on the main thread.
 
-In a 6× throttled Aokana slot 3 capture, main-thread legacy decoding fell from 719 ms to zero. The eight decodes took 129 ms of worker round trips. Main-thread work that remains on the loading path is copying: the codec worker's all-initialized mask for direct images, the preload cache's validity scan and copy of each decoded image (`bitmap-preload-cache.ts`), and repeated 34 MB raw loose-file reads, each copied by `decodeBurikoResource`.
+In a 6× throttled Aokana slot 3 capture, main-thread legacy decoding fell from 719 ms to zero. The eight decodes took 129 ms of worker round trips.
+
+Three copies on the loading path are now skipped in both profiles. None of them changes VM-visible bytes or fault checks:
+
+- **No mask for private legacy output.** Private legacy CompressedBG output is written completely, so `decodeBurikoResource` no longer attaches an all-ones validity mask. An absent mask already means fully defined. This saves a fill of the image size, about 23 MB per Aokana sprite sheet, and every later zero-byte scan of it.
+- **Preload adoption.** `RegisterBitmapProcess` releases the decoder's private output right after preloading it. When no import ran first, the preload cache now adopts that buffer (`insertPointer(..., owned)`) instead of copying it. Masked sources are still validated before adoption. Slot 3's eight preload inserts fell from 183 ms to 0.3 ms (`buriko.bitmap.register-cache`).
+- **Owned raw reads.** Aokana's script loads `system.arc`, a 34 MB archive, whole as a loose resource, eight times in the slot 3 window. `looseFile` passes ownership of its fresh whole-file read (`readsFreshBytes`, true for blob-backed sources), so raw output returns that array instead of copying it.
+
+Importing a preloaded image into a bitmap still copies it, because the resource cache adopts the same bytes afterwards (`bitmap-loading.ts`). Native keeps both copies too.
 
 ### Glyph rasterization
 

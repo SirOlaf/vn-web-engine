@@ -60,8 +60,16 @@ export class BurikoRegisterBitmapProcess extends BurikoDataDecodeProcess {
         if (this.name !== null) {
           const finishCache = beginRuntimeSpan('buriko.bitmap.register-cache');
           try {
+            // The decoder's private output is released below without another access, so the
+            // preload cache can adopt it unless an import may still reference it.
             if ((this.preloadFlag | 0) !== 0)
-              this.registration.preload(this.archive, this.name, source, worker.result);
+              this.registration.preload(
+                this.archive,
+                this.name,
+                source,
+                worker.result,
+                (this.index | 0) === -1,
+              );
             else
               this.registration.cache(
                 this.archive === null ? null : hostPointer(this.archive),

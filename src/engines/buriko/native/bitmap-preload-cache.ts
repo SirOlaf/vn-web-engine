@@ -66,12 +66,18 @@ export class BurikoBitmapPreloadCache {
     return this.insertPointer(archive, name, hostPointer(bytes), bytes.length);
   }
 
-  /** Duplicate lookup precedes all payload consumption, including validity checks. */
+  /**
+   * Duplicate lookup precedes all payload consumption, including validity checks. `owned`
+   * adopts the source bytes instead of copying them; the caller must hold the only reference
+   * to that private allocation and release it without further access, as native does after
+   * copying.
+   */
   insertPointer(
     archive: Uint8Array | null,
     name: Uint8Array,
     source: BurikoCodecPointer | null,
     count: number,
+    owned = false,
   ): 0 | 1 {
     if (this.find(archive, name) >= 0) return 0;
     const archiveKey = archive === null ? null : this.key(archive),
@@ -84,7 +90,9 @@ export class BurikoBitmapPreloadCache {
       bytes:
         count === 0
           ? new Uint8Array(0)
-          : source!.view().slice(source!.offset, source!.offset + count),
+          : owned
+            ? source!.view().subarray(source!.offset, source!.offset + count)
+            : source!.view().slice(source!.offset, source!.offset + count),
     });
     return 1;
   }

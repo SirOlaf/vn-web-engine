@@ -37,6 +37,11 @@ export class BlobSource implements ByteSource {
     }
   }
 }
+/** True when every read returns a new array that no other holder references. */
+export function readsFreshBytes(source: ByteSource): boolean {
+  while (source instanceof SliceSource) source = source.source;
+  return source instanceof BlobSource;
+}
 export class HttpSource implements ByteSource {
   constructor(
     readonly url: string,

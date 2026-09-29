@@ -51,11 +51,13 @@ export class BurikoBitmapRegistration {
     return 0;
   }
 
+  /** `owned` transfers a private source the caller releases untouched afterwards. */
   preload(
     archive: Uint8Array | null,
     name: Uint8Array,
     source: BurikoCodecPointer,
     count: number,
+    owned = false,
   ): 0 | 1 {
     if (
       burikoPackedBitmapFormat(
@@ -64,7 +66,7 @@ export class BurikoBitmapRegistration {
       ) === -1
     )
       return 1;
-    this.loading.preloaded.insertPointer(archive, name, source, count);
+    this.loading.preloaded.insertPointer(archive, name, source, count, owned);
     return 0;
   }
 }

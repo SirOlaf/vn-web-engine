@@ -1,4 +1,5 @@
 import {FileError} from '../../../platform/filesystem.js';
+import {readsFreshBytes} from '../../../core/source.js';
 import type {BurikoBpModuleResourceSource} from './types.js';
 import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {BurikoProgramArchives, type BurikoArchiveResource} from './program-archives.js';
@@ -153,6 +154,7 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
       throw error;
     }
     if (stored.length !== size) return {result: 5, bytes: null};
+    // A fresh whole-file read has no other holder, so raw output need not copy it again.
     const decoded = await decodeBurikoResource(
       stored,
       this.mainProcessing,
@@ -161,6 +163,8 @@ export class BurikoProgramResources implements BurikoBpModuleResourceSource {
       destination,
       undefined,
       actor,
+      undefined,
+      readsFreshBytes(opened.source),
     );
     return {
       result: decoded.status,

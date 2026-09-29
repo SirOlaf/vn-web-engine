@@ -95,6 +95,8 @@ export async function decodeBurikoResource(
   nativeInput?: BurikoNativeResourceInput,
   actor = mainProcessing.allocator.currentActor,
   beforeResume?: () => void,
+  /** The caller hands over an owned `input` array; raw output may return it uncopied. */
+  ownsInput = false,
 ): Promise<BurikoResourceDecodeResult> {
   beforeResume?.();
   const source = borrowedBytes(input),
@@ -224,13 +226,13 @@ export async function decodeBurikoResource(
         }
         decoded = caller === undefined ? packedImage(image) : caller.bytes.subarray(0, extent);
         privateOutput = caller === undefined;
-        initialized =
-          caller?.initialized.subarray(0, decoded.length) ??
-          (directImage ? new Uint8Array(decoded.length).fill(1) : null);
+        // Private legacy output is written completely, so it carries no validity mask; an
+        // absent mask already means fully defined and spares a fill and every later scan.
+        initialized = caller?.initialized.subarray(0, decoded.length) ?? null;
         initializedLength = decoded.length;
       }
       decodedSize = decoded.length;
-    }
+    } else privateOutput = ownsInput && source.bytes === stored;
   } catch (error) {
     if (
       error instanceof BurikoResourceCodecException ||
@@ -260,13 +262,13 @@ export async function decodeBurikoResource(
   }
   if (directImage) {
     if (destination === null)
-      return {status: 0, bytes: decoded.subarray(0, length), initialized: initialized!};
+      return {status: 0, bytes: decoded.subarray(0, length), initialized: initialized ?? undefined};
     return {
       status: 0,
       get bytes() {
         return destination!.bytes.subarray(0, length);
       },
-      initialized: initialized!,
+      initialized: initialized ?? undefined,
     };
   }
   if (offset + length > initializedLength) {
