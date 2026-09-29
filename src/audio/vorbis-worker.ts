@@ -1,18 +1,21 @@
 import {decodeVorbisFile, VorbisDecodeError} from './vorbis-codec.js';
 import type {VorbisDecodeResponse} from './vorbis-decoder.js';
+import {serveWorkerPool} from '../platform/worker-pool.js';
 
-declare const self: {
-  onmessage: ((event: MessageEvent<Uint8Array>) => void) | null;
-  postMessage(response: VorbisDecodeResponse, transfer?: Transferable[]): void;
-};
-self.onmessage = async ({data}) => {
+// Pool workers stay alive between jobs, so libvorbis loads and compiles once per worker.
+serveWorkerPool<Uint8Array, VorbisDecodeResponse>(async (data) => {
   try {
     const pcm = await decodeVorbisFile(data);
-    self.postMessage({pcm}, [...new Set(pcm.planes.map((plane) => plane.buffer as ArrayBuffer))]);
+    return {
+      response: {pcm},
+      transfer: [...new Set(pcm.planes.map((plane) => plane.buffer as ArrayBuffer))],
+    };
   } catch (error) {
-    self.postMessage({
-      error: error instanceof Error ? error.message : String(error),
-      encodedDataError: error instanceof VorbisDecodeError,
-    });
+    return {
+      response: {
+        error: error instanceof Error ? error.message : String(error),
+        encodedDataError: error instanceof VorbisDecodeError,
+      },
+    };
   }
-};
+});

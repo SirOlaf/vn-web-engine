@@ -1,31 +1,29 @@
 import {decodeVorbisFile, VorbisDecodeError, type VorbisPcm} from './vorbis-codec.js';
+import {WorkerPool} from '../platform/worker-pool.js';
 export {VorbisDecodeError};
 export type {VorbisPcm};
 
 export type VorbisDecodeResponse = {pcm: VorbisPcm} | {error: string; encodedDataError: boolean};
 
-/** Each job owns a decoder worker; no browser codec, device sample rate or audio graph. */
+let pool: WorkerPool<Uint8Array, VorbisDecodeResponse> | null = null;
+
+/**
+ * Decodes on reused module workers; no browser codec, device sample rate or audio graph.
+ * A fresh worker per job reloaded and recompiled libvorbis each time, which took longer
+ * than decoding a short voice line. Without workers, decoding runs in-thread.
+ */
 export async function decodeVorbis(bytes: Uint8Array): Promise<VorbisPcm> {
   if (typeof Worker === 'undefined') return decodeVorbisFile(bytes);
-  const worker = new Worker(new URL('./vorbis-worker.js', import.meta.url), {type: 'module'});
-  try {
-    return await new Promise<VorbisPcm>((resolve, reject) => {
-      worker.onerror = (event) => {
-        event.preventDefault();
-        reject(new Error(event.message || 'Vorbis decoder worker failed'));
-      };
-      worker.onmessageerror = () =>
-        reject(new Error('Vorbis decoder result could not be transferred'));
-      worker.onmessage = ({data}: MessageEvent<VorbisDecodeResponse>) => {
-        if ('pcm' in data) resolve(data.pcm);
-        else
-          reject(data.encodedDataError ? new VorbisDecodeError(data.error) : new Error(data.error));
-      };
-      // Keep the caller's encoded bytes intact, as with other asynchronous decoders.
-      const input = bytes.slice();
-      worker.postMessage(input, [input.buffer]);
-    });
-  } finally {
-    worker.terminate();
+  pool ??= new WorkerPool(
+    () => new Worker(new URL('./vorbis-worker.js', import.meta.url), {type: 'module'}),
+  );
+  // Keep the caller's encoded bytes intact, as with other asynchronous decoders.
+  const input = bytes.slice();
+  const data = await pool.run(input, [input.buffer]);
+  if (data === undefined) {
+    if (pool.available) throw new Error('Vorbis decoder worker failed');
+    return decodeVorbisFile(bytes);
   }
+  if ('pcm' in data) return data.pcm;
+  throw data.encodedDataError ? new VorbisDecodeError(data.error) : new Error(data.error);
 }
