@@ -1,6 +1,7 @@
 import {decodeCp932} from '../text.js';
 import {LayerRecord, Scene, type RScriptMemory} from '../memory.js';
 import type {RScriptImages} from '../images.js';
+import {filterLayerImage} from '../graphics/filters.js';
 import {colorrefPixel, createSurface, type RScriptSurface} from '../graphics/pixels.js';
 import {RScriptContainer, RScriptSprite, type RScriptPoint} from '../graphics/sprite.js';
 import {FramePlayer, type AnimationFrame, type FrameAnimation} from './animation.js';
@@ -80,8 +81,9 @@ class OverlayFrames extends RScriptSprite {
 /**
  * One of the hundred script layers (0x4061E0). Its state lives in the scene record so that
  * saves and nested calls restore it (0x407480); the sprites here are the visible objects.
- * Kind 2 layers play LWG frames sequenced by an FSC script. Kind 1 adds image filters in the
- * native engine; it draws like kind 0 here.
+ * Kind 2 layers play LWG frames sequenced by an FSC script; kinds 0 and 1 apply the colour
+ * effect named by the load flags. Kind 1 also mirrors and scales in the native engine,
+ * which the supported titles do not use.
  */
 export class RScriptLayer extends RScriptContainer {
   readonly main = new RScriptSprite();
@@ -206,7 +208,11 @@ export class RScriptLayer extends RScriptContainer {
         if (!animation) this.env.diagnostic(`missing animation ${this.imagePath(image)}`);
         player = animation ? new FramePlayer(animation) : null;
         surface = animation?.frames[0]?.surface ?? null;
-      } else if (image) surface = await this.fetch(image);
+      } else if (image) {
+        surface = await this.fetch(image);
+        // sub_40C870 / sub_40C2F0: kinds 0 and 1 filter the image by its load flags.
+        if (surface) surface = filterLayerImage(surface, this.uword(LayerRecord.loadFlags));
+      }
     }
     if (generation !== this.loadGeneration) return false;
     this.player = player;

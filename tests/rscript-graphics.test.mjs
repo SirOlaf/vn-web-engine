@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {blendSprite} from '../dist/engines/rscript/graphics/blend.js';
+import {filterLayerImage} from '../dist/engines/rscript/graphics/filters.js';
 import {createSurface} from '../dist/engines/rscript/graphics/pixels.js';
 import {RScriptScreen, RScriptSprite} from '../dist/engines/rscript/graphics/sprite.js';
 
@@ -71,4 +72,23 @@ test('RScript sprite trees draw in priority order and redraw only dirty areas', 
     [...screen.surface.data.subarray(0, 4)],
     [0x0000ff, 0x0000ff, 0x0000ff, 0x0000ff],
   );
+});
+
+test('RScript layer load filters recolour and keep transparency', () => {
+  // B, G, R and a half transparency byte.
+  const source = {width: 1, height: 1, data: Uint32Array.of(0x80_30_60_90)};
+  const filtered = (flags) => filterLayerImage(source, flags).data[0] >>> 0;
+  assert.equal(filtered(1), 0x80_00_00_00, 'silhouette');
+  assert.equal(filtered(2), 0x80_cf_9f_6f, 'negative');
+  assert.equal(filtered(3), 0x80_60_60_60, 'grey: (0x90 + 0x60 + 0x30) / 3');
+  // Level 128 brightens by del row 1 and 127 darkens by add row 0: both nearly neutral.
+  const neutral = {width: 1, height: 1, data: Uint32Array.of(0x00_80_80_80)};
+  const sepia = filterLayerImage(neutral, 4).data[0] >>> 0;
+  // A mid grey takes the tint colour almost unchanged (0x8B4513).
+  assert.ok(Math.abs(((sepia >>> 16) & 0xff) - 0x8b) <= 1);
+  assert.ok(Math.abs(((sepia >>> 8) & 0xff) - 0x45) <= 1);
+  assert.ok(Math.abs((sepia & 0xff) - 0x13) <= 1);
+  // Unknown flags leave the shared surface untouched.
+  assert.equal(filterLayerImage(source, 0), source);
+  assert.equal(source.data[0] >>> 0, 0x80_30_60_90);
 });
