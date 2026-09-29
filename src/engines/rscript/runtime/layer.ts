@@ -104,7 +104,12 @@ export class RScriptLayer extends RScriptContainer {
     this.add(this.special, 0);
     this.add(this.main, 1);
     this.main.onPress = () => this.pressed();
-    this.main.onHover = (_, inside) => (inside ? this.hoverIn() : this.hoverOut());
+    // sub_442B90 ignores disabled sprites, so a button disabled by its press keeps its hover
+    // images when the pointer leaves (sub_442D00 clears only the hover flag).
+    this.main.onHover = (_, inside) => {
+      if (inside) this.hoverIn();
+      else if (this.main.interactive) this.hoverOut();
+    };
   }
 
   get record(): number {
