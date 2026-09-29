@@ -26,6 +26,7 @@ import {setBurikoBpWasmEnabled} from '../../src/engines/buriko/bp/wasm-core.js';
 import {setBurikoBitmapResidencyEnabled} from '../../src/engines/buriko/native/bitmap-resident.js';
 import {setBurikoGpuPresentationEnabled} from '../../src/engines/buriko/native/display-gpu-presenter.js';
 import {setBurikoGpuCompositingMode} from '../../src/engines/buriko/native/display-gpu-compositor.js';
+import {setBurikoDecodeWorkersEnabled} from '../../src/engines/buriko/native/resource-decode-offload.js';
 import {
   BurikoBrowserSpeakerBackend,
   BurikoMemorySpeakerBackend,
@@ -376,6 +377,10 @@ async function launch(
     // `?gpu-compose=0` keeps software compositing while WebGL still presents.
     const compose = new URLSearchParams(location.search).get('gpu-compose');
     setBurikoGpuCompositingMode(compose === '0' ? 'off' : compose === 'verify' ? 'verify' : 'on');
+    // `?decode-worker=0` keeps DSC and legacy CompressedBG decoding on the main thread.
+    setBurikoDecodeWorkersEnabled(
+      new URLSearchParams(location.search).get('decode-worker') !== '0',
+    );
     const memory = new BurikoBpMemory(new Uint8Array(0x10000), graph.engineVersion.bpAbi);
     const data = new BurikoProductionDataOwners(graph, memory);
     const diagnostics = new BurikoBpDiagnostics((notice) => {

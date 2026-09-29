@@ -56,8 +56,9 @@ export function decodeCompressedBgV1(bytes: Uint8Array): BurikoImage {
 export function decodeCompressedBgLegacy(
   bytes: Uint8Array,
   destination?: BurikoImageDestination,
+  accelerator?: CompressedBgLegacyAccelerator,
 ): BurikoImage {
-  return finishTask(decodeLegacy(bytes, false, destination));
+  return finishTask(decodeLegacy(bytes, false, destination, accelerator));
 }
 
 /** The same legacy worker, with bounded steps and borrowed-storage validation on resumption. */
@@ -459,6 +460,77 @@ function legacyImage(
     pixels,
   };
 }
+/** A legacy image decoded from a snapshot of its source, outside the caller's storage. */
+export interface CompressedBgLegacyDecoded {
+  /** Source bytes 16–32, the header published after checksum validation. */
+  readonly sourceHeader: Uint8Array;
+  /** The final 16-byte header followed by packed pixels, as `packedImage` returns them. */
+  readonly packed: Uint8Array;
+}
+
+const PUBLISH_BYTES_PER_STEP = 1024 * 1024;
+
+/**
+ * Publishes a snapshot-decoded image in the reference stages' order: the source header, then
+ * rows whose pixels precede their initialization, then the 24-bit header rewrite. Destination
+ * views are read afresh after every yield. Rows are reconstructed from the snapshot, so host
+ * writes to published rows do not feed later rows; callers must keep overlapping pixel and
+ * initialization views, which the reference predictor reads back, on the reference path.
+ * Without a destination the packed buffer is returned as the image's header and pixel views.
+ */
+export function publishCompressedBgLegacyAsync(
+  decoded: CompressedBgLegacyDecoded,
+  destination?: BurikoImageDestination,
+  beforeResume?: () => void,
+): Promise<BurikoImage> {
+  return runCooperativeTask(publishLegacy(decoded, destination), beforeResume);
+}
+
+function* publishLegacy(
+  {sourceHeader, packed}: CompressedBgLegacyDecoded,
+  destination: BurikoImageDestination | undefined,
+): CooperativeTask<BurikoImage> {
+  const data = view(sourceHeader),
+    width = data.getUint16(0, true),
+    height = data.getUint16(2, true),
+    depth = data.getUint16(4, true),
+    stride = width * (depth === 24 ? 4 : depth >>> 3),
+    extent = 16 + stride * height;
+  checkRange(packed.length, 0, extent);
+  let header = packed.subarray(0, 16),
+    pixels = packed.subarray(16, extent);
+  if (destination !== undefined) {
+    checkRange(destination.bytes.length, 0, extent);
+    checkRange(destination.initialized.length, 0, extent);
+    destination.bytes.set(sourceHeader);
+    destination.initialized.fill(1, 0, 16);
+    const rowsPerStep = Math.max(1, Math.floor(PUBLISH_BYTES_PER_STEP / stride));
+    for (let y = 0; y < height;) {
+      const end = Math.min(height, y + rowsPerStep),
+        first = 16 + y * stride,
+        last = 16 + end * stride;
+      destination.bytes.set(packed.subarray(first, last), first);
+      destination.initialized.fill(1, first, last);
+      y = end;
+      yield;
+    }
+    header = destination.bytes.subarray(0, 16);
+    pixels = destination.bytes.subarray(16, extent);
+    if (depth === 24) {
+      view(header).setUint16(4, 32, true);
+      view(header).setUint16(8, 7, true);
+    }
+  }
+  return {
+    width,
+    height,
+    bitDepth: view(header).getUint16(4, true),
+    flags: view(header).getUint16(8, true),
+    header,
+    pixels,
+  };
+}
+
 /** Raw BURIKO image buffers have a 16-byte header followed by packed pixels. */
 export function readBurikoImage(bytes: Uint8Array): BurikoImage {
   checkRange(bytes.length, 0, 16);
@@ -476,7 +548,15 @@ export function readBurikoImage(bytes: Uint8Array): BurikoImage {
     throw new Error('Not a packed BURIKO image');
   return {width, height, bitDepth, flags, header: bytes.slice(0, 16), pixels: bytes.subarray(16)};
 }
+/** A header stored immediately before its pixels is returned as one view of that storage. */
 export function packedImage(image: BurikoImage): Uint8Array {
+  const {header, pixels} = image;
+  if (
+    header.length === 16 &&
+    header.buffer === pixels.buffer &&
+    header.byteOffset + 16 === pixels.byteOffset
+  )
+    return new Uint8Array(header.buffer, header.byteOffset, 16 + pixels.length);
   const bytes = new Uint8Array(16 + image.pixels.length);
   bytes.set(image.header);
   bytes.set(image.pixels, 16);

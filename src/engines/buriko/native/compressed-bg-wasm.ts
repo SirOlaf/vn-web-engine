@@ -1,6 +1,7 @@
 import {instantiateEmbeddedWasm} from '../../../core/wasm.js';
 import type {CooperativeTask} from '../../../core/cooperative-task.js';
 import {
+  decodeCompressedBgLegacy,
   decodeCompressedBgLegacyAsync,
   legacyImageHeader,
   type BurikoImage,
@@ -55,6 +56,8 @@ const CBG_WINDOW_BYTES = 128 * 1024;
 const CBG_SYMBOLS_PER_STEP = 128 * 1024;
 const CBG_RUN_BYTES_PER_STEP = 512 * 1024;
 const CBG_PREDICTOR_BYTES_PER_STEP = 256 * 1024;
+/** Readable and writable bytes the run stage may touch past its input and output. */
+const CBG_RUN_SLACK = 32;
 const CBG_WASM_MAX_WORKSPACE = 256 * 1024 * 1024;
 /** An idle instance keeps its grown memory; larger ones are left to the collector. */
 const CBG_WASM_RETAINED_MEMORY = 32 * 1024 * 1024;
@@ -89,6 +92,11 @@ export function decodeBurikoCompressedBgLegacyAsync(
   return decodeCompressedBgLegacyAsync(bytes, destination, beforeResume, decodeLegacyStagesWasm);
 }
 
+/** Synchronous `decodeBurikoCompressedBgLegacyAsync` into an owned image, for decode workers. */
+export function decodeBurikoCompressedBgLegacy(bytes: Uint8Array): BurikoImage {
+  return decodeCompressedBgLegacy(bytes, undefined, decodeLegacyStagesWasm);
+}
+
 function overlaps(first: Uint8Array, second: Uint8Array): boolean {
   return (
     first.buffer === second.buffer &&
@@ -121,15 +129,17 @@ function* decodeLegacyStagesWasm(
     base = 16,
     align = (value: number) => Math.ceil(value / 16) * 16;
   // Layout, from the aligned heap base: tables, children, window (eight padding bytes),
-  // intermediate (slack for four-symbol stores), residuals (a masked fourth byte is read after
-  // the last 24-bit residual), and expanded 24-bit pixels. 8- and 32-bit pixels replace residuals.
+  // intermediate and residuals (each with the run stage's thirty-two bytes of slack, which also
+  // covers four-symbol stores and the masked fourth byte read after the last 24-bit residual),
+  // and expanded 24-bit pixels. 8- and 32-bit pixels replace residuals.
   const tablesOffset = 0,
     childrenOffset = tablesOffset + 7 * (1 << prefixBits),
     windowOffset = childrenOffset + 2048,
     intermediateOffset = windowOffset + align(CBG_WINDOW_BYTES + 8),
-    residualsOffset = intermediateOffset + align(intermediateSize + 4),
-    outputOffset = depth === 24 ? residualsOffset + align(size + 1) : residualsOffset,
-    workspace = (depth === 24 ? outputOffset + outputSize : residualsOffset + size) + base;
+    residualsOffset = intermediateOffset + align(intermediateSize + CBG_RUN_SLACK),
+    outputOffset = depth === 24 ? residualsOffset + align(size + CBG_RUN_SLACK) : residualsOffset,
+    workspace =
+      (depth === 24 ? outputOffset + outputSize : residualsOffset + size + CBG_RUN_SLACK) + base;
   if (workspace > CBG_WASM_MAX_WORKSPACE) {
     recordRuntimeMetric('buriko.decode.cbg.wasm-applied', 0);
     return null;

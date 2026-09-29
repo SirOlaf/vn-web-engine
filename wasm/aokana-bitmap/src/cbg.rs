@@ -8,6 +8,8 @@
 //! updated state is returned or left in `STATE`; state never survives in this
 //! module between host calls. Host-owned pointers live in a dedicated instance.
 
+use core::arch::wasm32::*;
+
 const ABSENT: u32 = 511;
 const ABSENT_CHILD: u16 = 0xffff;
 /// Bits kept unread at the end of a nonfinal window: a sixteen-bit prefix plus
@@ -211,8 +213,13 @@ pub unsafe extern "C" fn cbg_entropy(
     i as i32
 }
 
+/// Readable bytes after `input_length` and writable bytes after `size` that
+/// `cbg_runs` may touch; the written slack holds no meaningful output.
+pub const RUN_SLACK: usize = 32;
+
 /// Expands alternating literal and zero runs of `input` into `output` (`size`
-/// bytes), resuming at `cursor`, `written` and `literal`. A step ends once it
+/// bytes), resuming at `cursor`, `written` and `literal`. Both buffers carry
+/// `RUN_SLACK` bytes of slack. A step ends once it
 /// has consumed and written `budget` bytes combined. Returns 0 when the input
 /// is exhausted and exactly fills the output, 1 with the resumed state in
 /// `STATE[0..3]`, or `CBG_FAILED` for any varint, range or size error.
@@ -259,12 +266,23 @@ pub unsafe extern "C" fn cbg_runs(
             return CBG_FAILED;
         }
         let count = count as usize;
+        // Most runs are a few bytes long. Short runs store thirty-two bytes and let
+        // the next run overwrite the excess, avoiding a bulk-memory call per run.
         if literal {
             if count > input_length - cursor {
                 return CBG_FAILED;
             }
-            core::ptr::copy_nonoverlapping(input.add(cursor), output.add(p), count);
+            if count <= RUN_SLACK {
+                let (from, to) = (input.add(cursor), output.add(p));
+                v128_store(to as *mut v128, v128_load(from as *const v128));
+                v128_store(to.add(16) as *mut v128, v128_load(from.add(16) as *const v128));
+            } else {
+                core::ptr::copy_nonoverlapping(input.add(cursor), output.add(p), count);
+            }
             cursor += count;
+        } else if count <= RUN_SLACK {
+            v128_store(output.add(p) as *mut v128, u64x2_splat(0));
+            v128_store(output.add(p + 16) as *mut v128, u64x2_splat(0));
         } else {
             core::ptr::write_bytes(output.add(p), 0, count);
         }

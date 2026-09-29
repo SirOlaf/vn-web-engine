@@ -12,6 +12,10 @@ import {requireBurikoResourceRange} from './bf-entropy.js';
 import {BurikoDistributedProcessing} from './distributed-processing.js';
 import {pointerView, type BurikoBpPointer} from '../bp/memory.js';
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
+import {
+  decodeBurikoCompressedBgLegacyOffThread,
+  decodeBurikoDscOffThread,
+} from './resource-decode-offload.js';
 export {BurikoUndefinedResourceRead} from './resource-memory.js';
 
 export interface BurikoResourceDestination {
@@ -117,6 +121,8 @@ export async function decodeBurikoResource(
   let decodedSize = nativeInput?.rawLength ?? stored.length;
   let initializedLength = stored.length;
   let initialized: Uint8Array | null = null;
+  // DSC and owned legacy CompressedBG output is a fresh buffer no other holder can see.
+  let privateOutput = false;
   try {
     if (
       nativeInput === undefined
@@ -129,11 +135,15 @@ export async function decodeBurikoResource(
         true,
       );
       if (size > 0x4000000) return {status: 6, bytes: null};
+      const pending = decodeBurikoDscOffThread(stored, size),
+        offThread = pending === null ? null : await pending;
+      if (pending !== null) beforeResume?.();
       const finishDecode = beginRuntimeSpan('buriko.decode.dsc');
       try {
-        decoded = decodeBurikoDsc(stored);
+        decoded = offThread ?? decodeBurikoDsc(pending === null ? stored : source.bytes);
+        privateOutput = true;
       } finally {
-        finishDecode?.({inputBytes: stored.length, outputBytes: size});
+        finishDecode?.({inputBytes: stored.length, outputBytes: size, worker: +!!offThread});
       }
       decodedSize = decoded.length;
       initializedLength = decoded.length;
@@ -204,12 +214,16 @@ export async function decodeBurikoResource(
         const finishDecode = beginRuntimeSpan('buriko.decode.cbg-legacy');
         let image: BurikoImage;
         try {
-          image = await decodeBurikoCompressedBgLegacyAsync(source, caller, beforeResume);
+          const pending = decodeBurikoCompressedBgLegacyOffThread(source, caller, beforeResume);
+          image =
+            (pending === null ? null : await pending) ??
+            (await decodeBurikoCompressedBgLegacyAsync(source, caller, beforeResume));
           beforeResume?.();
         } finally {
           finishDecode?.({inputBytes: source.bytes.length});
         }
         decoded = caller === undefined ? packedImage(image) : caller.bytes.subarray(0, extent);
+        privateOutput = caller === undefined;
         initialized =
           caller?.initialized.subarray(0, decoded.length) ??
           (directImage ? new Uint8Array(decoded.length).fill(1) : null);
@@ -265,7 +279,10 @@ export async function decodeBurikoResource(
       'Buriko CompressedBG version2 slice retains unwritten native pixels',
     );
   }
-  const bytes = decoded.slice(offset, offset + length);
+  const bytes =
+    privateOutput && offset === 0 && length === decoded.length
+      ? decoded
+      : decoded.slice(offset, offset + length);
   if (destination !== undefined && destination !== null) {
     const output = target(length);
     output.bytes.set(bytes);

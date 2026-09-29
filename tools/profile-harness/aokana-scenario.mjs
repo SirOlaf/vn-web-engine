@@ -77,7 +77,7 @@ if (play === null) throw new Error('The Play button never became available');
 // A cached page or service worker can serve an older bundle; measure only the current build.
 const assets = fileURLToPath(new URL('../../site-profile/assets/', import.meta.url));
 const expected = readdirSync(assets)
-  .filter((name) => name.startsWith('source-'))
+  .filter((name) => name.endsWith('.js'))
   .map((name) => readFileSync(assets + name, 'utf8').match(/profile-20[0-9T:.Z-]+/)?.[0])
   .find(Boolean);
 const shown = await evaluate(
