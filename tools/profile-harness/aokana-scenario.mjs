@@ -4,16 +4,19 @@
 //
 //   node tools/profile-harness/aokana-scenario.mjs <slot 2|3|4> --out <prefix>
 //     [--throttle 6] [--query bitmap-resident=0&bp-wasm=0] [--no-record] [--boot-record]
-//     [--check] [--frames] [--no-profile] [--controller http://127.0.0.1:9444] [--origin http://127.0.0.1:8001]
+//     [--check] [--frames] [--gap-ms 100] [--frames-from-load] [--record-from-advance] [--no-profile] [--controller http://127.0.0.1:9444] [--origin http://127.0.0.1:8001]
 //
 // Writes <prefix>.cpuprofile and, unless --no-record, <prefix>.timings.json. The recorder's
 // own spans cost about a tenth of a CPU-bound window, so take CPU attribution from a
 // --no-record run. --boot-record starts the recorder before Play (allocation metrics).
 // --no-profile skips the sampling CPU profile, whose start and stop stall the page for
 // hundreds of milliseconds at 6x.
-// --frames writes <prefix>.frames.json: every requestAnimationFrame gap over 100 ms in the
-// measured window, with overlapping long animation frames, to tell main-thread stalls apart
-// from compositor or GPU stalls.
+// --frames writes <prefix>.frames.json: every requestAnimationFrame gap over 100 ms (or
+// --gap-ms; long animation frames start at 50 ms) in the measured window, with overlapping
+// long animation frames, to tell main-thread stalls apart from compositor or GPU stalls.
+// --frames-from-load starts that monitor before the save loads (at 1x), not at the window.
+// --record-from-advance starts the recorder at the first click, so its 2,048-event ring
+// covers the scene change instead of the idle lead-in.
 // --check saves three screenshots (<prefix>.title/.loaded/.end.png) to verify navigation;
 // they show game art, so keep them out of the repository.
 //
@@ -39,6 +42,9 @@ const slot = args[0],
   bootRecord = args.includes('--boot-record'),
   check = args.includes('--check'),
   frames = args.includes('--frames'),
+  gapMs = Number(option('--gap-ms', 100)),
+  framesFromLoad = args.includes('--frames-from-load'),
+  recordFromAdvance = args.includes('--record-from-advance'),
   profile = !args.includes('--no-profile');
 if (!['2', '3', '4'].includes(slot) || out === undefined)
   throw new Error('Usage: aokana-scenario.mjs <2|3|4> --out <prefix> [options]');
@@ -62,6 +68,29 @@ async function clickGame(fx, fy) {
   );
   await call('click', {x: x + fx * width, y: y + fy * height});
 }
+
+/** Records rAF gaps and long animation frames until the window ends. */
+const installFrameMonitor = () =>
+  evaluate(`(() => {
+    const monitor = (window.__frameMonitor = {gaps: [], frames: [], count: 0, stopped: false});
+    try {
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries())
+          if (entry.duration > ${gapMs})
+            monitor.frames.push({start: entry.startTime, duration: entry.duration, blocking: entry.blockingDuration, scripts: entry.scripts.slice(0, 3).map((s) => ({invoker: s.invoker, duration: s.duration}))});
+      }).observe({type: 'long-animation-frame', buffered: false});
+    } catch {}
+    let last = performance.now();
+    const tick = (now) => {
+      if (monitor.stopped) return;
+      monitor.count++;
+      if (now - last > ${gapMs}) monitor.gaps.push({start: last, duration: now - last});
+      last = now;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return true;
+  })()`);
 
 await call('throttle', {rate: 1});
 await call('nav', {url: `${origin}/buriko.html${query ? '?' + query : ''}`});
@@ -108,35 +137,23 @@ await clickGame(0.475, 0.899); // Load
 await delay(2500);
 await clickGame({2: 0.3854, 3: 0.6125, 4: 0.8396}[slot], 0.2843);
 await delay(1200);
+if (frames && framesFromLoad) await installFrameMonitor();
 await clickGame(0.4563, 0.5324); // confirm
 await delay(8000);
 await shot('loaded');
 
-const advance = () => clickGame(0.5, 0.3583);
+const advance = async () => {
+  if (record && recordFromAdvance && !recording) {
+    await call('recstart');
+    recording = true;
+  }
+  await clickGame(0.5, 0.3583);
+};
+let recording = false;
 await call('throttle', {rate: throttle});
-if (record && !bootRecord) await call('recstart');
+if (record && !bootRecord && !recordFromAdvance) await call('recstart');
 if (profile) await call('profstart');
-if (frames)
-  await evaluate(`(() => {
-    const monitor = (window.__frameMonitor = {gaps: [], frames: [], count: 0, stopped: false});
-    try {
-      new PerformanceObserver((list) => {
-        for (const entry of list.getEntries())
-          if (entry.duration > 100)
-            monitor.frames.push({start: entry.startTime, duration: entry.duration, blocking: entry.blockingDuration, scripts: entry.scripts.slice(0, 3).map((s) => ({invoker: s.invoker, duration: s.duration}))});
-      }).observe({type: 'long-animation-frame', buffered: false});
-    } catch {}
-    let last = performance.now();
-    const tick = (now) => {
-      if (monitor.stopped) return;
-      monitor.count++;
-      if (now - last > 100) monitor.gaps.push({start: last, duration: now - last});
-      last = now;
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-    return true;
-  })()`);
+if (frames && !framesFromLoad) await installFrameMonitor();
 const started = Date.now();
 if (slot === '3') {
   await delay(10000); // idle animation alone
