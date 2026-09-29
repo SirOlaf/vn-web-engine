@@ -1,4 +1,12 @@
-import type {BurikoBitmap, BurikoBitmapRectangle, BurikoBitmapStorage} from './bitmap.js';
+import {
+  burikoBitmapInitialized,
+  type BurikoBitmap,
+  type BurikoBitmapRectangle,
+  type BurikoBitmapStorage,
+  type BurikoPendingWrite,
+} from './bitmap.js';
+import {burikoMixAlphaCoefficient} from './bitmap-mix.js';
+import {hasRasterText, type RasterTextBitmap} from '../../../text/raster-text.js';
 import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import {
   burikoAlignedAffineSource,
@@ -7,6 +15,7 @@ import {
 } from './bitmap-affine.js';
 import {
   BurikoGpuTargetStorage,
+  type BurikoGpuDeferrer,
   type BurikoGpuKernel,
   type BurikoGpuKernelTarget,
 } from './bitmap-gpu-target.js';
@@ -121,8 +130,83 @@ void main(){
   uint green=(((((s>>8)&255u)*coefficient+((d>>8)&255u)*inverse)>>7)&255u)<<8;
   store((d&0xff000000u)|redBlue|green);
 }`,
+  /** bitmap-mix.ts mixRgbBounded: all four bytes, Q8 factor. */
+  mixRgb: `uniform sampler2D second;uniform ivec2 secondOrigin;uniform uint factor;
+void main(){
+  ivec2 p=ivec2(gl_FragCoord.xy)-origin;
+  uint a=pixel(source,p+sourceOrigin),b=pixel(second,p+secondOrigin),inverse=256u-factor;
+  uint redBlue=(((a&0xff00ffu)*inverse+(b&0xff00ffu)*factor)>>8)&0xff00ffu;
+  uint greenAlpha=((((a>>8)&0xff00ffu)*inverse+((b>>8)&0xff00ffu)*factor)>>8)&0xff00ffu;
+  store(redBlue|(greenAlpha<<8));
+}`,
+  /**
+   * bitmap-mix.ts mixAlphaBounded. Its RCPSS coefficient comes from a table the CPU fills with
+   * burikoMixAlphaCoefficient, indexed by the two alphas.
+   */
+  mixAlpha: `uniform sampler2D second;uniform sampler2D coefficients;uniform ivec2 secondOrigin;
+uniform uint factor;
+void main(){
+  ivec2 p=ivec2(gl_FragCoord.xy)-origin;
+  uint a=pixel(source,p+sourceOrigin),b=pixel(second,p+secondOrigin),fa=a>>24,sa=b>>24;
+  uint c=uint(texelFetch(coefficients,ivec2(sa,fa),0).r*255.+.5),retained=128u-c;
+  uint redBlue=(((a&0xff00ffu)*c+(b&0xff00ffu)*retained)>>7)&0xff00ffu;
+  uint green=((((a>>8)&255u)*c+((b>>8)&255u)*retained)>>7)<<8;
+  store(redBlue|green|(((fa*(256u-factor)+sa*factor)>>8)<<24));
+}`,
 } as const;
 type Program = keyof typeof KERNELS;
+
+const contains = (outer: Area, inner: Area): boolean =>
+  inner.x >= outer.x &&
+  inner.y >= outer.y &&
+  inner.x + inner.width <= outer.x + outer.width &&
+  inner.y + inner.height <= outer.y + outer.height;
+const union = (a: Area, b: Area): Area => {
+  const x = Math.min(a.x, b.x),
+    y = Math.min(a.y, b.y);
+  return {
+    x,
+    y,
+    width: Math.max(a.x + a.width, b.x + b.width) - x,
+    height: Math.max(a.y + a.height, b.y + b.height) - y,
+  };
+};
+const sameArea = (a: Area, b: Area): boolean =>
+  a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+/**
+ * A sprite mix recorded instead of computed. The GPU draws it into its destination's cached
+ * texture; any software access to the destination or a later write to a source runs the
+ * software kernel on the unchanged inputs first.
+ */
+class PendingMix implements BurikoPendingWrite {
+  /** The destination's pixels on its storage row grid. */
+  readonly area: Area;
+  constructor(
+    readonly owner: BurikoGpuCompositor,
+    readonly destination: BurikoBitmap,
+    readonly first: BurikoBitmap,
+    readonly second: BurikoBitmap,
+    readonly factor: number,
+    private readonly run: () => unknown,
+  ) {
+    const stride = destination.stride;
+    this.area = {
+      x: (destination.offset % stride) >>> 2,
+      y: Math.floor(destination.offset / stride),
+      width: destination.width,
+      height: destination.height,
+    };
+  }
+  settle(): void {
+    this.discard();
+    this.run();
+    recordRuntimeMetric('buriko.display.gpu-compose.settled-mixes', 1);
+  }
+  discard(): void {
+    this.destination.storage!.detach(this, [this.first.storage!, this.second.storage!]);
+  }
+}
 
 interface Compiled {
   program: WebGLProgram;
@@ -143,7 +227,8 @@ interface Area {
   height: number;
 }
 
-const FIRST_COOLDOWN = 30,
+const COEFFICIENT_TABLES = 64,
+  FIRST_COOLDOWN = 30,
   MAXIMUM_COOLDOWN = 1800,
   SOURCE_IDLE_FRAMES = 120,
   SOURCE_BUDGET_BYTES = 384 * 1024 * 1024;
@@ -178,10 +263,13 @@ export function burikoGpuCompositingMode(): BurikoGpuCompositingMode {
  * jobs in software. The software texture is stale while the presenter owns the display image;
  * `syncSoftware` reads it back before any software reader.
  */
-export class BurikoGpuCompositor implements BurikoGpuKernelTarget {
+export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDeferrer {
   private readonly gl: WebGL2RenderingContext;
   private readonly framebuffer: WebGLFramebuffer;
   private readonly backupFramebuffer: WebGLFramebuffer;
+  private readonly mixFramebuffer: WebGLFramebuffer;
+  /** Mix coefficient tables by factor, least recently used first. */
+  private readonly coefficients = new Map<number, WebGLTexture>();
   private readonly vertexArray: WebGLVertexArrayObject;
   private readonly programs = new Map<Program, Compiled>();
   private readonly destination: Scratch = {texture: null, width: 0, height: 0};
@@ -204,6 +292,7 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget {
     const gl = (this.gl = presenter.gl);
     this.framebuffer = gl.createFramebuffer()!;
     this.backupFramebuffer = gl.createFramebuffer()!;
+    this.mixFramebuffer = gl.createFramebuffer()!;
     this.vertexArray = gl.createVertexArray()!;
     this.maximumTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
   }
@@ -477,8 +566,7 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget {
 
   /**
    * Bind a texture holding the source bitmap's pixels in `x, y, width, height` to unit one and
-   * return where the bitmap's origin lies in it, or null after failing the frame. Textures are
-   * cached per storage on its own row grid and reused while its generation is unchanged.
+   * return where the bitmap's origin lies in it, or null after failing the frame.
    */
   private bindSource(
     bitmap: BurikoBitmap,
@@ -487,6 +575,27 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget {
     width: number,
     height: number,
   ): readonly [number, number] | null {
+    const source = this.sourceTexture(bitmap, x, y, width, height);
+    if (source === null) return null;
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, source.texture);
+    this.boundSource = source.texture;
+    return source.origin;
+  }
+
+  /**
+   * A texture holding the source bitmap's pixels in `x, y, width, height`, and where the
+   * bitmap's origin lies in it. Textures are cached per storage on its own row grid and reused
+   * while its generation is unchanged. A pending GPU mix is drawn into the texture instead.
+   */
+  private sourceTexture(
+    bitmap: BurikoBitmap,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): {texture: WebGLTexture; origin: readonly [number, number]} | null {
     const storage = bitmap.storage;
     if (
       storage === null ||
@@ -502,22 +611,67 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget {
     }
     const stride = bitmap.stride,
       columns = stride >>> 2,
-      originX = (bitmap.offset % stride) >>> 2,
-      originY = Math.floor(bitmap.offset / stride),
-      rows = Math.ceil(storage.byteLength / stride);
-    const needed = {x: originX + x, y: originY + y, width, height};
+      origin = [(bitmap.offset % stride) >>> 2, Math.floor(bitmap.offset / stride)] as const;
+    const needed = {x: origin[0] + x, y: origin[1] + y, width, height};
     if (needed.x + width > columns) {
       this.fail('source wraps rows');
       return null;
     }
+    const pending = storage.pending;
+    if (pending instanceof PendingMix && pending.owner === this && contains(pending.area, needed)) {
+      const texture = this.renderMix(pending);
+      if (texture !== null) return {texture, origin};
+    }
+    const entry = this.sourceEntry(storage, stride);
+    if (entry === null) return null;
     const gl = this.gl,
+      valid = entry.valid;
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, entry.texture);
+    if (valid === null || !contains(valid, needed)) {
+      const region = valid === null ? needed : union(valid, needed);
+      const offset = region.y * stride + region.x * 4,
+        length = (region.height - 1) * stride + region.width * 4;
+      // Reading settles a pending write first, whose software run advances the generation.
+      const bytes = storage.readOnlyBytes();
+      if (!storage.isInitialized(offset, length)) {
+        this.fail('source storage');
+        return null;
+      }
+      if (entry.generation !== storage.generation)
+        return this.sourceTexture(bitmap, x, y, width, height);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, columns);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        region.x,
+        region.y,
+        region.width,
+        region.height,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        bytes,
+        offset,
+      );
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+      entry.valid = region;
+      recordRuntimeMetric('buriko.display.gpu-compose.upload-pixels', region.width * region.height);
+    } else recordRuntimeMetric('buriko.display.gpu-compose.cached-pixels', width * height);
+    return {texture: entry.texture, origin};
+  }
+
+  /** The cache entry for a storage's row grid, emptied when its generation has moved on. */
+  private sourceEntry(storage: BurikoBitmapStorage, stride: number): SourceTexture | null {
+    const gl = this.gl,
+      columns = stride >>> 2,
+      rows = Math.ceil(storage.byteLength / stride),
       maximum = this.maximumTextureSize;
     let entry = this.sources.get(storage);
-    if (entry !== undefined && (entry.stride !== stride || entry.generation !== storage.generation))
-      if (entry.stride !== stride || columns > maximum || rows > maximum) {
-        this.evict(storage, entry);
-        entry = undefined;
-      } else entry.valid = null;
+    if (entry !== undefined && entry.stride !== stride) {
+      this.evict(storage, entry);
+      entry = undefined;
+    }
     if (entry === undefined) {
       if (columns > maximum || rows > maximum) {
         this.fail('source larger than a texture');
@@ -535,58 +689,178 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget {
       gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, columns, rows);
       this.sources.set(storage, entry);
       this.sourceBytes += entry.bytes;
+    } else if (entry.generation !== storage.generation) {
+      entry.generation = storage.generation;
+      entry.valid = null;
     }
     entry.used = this.frames;
-    const valid = entry.valid;
-    const contained =
-      valid !== null &&
-      needed.x >= valid.x &&
-      needed.y >= valid.y &&
-      needed.x + width <= valid.x + valid.width &&
-      needed.y + height <= valid.y + valid.height;
+    return entry;
+  }
+
+  /** BurikoGpuDeferrer: record a sprite mix for the GPU to draw when a frame reads it. */
+  defer(
+    kernel: BurikoGpuKernel,
+    args: readonly unknown[],
+    run: (args: readonly unknown[]) => unknown,
+  ): boolean {
+    if (kernel !== 'mix' || !this.presenter.available) return false;
+    const [destinationValue, firstValue, secondValue, factor, processing, distributed] = args as [
+      BurikoBitmap,
+      BurikoBitmap,
+      BurikoBitmap,
+      number,
+      {capacity: number} | null | undefined,
+      number | undefined,
+    ];
+    const bitmaps = [destinationValue, firstValue, secondValue];
+    if (
+      !Number.isInteger(factor) ||
+      factor < 0 ||
+      factor > 256 ||
+      (processing != null && processing.capacity > 1 && (distributed ?? 1) !== 0) ||
+      !bitmaps.every(
+        (bitmap) =>
+          bitmap !== null &&
+          typeof bitmap === 'object' &&
+          bitmap.storage != null &&
+          !(bitmap.storage instanceof BurikoGpuTargetStorage) &&
+          (bitmap.format === 1 || bitmap.format === 2) &&
+          bitmap.format === destinationValue.format &&
+          bitmap.bytesPerPixel === 4 &&
+          bitmap.width === destinationValue.width &&
+          bitmap.height === destinationValue.height &&
+          bitmap.width > 0 &&
+          bitmap.height > 0 &&
+          Number.isSafeInteger(bitmap.stride) &&
+          (bitmap.stride & 3) === 0 &&
+          bitmap.stride >= bitmap.width * 4 &&
+          Number.isSafeInteger(bitmap.offset) &&
+          (bitmap.offset & 3) === 0 &&
+          bitmap.offset >= 0 &&
+          bitmap.stride <= this.maximumTextureSize * 4 &&
+          Math.ceil(bitmap.storage.byteLength / bitmap.stride) <= this.maximumTextureSize &&
+          !hasRasterText(bitmap as RasterTextBitmap),
+      )
+    )
+      return false;
+    const destination = {...destinationValue},
+      first = {...firstValue},
+      second = {...secondValue};
+    const storage = destination.storage!;
+    if (storage === first.storage || storage === second.storage) return false;
+    const end =
+      destination.offset + (destination.height - 1) * destination.stride + destination.width * 4;
+    if (
+      end > storage.byteLength ||
+      !burikoBitmapInitialized(first, first.width, first.height) ||
+      !burikoBitmapInitialized(second, second.width, second.height) ||
+      [first, second].some((source) => {
+        const a = source.storage!.backing(),
+          b = storage.backing();
+        return (
+          a.buffer === b.buffer &&
+          a.byteOffset < b.byteOffset + b.length &&
+          b.byteOffset < a.byteOffset + a.length
+        );
+      })
+    )
+      return false;
+    const copied = [destination, first, second, factor, null, 0];
+    const mix = new PendingMix(this, destination, first, second, factor, () => run(copied));
+    const rows = Array.from(
+      {length: destination.height},
+      (_, row) => [destination.offset + row * destination.stride, destination.width * 4] as const,
+    );
+    storage.defer(
+      mix,
+      [first.storage!, second.storage!],
+      (previous) => previous instanceof PendingMix && sameArea(previous.area, mix.area),
+      rows,
+    );
+    recordRuntimeMetric('buriko.display.gpu-compose.deferred-mixes', 1);
+    return true;
+  }
+
+  /** Draw a pending mix into its destination's cached texture; null leaves it to software. */
+  private renderMix(mix: PendingMix): WebGLTexture | null {
+    const storage = mix.destination.storage!;
+    const entry = this.sourceEntry(storage, mix.destination.stride);
+    if (entry === null) return null;
+    if (entry.valid !== null && contains(entry.valid, mix.area)) return entry.texture;
+    const {width, height} = mix.destination;
+    const first = this.sourceTexture(mix.first, 0, 0, width, height),
+      second = first === null ? null : this.sourceTexture(mix.second, 0, 0, width, height);
+    // A source's own software settlement advances this storage only if it read it.
+    if (first === null || second === null || storage.pending !== mix) return null;
+    const gl = this.gl,
+      alpha = mix.destination.format === 2;
+    const {program, uniforms} = this.compiled(alpha ? 'mixAlpha' : 'mixRgb');
+    const location = (name: string) => {
+      if (!uniforms.has(name)) uniforms.set(name, gl.getUniformLocation(program, name));
+      return uniforms.get(name)!;
+    };
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.mixFramebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, entry.texture, 0);
+    // The destination scratch keeps the display image off every sampler unit.
+    if (this.destination.texture === null) this.scratch(this.destination, 1, 1, gl.TEXTURE0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.destination.texture);
     gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, entry.texture);
-    this.boundSource = entry.texture;
-    if (!contained) {
-      const region =
-        valid === null
-          ? needed
-          : (() => {
-              const left = Math.min(valid.x, needed.x),
-                top = Math.min(valid.y, needed.y);
-              return {
-                x: left,
-                y: top,
-                width: Math.max(valid.x + valid.width, needed.x + width) - left,
-                height: Math.max(valid.y + valid.height, needed.y + height) - top,
-              };
-            })();
-      const offset = region.y * stride + region.x * 4,
-        length = (region.height - 1) * stride + region.width * 4;
-      if (!storage.isInitialized(offset, length)) {
-        this.fail('source storage');
-        return null;
-      }
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
-      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, columns);
-      gl.texSubImage2D(
-        gl.TEXTURE_2D,
-        0,
-        region.x,
-        region.y,
-        region.width,
-        region.height,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        storage.readOnlyBytes(),
-        offset,
-      );
-      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
-      entry.valid = region;
-      entry.generation = storage.generation;
-      recordRuntimeMetric('buriko.display.gpu-compose.upload-pixels', region.width * region.height);
-    } else recordRuntimeMetric('buriko.display.gpu-compose.cached-pixels', width * height);
-    return [originX, originY];
+    gl.bindTexture(gl.TEXTURE_2D, first.texture);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, second.texture);
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(
+      gl.TEXTURE_2D,
+      alpha ? this.coefficientTable(mix.factor) : this.destination.texture,
+    );
+    gl.useProgram(program);
+    gl.bindVertexArray(this.vertexArray);
+    gl.uniform1i(location('destination'), 0);
+    gl.uniform1i(location('source'), 1);
+    gl.uniform1i(location('second'), 2);
+    gl.uniform1i(location('coefficients'), 3);
+    gl.uniform2i(location('origin'), mix.area.x, mix.area.y);
+    gl.uniform2i(location('sourceOrigin'), first.origin[0], first.origin[1]);
+    gl.uniform2i(location('secondOrigin'), second.origin[0], second.origin[1]);
+    gl.uniform1ui(location('factor'), mix.factor);
+    gl.viewport(mix.area.x, mix.area.y, mix.area.width, mix.area.height);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(mix.area.x, mix.area.y, mix.area.width, mix.area.height);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+    entry.valid = {...mix.area};
+    recordRuntimeMetric('buriko.display.gpu-compose.gpu-mixes', 1);
+    return entry.texture;
+  }
+
+  /** bitmap-mix.ts coefficients for one factor, indexed by (second alpha, first alpha). */
+  private coefficientTable(factor: number): WebGLTexture {
+    let texture = this.coefficients.get(factor);
+    if (texture !== undefined) {
+      this.coefficients.delete(factor);
+      this.coefficients.set(factor, texture);
+      return texture;
+    }
+    const table = new Uint8Array(256 * 256);
+    for (let first = 0; first < 256; first++)
+      for (let second = 0; second < 256; second++)
+        table[first * 256 + second] = burikoMixAlphaCoefficient(first, second, factor);
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE3);
+    texture = burikoGpuTexture(gl);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, 256, 256);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 256, gl.RED, gl.UNSIGNED_BYTE, table);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    this.coefficients.set(factor, texture);
+    if (this.coefficients.size > COEFFICIENT_TABLES) {
+      const [oldest, stale] = this.coefficients.entries().next().value!;
+      gl.deleteTexture(stale);
+      this.coefficients.delete(oldest);
+    }
+    return texture;
   }
 
   private evict(storage: BurikoBitmapStorage, entry: SourceTexture): void {
@@ -836,6 +1110,9 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget {
     for (const [storage, entry] of this.sources) this.evict(storage, entry);
     gl.deleteFramebuffer(this.framebuffer);
     gl.deleteFramebuffer(this.backupFramebuffer);
+    gl.deleteFramebuffer(this.mixFramebuffer);
+    for (const texture of this.coefficients.values()) gl.deleteTexture(texture);
+    this.coefficients.clear();
     this.programs.clear();
   }
 }

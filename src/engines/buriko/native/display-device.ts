@@ -27,6 +27,7 @@ import type {BurikoNativeDisplayState} from './display-state.js';
 import {BurikoDisplayTexture, burikoDisplayTextureSize} from './display-texture.js';
 import {BurikoGpuCompositor, burikoGpuCompositingMode} from './display-gpu-compositor.js';
 import type {BurikoGpuFrames} from './object-manager.js';
+import {burikoGpuDeferrer, setBurikoGpuDeferrer} from './bitmap-gpu-target.js';
 import {
   BurikoGpuPresenter,
   burikoGpuPresentationEnabled,
@@ -674,6 +675,7 @@ export class BurikoDisplayDevice {
       this.gpuCompositor = new BurikoGpuCompositor(gpu);
     }
     this.manager.gpuFrames = mode === 'verify' ? this.verifiedGpuFrames : this.gpuFrames;
+    setBurikoGpuDeferrer(this.gpuCompositor);
   }
   /** Software presentation and every later draw need current software pixels. */
   private leaveGpuCompositing(): void {
@@ -682,6 +684,9 @@ export class BurikoDisplayDevice {
       this.manager.gpuFrames === this.verifiedGpuFrames
     )
       this.manager.gpuFrames = null;
+    // Pending mixes stay exact: software readers settle them on the CPU.
+    if (this.gpuCompositor !== null && burikoGpuDeferrer() === this.gpuCompositor)
+      setBurikoGpuDeferrer(null);
     this.syncSoftware();
   }
   private syncSoftware(): void {
@@ -1105,6 +1110,8 @@ export class BurikoDisplayDevice {
       this.manager.gpuFrames === this.verifiedGpuFrames
     )
       this.manager.gpuFrames = null;
+    if (this.gpuCompositor !== null && burikoGpuDeferrer() === this.gpuCompositor)
+      setBurikoGpuDeferrer(null);
     this.gpuCompositor?.dispose();
     this.gpuCompositor = null;
     this.gpu?.dispose();

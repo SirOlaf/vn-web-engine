@@ -64,8 +64,10 @@ function copyInitializedRows(
   const input = source.storage,
     output = destination.storage;
   if (input === null || output === null || rowBytes === 0 || height === 0) return false;
+  // Only read the source: its cached copies and pending readers stay valid.
+  const inputBytes = input.readOnlyBytes();
   if (
-    !(input.bytes.buffer instanceof ArrayBuffer) ||
+    !(inputBytes.buffer instanceof ArrayBuffer) ||
     !(output.bytes.buffer instanceof ArrayBuffer) ||
     !Number.isSafeInteger(source.offset) ||
     !Number.isSafeInteger(destination.offset) ||
@@ -80,7 +82,7 @@ function copyInitializedRows(
     sourceEnd = Math.max(source.offset, sourceLast) + rowBytes,
     destinationEnd = Math.max(destination.offset, destinationLast) + rowBytes;
   if (
-    input.initializedView(sourceBegin, sourceEnd - sourceBegin) === null ||
+    !input.isInitialized(sourceBegin, sourceEnd - sourceBegin) ||
     !Number.isSafeInteger(destinationBegin) ||
     !Number.isSafeInteger(destinationEnd) ||
     destinationBegin < 0 ||
@@ -90,8 +92,8 @@ function copyInitializedRows(
   )
     return false;
   let identical = false;
-  if (input.bytes.buffer === output.bytes.buffer) {
-    const sourceBase = input.bytes.byteOffset,
+  if (inputBytes.buffer === output.bytes.buffer) {
+    const sourceBase = inputBytes.byteOffset,
       destinationBase = output.bytes.byteOffset;
     identical =
       sourceBase + source.offset === destinationBase + destination.offset &&
@@ -105,12 +107,12 @@ function copyInitializedRows(
   }
   if (!identical) {
     if (source.stride === rowBytes && destination.stride === rowBytes)
-      output.bytes.set(input.bytes.subarray(source.offset, sourceEnd), destination.offset);
+      output.bytes.set(inputBytes.subarray(source.offset, sourceEnd), destination.offset);
     else
       for (let row = 0; row < height; row++) {
         const offset = source.offset + row * source.stride;
         output.bytes.set(
-          input.bytes.subarray(offset, offset + rowBytes),
+          inputBytes.subarray(offset, offset + rowBytes),
           destination.offset + row * destination.stride,
         );
       }

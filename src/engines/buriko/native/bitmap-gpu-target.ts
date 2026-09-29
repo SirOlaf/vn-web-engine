@@ -11,7 +11,8 @@ export type BurikoGpuKernel =
   | 'dim-rgb'
   | 'copy-rows'
   | 'clear'
-  | 'affine-blend';
+  | 'affine-blend'
+  | 'mix';
 
 /** Receives kernels whose destination is the display during a browser-optimized GPU frame. */
 export interface BurikoGpuKernelTarget {
@@ -69,6 +70,28 @@ export class BurikoGpuTargetStorage extends BurikoBitmapStorage {
   override release(): void {
     this.target.fail('release');
   }
+}
+
+/**
+ * Accepts kernels whose result the GPU can produce when it first needs it. A deferred call is
+ * recorded as its destination's pending write; `run` is the software kernel that settles it.
+ */
+export interface BurikoGpuDeferrer {
+  /** `run` executes the software kernel with the given arguments, never deferring again. */
+  defer(
+    kernel: BurikoGpuKernel,
+    args: readonly unknown[],
+    run: (args: readonly unknown[]) => unknown,
+  ): boolean;
+}
+let deferrer: BurikoGpuDeferrer | null = null;
+
+/** Installed while browser-optimized GPU compositing is active. */
+export function setBurikoGpuDeferrer(value: BurikoGpuDeferrer | null): void {
+  deferrer = value;
+}
+export function burikoGpuDeferrer(): BurikoGpuDeferrer | null {
+  return deferrer;
 }
 
 /** The GPU target a kernel's destination belongs to, if any. */

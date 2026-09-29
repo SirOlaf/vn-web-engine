@@ -12,18 +12,31 @@ import {
  */
 async function pageMain(_fixture, options) {
   const load = (path) => import('/runtime/engines/buriko/native/' + path);
-  const [bitmap, compositorModule, alpha, copy, effects, affine, texture, presenter, gpu] =
-    await Promise.all([
-      load('bitmap.js'),
-      load('bitmap-compositor.js'),
-      load('bitmap-alpha.js'),
-      load('bitmap-copy.js'),
-      load('bitmap-effects.js'),
-      load('bitmap-affine.js'),
-      load('display-texture.js'),
-      load('display-gpu-presenter.js'),
-      load('display-gpu-compositor.js'),
-    ]);
+  const [
+    bitmap,
+    compositorModule,
+    alpha,
+    copy,
+    effects,
+    affine,
+    texture,
+    presenter,
+    gpu,
+    mix,
+    gpuTarget,
+  ] = await Promise.all([
+    load('bitmap.js'),
+    load('bitmap-compositor.js'),
+    load('bitmap-alpha.js'),
+    load('bitmap-copy.js'),
+    load('bitmap-effects.js'),
+    load('bitmap-affine.js'),
+    load('display-texture.js'),
+    load('display-gpu-presenter.js'),
+    load('display-gpu-compositor.js'),
+    load('bitmap-mix.js'),
+    load('bitmap-gpu-target.js'),
+  ]);
   const target = presenter.BurikoGpuPresenter.create(document);
   if (target === null) return {available: false, reason: 'WebGL 2 unavailable'};
   const composer = new gpu.BurikoGpuCompositor(target);
@@ -156,6 +169,22 @@ async function pageMain(_fixture, options) {
       },
       2,
     ]);
+  // Sprite mixes are recorded, drawn by the GPU when a frame reads them, and settled in
+  // software on any later software access.
+  const seconds = new WeakMap();
+  for (const factor of [0, 1, 64, 128, 200, 255, 256])
+    for (const format of [1, 2])
+      cases.push([
+        `deferred mix f${factor} rgb${format === 1 ? '' : 'a'}`,
+        (d, s, mixes) => {
+          if (!seconds.has(s)) seconds.set(s, source(s.width, s.height, format));
+          const out = bitmap.allocateBurikoBitmap(s.width, s.height, format);
+          mix.mixBurikoBitmaps(out, s, seconds.get(s), factor, null, 1);
+          compositor.composite(d, out, format === 1 ? 0x80 : 1, 0, true);
+          mixes.push(out);
+        },
+        format,
+      ]);
   cases.push([
     'unsupported screen',
     (d, s) => effects.screenBurikoBitmap(d, s, 128, false),
@@ -176,7 +205,9 @@ async function pageMain(_fixture, options) {
       hardware = new texture.BurikoDisplayTexture(textureWidth, textureHeight, 22);
     hardware.storage.bytes.set(software.storage.bytes);
     // Software reference.
-    run(descriptor(software.storage, area), input);
+    const softwareMixes = [],
+      hardwareMixes = [];
+    run(descriptor(software.storage, area), input, softwareMixes);
     // GPU frame over the same area; a fresh display image is uploaded from the initial bytes.
     target.invalidate();
     const context = {
@@ -198,10 +229,21 @@ async function pageMain(_fixture, options) {
     }
     const destination = {...context.bitmap};
     bitmap.cropBurikoBitmap(destination, area);
-    run(destination, input);
+    gpuTarget.setBurikoGpuDeferrer(composer);
+    run(destination, input, hardwareMixes);
+    gpuTarget.setBurikoGpuDeferrer(null);
     const drawn = composer.end(context);
+    // A mix the GPU drew stays pending: nothing has read it in software yet.
+    const unsettled = hardwareMixes.every((out) => out.storage.pending !== null);
     composer.syncSoftware(hardware);
-    if (!drawn) run(descriptor(hardware.storage, area), input);
+    if (!drawn) run(descriptor(hardware.storage, area), input, []);
+    // Software access settles each deferred mix exactly.
+    let mixDiffering = 0;
+    softwareMixes.forEach((expected, index) => {
+      const actual = hardwareMixes[index].storage.bytes,
+        reference = expected.storage.bytes;
+      for (let i = 0; i < reference.length; i++) if (actual[i] !== reference[i]) mixDiffering++;
+    });
     let differing = 0,
       first = null;
     const a = software.storage.view,
@@ -220,9 +262,19 @@ async function pageMain(_fixture, options) {
         }
       }
     const fallbackMismatch = drawn === Boolean(expectFallback);
-    if (differing !== 0 || fallbackMismatch) failed++;
-    if (differing !== 0 || fallbackMismatch || options.verbose)
-      results.push({name, area, source: [input.width, input.height], drawn, differing, first});
+    const bad = differing !== 0 || fallbackMismatch || mixDiffering !== 0 || !unsettled;
+    if (bad) failed++;
+    if (bad || options.verbose)
+      results.push({
+        name,
+        area,
+        source: [input.width, input.height],
+        drawn,
+        differing,
+        mixDiffering,
+        unsettled,
+        first,
+      });
     software.dispose();
     hardware.dispose();
     input.storage.release();

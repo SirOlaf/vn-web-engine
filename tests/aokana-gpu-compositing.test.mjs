@@ -213,3 +213,72 @@ test('GPU frames draw once, and a failed GPU frame reruns the same jobs in softw
     assert.equal(environment.displayContext.bitmap.storage, null);
   }
 });
+
+/** A pending write that fills its destination with a value when settled. */
+function pendingFill(destination, sources, value, log) {
+  const write = {
+    settle() {
+      write.discard();
+      log.push(['settle', value]);
+      destination.bytes.fill(value);
+    },
+    discard() {
+      log.push(['discard', value]);
+      destination.detach(write, sources);
+    },
+  };
+  return write;
+}
+
+test('pending writes settle on pixel access and before their sources change', () => {
+  const log = [];
+  const source = new BurikoBitmapStorage(new Uint8Array(4), true),
+    destination = new BurikoBitmapStorage(new Uint8Array(4), false);
+  const write = pendingFill(destination, [source], 9, log);
+  const before = destination.generation;
+  destination.defer(write, [source], () => false, [[0, 4]]);
+  assert.ok(destination.generation > before);
+  assert.equal(destination.pending, write);
+  // Checks that never read pixels leave the write pending.
+  assert.equal(destination.isInitialized(0, 4), true);
+  destination.backing();
+  source.readOnlyBytes();
+  source.range(0, 4, true);
+  assert.deepEqual(log, []);
+  // A source write settles its readers first.
+  source.view.setUint32(0, 1, true);
+  assert.deepEqual(log, [
+    ['discard', 9],
+    ['settle', 9],
+  ]);
+  assert.equal(destination.pending, null);
+  assert.deepEqual([...destination.readOnlyBytes()], [9, 9, 9, 9]);
+
+  // Reading the destination settles it; release drops an unobserved write.
+  log.length = 0;
+  destination.defer(pendingFill(destination, [source], 5, log), [source], () => false, []);
+  destination.range(0, 4, true);
+  assert.deepEqual(log.at(-1), ['settle', 5]);
+  log.length = 0;
+  destination.defer(pendingFill(destination, [source], 6, log), [source], () => false, []);
+  destination.release();
+  assert.deepEqual(log, [['discard', 6]]);
+  // The discarded write no longer reads its source.
+  source.bytes;
+  assert.deepEqual(log, [['discard', 6]]);
+});
+
+test('a pending write replaced whole is discarded, otherwise settled first', () => {
+  const log = [];
+  const source = new BurikoBitmapStorage(new Uint8Array(4), true),
+    destination = new BurikoBitmapStorage(new Uint8Array(4), true);
+  destination.defer(pendingFill(destination, [source], 1, log), [source], () => false, []);
+  destination.defer(pendingFill(destination, [source], 2, log), [source], () => true, []);
+  assert.deepEqual(log, [['discard', 1]]);
+  destination.defer(pendingFill(destination, [source], 3, log), [source], () => false, []);
+  assert.deepEqual(log.slice(1), [
+    ['discard', 2],
+    ['settle', 2],
+  ]);
+  assert.deepEqual([...destination.bytes], [3, 3, 3, 3]);
+});

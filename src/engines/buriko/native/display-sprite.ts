@@ -8,7 +8,7 @@ import {
   allocateBurikoBitmap,
   burikoBitmapRectangle,
   cropBurikoBitmap,
-  initializedBurikoBitmapView,
+  burikoBitmapInitialized,
   type BurikoBitmap,
   type BurikoBitmapRectangle,
 } from './bitmap.js';
@@ -1179,8 +1179,8 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
           bitmap.stride === (bitmap.stride | 0) &&
           bitmap.stride >= bitmap.width * 4 &&
           bitmap.width * bitmap.height * 4 <= 0xffffffff &&
-          bitmap.storage?.bytes.buffer instanceof ArrayBuffer &&
-          initializedBurikoBitmapView(bitmap, bitmap.width, bitmap.height) !== null,
+          bitmap.storage?.backing().buffer instanceof ArrayBuffer &&
+          burikoBitmapInitialized(bitmap, bitmap.width, bitmap.height),
       ) &&
       deferBurikoSpriteMix(this.environment, this, () => {
         this.buildMixed(first, second, factor);
@@ -1260,18 +1260,18 @@ export class BurikoDisplaySprite extends BurikoDisplayObject {
           source.bytesPerPixel === 4 &&
           source.stride === (source.stride | 0) &&
           source.stride >= source.width * 4 &&
-          source.storage?.bytes.buffer instanceof ArrayBuffer &&
+          source.storage?.backing().buffer instanceof ArrayBuffer &&
           (destination.storage === null ||
-            !viewsOverlap(source.storage.bytes, destination.storage.bytes)) &&
+            !viewsOverlap(source.storage.backing(), destination.storage.backing())) &&
           !hasRasterText(source) &&
-          initializedBurikoBitmapView(source, source.width, source.height) !== null,
+          burikoBitmapInitialized(source, source.width, source.height),
       ) &&
       destination.offset === 0 &&
       destination.width > 0 &&
       destination.height > 0 &&
       destination.stride === destination.width * 4 &&
       !hasRasterText(destination) &&
-      initializedBurikoBitmapView(destination, destination.width, destination.height) !== null
+      burikoBitmapInitialized(destination, destination.width, destination.height)
     ) {
       recordRuntimeMetric('buriko.sprite.mix.reused-destination', 1);
       return destination;

@@ -4,11 +4,16 @@
 //
 //   node tools/profile-harness/aokana-scenario.mjs <slot 2|3|4> --out <prefix>
 //     [--throttle 6] [--query bitmap-resident=0&bp-wasm=0] [--no-record] [--boot-record]
-//     [--check] [--controller http://127.0.0.1:9444] [--origin http://127.0.0.1:8001]
+//     [--check] [--frames] [--no-profile] [--controller http://127.0.0.1:9444] [--origin http://127.0.0.1:8001]
 //
 // Writes <prefix>.cpuprofile and, unless --no-record, <prefix>.timings.json. The recorder's
 // own spans cost about a tenth of a CPU-bound window, so take CPU attribution from a
 // --no-record run. --boot-record starts the recorder before Play (allocation metrics).
+// --no-profile skips the sampling CPU profile, whose start and stop stall the page for
+// hundreds of milliseconds at 6x.
+// --frames writes <prefix>.frames.json: every requestAnimationFrame gap over 100 ms in the
+// measured window, with overlapping long animation frames, to tell main-thread stalls apart
+// from compositor or GPU stalls.
 // --check saves three screenshots (<prefix>.title/.loaded/.end.png) to verify navigation;
 // they show game art, so keep them out of the repository.
 //
@@ -16,7 +21,7 @@
 //   2  just before a scene transition; one click triggers it
 //   3  full-screen idle animation; expression changes at clicks 1, 3, 6 and 8
 //   4  shortly before a character enters on the next click
-import {readdirSync, readFileSync} from 'node:fs';
+import {readdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 
 const args = process.argv.slice(2);
@@ -32,7 +37,9 @@ const slot = args[0],
   origin = option('--origin', 'http://127.0.0.1:8001'),
   record = !args.includes('--no-record'),
   bootRecord = args.includes('--boot-record'),
-  check = args.includes('--check');
+  check = args.includes('--check'),
+  frames = args.includes('--frames'),
+  profile = !args.includes('--no-profile');
 if (!['2', '3', '4'].includes(slot) || out === undefined)
   throw new Error('Usage: aokana-scenario.mjs <2|3|4> --out <prefix> [options]');
 
@@ -108,7 +115,28 @@ await shot('loaded');
 const advance = () => clickGame(0.5, 0.3583);
 await call('throttle', {rate: throttle});
 if (record && !bootRecord) await call('recstart');
-await call('profstart');
+if (profile) await call('profstart');
+if (frames)
+  await evaluate(`(() => {
+    const monitor = (window.__frameMonitor = {gaps: [], frames: [], count: 0, stopped: false});
+    try {
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries())
+          if (entry.duration > 100)
+            monitor.frames.push({start: entry.startTime, duration: entry.duration, blocking: entry.blockingDuration, scripts: entry.scripts.slice(0, 3).map((s) => ({invoker: s.invoker, duration: s.duration}))});
+      }).observe({type: 'long-animation-frame', buffered: false});
+    } catch {}
+    let last = performance.now();
+    const tick = (now) => {
+      if (monitor.stopped) return;
+      monitor.count++;
+      if (now - last > 100) monitor.gaps.push({start: last, duration: now - last});
+      last = now;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return true;
+  })()`);
 const started = Date.now();
 if (slot === '3') {
   await delay(10000); // idle animation alone
@@ -121,7 +149,13 @@ if (slot === '3') {
   await advance();
   await delay(20000);
 }
-await call('profstop', {file: `${out}.cpuprofile`});
+if (profile) await call('profstop', {file: `${out}.cpuprofile`});
+if (frames) {
+  const result = await evaluate(
+    `(() => { const m = window.__frameMonitor; m.stopped = true; return JSON.stringify(m); })()`,
+  );
+  writeFileSync(`${out}.frames.json`, result);
+}
 if (record || bootRecord) await call('recstop', {file: `${out}.timings.json`});
 await call('throttle', {rate: 1});
 await shot('end');

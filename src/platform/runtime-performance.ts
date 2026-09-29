@@ -3,7 +3,7 @@ import {RUNTIME_BUILD_ID} from './runtime-build.js';
 
 /** Optional, in-memory wall-clock diagnostics shared by all engines. */
 const EVENT_LIMIT = 2048;
-const AGGREGATE_LIMIT = 128;
+const AGGREGATE_LIMIT = 512;
 const SPAN_THRESHOLD_MS = 4;
 const LOOP_INTERVAL_MS = 100;
 const LOOP_THRESHOLD_MS = 16;

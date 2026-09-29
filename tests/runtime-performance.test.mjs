@@ -169,7 +169,7 @@ test('optional timing recorder bounds data, measures browser delays, and fully s
   }
   snapshot = getRuntimePerformanceSnapshot();
   assert.equal(snapshot.events.length, 2048);
-  assert.equal(snapshot.aggregates.length, 128);
+  assert.equal(snapshot.aggregates.length, 512);
   assert.ok(snapshot.overwrittenEvents > 0);
   assert.ok(snapshot.overflowedCategorySamples > 0);
   assert.equal(snapshot.completedSpans, 3004);

@@ -68,6 +68,18 @@ function alphaCoefficients(factor: number): Uint8Array {
   return cachedAlphaCoefficients;
 }
 
+/** Q7 weight of the first pixel in a bounded alpha mix: RCPSS of the combined coverage. */
+export function burikoMixAlphaCoefficient(
+  firstAlpha: number,
+  secondAlpha: number,
+  factor: number,
+): number {
+  const weighted = firstAlpha * (256 - factor),
+    alpha = weighted + secondAlpha * factor;
+  const reciprocal = burikoRosettaSseReciprocal(Math.fround(alpha === 0 ? 1 : alpha));
+  return Math.trunc(Math.fround(reciprocal * Math.fround(weighted << 7)));
+}
+
 function mixAlphaBounded(
   first: number,
   second: number,
@@ -79,8 +91,7 @@ function mixAlphaBounded(
     key = ((first >>> 24) << 8) | (second >>> 24);
   let coefficient = coefficients[key]! - 1;
   if (coefficient < 0) {
-    const reciprocal = burikoRosettaSseReciprocal(Math.fround(alpha === 0 ? 1 : alpha));
-    coefficient = Math.trunc(Math.fround(reciprocal * Math.fround(firstAlpha << 7)));
+    coefficient = burikoMixAlphaCoefficient(first >>> 24, second >>> 24, factor);
     coefficients[key] = coefficient + 1;
   }
   // Bounded factors keep the signed-word product within [-32640,32640].
@@ -547,6 +558,7 @@ export const blendMixedBurikoBitmapsIntoRgb = withBurikoBitmapText(
 );
 
 export const mixBurikoBitmaps = withBurikoBitmapText(mixBurikoBitmapsPixels, {
+  gpu: 'mix',
   sourceOpacity: (source, args) =>
     args[1].storage === args[2].storage &&
     args[1].offset === args[2].offset &&
