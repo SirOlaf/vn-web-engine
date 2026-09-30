@@ -4,7 +4,7 @@ import './explorers/explorer.css';
 import './explorers/buriko.css';
 import './pwa/register.js';
 
-const game = /(?:buriko|aokana)-assets\.html$/i.test(location.pathname) ? 'buriko' : 'noah';
+const game = /buriko-assets\.html$/i.test(location.pathname) ? 'buriko' : 'noah';
 const target = document.getElementById('app');
 if (!target) throw new Error('Missing explorer mount point');
 mount(Explorer, {target, props: {game}});

@@ -5,10 +5,5 @@ export const legacyAokanaProfile = {
   productIdentity: 'AoNoKanataNoFourRhythmUEDL',
   id: 'legacy-aokana',
   title: 'Aokana',
-  legacyRoute: './aokana.html',
   namespace: ['aokana', 'default'],
 } as const;
-
-export function legacyAokanaRoute(pathname: string): boolean {
-  return pathname.toLowerCase().endsWith('/aokana.html');
-}

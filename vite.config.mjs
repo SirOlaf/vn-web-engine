@@ -22,11 +22,9 @@ export default defineConfig(({mode}) => {
         input: [
           'index.html',
           'buriko.html',
-          'aokana.html',
           'noah.html',
           'assets.html',
           'buriko-assets.html',
-          'aokana-assets.html',
         ],
       },
     },

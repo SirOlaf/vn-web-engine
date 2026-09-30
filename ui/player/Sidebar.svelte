@@ -7,7 +7,6 @@
   import RuntimeProfile from './RuntimeProfile.svelte';
   import BitmapMemory from './BitmapMemory.svelte';
   import DomTextStyle from './DomTextStyle.svelte';
-  import {legacyAokanaProfile} from '../game-profiles/aokana.js';
   export let game: GameId;
 </script>
 
@@ -52,13 +51,6 @@
       <p id="fullscreen-help" role="status" hidden></p>
     </section>
     <InstallationFiles />
-    {#if game === 'buriko'}
-      <p>
-        <a href={legacyAokanaProfile.legacyRoute}
-          >Open the previous {legacyAokanaProfile.title} installation cache</a
-        >
-      </p>
-    {/if}
     <section>
       <h2>Text rendering</h2>
       <label class="sr-only" for="text-mode">Text rendering mode</label>

@@ -37,7 +37,6 @@ import {BurikoBpDiagnostics} from '../../src/engines/buriko/native/diagnostics.j
 import {burikoEngineVersion} from '../../src/engines/buriko/native/engine-version.js';
 import {inspectBurikoInstallation, type BurikoExecutable} from './buriko-installation.js';
 import {activeBurikoGame, burikoTitle, rememberBurikoGame} from '../player/buriko-library.js';
-import {legacyAokanaRoute} from '../game-profiles/aokana.js';
 import {
   BurikoMountedFileMetadata,
   type BurikoFileMetadataRecord,
@@ -447,7 +446,7 @@ function installationSnapshot(installation: Installation): CachedInstallation {
 }
 
 const installationControls = mountInstallationControls({
-  key: legacyAokanaRoute(location.pathname) ? 'aokana' : 'buriko',
+  key: 'buriko',
   choose: chooseButton,
   input: choose,
   current: () => selectedSnapshot,

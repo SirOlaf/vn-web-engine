@@ -52,7 +52,7 @@ The local URL above is a browser secure context because it uses loopback. Ordina
 tailscale serve 8000
 ```
 
-Open the HTTPS URL printed by Tailscale on a device in the same tailnet, adding `/aokana.html` if desired. Tailscale Serve proxies the server's existing loopback port; `HOST=0.0.0.0` is not needed. An HTTPS reverse proxy to `127.0.0.1:8000` works too. Tailscale Serve may prompt you to enable HTTPS certificates for your tailnet.
+Open the HTTPS URL printed by Tailscale on a device in the same tailnet, adding `/buriko.html` if desired. Tailscale Serve proxies the server's existing loopback port; `HOST=0.0.0.0` is not needed. An HTTPS reverse proxy to `127.0.0.1:8000` works too. Tailscale Serve may prompt you to enable HTTPS certificates for your tailnet.
 
 WebAssembly support is required for the shared Vorbis decoder. Some optional acceleration modules have JavaScript fallbacks, which may be much slower; the viewer reports audio and WebAssembly fallbacks when they occur.
 

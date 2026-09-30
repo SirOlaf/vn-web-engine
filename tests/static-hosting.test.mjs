@@ -14,10 +14,10 @@ test('the production artifact serves complete pages beneath a project path witho
   try {
     for (const page of [
       'index.html',
-      'aokana.html',
+      'buriko.html',
       'noah.html',
       'assets.html',
-      'aokana-assets.html',
+      'buriko-assets.html',
     ]) {
       const url = `${origin}${base}${page}`;
       const response = await fetch(url);
