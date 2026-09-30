@@ -21,8 +21,10 @@ behavior by a game's display name.
   configuration screens built from the system LWG images.
 - `graphics/` composites sprites in native pixel layout (B, G, R and a
   transparency byte) with the native blend modes.
-- `browser/` adapts the scene to a canvas, Web Audio, fullscreen, a confirmation
-  dialog and the selectable DOM text layer. Other hosts implement `RScriptGameHost` in `runtime/game.ts`.
+- `browser/` adapts the scene to a canvas, Web Audio, the browser's fonts and the
+  selectable DOM text layer. Message boxes, window activation and fullscreen come from
+  `src/platform`; the page's display host decides what the configuration's screen mode
+  does. Other hosts implement `RScriptGameHost` in `runtime/game.ts`.
 
 Native address comments refer to the Fairytale Requiem executable with SHA-256
 `7c5392abef0810ec2ce3ec8c6318a566fce854281bbd52c7c032a8d7477ecd66` (RScript
@@ -33,21 +35,25 @@ and differ only in their `APINI` blocks and resources.
 `npm run verify:rscript -- "/path/to/game"` decodes every archive entry it
 recognizes and reports counts and failures without writing assets.
 
-## Verification
+## Compatibility
 
-- Fairytale Requiem was played to all twelve endings: both endings of each of the five heroine
-  chapters, then both endings of the final chapter the title unlocks afterwards.
-- Fairytale Symphony was played to both of its endings, and Fairytale Encore through all six
-  scenarios, including the two the first four unlock.
-- Screens were compared pixel by pixel with the native game at 1280x720:
-  - title, scenes, maps, choices, backlog, the save, load and configuration screens
-  - the library, room and sketchbook screens
-  - colour-effect (sepia) scenes
-- Slot saves load in both directions between the port and the native game.
+| Title              | Executable SHA-256                                                 | Status                       |
+| ------------------ | ------------------------------------------------------------------ | ---------------------------- |
+| Fairytale Requiem  | `7c5392abef0810ec2ce3ec8c6318a566fce854281bbd52c7c032a8d7477ecd66` | Complete: all twelve endings |
+| Fairytale Symphony | `adcc785a849606ffad8748645348392cbc28a44abc5f40f8180f30f81af89396` | Complete: both endings       |
+| Fairytale Encore   | `04d1deb0eef007411d87d2d31f6652286f78b174ab190815d9bee58645a2ec49` | Complete: all six scenarios  |
 
-A few diagnostics remain during play. Each names a file the game's own scripts request but its
-archives do not contain, which the native game also fails to load. Examples are Fairytale
-Requiem's `wav\4243.wav` and Fairytale Symphony's ending movie, which its installation lacks.
+All three are RScript 1.11.0.3. Scenes, maps, choices, backlog, colour effects and the save,
+load, configuration and font screens match the native game pixel for pixel at 1280x720.
+Slot saves are interchangeable with the native game.
+
+Some diagnostics name files the game's own scripts request but its archives do not contain;
+the native game fails to load them too. Examples are Fairytale Requiem's `wav\4243.wav` and
+Fairytale Symphony's ending movie.
+
+RScript 1.9 executables (for example Railsoft's Albatross Koukairoku) use an older `APINI` layout,
+different operand layouts for opcodes 0x3E and 0x40, and LWG layer formats 40 and 56. They
+are not supported.
 
 ## Known gaps
 

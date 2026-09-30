@@ -7,14 +7,16 @@ read for resources and evidence only; they never run in the browser.
 
 ## Current engines
 
-| Engine      | Location              | Games                                                                 |
-| ----------- | --------------------- | --------------------------------------------------------------------- |
-| BGI/Buriko  | `src/engines/buriko/` | Aokana, 穢翼のユースティア, Jewelry Hearts Academia, Subarashiki Hibi |
-| MAGES / SC3 | `src/engines/mages/`  | CHAOS;HEAD NOAH (`games/chaos-head-noah`)                             |
+| Engine        | Location               | Games                                                                 |
+| ------------- | ---------------------- | --------------------------------------------------------------------- |
+| BGI/Buriko    | `src/engines/buriko/`  | Aokana, 穢翼のユースティア, Jewelry Hearts Academia, Subarashiki Hibi |
+| MAGES / SC3   | `src/engines/mages/`   | CHAOS;HEAD NOAH (`games/chaos-head-noah`)                             |
+| codeX RScript | `src/engines/rscript/` | Fairytale Requiem, Fairytale Symphony, Fairytale Encore               |
 
 BGI/Buriko is a complete recreation: `bp/` holds the bytecode VM, `native/`
-the native services and script callbacks. Read the engine `README.md` files
-before changing either engine.
+the native services and script callbacks. codeX RScript runs GSC bytecode
+(`vm/`) in a native game scene (`runtime/`). Read the engine `README.md` files
+before changing an engine.
 
 A browser tab has a small CPU budget. Compute-heavy routines are therefore
 implemented in Rust compiled to WebAssembly (`wasm/`, rebuilt with
