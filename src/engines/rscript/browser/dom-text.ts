@@ -5,6 +5,7 @@ import {
   subscribeDomTextStyle,
   type DomTextStyle,
 } from '../../../text/dom-text-style.js';
+import {objectFitPlacement} from '../../../graphics/object-fit.js';
 import {RScriptContainer, type BakedGlyph, type RScriptNode} from '../graphics/sprite.js';
 import {RScriptTextBlock} from '../runtime/text-block.js';
 
@@ -59,6 +60,8 @@ export class RScriptDomText {
   readonly element: HTMLElement;
   private readonly blocks = new Map<RScriptNode, BlockView>();
   private readonly resize: ResizeObserver;
+  /** Re-reads canvas placement; box resizes are observed, `object-fit` changes are not. */
+  readonly relayout: () => void;
   private readonly unsubscribeStyle: () => void;
   private enabled = false;
   private styled = false;
@@ -83,13 +86,14 @@ export class RScriptDomText {
     const fit = (): void => {
       const r = canvas.getBoundingClientRect(),
         p = parent.getBoundingClientRect();
-      const scale = Math.min(r.width / width, r.height / height) || 1;
+      const {scaleX, scaleY, offsetX, offsetY} = objectFitPlacement(canvas, r, width, height);
       Object.assign(this.element.style, {
-        left: `${r.left - p.left + (r.width - width * scale) / 2}px`,
-        top: `${r.top - p.top + (r.height - height * scale) / 2}px`,
-        transform: `scale(${scale})`,
+        left: `${r.left - p.left + offsetX}px`,
+        top: `${r.top - p.top + offsetY}px`,
+        transform: scaleX === scaleY ? `scale(${scaleX || 1})` : `scale(${scaleX}, ${scaleY})`,
       });
     };
+    this.relayout = fit;
     this.resize = new ResizeObserver(fit);
     this.resize.observe(canvas);
     fit();

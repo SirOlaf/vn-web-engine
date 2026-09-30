@@ -1,4 +1,6 @@
 import {BrowserAudioContextHost} from '../../../audio/browser-audio-context-host.js';
+import {objectFitPlacement} from '../../../graphics/object-fit.js';
+import {BrowserWindowsMessageBoxHost} from '../../../platform/windows-message-box.js';
 import {HttpSource, sourceBlob, type ByteSource} from '../../../core/source.js';
 import type {WorkerSource} from '../../../core/worker-source.js';
 import type {YuvFrame} from '../../../video/frame.js';
@@ -16,6 +18,11 @@ export interface RScriptBrowserPlayerOptions {
   readonly apini: RScriptApini;
   readonly saves: RScriptSaveStorage;
   readonly document: Document;
+  /**
+   * The configuration's window or fullscreen choice (sub_452990). The page's display host
+   * decides what it does; without one the choice has no effect.
+   */
+  setFullscreen?(fullscreen: boolean): void;
   diagnostic(message: string): void;
   /** The game closed (`error` unset) or stopped with an error. */
   exit(error?: unknown): void;
@@ -82,6 +89,9 @@ export class RScriptBrowserPlayer {
     this.movieCanvas.style.cssText = 'display:none;pointer-events:none';
     this.panel.append(this.canvas, this.movieCanvas);
     this.audioHost = new BrowserAudioContextHost(this.audio, document);
+    const messageBox = new BrowserWindowsMessageBoxHost(this.panel, () =>
+      this.canvas.focus({preventScroll: true}),
+    );
     const rasterizer = new CanvasGlyphRasterizer(document);
     this.domText = new RScriptDomText({
       document,
@@ -117,9 +127,9 @@ export class RScriptBrowserPlayer {
       saves: options.saves,
       playMovie: (path) => this.playMovie(path),
       stopMovie: () => this.skipMovie?.(),
-      confirm: (caption, text) => this.confirm(caption, text),
+      confirm: (caption, text) => messageBox.confirm(caption, text),
       listFonts: () => listRScriptFonts(document),
-      setFullscreen: (fullscreen) => this.setFullscreen(fullscreen),
+      setFullscreen: (fullscreen) => options.setFullscreen?.(fullscreen),
       setCursorVisible: (visible) => {
         this.canvas.style.cursor = visible ? '' : 'none';
       },
@@ -127,6 +137,11 @@ export class RScriptBrowserPlayer {
       exit: (error) => options.exit(error),
     });
     this.bindInput();
+  }
+
+  /** Re-reads the canvas placement; box resizes are observed, `object-fit` changes are not. */
+  relayout(): void {
+    this.domText.relayout();
   }
 
   /**
@@ -148,13 +163,14 @@ export class RScriptBrowserPlayer {
   }
 
   private point(event: MouseEvent): {x: number; y: number} {
-    const rect = this.canvas.getBoundingClientRect();
-    const scale = Math.min(rect.width / this.canvas.width, rect.height / this.canvas.height) || 1;
-    const left = rect.left + (rect.width - this.canvas.width * scale) / 2,
-      top = rect.top + (rect.height - this.canvas.height * scale) / 2;
+    const {canvas} = this;
+    const rect = canvas.getBoundingClientRect();
+    const fit = objectFitPlacement(canvas, rect, canvas.width, canvas.height);
+    const scaleX = fit.scaleX || 1,
+      scaleY = fit.scaleY || 1;
     return {
-      x: Math.floor((event.clientX - left) / scale),
-      y: Math.floor((event.clientY - top) / scale),
+      x: Math.floor((event.clientX - rect.left - fit.offsetX) / scaleX),
+      y: Math.floor((event.clientY - rect.top - fit.offsetY) / scaleY),
     };
   }
 
@@ -315,71 +331,6 @@ export class RScriptBrowserPlayer {
       voice.dispose();
       this.movieCanvas.style.display = 'none';
     }
-  }
-
-  /** The configuration's screen mode; the click that chose it allows the request. */
-  private setFullscreen(fullscreen: boolean): void {
-    const document = this.options.document;
-    const request = fullscreen
-      ? document.fullscreenElement
-        ? null
-        : this.panel.requestFullscreen?.()
-      : document.fullscreenElement
-        ? document.exitFullscreen()
-        : null;
-    void request?.catch((error: unknown) =>
-      this.options.diagnostic(`Fullscreen: ${error instanceof Error ? error.message : error}`),
-    );
-  }
-
-  /** OK/Cancel confirmation over the game, standing in for the native MessageBox. */
-  private confirm(caption: string, text: string): Promise<boolean> {
-    const document = this.options.document;
-    const dialog = document.createElement('dialog');
-    dialog.setAttribute('aria-label', caption);
-    dialog.style.cssText =
-      'max-width:min(90%,28rem);padding:1.25rem 1.5rem;border:1px solid #39414c;border-radius:8px;background:#171c24;color:#e8ecf2';
-    const heading = document.createElement('h2');
-    heading.textContent = caption;
-    heading.style.cssText = 'margin:0 0 .75rem;font-size:1rem';
-    const message = document.createElement('p');
-    // pre-line keeps the native CR LF line breaks.
-    message.textContent = text;
-    message.style.cssText = 'margin:0 0 1rem;white-space:pre-line';
-    const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;gap:.5rem;justify-content:flex-end';
-    const button = (label: string): HTMLButtonElement => {
-      const element = document.createElement('button');
-      element.type = 'button';
-      element.textContent = label;
-      return element;
-    };
-    const ok = button('OK'),
-      cancel = button('Cancel');
-    actions.append(ok, cancel);
-    dialog.append(heading, message, actions);
-    this.panel.append(dialog);
-    return new Promise((resolve) => {
-      const finish = (confirmed: boolean): void => {
-        dialog.close();
-        dialog.remove();
-        this.canvas.focus({preventScroll: true});
-        resolve(confirmed);
-      };
-      ok.addEventListener('click', () => finish(true), {once: true});
-      cancel.addEventListener('click', () => finish(false), {once: true});
-      // Escape cancels, like closing the native message box.
-      dialog.addEventListener(
-        'cancel',
-        (event) => {
-          event.preventDefault();
-          finish(false);
-        },
-        {once: true},
-      );
-      dialog.showModal();
-      ok.focus();
-    });
   }
 
   dispose(): void {

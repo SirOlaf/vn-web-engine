@@ -36,7 +36,10 @@ textMode.onchange = () => player?.setTextMode(selectedTextMode());
 let fullscreenControls: ReturnType<typeof mountFullscreenControls> | undefined;
 const displayHost = new BrowserPageFullscreenHost(
   element('display'),
-  () => fullscreenControls?.refresh(),
+  () => {
+    fullscreenControls?.refresh();
+    player?.relayout();
+  },
   report,
 );
 fullscreenControls = mountFullscreenControls(displayHost);
@@ -177,6 +180,10 @@ play.onclick = () => {
     apini,
     saves: storage(saves),
     document,
+    // The configuration's screen mode expands the page view in the chosen fullscreen mode.
+    setFullscreen: (fullscreen) => {
+      if (displayHost.isExpanded !== fullscreen) displayHost.toggleFullscreen();
+    },
     diagnostic: (message) => console.warn(`[RScript] ${message}`),
     exit: stopped,
   });
