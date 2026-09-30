@@ -1,0 +1,212 @@
+<!doctype html><meta charset="utf-8" /><title>DOM text style</title>
+<link rel="stylesheet" href="/ui/player/player.css" />
+<style>
+  body {
+    padding: 24px;
+  }
+  #stage {
+    position: relative;
+    height: 360px;
+    background: #86949d;
+    margin-top: 20px;
+  }
+  .game-glyph-slots {
+    transform: scale(0.8);
+  }
+  button {
+    margin-right: 12px;
+  }
+</style>
+<p>
+  Reader DOM text style. Rows: two-line dialogue in the game font, gray outlined text. Checks run on
+  load; the buttons switch styles for visual comparison.
+</p>
+<button id="native">Native style</button><button id="fit">Custom, fit</button
+><button id="natural">Custom, natural</button>
+<p id="status">Loading…</p>
+<div id="stage"></div>
+<script type="module">
+  import {DomGlyphSlots} from './text/dom-glyph-slots.js';
+  import {
+    defaultDomTextStyle,
+    getDomTextStyle,
+    setDomTextStyle,
+    subscribeDomTextStyle,
+  } from './text/dom-text-style.js';
+  const status = document.querySelector('#status');
+  window.addEventListener('error', (e) => (status.textContent = `FAIL: ${e.message}`));
+  const layer = new DomGlyphSlots(document.querySelector('#stage'));
+  layer.setSize(600, 360);
+  const row = (text, line, x, y, extra = {}) =>
+    [...text].map((ch, i) => ({
+      id: line * 100 + i,
+      text: ch,
+      line,
+      x: x + i * 28,
+      y,
+      width: 28,
+      height: 32,
+      size: 30,
+      color: 0xffffff,
+      alpha: 255,
+      ...extra,
+    }));
+  const slots = [
+    {
+      id: 'dialogue',
+      explicitLines: true,
+      stretch: 0.9,
+      glyphs: [...row('「読みやすい文字で', 0, 40, 30), ...row('表示。」', 1, 68, 70)],
+    },
+    {
+      id: 'outlined',
+      explicitLines: true,
+      glyphs: row('Gray outlined text', 0, 40, 200, {
+        color: 0x808080,
+        outline: {radiusX: 1, radiusY: 1, color: 0, alpha: 255},
+      }),
+    },
+  ];
+  // A wait marker in its own flow, drawn at the native end of the dialogue's second row.
+  slots.push({
+    id: 'marker',
+    explicitLines: true,
+    classes: ['game-text-marker'],
+    glyphs: row('▼', 1, 180, 70, {flow: 'overlay'}),
+  });
+  const draw = () => {
+    for (const slot of slots) layer.show(slot, 0, 'sans-serif', false);
+    if (getDomTextStyle().enabled) layer.follow('marker', 'dialogue');
+  };
+  subscribeDomTextStyle(draw);
+  draw();
+  const span = (id) => layer.element.querySelector(`[data-text-id="${id}"] [data-game-text]`);
+  const box = (id) => layer.element.querySelector(`[data-text-id="${id}"]`);
+  const assert = (condition, message) => {
+    if (!condition) throw Error(message);
+  };
+  const node = span('dialogue').firstChild,
+    nativeFont = span('dialogue').style.font,
+    nativeTransform = span('dialogue').style.transform;
+  assert(span('dialogue').style.fontFamily === 'sans-serif', 'Native family changed');
+  assert(box('dialogue').style.overflow === 'hidden', 'Native clip missing');
+  const ink = () =>
+    box('outlined').querySelector('feColorMatrix').getAttribute('values').split(' ').map(Number);
+  // Browser-font glyphs already carry the CSS color; the ink matrix must not apply it again.
+  assert(ink()[0] === 1 && ink()[6] === 1 && ink()[12] === 1, 'Outlined browser text tinted twice');
+
+  setDomTextStyle({enabled: true, family: 'monospace', scale: 1.5, layout: 'natural'});
+  const s = span('dialogue');
+  assert(s.firstChild === node, 'Restyling replaced the text node');
+  assert(
+    s.style.fontFamily.startsWith('monospace'),
+    `Custom family missing: ${s.style.fontFamily}`,
+  );
+  assert(s.style.fontFamily.includes('sans-serif'), 'Game family is not a fallback');
+  assert(parseFloat(s.style.fontSize) === 45, `Size not scaled: ${s.style.fontSize}`);
+  assert(s.style.transform === 'scaleX(1)', `Natural layout compressed: ${s.style.transform}`);
+  assert(s.style.letterSpacing === '0px', 'Natural layout kept native pitch spacing');
+  assert(parseFloat(s.style.lineHeight) >= 45 * 1.25, 'Rows overlap at larger size');
+  assert(box('dialogue').style.overflow === 'visible', 'Natural layout still clips');
+  const lineTops = (id) => {
+    const r = document.createRange();
+    r.selectNodeContents(span(id).firstChild);
+    return new Set([...r.getClientRects()].map((rect) => Math.round(rect.top))).size;
+  };
+  // The wrapped paragraph reflows within its widest native row (right edge 292px): larger
+  // text flows into more lines than the game's two, smaller text into fewer.
+  assert(lineTops('dialogue') === 3, `Natural layout lines: ${lineTops('dialogue')}`);
+  setDomTextStyle({scale: 3});
+  assert(lineTops('dialogue') > 2, 'Natural layout did not flow into more lines');
+  {
+    // Lines end inside the text area (right edge 292), plus at most one hanging glyph.
+    const layerBox = layer.element.getBoundingClientRect(),
+      unit = layerBox.width / 600,
+      r = document.createRange();
+    r.selectNodeContents(span('dialogue').firstChild);
+    for (const rect of r.getClientRects())
+      assert(
+        (rect.right - layerBox.left) / unit <= 292 + 90 + 1,
+        'Reflowed text passed the text area',
+      );
+  }
+  setDomTextStyle({scale: 0.5});
+  assert(lineTops('dialogue') === 1, 'Natural layout did not join soft rows');
+  assert(span('dialogue').firstChild === node, 'Reflow replaced the text node');
+  setDomTextStyle({scale: 1.5});
+  // The marker follows the larger text's rendered end.
+  const lastRect = () => {
+    const n = span('dialogue').firstChild,
+      r = document.createRange();
+    r.setStart(n, n.length - 1);
+    r.setEnd(n, n.length);
+    return [...r.getClientRects()].at(-1);
+  };
+  const near = (a, b) => Math.abs(a - b) <= 3;
+  assert(
+    near(box('marker').getBoundingClientRect().left, lastRect().right),
+    'Marker did not follow the restyled dialogue end',
+  );
+
+  setDomTextStyle({
+    layout: 'fit',
+    scale: 1,
+    effects: false,
+    css: '.game-text-multiline { letter-spacing: 3px } .game-text-marker { color: rgb(255, 208, 96) } [data-font-size="30"]:not(.game-text-multiline, .game-text-marker) { text-decoration: underline }',
+  });
+  const computed = (id) => getComputedStyle(span(id));
+  assert(
+    computed('dialogue').letterSpacing === '3px',
+    'Class rule did not override inline spacing',
+  );
+  assert(computed('outlined').letterSpacing !== '3px', 'Class rule leaked to other slots');
+  assert(computed('marker').color === 'rgb(255, 208, 96)', 'Marker class rule missing');
+  assert(
+    computed('outlined').textDecorationLine === 'underline',
+    'Font size attribute rule missing',
+  );
+  assert(span('dialogue').classList.contains('game-text-horizontal'), 'Direction class missing');
+  // Rules are scoped to DOM text layers.
+  assert(
+    getComputedStyle(document.querySelector('#status')).letterSpacing !== '3px',
+    'Rules leaked',
+  );
+  assert(!box('outlined').querySelector('svg') || !span('outlined').style.filter, 'Effects kept');
+  assert(box('dialogue').style.overflow === 'hidden', 'Fit layout does not clip');
+  // Reader letter spacing is measured, so native rows neither break early nor overflow.
+  const tops = new Set(
+    [
+      ...(() => {
+        const r = document.createRange();
+        r.selectNodeContents(span('dialogue').firstChild);
+        return r.getClientRects();
+      })(),
+    ].map((rect) => Math.round(rect.top)),
+  );
+  assert(tops.size === 2, `Reader spacing changed native rows: ${tops.size}`);
+  assert(
+    lastRect().right <= box('dialogue').getBoundingClientRect().right + 1,
+    'Fit layout overflows the native row',
+  );
+
+  setDomTextStyle(defaultDomTextStyle);
+  assert(span('dialogue').style.font === nativeFont, 'Disabling did not restore the font');
+  assert(span('dialogue').style.transform === nativeTransform, 'Disabling did not restore fit');
+  assert(computed('dialogue').letterSpacing !== '3px', 'Reader rules remained');
+  assert(span('outlined').style.color === 'rgb(128, 128, 128)', 'Game color not restored');
+  assert(!box('marker').style.translate, 'Native styling kept the follower offset');
+  status.textContent =
+    'PASS: reader styles apply, restore, and keep text nodes. Visual review is manual.';
+
+  document.querySelector('#native').onclick = () => setDomTextStyle(defaultDomTextStyle);
+  document.querySelector('#fit').onclick = () =>
+    setDomTextStyle({...defaultDomTextStyle, enabled: true, family: 'monospace', scale: 1.2});
+  document.querySelector('#natural').onclick = () =>
+    setDomTextStyle({
+      ...defaultDomTextStyle,
+      enabled: true,
+      family: 'monospace',
+      scale: 1.2,
+      layout: 'natural',
+    });
+</script>

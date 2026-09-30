@@ -50,6 +50,8 @@ import {BurikoProductionDisplayResourceGraph} from '../../src/engines/buriko/nat
 import {BurikoProductionVmCore} from '../../src/engines/buriko/native/production-vm-core.js';
 import {burikoRegistryFold} from '../../src/engines/buriko/native/registry-case.js';
 import {BurikoNativeText} from '../../src/engines/buriko/native/text.js';
+import {BurikoBrowserFonts} from '../../src/engines/buriko/native/font-browser.js';
+import {readGameDirectoryFonts} from '../../src/text/game-directory-fonts.js';
 
 interface Installation extends BurikoExecutable {
   /** Keep the raw selection for handle/cache restoration, before runtime projection. */
@@ -291,6 +293,10 @@ async function launch(
         verticalScrollbarWidth: 0,
         horizontalScrollbarHeight: 0,
       },
+      fontProvider: new BurikoBrowserFonts({
+        // Disc selections keep installer-registered fonts outside the mounted game view.
+        directoryFonts: () => readGameDirectoryFonts(installation.selectedFiles),
+      }),
       nativeWindowTitle: encode(installation.title),
       productIdentity: installation.productIdentity ?? Uint8Array.of(0),
       engineVersion: burikoEngineVersion(

@@ -55,6 +55,23 @@ export function textLocation(s: NoahState, kind: string): string {
 export function fixedTextLocation(s: NoahState, kind: string): string {
   return `${state(s).scope}/${kind}`;
 }
+/**
+ * Reader stylesheet classes from a slot id (`<scope>/<kind>[/<call>]/<role>`): the layout
+ * role (`game-text-body`, `game-text-name`, `game-text-ruby`) and the drawing source
+ * (`game-text-source-scene`, `game-text-source-backlog`, `game-text-source-tips-description`,
+ * ...), without per-instance numbers.
+ */
+export function noahTextClasses(id: string): string[] {
+  const parts = id.split('/'),
+    role = parts.at(-1)!.replace(/-\d+$/, '');
+  let kind = parts.length - 2;
+  if (/^\d+$/.test(parts[kind] ?? '')) kind--;
+  const source = (parts[kind] ?? '').replace(/-\d+$/, '');
+  return [
+    `game-text-${role}`,
+    ...(kind >= 0 && /^[a-z][a-z-]*$/.test(source) ? [`game-text-source-${source}`] : []),
+  ];
+}
 /** Read the native classified tokens; never re-parse a message or run expressions. */
 export function tokenLayouts(s: NoahState, font: number): GlyphLayout[] {
   const result: GlyphLayout[] = [];
@@ -351,6 +368,7 @@ export function collectTextFrame(
       id,
       glyphs: buffer,
       interactive: commands.indexOf(anchors.get(id)!) >= lastBoundary,
+      classes: noahTextClasses(id),
     };
     slots.push(slot);
     if (dependent.has(id) || buffer.some((g) => g.text === undefined)) continue;

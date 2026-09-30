@@ -18,7 +18,7 @@ import {
   withRasterText,
   clearRasterTextPresentation,
 } from '../dist/text/raster-text.js';
-import {rasterTextSlots} from '../dist/text/browser-raster-text.js';
+import {rasterTextFollowers, rasterTextSlots} from '../dist/text/browser-raster-text.js';
 import {slotText} from '../dist/text/glyph-slots.js';
 import {
   startRuntimePerformanceRecording,
@@ -180,6 +180,52 @@ test('raster paragraphs keep faded glyphs, cropped fragments and hanging dialogu
   assert.equal(refreshed[0].slot.glyphs[1].alpha, 255);
   const fading = {...glyphs[1], alpha: 64};
   assert.equal(rasterTextSlots([...glyphs, fading])[0].slot.glyphs[1].alpha, 64);
+});
+
+test('leading indentation is dropped and end-of-row controls pair with their dialogue', () => {
+  const make = (id, text, x, y, flow) => ({
+    id,
+    text,
+    x,
+    y,
+    width: 24,
+    height: 24,
+    size: 24,
+    clip: {x, y, width: 24, height: 24},
+    family: 'monospace',
+    bold: false,
+    vertical: false,
+    color: 0xffffff,
+    alpha: 255,
+    ...(flow ? {flow} : {}),
+  });
+  // A hanging full-width indent, then a continuation row aligned with the first visible glyph.
+  const dialogue = [
+    make(1, '\u3000', 10, 10),
+    make(2, 'あ', 34, 10),
+    make(3, 'い', 58, 10),
+    make(4, 'う', 34, 46),
+    make(5, 'え', 58, 46),
+  ];
+  const marker = make(6, '▼', 86, 46, 'overlay/1');
+  const blocks = rasterTextSlots([...dialogue, marker]);
+  const body = blocks.find((b) => slotText(b.slot).text === 'あいうえ');
+  assert.ok(body, 'indent is not part of the dialogue text');
+  assert.equal(body.slot.glyphs[0].x, 34);
+  assert.deepEqual(
+    body.slot.glyphs.map((g) => g.line),
+    [0, 0, 1, 1],
+  );
+  // A row holding only indentation presents nothing.
+  assert.deepEqual(rasterTextSlots([dialogue[0]]), []);
+  const markerSlot = blocks.find((b) => slotText(b.slot).text === '▼');
+  assert.deepEqual(rasterTextFollowers(blocks.map((b) => b.slot)), [
+    [markerSlot.slot.id, body.slot.id],
+  ]);
+  // Same-flow glyphs and distant controls are not followers.
+  const far = make(7, '▼', 300, 46, 'overlay/2');
+  const sameFlow = rasterTextSlots([...dialogue, far]).map((b) => b.slot);
+  assert.deepEqual(rasterTextFollowers(sameFlow), []);
 });
 
 test('textless alpha replay cannot introduce a native divide fault, while native transparent tails still fault', () => {

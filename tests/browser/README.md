@@ -32,6 +32,11 @@ page expansion. It does not open a game installation or display game assets.
 
 `draw-list.html` exercises the reusable Canvas sprite backend: seven pixel checks for RGB modulation, opacity, source cropping, invalidation and clearing. Copy it to `dist/draw-list-test.html` and open that page through the existing development server.
 
+`dom-text-style.html` checks reader DOM text styles: custom families with the game
+font as fallback, size scaling, natural layout, color overrides, dropped effects,
+important reader CSS and restoration of native styling, without replacing text
+nodes. Copy it to `dist/dom-text-style-test.html` and open it through `npm run start:debug`.
+
 `scene-graphics.html` renders captured first-scene frames and checks triangle
 interpolation, tint, additive blending and painter order. Generate its fixtures
 with `NOAH_SCENE_CAPTURE=1 npm run verify:scene`, copy the HTML to

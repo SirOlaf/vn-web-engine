@@ -2,6 +2,7 @@ import type {Rect} from '../graphics/surface.js';
 import {BrowserRasterText} from './browser-raster-text.js';
 import type {RasterTextGlyph} from './raster-text.js';
 import {beginRuntimeSpan, recordRuntimeMetric} from '../platform/runtime-performance.js';
+import {subscribeDomTextStyle} from './dom-text-style.js';
 
 export type BrowserTextMode = 'native' | 'dom';
 export interface BrowserRasterTextFrame {
@@ -85,6 +86,10 @@ export function rasterTextOutsideRegion(
 export class BrowserRasterTextPresentation {
   private readonly presentations = new Map<HTMLCanvasElement, Presentation>();
   private mode: BrowserTextMode = 'native';
+  private readonly unsubscribeStyle = subscribeDomTextStyle(() => {
+    if (this.mode === 'dom')
+      for (const [canvas, value] of this.presentations) this.render(canvas, value);
+  });
   get textMode(): BrowserTextMode {
     return this.mode;
   }
@@ -189,6 +194,7 @@ export class BrowserRasterTextPresentation {
     this.presentations.delete(canvas);
   }
   dispose(): void {
+    this.unsubscribeStyle();
     for (const canvas of this.presentations.keys()) this.clear(canvas);
   }
 }

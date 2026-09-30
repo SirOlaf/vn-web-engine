@@ -2,6 +2,11 @@ import {CanvasDrawTarget, type DrawCommand} from '../../../../../graphics/draw-l
 import type {TriangleImage} from '../../../../../graphics/triangle-draw.js';
 import {BrowserAtlasFonts} from '../../../../../text/browser-atlas-font.js';
 import {DomGlyphSlots} from '../../../../../text/dom-glyph-slots.js';
+import {
+  getDomTextStyle,
+  replacesDomTextFamily,
+  subscribeDomTextStyle,
+} from '../../../../../text/dom-text-style.js';
 import type {CapturedDialogFrame} from './dialog-canvas.js';
 
 /** Browser presentation only. The ordinary target still executes every native
@@ -13,6 +18,10 @@ export class BrowserDomText {
   });
   private readonly layers: HTMLCanvasElement[] = [];
   private readonly resize: ResizeObserver;
+  private readonly unsubscribeStyle = subscribeDomTextStyle(() => {
+    if (this.latest && !this.text.element.hidden)
+      this.show(this.latest.frame, this.latest.captures);
+  });
   private readonly fonts = new BrowserAtlasFonts(() => {
     if (this.latest && !this.text.element.hidden)
       this.show(this.latest.frame, this.latest.captures);
@@ -44,10 +53,12 @@ export class BrowserDomText {
     const plan = frame.text;
     if (!plan) return;
     const families = new Map<string, string>();
+    // A reader font needs no atlas-derived font; every decoded slot can present at once.
+    const replaced = replacesDomTextFamily(getDomTextStyle());
     for (const slots of plan.after.values())
       for (const slot of slots) {
-        const family = this.fonts.request(slot, frame.textures);
-        if (family) families.set(slot.id, family);
+        const family = replaced ? '' : this.fonts.request(slot, frame.textures);
+        if (family !== undefined) families.set(slot.id, family);
       }
     this.fonts.retain(new Set(families.values()));
     const after = new Map<DrawCommand, typeof plan.slots>(),
@@ -120,7 +131,7 @@ export class BrowserDomText {
             layer++;
           }
           for (const slot of command ? (after.get(command) ?? []) : []) {
-            this.text.show(slot, z++, families.get(slot.id));
+            this.text.show(slot, z++, families.get(slot.id) || undefined);
             visible.add(slot.id);
           }
         },
@@ -148,6 +159,7 @@ export class BrowserDomText {
     this.text.clear();
   }
   dispose(): void {
+    this.unsubscribeStyle();
     this.resize.disconnect();
     this.clear();
     this.text.dispose();

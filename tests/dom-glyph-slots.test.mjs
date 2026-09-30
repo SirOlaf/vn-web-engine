@@ -431,3 +431,30 @@ test('only text above the last modal boundary is interactive, including raster-o
     'rectangle compilation retains interaction boundaries',
   );
 });
+
+test('natural reflow joins soft rows, keeps deliberate breaks and hangs closing punctuation like BGI', async () => {
+  const {reflowTextRows} = await import('../dist/text/dom-glyph-slots.js');
+  const advance = () => 10;
+  // A larger font: two full native rows of 6 now need 4 characters per line.
+  assert.deepEqual(reflowTextRows(['あいうえおか', 'きくけ'], [false], advance, 40, 40), [
+    'あいうえ',
+    'おかきく',
+    'け',
+  ]);
+  // A hanging first-row indent gives the first line more room.
+  assert.deepEqual(reflowTextRows(['「あいう」'], [], advance, 50, 40), ['「あいう」']);
+  // Closing punctuation hangs when its whole group fits within one advance past the edge.
+  assert.deepEqual(reflowTextRows(['あいうえ。'], [], advance, 40, 40), ['あいうえ。']);
+  assert.deepEqual(reflowTextRows(['あいうえっ'], [], advance, 40, 40), ['あいうえっ']);
+  // A longer group does not hang; the line breaks before it, as BGI's layout does
+  // (e.g. a row ending "……、" whose ellipsis continues the next row).
+  assert.deepEqual(reflowTextRows(['あいうえ。」'], [], advance, 40, 40), ['あいうえ', '。」']);
+  assert.deepEqual(reflowTextRows(['あいう……、'], [], advance, 40, 40), ['あいう…', '…、']);
+  // Deliberate and blank-row breaks survive; blank rows stay blank.
+  assert.deepEqual(
+    reflowTextRows(['あい', 'うえ', '', 'お'], [true, false, true], advance, 40, 40),
+    ['あい', 'うえ', '', 'お'],
+  );
+  // A smaller font joins soft rows into fewer lines.
+  assert.deepEqual(reflowTextRows(['あいう', 'えお'], [false], advance, 100, 100), ['あいうえお']);
+});

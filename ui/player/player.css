@@ -293,20 +293,6 @@ a {
   box-shadow: inset 0 0 0 2px #a6e0ff;
 }
 
-/* Empty geometry keeps native visual rows out of the continuous Text node. */
-.game-glyph-slots [data-game-text]::before {
-  content: '';
-  float: right;
-  width: 100%;
-  height: var(--text-wrap-height);
-  shape-outside: var(--text-wrap-shape);
-  pointer-events: none;
-  user-select: none;
-}
-.game-glyph-slots [data-game-text].vertical-game-text::before {
-  content: none;
-}
-
 #noah-surface {
   position: absolute;
   inset: 0;

@@ -56,6 +56,12 @@ export interface GlyphSlot {
   stretch?: number;
   id: string;
   glyphs: readonly TextGlyph[];
+  /**
+   * Engine classes for reader stylesheets, beside the shared `domTextClasses`: for example
+   * a dialogue role (`game-text-name`) or a control drawn over a window
+   * (`game-text-overlay`).
+   */
+  classes?: readonly string[];
 }
 export interface SlotText {
   text: string;

@@ -1,4 +1,5 @@
 import {DomGlyphSlots} from './dom-glyph-slots.js';
+import {getDomTextStyle} from './dom-text-style.js';
 import type {GlyphSlot, TextGlyph} from './glyph-slots.js';
 import {rasterTextGlyphKey, type RasterTextGlyph} from './raster-text.js';
 
@@ -50,6 +51,10 @@ export function rasterTextSlots(
     row.sort((a, b) => (a.vertical ? a.y - b.y : a.x - b.x));
     let run: RasterTextGlyph[] = [];
     const flush = () => {
+      // Leading whitespace is indentation, which the first visible glyph's position already
+      // carries. Keeping it would anchor the row to an invisible advance that restyled text
+      // widens or narrows, pushing or clipping the first visible glyph.
+      while (run.length && run[0]!.text !== undefined && /^\s*$/u.test(run[0]!.text)) run.shift();
       if (!run.length) return;
       const first = run[0]!;
       const glyphs: TextGlyph[] = run.map((g) => ({...g, line: 0}));
@@ -130,6 +135,37 @@ export function rasterTextSlots(
   return blocks;
 }
 
+/**
+ * Short controls in another flow that sit at the end of a dialogue row, such as a wait
+ * marker drawn after the last glyph: [follower, leader] slot ids. Each follower takes the
+ * nearest leader whose last visible glyph ends within three glyph widths before it on the
+ * same row.
+ */
+export function rasterTextFollowers(slots: readonly GlyphSlot[]): [string, string][] {
+  const visible = (slot: GlyphSlot) => slot.glyphs.filter((g) => g.alpha > 0 && g.text);
+  const pairs: [string, string][] = [];
+  for (const follower of slots) {
+    const glyphs = visible(follower);
+    if (follower.vertical || glyphs.length === 0 || glyphs.length > 2) continue;
+    const first = glyphs[0]!;
+    let best: {id: string; distance: number} | undefined;
+    for (const leader of slots) {
+      if (leader === follower || leader.vertical) continue;
+      const own = visible(leader);
+      const last = own.at(-1);
+      if (!last || own.length <= glyphs.length || last.flow === first.flow) continue;
+      const distance = first.x - (last.x + last.width),
+        rowOffset = Math.abs(first.y + first.height / 2 - (last.y + last.height / 2));
+      if (rowOffset > last.height / 2 || distance < -last.width / 2 || distance > last.width * 3)
+        continue;
+      if (!best || Math.abs(distance) < best.distance)
+        best = {id: leader.id, distance: Math.abs(distance)};
+    }
+    if (best) pairs.push([follower.id, best.id]);
+  }
+  return pairs;
+}
+
 /** An alternate presentation only: the underlying game canvas and readbacks stay native. */
 export class BrowserRasterText {
   readonly text: DomGlyphSlots;
@@ -171,10 +207,20 @@ export class BrowserRasterText {
     this.background.getContext('2d')!.putImageData(frame, 0, 0);
     this.text.setSize(frame.width, frame.height);
     const visible = new Set<string>();
-    for (const {slot, family} of rasterTextSlots(glyphs)) {
-      this.text.show(slot, 1, family, false);
+    const slots = rasterTextSlots(glyphs),
+      followers = rasterTextFollowers(slots.map(({slot}) => slot)),
+      markers = new Set(followers.map(([follower]) => follower));
+    for (const {slot, family} of slots) {
+      const classes = [
+        ...(slot.glyphs[0]?.flow !== undefined ? ['game-text-overlay'] : []),
+        ...(markers.has(slot.id) ? ['game-text-marker'] : []),
+      ];
+      this.text.show(classes.length ? {...slot, classes} : slot, 1, family, false);
       visible.add(slot.id);
     }
+    // Native placement already puts controls at the native text end.
+    if (getDomTextStyle().enabled)
+      for (const [follower, leader] of followers) this.text.follow(follower, leader);
     this.text.retain(visible);
     this.text.element.hidden = false;
     this.fit();

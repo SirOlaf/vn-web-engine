@@ -5,6 +5,9 @@
  * A verified product ID may be supplied as BURIKO_PROBE_PRODUCT_ID when a packed executable hides it.
  * BURIKO_PROBE_EXECUTABLE substitutes a root file at the selected executable's mounted path.
  * BURIKO_PROBE_OMIT_GDB=1 hides global save databases without modifying disk files.
+ * Font resources, enumerations and face requests are reported with the source the browser
+ * player would select (font resource, game-directory file, host font, or fallback). Node has
+ * no installed-font access, so faces a real host would supply are reported as fallback.
  */
 import {open, readdir} from 'node:fs/promises';
 import {basename, dirname, join, relative, resolve, sep} from 'node:path';
@@ -19,6 +22,7 @@ import {burikoInstallationView} from '../dist/engines/buriko/installation-view.j
 import {createMountedVmFixture} from '../tests/aokana-production-vm-fixture.mjs';
 import {BurikoProductionBootRunner} from '../dist/engines/buriko/native/production-boot-runner.js';
 import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
+import {ProbeFontProvider} from './probe-font-provider.mjs';
 
 const defaultRoots = ['targetgame/aokana', 'targetgame/穢翼のユースティアno-patch'];
 const legacyAokanaSha256 = 'f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a';
@@ -252,6 +256,9 @@ async function probe(inputRoot) {
       engineVersion,
       commandLineTailWide: '',
       presentationMode: 'none',
+      fontProvider: new ProbeFontProvider(sourceEntries, (record) =>
+        console.log(JSON.stringify({game: basename(root), ...record})),
+      ),
       cpuHost: new BrowserX86CompatibilityCpuHost(headlessPerformance),
       onDialogShown(element) {
         const id = typeof element.id === 'string' && element.id ? element.id : element.tagName;

@@ -6,6 +6,7 @@
   import PerformanceDiagnostics from './PerformanceDiagnostics.svelte';
   import RuntimeProfile from './RuntimeProfile.svelte';
   import BitmapMemory from './BitmapMemory.svelte';
+  import DomTextStyle from './DomTextStyle.svelte';
   import {legacyAokanaProfile} from '../game-profiles/aokana.js';
   export let game: GameId;
 </script>
@@ -64,6 +65,7 @@
         DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and
         visual effects are approximate.
       </p>
+      <DomTextStyle />
     </section>
     <SaveFiles {game} runtime />
     {#if game === 'buriko'}

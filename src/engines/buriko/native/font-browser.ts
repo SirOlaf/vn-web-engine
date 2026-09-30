@@ -1,5 +1,7 @@
 import {readBurikoFontData, type BurikoFontData} from './font-data.js';
 import type {SfntFontMetadata} from '../../../formats/sfnt.js';
+import type {ByteSource} from '../../../core/source.js';
+import type {GameDirectoryFont} from '../../../text/game-directory-fonts.js';
 import {
   queryBrowserLocalFonts,
   readBrowserLocalFontMetadata,
@@ -89,6 +91,22 @@ interface InstalledFace {
   readonly names: readonly string[];
   readonly family: string;
   readonly fullName: string;
+}
+/** A face of a font file in the game directory, loaded into the browser on first use. */
+interface DirectoryFace extends InstalledFace {
+  readonly path: string;
+  readonly source: ByteSource;
+  readonly index: number;
+  loaded?: Promise<LoadedFace | null>;
+}
+
+export interface BurikoBrowserFontOptions {
+  /**
+   * Font files shipped in the game directory. They behave as installed families: they are
+   * enumerable, answer pitch and charset queries, and take precedence over host fonts of the
+   * same name. Called once, on the first query that needs the installed catalog.
+   */
+  readonly directoryFonts?: () => Promise<readonly GameDirectoryFont[]>;
 }
 const charsetBits = new Map([
   [0, 0],
@@ -343,7 +361,9 @@ function installedFace({
 }
 
 export class BurikoBrowserFonts implements BurikoFontProvider {
+  constructor(private readonly options: BurikoBrowserFontOptions = {}) {}
   private readonly resources = new Map<number, readonly LoadedFace[]>();
+  private directory: Promise<readonly DirectoryFace[]> | null = null;
   private readonly localFaces = new Map<string, FontFace | null>();
   private nextResource = 1;
   private nextFamily = 1;
@@ -362,7 +382,34 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
    * from enumeration and from pitch/charset queries, though local() rendering can still
    * select them.
    */
-  private installedFonts(name?: string): Promise<readonly InstalledFace[]> {
+  private async installedFonts(name?: string): Promise<readonly InstalledFace[]> {
+    // The game's own files come first: they are the faces its installer would have added.
+    const [directory, host] = await Promise.all([this.directoryFaces(), this.hostFonts(name)]);
+    return directory.length === 0 ? host : [...directory, ...host];
+  }
+  private directoryFaces(): Promise<readonly DirectoryFace[]> {
+    const find = this.options.directoryFonts;
+    if (!find) return Promise.resolve([]);
+    return (this.directory ??= find().then(
+      (fonts) =>
+        fonts.flatMap(({path, source, faces}) =>
+          faces.map((data, index): DirectoryFace => {
+            const family = selectName(data, 1) ?? selectName(data, 16) ?? '',
+              fullName = selectName(data, 4) ?? family,
+              postscriptName = selectName(data, 6) ?? '';
+            return {
+              ...installedFace({data, family, fullName, postscriptName}),
+              path,
+              source,
+              index,
+            };
+          }),
+        ),
+      // A failed scan leaves only host fonts; it is not retried for this runtime.
+      () => [],
+    ));
+  }
+  private hostFonts(name?: string): Promise<readonly InstalledFace[]> {
     if (this.installed) return this.installed;
     if (getRuntimeProfile() === 'browser-optimized') return this.selectedInstalledFonts(name);
     return (this.installed = readBrowserLocalFontMetadata().then((faces) =>
@@ -512,6 +559,84 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
       .flat()
       .filter((face) => face.names.some((candidate) => candidate.toLowerCase() === folded));
   }
+  /** The closest-styled game-directory face with the requested name. */
+  private async selectDirectoryFace(
+    parameters: Pick<BurikoBrowserFontParameters, 'face' | 'weight' | 'italic'>,
+  ): Promise<DirectoryFace | null> {
+    const folded = parameters.face.toLowerCase();
+    const matches = (await this.directoryFaces()).filter((face) =>
+      face.names.some((candidate) => candidate.toLowerCase() === folded),
+    );
+    if (matches.length === 0) return null;
+    const distance = (face: DirectoryFace) =>
+      Number(face.data.italic !== parameters.italic) * 1000 +
+      Math.abs(face.data.weight - parameters.weight);
+    return matches.reduce((best, face) => (distance(face) < distance(best) ? face : best));
+  }
+  /**
+   * Where `create` finds a face, without loading anything into the browser: a loaded font
+   * resource, a game-directory file, or an installed host font. Null means `create` would try
+   * a `local()` face the catalog does not list, then the generic fallback.
+   */
+  async locate(
+    parameters: Pick<BurikoBrowserFontParameters, 'face' | 'weight' | 'italic'>,
+  ): Promise<
+    | {readonly source: 'resource' | 'host'; readonly family: string; readonly fullName: string}
+    | {
+        readonly source: 'directory';
+        readonly family: string;
+        readonly fullName: string;
+        readonly path: string;
+        readonly index: number;
+      }
+    | null
+  > {
+    const resource = this.candidates(parameters.face)[0];
+    if (resource) return {source: 'resource', family: resource.family, fullName: resource.fullName};
+    const directory = await this.selectDirectoryFace(parameters);
+    if (directory) {
+      const {family, fullName, path, index} = directory;
+      return {source: 'directory', family, fullName, path, index};
+    }
+    const folded = parameters.face.toLowerCase();
+    const host = (await this.hostFonts(parameters.face)).find((face) =>
+      face.names.some((candidate) => candidate.toLowerCase() === folded),
+    );
+    return host ? {source: 'host', family: host.family, fullName: host.fullName} : null;
+  }
+  /** The closest-styled game-directory face with the requested name, loaded on first use. */
+  private async loadDirectoryFace(
+    parameters: BurikoBrowserFontParameters,
+  ): Promise<LoadedFace | null> {
+    const selected = await this.selectDirectoryFace(parameters);
+    if (!selected) return null;
+    return (selected.loaded ??= (async (): Promise<LoadedFace | null> => {
+      const finishLoad = beginRuntimeSpan('buriko.font.directory-face-load');
+      try {
+        const bytes = await selected.source.read(0, selected.source.size);
+        const data = readBurikoFontData(bytes)[selected.index];
+        if (!data) return null;
+        const cssFamily = `BurikoDirectoryFont${this.nextFamily++}`;
+        const descriptors = {weight: String(data.weight), style: data.italic ? 'italic' : 'normal'};
+        const browserFace = new FontFace(cssFamily, data.bytes.slice().buffer, descriptors);
+        await browserFace.load();
+        fontSet().add(browserFace);
+        return {
+          ...selected,
+          data,
+          cssFamily,
+          descriptors,
+          browserFace,
+          enumerable: true,
+        };
+      } catch {
+        // An unreadable face falls through to host fonts, like a font Windows rejected.
+        return null;
+      } finally {
+        finishLoad?.();
+      }
+    })());
+  }
   async create(parameters: BurikoBrowserFontParameters): Promise<BurikoBrowserFontFace> {
     const finishCreate = beginRuntimeSpan('buriko.font.create');
     let source = 0;
@@ -534,6 +659,18 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
           selected.family,
           selected.data,
           {kind: 'bytes', bytes: selected.data.bytes, descriptors: selected.descriptors},
+        );
+      }
+      const directory = await this.loadDirectoryFace(parameters);
+      if (directory) {
+        source = 4;
+        return new BurikoBrowserFontFace(
+          parameters,
+          directory.cssFamily,
+          directory.fullName,
+          directory.family,
+          directory.data,
+          {kind: 'bytes', bytes: directory.data.bytes, descriptors: directory.descriptors},
         );
       }
       const key = parameters.face.toLowerCase();
@@ -578,6 +715,12 @@ export class BurikoBrowserFonts implements BurikoFontProvider {
     for (const token of this.resources.keys()) this.unloadResource(token);
     for (const face of this.localFaces.values()) if (face) fontSet().delete(face);
     this.localFaces.clear();
+    const directory = this.directory;
+    this.directory = null;
+    void directory?.then((faces) => {
+      for (const face of faces)
+        void face.loaded?.then((loaded) => loaded && fontSet().delete(loaded.browserFace));
+    });
     this.installed = this.localRecords = null;
     this.recordFaces.clear();
   }
