@@ -33,7 +33,10 @@ const {collapseOptions: collapse} = mountGameViewer('noah');
 let fullscreenControls: ReturnType<typeof mountFullscreenControls> | undefined;
 const displayHost = new BrowserPageFullscreenHost(
   element('display'),
-  () => fullscreenControls?.refresh(),
+  () => {
+    fullscreenControls?.refresh();
+    player?.relayout();
+  },
   report,
 );
 fullscreenControls = mountFullscreenControls(displayHost);

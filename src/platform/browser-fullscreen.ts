@@ -42,3 +42,28 @@ export function requestBrowserFullscreen(
     ? document.exitFullscreen()
     : document.webkitExitFullscreen!();
 }
+
+/** Expanded presentation keeps native proportions unless the player opts into stretching. */
+export type BrowserFullscreenScaling = 'fit' | 'stretch';
+const SCALING_KEY = 'vn.fullscreen-scaling';
+
+export function readBrowserFullscreenScaling(
+  view: Window | null | undefined,
+): BrowserFullscreenScaling {
+  try {
+    return view?.localStorage.getItem(SCALING_KEY) === 'stretch' ? 'stretch' : 'fit';
+  } catch {
+    return 'fit'; // Browser storage can be disabled independently of presentation.
+  }
+}
+
+export function writeBrowserFullscreenScaling(
+  view: Window | null | undefined,
+  scaling: BrowserFullscreenScaling,
+): void {
+  try {
+    view?.localStorage.setItem(SCALING_KEY, scaling);
+  } catch {
+    /* Optional preference. */
+  }
+}

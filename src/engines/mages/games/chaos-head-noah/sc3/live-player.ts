@@ -17,7 +17,13 @@ export function mountLivePlayer(
   presentation: 'diagnostic' | 'game' = 'diagnostic',
   onSidebarAvailability?: (available: boolean) => void,
   onStopped?: (message: string) => void,
-): {panel: HTMLElement; start(): void; setTextMode(mode: 'native' | 'dom'): void; dispose(): void} {
+): {
+  panel: HTMLElement;
+  start(): void;
+  setTextMode(mode: 'native' | 'dom'): void;
+  relayout(): void;
+  dispose(): void;
+} {
   const panel = document.createElement('section'),
     canvas = document.createElement('canvas'),
     controls = document.createElement('div'),
@@ -230,6 +236,9 @@ export function mountLivePlayer(
       device.clear();
       if (mode === 'native') domText.hide();
       else if (lastFrame) domText.show(lastFrame, lastCaptures);
+    },
+    relayout() {
+      domText.relayout();
     },
     dispose() {
       disposed = true;

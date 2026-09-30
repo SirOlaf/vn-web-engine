@@ -96,8 +96,31 @@ test('native desktop pixels, fitted window and pointer mapping retain one coordi
   s.host.dispose();
 });
 
-test('expanded presentation stretches both axes and preserves native pointer coordinates', () => {
+test('expanded presentation letterboxes to native proportions by default', () => {
   const s = fixture();
+  assert.equal(s.host.scaling, 'fit');
+  s.host.configure({width: 1920, height: 1080, fullscreen: true});
+  s.host.setPosition(300, 200);
+  // Unlike the windowed view, expansion is not capped at physical native size.
+  assert.equal(s.windowElement.style.transform, 'scale(0.5)');
+  assert.equal(s.auxiliaryLayer.style.transform, s.windowElement.style.transform);
+  assert.equal(s.windowElement.style.left, '0px');
+  assert.equal(s.windowElement.style.top, '90px');
+  const mapping = s.host.readViewportScreenMapping();
+  assert.equal(mapping.nativePixelsPerCssX, 2);
+  assert.equal(mapping.nativePixelsPerCssY, 2);
+  s.viewport.clientWidth = 1600;
+  s.view.dispatchEvent(new Event('resize'));
+  assert.equal(s.windowElement.style.transform, 'scale(0.6666666666666666)');
+  assert.equal(s.windowElement.style.left, '160px');
+  assert.equal(s.windowElement.style.top, '0px');
+  s.host.dispose();
+});
+
+test('expanded presentation stretches both axes when opted in and preserves native pointer coordinates', () => {
+  const s = fixture();
+  s.host.setScaling('stretch');
+  assert.equal(s.saved.get('vn.fullscreen-scaling'), 'stretch');
   s.host.configure({width: 1920, height: 1080, fullscreen: true});
   s.host.setPosition(300, 200);
   assert.equal(s.windowElement.style.transform, 'scale(0.5, 0.6666666666666666)');

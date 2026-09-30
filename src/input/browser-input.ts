@@ -1,5 +1,6 @@
 import {TouchMouse} from './touch-mouse.js';
 import {isBrowserTextTarget} from './browser-text-target.js';
+import {objectFitPlacement} from '../graphics/object-fit.js';
 export interface InputFrame {
   keys: ReadonlySet<string>;
   pressed: ReadonlySet<string>;
@@ -54,10 +55,10 @@ export class BrowserInput {
     );
     const point = (e: PointerEvent) => {
       const r = element.getBoundingClientRect(),
-        scale = Math.min(r.width / width, r.height / height);
-      if (!(scale > 0)) return {x: 0, y: 0, inside: false};
-      const x = (e.clientX - r.left - (r.width - width * scale) / 2) / scale,
-        y = (e.clientY - r.top - (r.height - height * scale) / 2) / scale;
+        fit = objectFitPlacement(element, r, width, height);
+      if (!(fit.scaleX > 0 && fit.scaleY > 0)) return {x: 0, y: 0, inside: false};
+      const x = (e.clientX - r.left - fit.offsetX) / fit.scaleX,
+        y = (e.clientY - r.top - fit.offsetY) / fit.scaleY;
       return {
         x: Math.trunc(x),
         y: Math.trunc(y),

@@ -101,6 +101,9 @@ p {
   object-fit: contain;
   outline: none;
 }
+#display[data-stretch] .live-player canvas {
+  object-fit: fill;
+}
 .live-player > [role='status'] {
   position: absolute;
   bottom: 20px;

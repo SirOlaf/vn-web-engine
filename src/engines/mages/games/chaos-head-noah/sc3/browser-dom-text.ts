@@ -8,6 +8,7 @@ import {
   subscribeDomTextStyle,
 } from '../../../../../text/dom-text-style.js';
 import type {CapturedDialogFrame} from './dialog-canvas.js';
+import {objectFitPlacement} from '../../../../../graphics/object-fit.js';
 
 /** Browser presentation only. The ordinary target still executes every native
  * command and owns all VM captures/readbacks. This renderer never publishes to it. */
@@ -18,6 +19,8 @@ export class BrowserDomText {
   });
   private readonly layers: HTMLCanvasElement[] = [];
   private readonly resize: ResizeObserver;
+  /** Re-reads canvas placement; box resizes are observed, `object-fit` changes are not. */
+  readonly relayout: () => void;
   private readonly unsubscribeStyle = subscribeDomTextStyle(() => {
     if (this.latest && !this.text.element.hidden)
       this.show(this.latest.frame, this.latest.captures);
@@ -37,13 +40,14 @@ export class BrowserDomText {
     const fit = () => {
       const r = canvas.getBoundingClientRect(),
         p = parent.getBoundingClientRect(),
-        scale = Math.min(r.width / 1920, r.height / 1080);
+        {scaleX, scaleY, offsetX, offsetY} = objectFitPlacement(canvas, r, 1920, 1080);
       Object.assign(this.text.element.style, {
-        left: `${r.left - p.left + (r.width - 1920 * scale) / 2}px`,
-        top: `${r.top - p.top + (r.height - 1080 * scale) / 2}px`,
-        transform: `scale(${scale})`,
+        left: `${r.left - p.left + offsetX}px`,
+        top: `${r.top - p.top + offsetY}px`,
+        transform: scaleX === scaleY ? `scale(${scaleX})` : `scale(${scaleX}, ${scaleY})`,
       });
     };
+    this.relayout = fit;
     this.resize = new ResizeObserver(fit);
     this.resize.observe(canvas);
     fit();

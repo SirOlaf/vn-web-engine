@@ -42,6 +42,10 @@
           >True fullscreen</option
         >
       </select>
+      <label class="fullscreen-stretch">
+        <input id="fullscreen-stretch" type="checkbox" />
+        Stretch to fill the screen
+      </label>
       <button id="fullscreen" type="button" aria-pressed="false" aria-describedby="fullscreen-help"
         >Fill page</button
       >
@@ -82,3 +86,11 @@
     <PerformanceDiagnostics />
   </div>
 </aside>
+
+<style>
+  .fullscreen-stretch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+</style>

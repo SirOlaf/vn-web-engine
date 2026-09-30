@@ -23,6 +23,7 @@ export async function inspectBoot(
   panel: HTMLElement;
   start(): void;
   setTextMode(mode: 'native' | 'dom'): void;
+  relayout(): void;
   dispose(): void;
 }> {
   const cursors = await readOptionalNoahCursors(

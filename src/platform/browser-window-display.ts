@@ -7,8 +7,11 @@ import {BrowserWindowCoordinatesHost} from './browser-window-coordinates.js';
 import {
   browserFullscreenElement,
   browserFullscreenAvailable,
+  readBrowserFullscreenScaling,
   requestBrowserFullscreen,
+  writeBrowserFullscreenScaling,
   type BrowserFullscreenDocument,
+  type BrowserFullscreenScaling,
   type BrowserFullscreenElement,
 } from './browser-fullscreen.js';
 
@@ -40,6 +43,7 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
   private scaleY = 1;
   private expanded = false;
   private modeValue: BrowserFullscreenMode = 'page';
+  private scalingValue: BrowserFullscreenScaling;
   private pending = false;
   private blocked = false;
   private disposed = false;
@@ -64,6 +68,7 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
     } catch {
       /* Browser storage can be disabled independently of presentation. */
     }
+    this.scalingValue = readBrowserFullscreenScaling(this.view);
     for (const name of ['fullscreenchange', 'webkitfullscreenchange'])
       this.document.addEventListener(name, this.fullscreenChanged);
     this.view.addEventListener('resize', this.layout);
@@ -78,6 +83,9 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
 
   get mode(): BrowserFullscreenMode {
     return this.modeValue;
+  }
+  get scaling(): BrowserFullscreenScaling {
+    return this.scalingValue;
   }
   get isExpanded(): boolean {
     return this.expanded;
@@ -98,6 +106,13 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
       /* Optional preference. */
     }
     this.synchronizeFullscreen();
+    this.changed();
+  }
+
+  setScaling(scaling: BrowserFullscreenScaling): void {
+    this.scalingValue = scaling;
+    writeBrowserFullscreenScaling(this.view, scaling);
+    this.layout();
     this.changed();
   }
 
@@ -149,9 +164,15 @@ export class BrowserWindowDisplayHost implements WindowDisplayHost {
     const ratio = this.view.devicePixelRatio > 0 ? this.view.devicePixelRatio : 1;
     // Native window dimensions are device pixels. Preserve their physical extent on
     // high-DPI screens; page/screen expansion is the separate user-controlled policy.
-    const fittedScale = Math.min(availableWidth / width, availableHeight / height, 1 / ratio);
-    this.scaleX = this.expanded ? availableWidth / width : fittedScale;
-    this.scaleY = this.expanded ? availableHeight / height : fittedScale;
+    // Expansion letterboxes to native proportions unless stretching was chosen.
+    const containScale = Math.min(availableWidth / width, availableHeight / height);
+    const stretch = this.expanded && this.scalingValue === 'stretch';
+    this.scaleX = stretch
+      ? availableWidth / width
+      : this.expanded
+        ? containScale
+        : Math.min(containScale, 1 / ratio);
+    this.scaleY = stretch ? availableHeight / height : this.scaleX;
     this.viewport.style.height = this.expanded ? '' : `${height * this.scaleY}px`;
     for (const element of new Set([this.windowElement, this.auxiliaryLayer])) {
       const style = element.style;

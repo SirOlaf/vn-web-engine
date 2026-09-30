@@ -1,14 +1,20 @@
 import {
   browserFullscreenAvailable,
   browserFullscreenElement,
+  readBrowserFullscreenScaling,
   requestBrowserFullscreen,
+  writeBrowserFullscreenScaling,
   type BrowserFullscreenElement,
+  type BrowserFullscreenScaling,
 } from './browser-fullscreen.js';
 import type {BrowserFullscreenMode} from './browser-window-display.js';
 
-/** Page fullscreen leaves renderer geometry and the game's display state untouched. */
+/** Page fullscreen leaves renderer geometry and the game's display state untouched.
+ * The root carries `data-stretch` while an expanded view should ignore native proportions.
+ */
 export class BrowserPageFullscreenHost {
   private modeValue: BrowserFullscreenMode = 'page';
+  private scalingValue: BrowserFullscreenScaling;
   private expanded = false;
   private pending = false;
   private blocked = false;
@@ -24,12 +30,16 @@ export class BrowserPageFullscreenHost {
     } catch {
       /* Optional preference. */
     }
+    this.scalingValue = readBrowserFullscreenScaling(root.ownerDocument.defaultView);
     for (const name of ['fullscreenchange', 'webkitfullscreenchange'])
       root.ownerDocument.addEventListener(name, this.fullscreenChanged);
   }
 
   get mode(): BrowserFullscreenMode {
     return this.modeValue;
+  }
+  get scaling(): BrowserFullscreenScaling {
+    return this.scalingValue;
   }
   get isExpanded(): boolean {
     return this.expanded;
@@ -53,10 +63,18 @@ export class BrowserPageFullscreenHost {
     this.changed();
   }
 
+  setScaling(scaling: BrowserFullscreenScaling): void {
+    this.scalingValue = scaling;
+    writeBrowserFullscreenScaling(this.root.ownerDocument.defaultView, scaling);
+    this.root.toggleAttribute('data-stretch', this.expanded && scaling === 'stretch');
+    this.changed();
+  }
+
   setFullscreen(active: boolean): void {
     this.expanded = active;
     this.blocked = false;
     this.root.toggleAttribute('data-expanded', active);
+    this.root.toggleAttribute('data-stretch', active && this.scalingValue === 'stretch');
     this.synchronize();
     this.changed();
   }
