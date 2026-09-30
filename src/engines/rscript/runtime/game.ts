@@ -25,6 +25,7 @@ import {MessageState, RScriptMessageWindow} from './message-window.js';
 import type {PanelCommand} from './message-panel.js';
 import {createOpcodeHandlers} from './opcodes.js';
 import type {GlyphRasterizer} from './text-block.js';
+import {decodeCp932} from '../text.js';
 
 /** Installation-local persistent files such as `FRsave.dat` and `FRsave01.dat`. */
 export interface RScriptSaveStorage {
@@ -49,6 +50,12 @@ export interface RScriptGameHost {
    * custom dialog image use); resolves true for OK.
    */
   confirm(caption: string, text: string): Promise<boolean>;
+  /**
+   * Font families the configuration's font window lists (0x4572F0): fixed-pitch TrueType
+   * families with Shift-JIS support, by their Japanese names. Called from the font button's
+   * press, so a browser can ask for font access.
+   */
+  listFonts?(): Promise<readonly string[]>;
   /** The configuration's window/fullscreen option (sub_452990). */
   setFullscreen?(fullscreen: boolean): void;
   /** Shows or hides the pointer over the game (ShowCursor). */
@@ -279,6 +286,7 @@ export class RScriptGame {
       },
       changed: (change) => this.configChanged(change),
       command: (command) => void this.configCommand(command),
+      listFonts: () => host.listFonts?.() ?? Promise.resolve([]),
     });
     this.display.screen.add(this.backdrop, 0);
     this.display.screen.add(this.configScreen, 1);
@@ -1250,6 +1258,8 @@ export class RScriptGame {
         initializeConfig(this.memory, apini);
       }
     }
+    // sub_456F60: the configured font becomes face 2, the one message boxes select.
+    this.host.rasterizer.addFace(decodeCp932(this.memory.configString(Config.fontName, 52)));
     this.applyVolumes();
     this.display.refresh();
     this.ticker = setInterval(() => this.tick(), Math.max(1, apini.tickMilliseconds));

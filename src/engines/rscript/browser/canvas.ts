@@ -1,6 +1,6 @@
 import type {RScriptRect, RScriptSurface} from '../graphics/pixels.js';
 import type {RScriptPresenter} from '../runtime/display.js';
-import type {GlyphCoverage, GlyphRasterizer} from '../runtime/text-block.js';
+import {DEFAULT_FACES, type GlyphCoverage, type GlyphRasterizer} from '../runtime/text-block.js';
 
 /** Presents native frames on a 2D canvas the size of the game screen. */
 export class CanvasPresenter implements RScriptPresenter {
@@ -68,25 +68,39 @@ export class CanvasPresenter implements RScriptPresenter {
   }
 }
 
-/** Font families tried for the executable's font, with common Japanese fallbacks. */
+/** CSS font families for a native face name, with common Japanese fallbacks. */
 export function rscriptFontFamilies(nativeName: string): string {
-  const names = [
-    nativeName,
-    'MS Gothic',
-    'ＭＳ ゴシック',
-    'Noto Sans JP',
-    'Hiragino Kaku Gothic ProN',
-    'Yu Gothic',
-  ];
+  const serif = /明朝|mincho/i.test(nativeName);
+  const names = serif
+    ? [nativeName, 'MS Mincho', 'ＭＳ 明朝', 'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho']
+    : [
+        nativeName,
+        'MS Gothic',
+        'ＭＳ ゴシック',
+        'Noto Sans JP',
+        'Hiragino Kaku Gothic ProN',
+        'Yu Gothic',
+      ];
   return (
     [...new Set(names.filter(Boolean))].map((name) => JSON.stringify(name)).join(', ') +
-    ', sans-serif'
+    (serif ? ', serif' : ', sans-serif')
   );
 }
 
 /** Glyphs are drawn at up to 8 times their size, and at most 512 pixels high. */
 const SUPERSAMPLE = 8;
 const SUPERSAMPLE_LIMIT = 512;
+/** Canvas size at which a face's metrics are measured. */
+const PROBE_SIZE = 256;
+
+/** A face as CreateFont sees it: `size` is the cell height, ascent plus descent. */
+interface CanvasFace {
+  readonly families: string;
+  /** CSS font size per pixel of cell height. */
+  readonly em: number;
+  /** The ascent's share of the cell (tmAscent / tmHeight). */
+  readonly ascent: number;
+}
 
 /**
  * GetGlyphOutline(GGO_GRAY8) replacement: draws one Shift-JIS character with the browser's
@@ -97,29 +111,71 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
   private readonly context: CanvasRenderingContext2D;
   private readonly decoder = new TextDecoder('shift-jis');
   private readonly cache = new Map<string, GlyphCoverage>();
+  private readonly faces: CanvasFace[] = [];
+  /** Faces by name, so the per-page font window faces keep their glyphs. */
+  private readonly known = new Map<string, CanvasFace>();
 
-  constructor(
-    private readonly families: string,
-    document: Document,
-  ) {
+  constructor(document: Document) {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d', {willReadFrequently: true});
     if (!context) throw new Error('A 2D canvas is required for text');
     this.context = context;
+    for (const name of DEFAULT_FACES) this.addFace(name);
   }
 
-  /** The native font code ignores the face index; every face uses the executable font. */
+  /** CSS families of a face, for text that should match the glyphs. */
+  families(face: number): string {
+    return (this.faces[face] ?? this.faces[0]!).families;
+  }
+
+  addFace(name: string): number {
+    this.faces.push(this.face(name));
+    return this.faces.length - 1;
+  }
+  setFace(face: number, name: string): void {
+    if (face >= 0 && face < this.faces.length) this.faces[face] = this.face(name);
+  }
+  removeFace(): void {
+    this.faces.pop();
+  }
+
+  /**
+   * CreateFont with a positive height scales the font so its Windows ascent and descent fill
+   * the cell, and tmAscent is the ascent's share of it. Browsers report those metrics as the
+   * font bounding box.
+   */
+  private face(name: string): CanvasFace {
+    let face = this.known.get(name);
+    if (face) return face;
+    const families = rscriptFontFamilies(name);
+    const context = this.context;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.font = `${PROBE_SIZE}px ${families}`;
+    const metrics = context.measureText('あ');
+    const above = metrics.fontBoundingBoxAscent,
+      below = metrics.fontBoundingBoxDescent;
+    const cell = above + below;
+    face =
+      Number.isFinite(cell) && cell > 0
+        ? {families, em: PROBE_SIZE / cell, ascent: above / cell}
+        : // MS Gothic's winAscent and winDescent are 220 and 36 of 256 units.
+          {families, em: 1, ascent: 220 / 256};
+    this.known.set(name, face);
+    return face;
+  }
+
   rasterize(
     code: number,
     size: number,
-    _face: number,
+    faceIndex: number,
     bold: boolean,
     italic: boolean,
   ): GlyphCoverage {
-    const key = `${code}:${size}:${bold ? 1 : 0}${italic ? 1 : 0}`;
+    const face = this.faces[faceIndex] ?? this.faces[0]!;
+    const key = `${face.families}:${code}:${size}:${bold ? 1 : 0}${italic ? 1 : 0}`;
     let glyph = this.cache.get(key);
     if (!glyph) {
-      glyph = this.draw(code, size, bold, italic);
+      glyph = this.draw(face, code, size, bold, italic);
       if (this.cache.size > 8192) this.cache.clear();
       this.cache.set(key, glyph);
     }
@@ -132,12 +188,18 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
    * multiple of the size, where no bitmap strike exists, and averaging the blocks gives
    * coverage close to GGO_GRAY8.
    */
-  private draw(code: number, size: number, bold: boolean, italic: boolean): GlyphCoverage {
+  private draw(
+    face: CanvasFace,
+    code: number,
+    size: number,
+    bold: boolean,
+    italic: boolean,
+  ): GlyphCoverage {
     const width = code > 0xff ? size : size >> 1,
       height = size;
     const levels = new Uint8Array(width * height);
-    // MS Gothic's tmAscent is 0.86 of its height; GDI rounds it to whole pixels.
-    const ascent = Math.round(size * 0.86);
+    // GDI rounds tmAscent to whole pixels.
+    const ascent = Math.round(size * face.ascent);
     if (!width || !height) return {width, height, levels, ascent};
     const scale = Math.max(1, Math.min(SUPERSAMPLE, Math.floor(SUPERSAMPLE_LIMIT / size)));
     const bytes = code > 0xff ? Uint8Array.of(code >>> 8, code & 0xff) : Uint8Array.of(code);
@@ -152,13 +214,13 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
     }
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, w, h);
-    context.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size * scale}px ${this.families}`;
+    context.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size * face.em * scale}px ${face.families}`;
     context.textBaseline = 'alphabetic';
     context.fillStyle = '#fff';
     const measured = context.measureText(text).width / scale;
-    // Keep proportional fallback fonts inside the fixed native cell.
+    // Keep proportional fallback fonts inside the fixed native cell; narrower glyphs start
+    // at the pen position, as GDI draws them.
     if (measured > width) context.setTransform(width / measured, 0, 0, 1, 0, 0);
-    else context.translate(Math.round((width - measured) / 2) * scale, 0);
     context.fillText(text, 0, ascent * scale);
     const pixels = context.getImageData(0, 0, w, h).data;
     const full = 255 * scale * scale;

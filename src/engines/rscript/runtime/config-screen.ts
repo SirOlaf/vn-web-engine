@@ -1,6 +1,8 @@
-import {RScriptContainer} from '../graphics/sprite.js';
+import {RScriptContainer, type RScriptNode} from '../graphics/sprite.js';
 import type {RScriptImages} from '../images.js';
 import {Config, type RScriptMemory} from '../memory.js';
+import {encodeCp932} from '../text.js';
+import {RScriptFontWindow} from './font-window.js';
 import {RScriptTextBlock, type GlyphRasterizer} from './text-block.js';
 import {ImageButton, OptionGroup, ScreenImage, Slider} from './widgets.js';
 
@@ -28,6 +30,8 @@ export interface ConfigScreenEnvironment {
   sound(sound: number): void;
   changed(change: ConfigChange): void;
   command(command: ConfigCommand): void;
+  /** The font window's catalog (0x4572F0), read when the font button is first pressed. */
+  listFonts(): Promise<readonly string[]>;
 }
 
 /** An option group bound to a configuration word (or system variable 7000 for `usr`). */
@@ -76,6 +80,8 @@ export class RScriptConfigScreen extends RScriptContainer {
   private readonly buttons = new Map<ConfigCommand, ImageButton>();
   private fontButton: ImageButton | null = null;
   private fontName: RScriptTextBlock | null = null;
+  private fontWindow: RScriptFontWindow | null = null;
+  private listingFonts = false;
   private standalone = false;
 
   constructor(private readonly env: ConfigScreenEnvironment) {
@@ -132,11 +138,24 @@ export class RScriptConfigScreen extends RScriptContainer {
       this.add(button, 10);
     }
     // The font button (0x4501E0) shows the font name in its `font_txt` rectangle, or over
-    // the whole button without one (0x4504D0). The native font window it opens is not
-    // available in browsers, so pressing it does nothing.
-    const fontButton = await image.button('font', () => {});
+    // the whole button without one (0x4504D0), and opens the font window.
+    const fontButton = await image.button('font', () => void this.openFonts());
     this.fontButton = fontButton;
     if (fontButton) this.add(fontButton, 1);
+    const at = image.position('fontwnd');
+    if (at) {
+      const window = new RScriptFontWindow({
+        images: this.env.images,
+        rasterizer: this.env.rasterizer,
+        systemDirectory: this.env.systemDirectory,
+        chosen: (index) => this.fontChosen(index),
+      });
+      if (await window.load()) {
+        window.setPosition(at.x, at.y);
+        this.add(window, 10);
+        this.fontWindow = window;
+      }
+    }
     const font =
       (await image.rect('font_txt')) ??
       (fontButton && {
@@ -169,6 +188,48 @@ export class RScriptConfigScreen extends RScriptContainer {
       this.fontName.setPosition(font.x, font.y);
       this.add(this.fontName, 2);
     }
+  }
+
+  /**
+   * sub_410360: shows the font window, which takes input from the screen until it closes.
+   * The browser lists fonts on the first press; an empty list is asked for again.
+   */
+  private async openFonts(): Promise<void> {
+    const window = this.fontWindow;
+    if (!window || window.visible || this.listingFonts) return;
+    if (!window.fonts.length) {
+      this.listingFonts = true;
+      try {
+        window.setFonts(await this.env.listFonts());
+      } finally {
+        this.listingFonts = false;
+      }
+      if (!this.visible) return;
+    }
+    this.fontButton?.unfocus();
+    window.show(true);
+  }
+
+  /**
+   * sub_4103F0: closes the font window; a chosen font becomes the configured name and face 2,
+   * and the button shows it.
+   */
+  private fontChosen(index: number): void {
+    const window = this.fontWindow;
+    if (!window) return;
+    window.close();
+    const name = window.fonts[index];
+    const bytes = name === undefined ? null : encodeCp932(name);
+    if (!name || !bytes) return;
+    this.env.memory.setConfigString(Config.fontName, 52, bytes);
+    this.env.rasterizer.setFace(2, name);
+    this.refresh();
+  }
+
+  /** The font window, while open, is the only part that takes input. */
+  override pick(x: number, y: number): RScriptNode | null {
+    const window = this.fontWindow;
+    return window?.visible ? window.pick(x, y) : super.pick(x, y);
   }
 
   /** The group callbacks (0x40FAF0..0x40FF60): store, sound and notify. */
@@ -212,11 +273,8 @@ export class RScriptConfigScreen extends RScriptContainer {
     for (const {offset, slider} of this.sliders) slider.set(this.read(offset));
     const block = this.fontName;
     if (block) {
-      const {memory} = this.env;
-      const field = memory.config.subarray(Config.fontName, Config.fontName + 32);
-      const end = field.indexOf(0);
       block.clear();
-      block.append(field.subarray(0, end < 0 ? field.length : end));
+      block.append(this.env.memory.configString(Config.fontName, 52));
       block.finishReveal();
       block.show(true);
     }
@@ -225,6 +283,7 @@ export class RScriptConfigScreen extends RScriptContainer {
   close(): void {
     for (const button of this.buttons.values()) button.unfocus();
     this.fontButton?.unfocus();
+    this.fontWindow?.close();
     this.show(false);
   }
 }

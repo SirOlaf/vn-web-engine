@@ -9,6 +9,7 @@ import type {RScriptFiles} from '../files.js';
 import {RScriptGame, type RScriptSaveStorage} from '../runtime/game.js';
 import {CanvasGlyphRasterizer, CanvasPresenter, rscriptFontFamilies} from './canvas.js';
 import {RScriptDomText} from './dom-text.js';
+import {listRScriptFonts} from './fonts.js';
 
 export interface RScriptBrowserPlayerOptions {
   readonly files: RScriptFiles;
@@ -82,6 +83,7 @@ export class RScriptBrowserPlayer {
     this.panel.append(this.canvas, this.movieCanvas);
     this.audioHost = new BrowserAudioContextHost(this.audio, document);
     const families = rscriptFontFamilies(apini.fontName);
+    const rasterizer = new CanvasGlyphRasterizer(document);
     this.domText = new RScriptDomText({
       document,
       parent: this.panel,
@@ -107,12 +109,13 @@ export class RScriptBrowserPlayer {
         sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
         now: () => performance.now(),
       },
-      rasterizer: new CanvasGlyphRasterizer(families, document),
+      rasterizer,
       audio: this.audio,
       saves: options.saves,
       playMovie: (path) => this.playMovie(path),
       stopMovie: () => this.skipMovie?.(),
       confirm: (caption, text) => this.confirm(caption, text),
+      listFonts: () => listRScriptFonts(document),
       setFullscreen: (fullscreen) => this.setFullscreen(fullscreen),
       setCursorVisible: (visible) => {
         this.canvas.style.cursor = visible ? '' : 'none';

@@ -12,10 +12,15 @@ export interface GlyphCoverage {
   readonly ascent?: number;
 }
 
+/** Faces of a new font table (0x456D40); the game adds the configured font as face 2. */
+export const DEFAULT_FACES: readonly string[] = ['ＭＳ ゴシック', 'ＭＳ 明朝'];
+
 /**
- * Font backend (0x4568F0). `code` is a Shift-JIS character (lead byte in the high byte)
- * or a single byte. The returned cell is `size` square for double-byte characters and
- * `size / 2` wide otherwise, with the glyph placed at its GDI origin below the ascent.
+ * Font backend (0x4568F0) over the font table (0x456D40). `code` is a Shift-JIS character
+ * (lead byte in the high byte) or a single byte. The returned cell is `size` square for
+ * double-byte characters and `size / 2` wide otherwise, with the glyph placed at its GDI
+ * origin below the ascent. `face` indexes the table; faces past its end draw with face 0
+ * (0x457200).
  */
 export interface GlyphRasterizer {
   rasterize(
@@ -25,6 +30,12 @@ export interface GlyphRasterizer {
     bold: boolean,
     italic: boolean,
   ): GlyphCoverage;
+  /** sub_456F60: appends a face and returns its index. */
+  addFace(name: string): number;
+  /** sub_457120: replaces an existing face. */
+  setFace(face: number, name: string): void;
+  /** sub_4571A0: removes the last face. */
+  removeFace(): void;
 }
 
 /** Colours selected by `^C` letters (0x459EC0), as 0xRRGGBB pixels. */

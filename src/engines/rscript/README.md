@@ -51,9 +51,10 @@ Requiem's `wav\4243.wav` and Fairytale Symphony's ending movie, which its instal
 
 ## Known gaps
 
-- The configuration screen's font button does nothing: the native font window lists
-  installed fonts, which browsers cannot enumerate portably. Text uses the
-  configured font name with Japanese fallbacks.
+- The font window lists fonts from the Local Font Access API by their OS/2 code page
+  bits. GDI also offers Chinese fixed-pitch fonts such as NSimSun, which cover
+  Shift-JIS without that bit; they are left out. Browsers without the API offer
+  common Japanese fixed-pitch families they can draw.
 - Timed button and pointer waits do not draw their countdown gauge.
 - The legacy top menu, text layers and native screens other than the title,
   configuration, save and load screens are reported as diagnostics. Fairytale

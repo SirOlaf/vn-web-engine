@@ -35,6 +35,7 @@ export const Config = {
   systemWords: 0x3c,
   systemWordsB: 0x50,
   systemStrings: 0x64,
+  /** The message font (`String`, 52 bytes to the end of the block). */
   fontName: 0x83e,
 } as const;
 
@@ -155,6 +156,16 @@ export class RScriptMemory {
     const length = Math.min(value.length, capacity - 1);
     this.scene.fill(0, offset, offset + capacity);
     this.scene.set(value.subarray(0, length), offset);
+  }
+  configString(offset: number, capacity: number): Uint8Array {
+    const field = this.config.subarray(offset, offset + capacity);
+    const end = field.indexOf(0);
+    return field.subarray(0, end < 0 ? capacity : end);
+  }
+  setConfigString(offset: number, capacity: number, value: Uint8Array): void {
+    const length = Math.min(value.length, capacity - 1);
+    this.config.fill(0, offset, offset + capacity);
+    this.config.set(value.subarray(0, length), offset);
   }
 
   /** sub_421390: remembers the state at a message boundary unless a nested call runs. */

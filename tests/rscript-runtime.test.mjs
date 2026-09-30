@@ -10,6 +10,49 @@ import {
   volumeAttenuation,
 } from '../dist/engines/rscript/runtime/audio.js';
 import {decodeVorbis} from '../dist/audio/vorbis-decoder.js';
+import {rscriptFontCatalog} from '../dist/engines/rscript/browser/fonts.js';
+import {decodeCp932, encodeCp932} from '../dist/engines/rscript/text.js';
+
+test('RScript font catalog lists Shift-JIS fixed-pitch families by their Japanese names', () => {
+  const name = (unicode, language) => ({id: 1, platform: 3, language, unicode});
+  const face = (family, fixedPitch, pages, names = []) => ({
+    family,
+    fullName: family,
+    postscriptName: family,
+    data: {fixedPitch, codePageRanges: [pages, 0], names},
+  });
+  const sjis = 1 << 17,
+    gb2312 = 1 << 18;
+  const catalog = rscriptFontCatalog([
+    face('MS Gothic', true, sjis | 1, [name('MS Gothic', 0x409), name('ＭＳ ゴシック', 0x411)]),
+    // A collection's proportional faces and bold styles of listed families are left out.
+    face('MS Gothic', false, sjis, [name('MS PGothic', 0x409), name('ＭＳ Ｐゴシック', 0x411)]),
+    face('MS Gothic', true, sjis, [name('MS Gothic', 0x409), name('ＭＳ ゴシック', 0x411)]),
+    face('Plain Mono', true, sjis),
+    face('NSimSun', true, gb2312, [name('NSimSun', 0x409)]),
+    face('Courier New', true, 1, [name('Courier New', 0x409)]),
+    // Face names are LOGFONTA strings: code page 932 and at most 31 bytes.
+    face('Hangul Mono', true, sjis, [name('한글 Mono', 0x409)]),
+    face('Long', true, sjis, [name('あ'.repeat(16), 0x411)]),
+  ]);
+  assert.deepEqual(catalog, ['ＭＳ ゴシック', 'Plain Mono']);
+});
+
+test('RScript text encodes code page 932 for face names', () => {
+  const bytes = encodeCp932('ＭＳ ゴシック Ab');
+  assert.deepEqual(
+    [...bytes],
+    [
+      0x82, 0x6c, 0x82, 0x72, 0x20, 0x83, 0x53, 0x83, 0x56, 0x83, 0x62, 0x83, 0x4e, 0x20, 0x41,
+      0x62,
+    ],
+  );
+  assert.equal(
+    decodeCp932(encodeCp932('あぃウェ５＃―壱弐鶴亀ＡｂAb')),
+    'あぃウェ５＃―壱弐鶴亀ＡｂAb',
+  );
+  assert.equal(encodeCp932('한'), null);
+});
 
 /** Web Audio stand-in that records buffers and the source schedule. */
 function recordingContext() {
