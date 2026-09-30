@@ -50,7 +50,9 @@ export class RScriptFiles {
       return entry ? archive.entrySource(entry) : null;
     }
     const nestedPath = [...prefix, rest[0]!];
-    const nested = await this.cached(nestedPath, async () => {
+    // Keyed apart from loose archives: `voice\1` names both a missing `voice\1.xfl` file and
+    // the `1.xfl` entry inside `voice.xfl`, and the miss must not hide the entry.
+    const nested = await this.cached(['>', ...nestedPath], async () => {
       const entry = archive.find(`${rest[0]!}.XFL`);
       return entry ? XflArchive.open(archive.entrySource(entry)) : null;
     });

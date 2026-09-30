@@ -8,6 +8,7 @@ import {decodeGscInstruction, parseGsc} from '../dist/formats/rscript/gsc.js';
 import {parseFsc} from '../dist/formats/rscript/fsc.js';
 import {parseWave, waveOggStream, wavePcmPlanes} from '../dist/formats/riff/wave.js';
 import {RSCRIPT_1_11_LAYOUTS} from '../dist/engines/rscript/vm/layouts.js';
+import {RScriptFiles} from '../dist/engines/rscript/files.js';
 import {gsc} from './rscript-fixtures.mjs';
 
 const memory = (bytes) => ({
@@ -65,6 +66,21 @@ test('XFL archives resolve names case-insensitively against the index base', asy
     ),
     /duplicate/,
   );
+});
+
+test('RScript paths reach archives nested inside archives', async () => {
+  const bank = xfl([['0501.wav', Buffer.from('voice')]]);
+  const voice = xfl([
+    ['0001.wav', Buffer.from('flat')],
+    ['1.xfl', Buffer.from(bank)],
+  ]);
+  const installed = new Map([['VOICE.XFL', memory(voice)]]);
+  const files = new RScriptFiles((segments) => installed.get(segments.join('\\')));
+  // The loose `voice\1.xfl` lookup fails first; the entry inside `voice.xfl` must still resolve.
+  assert.equal(Buffer.from(await files.read('.\\voice\\1\\0501.wav')).toString(), 'voice');
+  assert.equal(Buffer.from(await files.read('.\\voice\\1\\0501.wav')).toString(), 'voice');
+  assert.equal(Buffer.from(await files.read('.\\voice\\0001.wav')).toString(), 'flat');
+  assert.equal(await files.read('.\\voice\\2\\0501.wav'), null);
 });
 
 class BitWriter {
