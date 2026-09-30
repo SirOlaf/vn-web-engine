@@ -20,6 +20,18 @@ export interface RScriptBrowserPlayerOptions {
   exit(error?: unknown): void;
 }
 
+/**
+ * Every RScript music track is 44.1 kHz. At that context rate, streamed chunks join on exact
+ * samples and the browser resamples the mixed output once instead of each buffer.
+ */
+function createAudioContext(): AudioContext {
+  try {
+    return new AudioContext({sampleRate: 44100});
+  } catch {
+    return new AudioContext();
+  }
+}
+
 async function workerSource(source: ByteSource): Promise<WorkerSource> {
   const blob = sourceBlob(source);
   if (blob) return {kind: 'blob', blob};
@@ -37,7 +49,7 @@ export class RScriptBrowserPlayer {
   readonly panel: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly movieCanvas: HTMLCanvasElement;
-  private readonly audio = new AudioContext();
+  private readonly audio = createAudioContext();
   private readonly audioHost: BrowserAudioContextHost;
   private readonly game: RScriptGame;
   private readonly domText: RScriptDomText;

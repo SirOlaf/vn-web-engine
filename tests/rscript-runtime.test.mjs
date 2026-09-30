@@ -2,12 +2,124 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseFsc} from '../dist/formats/rscript/fsc.js';
 import {FramePlayer} from '../dist/engines/rscript/runtime/animation.js';
+import {readFile} from 'node:fs/promises';
 import {
   RScriptSoundChannel,
   attenuationGain,
   scriptLoops,
   volumeAttenuation,
 } from '../dist/engines/rscript/runtime/audio.js';
+import {decodeVorbis} from '../dist/audio/vorbis-decoder.js';
+
+/** Web Audio stand-in that records buffers and the source schedule. */
+function recordingContext() {
+  const sources = [];
+  const param = () => ({
+    value: 1,
+    setValueAtTime() {},
+    cancelScheduledValues() {},
+    exponentialRampToValueAtTime() {},
+  });
+  const node = () => ({connect: (next) => next, disconnect() {}, gain: param(), pan: param()});
+  return {
+    sources,
+    currentTime: 2,
+    createGain: node,
+    createStereoPanner: node,
+    createBuffer(channels, length, sampleRate) {
+      const planes = Array.from({length: channels}, () => new Float32Array(length));
+      return {
+        length,
+        sampleRate,
+        duration: length / sampleRate,
+        getChannelData: (i) => planes[i],
+        copyToChannel: (data, i) => planes[i].set(data),
+      };
+    },
+    createBufferSource() {
+      const source = {...node(), buffer: null, loop: false, when: null, offset: 0, stopAt: null};
+      source.start = (when, offset = 0) => Object.assign(source, {when, offset});
+      source.stop = (when = 0) => (source.stopAt = when);
+      sources.push(source);
+      return source;
+    },
+  };
+}
+
+/** Wraps an Ogg stream as a Vorbis ACM WAVE, as RScript archives store it. */
+function vorbisWave(ogg, channels, rate) {
+  const fmt = Buffer.alloc(24);
+  fmt.write('fmt ', 0, 'latin1');
+  fmt.writeUInt32LE(16, 4);
+  fmt.writeUInt16LE(0x6771, 8);
+  fmt.writeUInt16LE(channels, 10);
+  fmt.writeUInt32LE(rate, 12);
+  fmt.writeUInt16LE(2 * channels, 20);
+  fmt.writeUInt16LE(16, 22);
+  const data = Buffer.alloc(8);
+  data.write('data', 0, 'latin1');
+  data.writeUInt32LE(ogg.length, 4);
+  const body = Buffer.concat([Buffer.from('WAVE', 'latin1'), fmt, data, ogg]);
+  const riff = Buffer.alloc(8);
+  riff.write('RIFF', 0, 'latin1');
+  riff.writeUInt32LE(body.length, 4);
+  return new Uint8Array(Buffer.concat([riff, body]));
+}
+
+test('RScript music streams chunks back to back, then loops the whole track', async () => {
+  const ogg = await readFile(new URL('./fixtures/audio/vorbis-boundaries.ogg', import.meta.url));
+  const expected = await decodeVorbis(new Uint8Array(ogg));
+  const context = recordingContext();
+  const read = async () => vorbisWave(ogg, 1, expected.sampleRate);
+  const chunking = {firstFrames: 1000, chunkFrames: 1000, playableFrames: 10000};
+  const channel = new RScriptSoundChannel(
+    {context, read},
+    context.createGain(),
+    undefined,
+    chunking,
+  );
+  channel.load('Track06.wav');
+  channel.play(false, -1);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const rate = expected.sampleRate,
+    sources = context.sources;
+  const whole = sources.at(-1);
+  const chunks = sources.slice(0, -1);
+  // The fixture decodes as one EOS-trimmed chunk; real tracks give many.
+  assert.ok(chunks.length >= 1, 'the first playback starts on streamed chunks');
+  // Chunks follow one another on exact frames and hold the decoded PCM in order.
+  let at = 0;
+  const played = new Float32Array(expected.frames);
+  for (const chunk of chunks) {
+    assert.equal(chunk.loop, false);
+    assert.ok(Math.abs(chunk.when - (2 + at / rate)) < 1e-9);
+    played.set(chunk.buffer.getChannelData(0), at);
+    at += chunk.buffer.length;
+  }
+  // The whole track takes over at the first unscheduled frame and loops from its start.
+  assert.equal(whole.buffer.length, expected.frames);
+  assert.equal(whole.loop, true);
+  assert.ok(Math.abs(whole.when - (2 + at / rate)) < 1e-9);
+  assert.ok(Math.abs(whole.offset - (at % expected.frames) / rate) < 1e-9);
+  played.set(whole.buffer.getChannelData(0).subarray(at), at);
+  assert.deepEqual(played, expected.planes[0]);
+  assert.deepEqual(whole.buffer.getChannelData(0), expected.planes[0]);
+
+  // A second play needs no streaming; three passes stop after three durations.
+  channel.play(false, 2);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const again = context.sources.at(-1);
+  assert.equal(context.sources.length, sources.length);
+  assert.equal(again.offset, 0);
+  assert.ok(Math.abs(again.stopAt - (2 + (3 * expected.frames) / rate)) < 1e-9);
+  // Every scheduled source of the earlier playback was stopped.
+  assert.ok(chunks.every((chunk) => chunk.stopAt !== null));
+
+  // A fading stop ends every source of the playback at the end of the fade.
+  channel.fadeSteps = 50;
+  channel.stop(true);
+  assert.ok(Math.abs(again.stopAt - 3) < 1e-9);
+});
 
 test('RScript frame players run FSC scripts one displayed tick at a time', () => {
   const script = Buffer.from(
