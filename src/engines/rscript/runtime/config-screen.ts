@@ -58,7 +58,7 @@ const SETTINGS: readonly Setting[] = [
   {names: 'usr', offset: 'usr'},
   {names: 'vocst', offset: Config.voiceContinues},
   {names: 'awh', offset: Config.autoHide},
-  {names: 'bgr', offset: 0x18},
+  {names: 'bgr', offset: Config.backgroundAudio},
 ];
 
 /** Volume sliders and the auto-mode wait (0x40F8A0). */

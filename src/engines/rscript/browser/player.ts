@@ -1,5 +1,6 @@
 import {BrowserAudioContextHost} from '../../../audio/browser-audio-context-host.js';
 import {objectFitPlacement} from '../../../graphics/object-fit.js';
+import {watchBrowserWindowActivation} from '../../../platform/browser-window-activation.js';
 import {BrowserWindowsMessageBoxHost} from '../../../platform/windows-message-box.js';
 import {HttpSource, sourceBlob, type ByteSource} from '../../../core/source.js';
 import type {WorkerSource} from '../../../core/worker-source.js';
@@ -68,6 +69,7 @@ export class RScriptBrowserPlayer {
   private skipMovie: (() => void) | null = null;
   private readonly abort = new AbortController();
   private started = false;
+  private unwatchActivation: (() => void) | null = null;
 
   constructor(private readonly options: RScriptBrowserPlayerOptions) {
     const {document, apini} = options;
@@ -130,6 +132,9 @@ export class RScriptBrowserPlayer {
       confirm: (caption, text) => messageBox.confirm(caption, text),
       listFonts: () => listRScriptFonts(document),
       setFullscreen: (fullscreen) => options.setFullscreen?.(fullscreen),
+      // The shared audio host resumes the context again on activation.
+      pauseAudio: (paused) =>
+        void (paused ? this.audio.suspend() : this.audioHost.resume()).catch(() => {}),
       setCursorVisible: (visible) => {
         this.canvas.style.cursor = visible ? '' : 'none';
       },
@@ -137,6 +142,11 @@ export class RScriptBrowserPlayer {
       exit: (error) => options.exit(error),
     });
     this.bindInput();
+    const view = document.defaultView;
+    if (view)
+      this.unwatchActivation = watchBrowserWindowActivation(view, (active) =>
+        this.game.setActive(active),
+      );
   }
 
   /** Re-reads the canvas placement; box resizes are observed, `object-fit` changes are not. */
@@ -334,6 +344,7 @@ export class RScriptBrowserPlayer {
   }
 
   dispose(): void {
+    this.unwatchActivation?.();
     this.abort.abort();
     this.domText.dispose();
     this.skipMovie?.();

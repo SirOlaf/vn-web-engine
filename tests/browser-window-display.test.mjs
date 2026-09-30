@@ -4,6 +4,7 @@ import {
   BrowserWindowDisplayHost,
   browserDesktopSize,
 } from '../dist/platform/browser-window-display.js';
+import {watchBrowserWindowActivation} from '../dist/platform/browser-window-activation.js';
 
 function fixture(prefixed = false) {
   const document = new EventTarget(),
@@ -208,4 +209,26 @@ test('changing policy during a browser request settles to the latest requested v
   await settle();
   assert.equal(closing.host.isScreenFullscreen, false);
   assert.deepEqual(closing.calls, ['exit']);
+});
+
+test('window activation follows page focus and visibility', () => {
+  const document = Object.assign(new EventTarget(), {visibilityState: 'visible', focused: true});
+  document.hasFocus = () => document.focused;
+  const view = Object.assign(new EventTarget(), {document});
+  const changes = [];
+  const stop = watchBrowserWindowActivation(view, (active) => changes.push(active));
+  document.focused = false;
+  view.dispatchEvent(new Event('blur'));
+  // Another event without a state change reports nothing.
+  view.dispatchEvent(new Event('blur'));
+  document.focused = true;
+  view.dispatchEvent(new Event('focus'));
+  document.visibilityState = 'hidden';
+  document.dispatchEvent(new Event('visibilitychange'));
+  document.visibilityState = 'visible';
+  document.dispatchEvent(new Event('visibilitychange'));
+  stop();
+  document.focused = false;
+  view.dispatchEvent(new Event('blur'));
+  assert.deepEqual(changes, [false, true, false, true]);
 });

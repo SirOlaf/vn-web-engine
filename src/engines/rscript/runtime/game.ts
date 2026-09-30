@@ -58,6 +58,8 @@ export interface RScriptGameHost {
   listFonts?(): Promise<readonly string[]>;
   /** The configuration's window/fullscreen option (sub_452990). */
   setFullscreen?(fullscreen: boolean): void;
+  /** Pauses or resumes every sound, music and voice stream (sub_455EC0 / sub_455F00). */
+  pauseAudio?(paused: boolean): void;
   /** Shows or hides the pointer over the game (ShowCursor). */
   setCursorVisible?(visible: boolean): void;
   diagnostic(message: string): void;
@@ -194,6 +196,8 @@ export class RScriptGame {
   private idleHidden = false;
   private ticker: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
+  /** The window is active, so its audio plays (window object +472). */
+  private active = true;
   /** Incremented when the scene thread restarts (a load or a return to the title). */
   private sceneGeneration = 0;
   /** The running scene thread. */
@@ -713,6 +717,20 @@ export class RScriptGame {
     else if (flags.windowHidden) this.showWindow();
     else if (flags.buttonWait && flags.buttonCancel) this.buttonPressed(0, 0);
     else this.panelCommand('menu');
+  }
+  /**
+   * WM_ACTIVATE (sub_4541B0): deactivation pauses the audio streams unless the configuration
+   * keeps them playing in the background; activation resumes them.
+   */
+  setActive(active: boolean): void {
+    if (active) {
+      if (this.active) return;
+      this.active = true;
+      this.host.pauseAudio?.(false);
+    } else if (!this.config(Config.backgroundAudio)) {
+      this.host.pauseAudio?.(true);
+      this.active = false;
+    }
   }
   /** Mouse wheel (WM_MOUSEWHEEL): up browses the backlog, down pages forward or clicks. */
   wheel(up: boolean): void {

@@ -24,6 +24,11 @@ export const Config = {
   voiceVolume: 0x0e,
   effectsEnabled: 0x12,
   skipUnread: 0x14,
+  /**
+   * Nonzero keeps sound and music playing while the window is inactive (sub_4541B0); the
+   * configuration screen shows zero as silent mode on.
+   */
+  backgroundAudio: 0x18,
   /** Message window opacity, 0..255 (the panel slider, sub_41F0D0). */
   windowAlpha: 0x1a,
   autoWait: 0x1e,
