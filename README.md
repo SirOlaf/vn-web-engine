@@ -16,6 +16,7 @@ Zero setup. Visit the page and select your local game files, optionally install 
 | Aokana                                | BURIKO      | Complete      |
 | Eustia of the Tarnished Wings         | BURIKO      | Complete      |
 | Jewelry Hearts Academia               | BURIKO      | Complete      |
+| Subarashiki Hibi \~Furenzoku Sonzai\~   | BURIKO      | Complete      |
 
 The games share browser services for files, storage, audio, video, graphics, and input. Reusable interpreters live under `src/engines/`; installation identity and explicit game compatibility profiles are selected separately.
 See [BGI compatibility](docs/buriko-compatibility.md) for revision selection, optional metadata, native evidence, and current verification limits.
