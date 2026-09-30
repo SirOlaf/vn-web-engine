@@ -17,9 +17,9 @@ Zero setup. Visit the page and select your local game files, optionally install 
 | Eustia of the Tarnished Wings         | BURIKO        | Complete      |
 | Jewelry Hearts Academia               | BURIKO        | Complete      |
 | Subarashiki Hibi \~Furenzoku Sonzai\~ | BURIKO        | Complete      |
-| Fairytale Requiem                     | codeX RScript | Playable      |
-| Fairytale Symphony                    | codeX RScript | Playable      |
-| Fairytale Encore                      | codeX RScript | Playable      |
+| Fairytale Requiem                     | codeX RScript | Complete      |
+| Fairytale Symphony                    | codeX RScript | Complete      |
+| Fairytale Encore                      | codeX RScript | Complete      |
 
 The games share browser services for files, storage, audio, video, graphics, and input. Reusable interpreters live under `src/engines/`; installation identity and explicit game compatibility profiles are selected separately.
 See [BGI compatibility](docs/buriko-compatibility.md) for revision selection, optional metadata, native evidence, and current verification limits.

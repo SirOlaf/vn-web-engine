@@ -33,6 +33,22 @@ and differ only in their `APINI` blocks and resources.
 `npm run verify:rscript -- "/path/to/game"` decodes every archive entry it
 recognizes and reports counts and failures without writing assets.
 
+## Verification
+
+- Fairytale Requiem was played to all twelve endings: both endings of each of the five heroine
+  chapters, then both endings of the final chapter the title unlocks afterwards.
+- Fairytale Symphony was played to both of its endings, and Fairytale Encore through all six
+  scenarios, including the two the first four unlock.
+- Screens were compared pixel by pixel with the native game at 1280x720:
+  - title, scenes, maps, choices, backlog, the save, load and configuration screens
+  - the library, room and sketchbook screens
+  - colour-effect (sepia) scenes
+- Slot saves load in both directions between the port and the native game.
+
+A few diagnostics remain during play. Each names a file the game's own scripts request but its
+archives do not contain, which the native game also fails to load. Examples are Fairytale
+Requiem's `wav\4243.wav` and Fairytale Symphony's ending movie, which its installation lacks.
+
 ## Known gaps
 
 - The configuration screen's font button does nothing: the native font window lists
