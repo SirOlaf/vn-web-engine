@@ -372,6 +372,16 @@ test('DOM slots retain exactly one Text node as glyphs reveal and slots disappea
     layer.show({id: 'body', glyphs}, 3);
     assert.equal(box.hidden, false);
     assert.equal(span.children[0], node);
+    // Native raster rows wrap through the float shape: dictionary scanners read one
+    // continuous string. Vertical rows keep newline separators.
+    const rows = [glyph('日', 0, 0, 0), glyph('本', 1, 0, 40)];
+    layer.show({id: 'rows', explicitLines: true, glyphs: rows}, 1);
+    const rowText = layer.element.children.at(-1).children[0];
+    assert.equal(rowText.children[0].data, '日本');
+    assert.match(rowText.style.cssText, /white-space:break-spaces/);
+    assert.match(rowText.style.cssText, /--text-wrap-shape:polygon/);
+    layer.show({id: 'columns', explicitLines: true, vertical: true, glyphs: rows}, 1);
+    assert.equal(layer.element.children.at(-1).children[0].children[0].data, '日\n本');
     layer.retain(new Set());
     assert.equal(layer.buffers.size, 0);
     assert.equal(layer.element.children.length, 0);

@@ -17,7 +17,8 @@ export class DomGlyphSlots {
       text: HTMLSpanElement;
       node: Text;
       highlights: HTMLDivElement[];
-      explicitLines?: boolean;
+      /** Vertical native rows separate their visual rows with newline characters. */
+      newlines?: boolean;
       ink?: InkHighlights;
       tint?: {filter: SVGFilterElement; id: string; key: string};
     }
@@ -37,8 +38,8 @@ export class DomGlyphSlots {
     const selection = document.getSelection();
     if (!event.clipboardData || selection?.rangeCount !== 1 || selection.isCollapsed) return;
     const range = selection.getRangeAt(0);
-    for (const {node, explicitLines} of this.nodes.values()) {
-      if (!explicitLines || range.startContainer !== node || range.endContainer !== node) continue;
+    for (const {node, newlines} of this.nodes.values()) {
+      if (!newlines || range.startContainer !== node || range.endContainer !== node) continue;
       // Native visual wraps are presentation-only, as in slotText's source string.
       event.clipboardData.setData('text/plain', range.toString().replaceAll('\n', ''));
       event.preventDefault();
@@ -86,7 +87,11 @@ export class DomGlyphSlots {
     }
     const {box, text, node} = nodes,
       {bounds, clip} = content;
-    nodes.explicitLines = slot.explicitLines;
+    // Horizontal native rows wrap through the float shape below, so the Text node holds the
+    // source string: dictionary scanners and selections continue across rows. Vertical rows
+    // have no shape wrap and keep newline separators.
+    const newlines = slot.explicitLines && slot.vertical;
+    nodes.newlines = newlines;
     box.hidden = false;
     const interactive = slot.interactive !== false;
     box.inert = !interactive;
@@ -98,7 +103,7 @@ export class DomGlyphSlots {
       for (const highlight of nodes.highlights.splice(0)) highlight.remove();
     }
     // Update only the changed suffix, preserving the node and selections in the prefix.
-    const displayed = slot.explicitLines ? content.visualText : content.text;
+    const displayed = newlines ? content.visualText : content.text;
     if (node.data !== displayed) {
       let prefix = 0;
       while (
@@ -165,13 +170,16 @@ export class DomGlyphSlots {
     // The first row can hang to the left of subsequent rows (dialogue quotes).
     // text-indent preserves that offset; the float reserves the unused right
     // edge without splitting the Text node into independent visual rows.
-    // Leave a small allowance for CSS subpixel rounding of measured advances.
+    // Leave a small allowance for CSS subpixel rounding of measured advances. Native rows
+    // accumulate per-glyph rounding of fractional spacing; an eighth of the font size still
+    // admits no additional glyph.
+    const allowance = slot.explicitLines ? Math.max(1 / 16, size / 8) : 1 / 16;
     const origin = lineBounds.slice(1).find((line) => Number.isFinite(line.left))?.left ?? bounds.x,
       indent = (lineBounds[0]!.left - origin) / scale,
       wrapWidth =
-        Math.max(1, ...widths.map((width, line) => width + (line === 0 ? indent : 0))) + 1 / 16;
+        Math.max(1, ...widths.map((width, line) => width + (line === 0 ? indent : 0))) + allowance;
     const edge = widths.flatMap((width, line) => {
-      const x = width ? width + (line === 0 ? indent : 0) + 1 / 16 : 0;
+      const x = width ? width + (line === 0 ? indent : 0) + allowance : 0;
       return [`${x}px ${line * lineHeight}px`, `${x}px ${(line + 1) * lineHeight}px`];
     });
     const shape = `polygon(${wrapWidth}px 0,${edge.join(',')},${wrapWidth}px ${content.lines * lineHeight}px)`;
@@ -303,7 +311,7 @@ export class DomGlyphSlots {
       }
       filter = `filter:url(#${nodes.tint.id});`;
     }
-    text.style.cssText = `position:absolute;display:block;left:${origin - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;text-indent:${indent}px;--text-wrap-height:${content.lines * lineHeight}px;--text-wrap-shape:${shape};white-space:${slot.explicitLines ? 'pre' : 'break-spaces'};word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;letter-spacing:${spacing}px;${filter}line-height:${lineHeight}px;color:#${(content.color & 0xffffff).toString(16).padStart(6, '0')};opacity:${filter ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
+    text.style.cssText = `position:absolute;display:block;left:${origin - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;text-indent:${indent}px;--text-wrap-height:${content.lines * lineHeight}px;--text-wrap-shape:${shape};white-space:${newlines ? 'pre' : 'break-spaces'};word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;letter-spacing:${spacing}px;${filter}line-height:${lineHeight}px;color:#${(content.color & 0xffffff).toString(16).padStart(6, '0')};opacity:${filter ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
     // Reveal alpha belongs to glyphs, not paragraph identity. Custom highlight
     // ranges preserve that alpha without fragmenting text or changing wrapping.
     if (nodes.ink) this.clearInk(nodes.ink);
@@ -322,7 +330,7 @@ export class DomGlyphSlots {
       let offset = 0,
         previousLine = firstLine;
       for (const g of slot.glyphs) {
-        if (slot.explicitLines) offset = Math.min(node.length, offset + g.line - previousLine);
+        if (newlines) offset = Math.min(node.length, offset + g.line - previousLine);
         previousLine = g.line;
         const length = g.alpha > 0 ? (g.text?.length ?? 0) : Array.from(g.text ?? '').length,
           end = Math.min(node.length, offset + length);
@@ -342,11 +350,7 @@ export class DomGlyphSlots {
       }
       nodes.ink.style.textContent = rules.join('\n');
     }
-    text.className = slot.vertical
-      ? 'vertical-game-text'
-      : slot.explicitLines
-        ? 'native-lines-game-text'
-        : '';
+    text.className = slot.vertical ? 'vertical-game-text' : '';
     if (slot.vertical) {
       text.style.writingMode = 'vertical-rl';
       text.style.textOrientation = 'mixed';

@@ -24,8 +24,10 @@ clearing its client, hiding a presentation, or tearing down the runtime retires
 its DOM nodes. The no-canvas diagnostic mode never creates a DOM presentation.
 
 Browser glyph placement is approximate. Adjacent matching raster rows form one
-Text node with explicit native row boundaries. Its copy handler omits visual-wrap
-newlines from the source string. Completed rows do not reflow as a later row is
+Text node with explicit native row boundaries. Horizontal rows contain no newline
+characters: a floated `shape-outside` polygon ends each browser line at its native
+row's measured width, so selections and popup dictionaries read the source string
+across rows. Vertical rows use newline separators, which the copy handler omits. Completed rows do not reflow as a later row is
 revealed; horizontal scaling is anchored to the first row. Adapters with complete
 glyph buffers can use browser wrapping. Ruby and differently styled runs remain
 separate. Native row positions define line spacing; font size
