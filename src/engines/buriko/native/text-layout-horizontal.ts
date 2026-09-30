@@ -12,7 +12,7 @@ import {
 import {clearBurikoBitmap} from './bitmap-copy.js';
 import {burikoCrtWideLower} from './crt-case.js';
 import {isBurikoCustomGlyphCode, type BurikoDrawnGlyph} from './custom-text-glyphs.js';
-import {recordBurikoBitmapText} from './bitmap-dom-text.js';
+import {decorateBurikoBitmapText, recordBurikoBitmapText} from './bitmap-dom-text.js';
 import type {BurikoFontRecord} from './fonts.js';
 import type {BurikoRubyAnnotations} from './text-annotations.js';
 import type {BurikoTextLayoutState} from './text-layout-state.js';
@@ -1179,6 +1179,7 @@ export async function buildBurikoHorizontalTextLayout(
         };
       options.cursor.x = (options.cursor.x + spacing + fullAdvance) | 0;
 
+      decorateBurikoBitmapText(glyphBitmap, options.effect, effectRadiusX, effectRadiusY);
       const main = allocateBurikoBitmap(glyphBitmap.width, glyphBitmap.height, format);
       clearBurikoBitmap(main);
       node.bitmap = main;

@@ -1,4 +1,5 @@
 import type {Rect} from '../graphics/surface.js';
+import type {TextOutline, TextShadow} from './glyph-slots.js';
 import {recordRuntimeMetric} from '../platform/runtime-performance.js';
 
 /** Optional presentation provenance. These objects never replace engine-owned pixels. */
@@ -24,14 +25,22 @@ export interface RasterTextGlyph extends Rect {
   size: number;
   family: string;
   bold: boolean;
+  /** CSS font weight; `bold` is true from 600. */
+  weight: number;
+  /** Native glyph width relative to `size`; advances beyond the glyph are spacing. */
+  stretch: number;
   vertical: boolean;
   color: number;
   alpha: number;
+  outline?: TextOutline;
+  shadows?: readonly TextShadow[];
 }
 export interface RasterTextStyle {
   size?: number;
   family?: string;
   bold?: boolean;
+  weight?: number;
+  stretch?: number;
   vertical?: boolean;
   decorative?: boolean;
   color?: number;
@@ -369,6 +378,7 @@ export function recordRasterText(
   const glyph = {x: style.x ?? 0, y: style.y ?? 0, width, height: style.height ?? size};
   const clip = intersection(glyph, bounds(bitmap));
   if (!clip) return;
+  const weight = style.weight ?? (style.bold ? 700 : 400);
   plane.glyphs.push({
     ...shifted(glyph, ox, oy),
     clip: shifted(clip, ox, oy),
@@ -376,11 +386,40 @@ export function recordRasterText(
     text,
     size,
     family: style.family ?? 'serif',
-    bold: style.bold ?? false,
+    bold: style.bold ?? weight >= 600,
+    weight,
+    stretch: style.stretch ?? 1,
     vertical: style.vertical ?? false,
     color: style.color ?? 0xffffff,
     alpha: style.alpha ?? 255,
   });
+}
+
+/** Edge effects the engine composites around glyph ink, in bitmap pixels. */
+export interface RasterTextEffect {
+  outline?: TextOutline;
+  shadows?: readonly TextShadow[];
+}
+/**
+ * Attach an edge effect to the glyphs already recorded in `bitmap`. Engines call this on
+ * the source glyph before compositing its effect passes, which are recorded as decorative
+ * ink; copies of the glyph carry the effect so DOM text can redraw the edge.
+ */
+export function decorateRasterText(bitmap: RasterTextBitmap, effect: RasterTextEffect): void {
+  if (depth) return;
+  const plane = bitmap.storage && planes.get(bitmap.storage);
+  if (!plane) return;
+  const [x, y] = origin(bitmap, plane),
+    region = shifted(bounds(bitmap), x, y);
+  plane.glyphs = plane.glyphs.map((g) =>
+    intersection(g.clip, region)
+      ? {
+          ...g,
+          ...(effect.outline ? {outline: effect.outline} : {}),
+          ...(effect.shadows ? {shadows: effect.shadows} : {}),
+        }
+      : g,
+  );
 }
 
 // Pixel kernels are synchronous and pure with respect to engine state. Nesting

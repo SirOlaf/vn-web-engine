@@ -28,13 +28,15 @@ export function rasterTextSlots(
       });
     } else unique.set(key, {...g, clip: {...g.clip}});
   }
+  // Runs with different faces or edges are separately styled text nodes.
+  const style = (g: RasterTextGlyph) =>
+    JSON.stringify([g.family, g.weight, g.stretch, g.outline ?? null, g.shadows ?? null]);
   const rows = new Map<string, RasterTextGlyph[]>();
   for (const g of unique.values()) {
     const key = JSON.stringify([
       g.vertical,
       Math.round(g.vertical ? g.x : g.y),
-      g.family,
-      g.bold,
+      style(g),
       g.size,
       g.color,
       g.flow ?? null,
@@ -43,7 +45,7 @@ export function rasterTextSlots(
     row.push(g);
     rows.set(key, row);
   }
-  const output: {slot: GlyphSlot; family: string}[] = [];
+  const output: {slot: GlyphSlot; family: string; style: string}[] = [];
   for (const [key, row] of rows) {
     row.sort((a, b) => (a.vertical ? a.y - b.y : a.x - b.x));
     let run: RasterTextGlyph[] = [];
@@ -58,8 +60,11 @@ export function rasterTextSlots(
           explicitLines: true,
           vertical: first.vertical,
           bold: first.bold,
+          weight: first.weight,
+          stretch: first.stretch,
         },
         family: first.family,
+        style: style(first),
       });
       run = [];
     };
@@ -97,8 +102,7 @@ export function rasterTextSlots(
             last = block.slot.glyphs.at(-1)!;
           return (
             !block.slot.vertical &&
-            block.family === row.family &&
-            block.slot.bold === row.slot.bold &&
+            block.style === row.style &&
             start.color === first.color &&
             start.flow === first.flow &&
             (start.size ?? start.height) === (first.size ?? first.height) &&

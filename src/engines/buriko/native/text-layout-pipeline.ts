@@ -12,7 +12,7 @@ import {BurikoWindowDisplayObject} from './display-window.js';
 import type {BurikoWindowDisplayState} from './display-window-state.js';
 import {rasterBurikoGlyph} from './font-bitmap.js';
 import {drawBurikoCachedGlyphOutline} from './font-outline.js';
-import {recordBurikoBitmapText} from './bitmap-dom-text.js';
+import {decorateBurikoBitmapText, recordBurikoBitmapText} from './bitmap-dom-text.js';
 import type {BurikoFontRecord} from './fonts.js';
 import {BurikoRubyAnnotations, type BurikoRubyAnnotation} from './text-annotations.js';
 import {
@@ -173,6 +173,7 @@ function readingGlyphNodes(
         throw new RangeError('Buriko horizontal reading code exceeds its native array');
       const glyph = rasterBurikoGlyph(scratch, raster, character, color),
         abcTotal = glyph.abc[0] + glyph.abc[1] + glyph.abc[2];
+      decorateBurikoBitmapText(scratch, effect, radiusX, radiusY);
       let x: number, advance: number;
       if (readingWider) {
         x = Math.trunc(snapNearInteger(position)) | 0;

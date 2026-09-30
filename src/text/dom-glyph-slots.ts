@@ -110,7 +110,7 @@ export class DomGlyphSlots {
       node.replaceData(prefix, node.length - prefix, displayed.slice(prefix));
     }
     const size = Math.min(content.size, bounds.height),
-      font = `${slot.bold ? 'bold ' : ''}${size}px ${family ?? 'serif'}`;
+      font = `${slot.weight ?? (slot.bold ? 'bold' : 'normal')} ${size}px ${family ?? 'serif'}`;
     this.measure.font = font;
     this.measure.fontKerning = 'none';
     const fullLines = Array.from({length: content.lines}, () => '');
@@ -123,14 +123,36 @@ export class DomGlyphSlots {
       lineBounds[line]!.right = Math.max(lineBounds[line]!.right, g.x + g.width);
       lineBounds[line]!.top = Math.min(lineBounds[line]!.top, g.y);
     }
-    const widths = fullLines.map((line) => this.measure.measureText(line).width);
+    const browserWidths = fullLines.map((line) => this.measure.measureText(line).width);
+    // A declared stretch reproduces native condensed glyphs and their pitch: CSS spacing
+    // precedes scaleX, so each advance is stretch * (browser advance + spacing). The first
+    // row's glyph step anchors the pitch, as it anchors the fallback compression below.
+    let spacing = 0;
+    const stretch = slot.vertical ? undefined : slot.stretch;
+    if (stretch !== undefined && stretch > 0) {
+      const row = slot.glyphs.filter((g) => g.line === firstLine && g.text),
+        count = row.reduce((n, g) => n + Array.from(g.text!).length, 0);
+      if (row.length > 1 && count > 1 && browserWidths[0]) {
+        const pitch = (row.at(-1)!.x - row[0]!.x) / (count - Array.from(row.at(-1)!.text!).length);
+        spacing = Math.max(
+          pitch / stretch - browserWidths[0] / count,
+          -browserWidths[0] / count / 2,
+        );
+      }
+    }
+    const widths = browserWidths.map(
+      (width, line) => width + spacing * Array.from(fullLines[line]!).length,
+    );
     const measured = Math.max(1, ...widths),
-      scale = Math.min(
-        1,
-        ...(slot.explicitLines ? widths.slice(0, 1) : widths).flatMap((width, line) =>
-          width ? [(lineBounds[line]!.right - lineBounds[line]!.left) / width] : [],
-        ),
-      );
+      scale =
+        stretch !== undefined && stretch > 0
+          ? stretch
+          : Math.min(
+              1,
+              ...(slot.explicitLines ? widths.slice(0, 1) : widths).flatMap((width, line) =>
+                width ? [(lineBounds[line]!.right - lineBounds[line]!.left) / width] : [],
+              ),
+            );
     const positioned = lineBounds.flatMap((row, line) =>
         Number.isFinite(row.top) ? [{line, top: row.top}] : [],
       ),
@@ -155,7 +177,8 @@ export class DomGlyphSlots {
     const shape = `polygon(${wrapWidth}px 0,${edge.join(',')},${wrapWidth}px ${content.lines * lineHeight}px)`;
     box.style.cssText = `position:absolute;left:${clip.x}px;top:${clip.y}px;width:${clip.width}px;height:${clip.height}px;overflow:hidden;pointer-events:none;z-index:${z}`;
     let filter = '';
-    if ((family && atlasTint) || content.shadows.length) {
+    const outline = content.outline;
+    if ((family && atlasTint) || content.shadows.length || outline) {
       const ns = 'http://www.w3.org/2000/svg';
       if (!nodes.tint) {
         const svg = document.createElementNS(ns, 'svg'),
@@ -174,6 +197,7 @@ export class DomGlyphSlots {
         key = JSON.stringify([
           c,
           content.shadows,
+          outline ?? null,
           content.alpha,
           scale,
           measured,
@@ -191,10 +215,12 @@ export class DomGlyphSlots {
           f.append(e);
           return e;
         };
-        const minX = Math.min(0, ...content.shadows.map((s) => s.x)) / scale,
-          minY = Math.min(0, ...content.shadows.map((s) => s.y)),
-          maxX = Math.max(0, ...content.shadows.map((s) => s.x)) / scale,
-          maxY = Math.max(0, ...content.shadows.map((s) => s.y));
+        const edgeX = (outline?.radiusX ?? 0) / scale,
+          edgeY = outline?.radiusY ?? 0;
+        const minX = Math.min(0, ...content.shadows.map((s) => s.x)) / scale - edgeX,
+          minY = Math.min(0, ...content.shadows.map((s) => s.y)) - edgeY,
+          maxX = Math.max(0, ...content.shadows.map((s) => s.x)) / scale + edgeX,
+          maxY = Math.max(0, ...content.shadows.map((s) => s.y)) + edgeY;
         f.setAttribute('filterUnits', 'userSpaceOnUse');
         f.setAttribute('x', String(minX - 1));
         f.setAttribute('y', String(minY - 1));
@@ -225,8 +251,50 @@ export class DomGlyphSlots {
             result: `shadow-${i}`,
           });
         }
+        if (outline) {
+          // A native edge surrounds the ink by its radii; dilation of the browser
+          // glyph's alpha is the equivalent shape at the browser's glyph outline.
+          const columns = outline.radiusX * 2 + 1,
+            rows = outline.radiusY * 2 + 1;
+          if (outline.weights?.length === columns * rows)
+            // Native edges sum weighted coverage and clamp; filter results clamp the same way.
+            // Kernel cells are native pixels, so their x spacing undoes the text's scaleX.
+            primitive('feConvolveMatrix', {
+              in: 'SourceAlpha',
+              order: `${columns} ${rows}`,
+              kernelMatrix: outline.weights.join(' '),
+              divisor: 1,
+              targetX: outline.radiusX,
+              targetY: outline.radiusY,
+              edgeMode: 'none',
+              kernelUnitLength: `${1 / scale} 1`,
+              result: 'edge-shape',
+            });
+          else
+            primitive('feMorphology', {
+              in: 'SourceAlpha',
+              operator: 'dilate',
+              radius: `${edgeX} ${edgeY}`,
+              result: 'edge-shape',
+            });
+          primitive('feFlood', {
+            'flood-color': `#${(outline.color & 0xffffff).toString(16).padStart(6, '0')}`,
+            'flood-opacity': Math.max(0, Math.min(255, outline.alpha)) / 255,
+            result: 'edge-color',
+          });
+          primitive('feComposite', {
+            in: 'edge-color',
+            in2: 'edge-shape',
+            operator: 'in',
+            result: 'edge',
+          });
+        }
         const merge = primitive('feMerge', {});
-        for (const name of [...content.shadows.map((_, i) => `shadow-${i}`), 'ink']) {
+        for (const name of [
+          ...content.shadows.map((_, i) => `shadow-${i}`),
+          ...(outline ? ['edge'] : []),
+          'ink',
+        ]) {
           const e = document.createElementNS(ns, 'feMergeNode');
           e.setAttribute('in', name);
           merge.append(e);
@@ -235,7 +303,7 @@ export class DomGlyphSlots {
       }
       filter = `filter:url(#${nodes.tint.id});`;
     }
-    text.style.cssText = `position:absolute;display:block;left:${origin - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;text-indent:${indent}px;--text-wrap-height:${content.lines * lineHeight}px;--text-wrap-shape:${shape};white-space:${slot.explicitLines ? 'pre' : 'break-spaces'};word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;${filter}line-height:${lineHeight}px;color:#${(content.color & 0xffffff).toString(16).padStart(6, '0')};opacity:${filter ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
+    text.style.cssText = `position:absolute;display:block;left:${origin - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;text-indent:${indent}px;--text-wrap-height:${content.lines * lineHeight}px;--text-wrap-shape:${shape};white-space:${slot.explicitLines ? 'pre' : 'break-spaces'};word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;letter-spacing:${spacing}px;${filter}line-height:${lineHeight}px;color:#${(content.color & 0xffffff).toString(16).padStart(6, '0')};opacity:${filter ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
     // Reveal alpha belongs to glyphs, not paragraph identity. Custom highlight
     // ranges preserve that alpha without fragmenting text or changing wrapping.
     if (nodes.ink) this.clearInk(nodes.ink);

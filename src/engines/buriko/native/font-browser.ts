@@ -52,6 +52,8 @@ export interface BurikoFontFace {
   readonly ascent: number;
   readonly emSize: number;
   readonly horizontalScale: number;
+  /** CSS weight the face rasterizes with. */
+  readonly weight?: number;
   abc(character: number): readonly [number, number, number];
   extent(character: number): number;
   rasterText(text: string, width: number, height: number): BurikoFontDib;
@@ -195,6 +197,9 @@ export class BurikoBrowserFontFace implements BurikoFontFace {
     this.horizontalScale = parameters.width === 0 ? 1 : parameters.width / average;
     this.averageWidth = Math.round(average * this.horizontalScale);
     this.metricsContext = probe;
+  }
+  get weight(): number {
+    return this.parameters.weight;
   }
   private get canvasStyle(): BurikoFontCanvasStyle {
     return {

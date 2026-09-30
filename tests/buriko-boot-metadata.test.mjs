@@ -33,3 +33,24 @@ test('optional IPL metadata proves a native identity comparison and rejects data
     assert.equal(inferBurikoBootProductIdentity(program.subarray(0, 40), abi), null);
   }
 });
+
+test('1.685.3 IPL metadata follows fused frame, varint, and comparison-branch operands', () => {
+  const bytes = new Uint8Array(128),
+    view = new DataView(bytes.buffer);
+  view.setUint32(0, 16, true);
+  view.setUint32(4, 112, true);
+  // 12 varint frame reserve; 03 two varint pushes; 37 immediate compare-branch over a decoy exit.
+  const prefix = [0x12, 0xa4, 0x11, 0x03, 0x01, 0x85, 0x01, 0x02, 0x37, 0x00, 0x07, 0x00, 0x05];
+  prefix.push(0x80, 0x6a);
+  bytes.set(
+    [...prefix, 0x04, 16, 0, 0x80, 0xe8, 0x04, 16, 0, 0x05, 56 - prefix.length, 0, 0x69],
+    16,
+  );
+  bytes.set(new TextEncoder().encode('Fused_BGI_Product'), 16 + 64);
+  assert.equal(
+    new TextDecoder().decode(inferBurikoBootProductIdentity(bytes, BURIKO_BP_ABI_172)),
+    'Fused_BGI_Product',
+  );
+  for (const abi of [BURIKO_BP_ABI_169, BURIKO_BP_ABI_1665])
+    assert.equal(inferBurikoBootProductIdentity(bytes, abi), null);
+});

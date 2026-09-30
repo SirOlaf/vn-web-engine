@@ -80,22 +80,91 @@ export function inferBurikoBootProductIdentity(
     ),
     0xff,
   ]);
+  // 1.685.3 fused operands: b=u8, h=u16, w=u32, v=(typed) varint.
+  const fused: ReadonlyMap<number, string> =
+    abi.revision === '1.685.3'
+      ? new Map([
+          [0x0d, 'v'],
+          [0x0e, 'hv'],
+          [0x12, 'v'],
+          [0x1a, 'hv'],
+          [0x1b, 'hv'],
+          [0x1c, 'hb'],
+          [0x1d, 'h'],
+          [0x1e, 'h'],
+          [0x1f, 'v'],
+          [0x2c, 'v'],
+          [0x2d, 'v'],
+          [0x2e, 'v'],
+          [0x2f, 'v'],
+          [0x36, 'bv'],
+          [0x37, 'bhv'],
+          [0x3b, 'bh'],
+          [0x3c, 'b'],
+          [0x3e, 'b'],
+          [0x3f, 'bv'],
+          [0xe4, 'hv'],
+          [0xe5, 'hv'],
+          [0xe6, 'hv'],
+          [0xe7, 'hv'],
+          [0xe8, 'h'],
+          [0xe9, 'hh'],
+          [0xea, 'hhv'],
+          [0xec, 'v'],
+          [0xed, 'hv'],
+          [0xf0, 'whv'],
+          [0xf1, 'hhv'],
+          [0xf2, 'hhhv'],
+          [0xf4, 'hwhh'],
+          [0xf5, 'hhhhh'],
+          [0xf7, 'hhh'],
+          [0xf8, 'whh'],
+          [0xf9, 'hhhh'],
+          [0xfa, 'whh'],
+          [0xfb, 'hhh'],
+        ])
+      : new Map();
+  // Varints continue while bit 7 is set; an unterminated operand overruns the module.
+  function operandsEnd(pc: number, layout: string): number {
+    for (const operand of layout) {
+      if (operand !== 'v') pc += operand === 'b' ? 1 : operand === 'h' ? 2 : 4;
+      else {
+        while (pc < bytes.length && (bytes[pc]! & 0x80) !== 0) pc++;
+        pc++;
+      }
+    }
+    return pc;
+  }
   function decode(pc: number): Instruction | null {
     if (pc < 0 || pc >= bytes.length) return null;
     const opcode = bytes[pc]!;
     if (primary[opcode] === undefined) return null;
     let length = fixed.get(opcode);
+    const layout = fused.get(opcode);
     if (banks[opcode] !== undefined) {
       if (banks[opcode]![bytes[pc + 1]!] === undefined) return null;
       length = 2;
     } else if (single.has(opcode)) length = 1;
+    else if (layout !== undefined) length = operandsEnd(pc + 1, layout) - pc;
     else if (opcode === 0x0b) length = 2 + (bytes[pc + 1] ?? bytes.length);
     else if (opcode === 0x15) length = !old && (bytes[pc + 1]! & 8) !== 0 ? 4 : 2;
+    else if (fused.size && opcode === 0x03 && pc + 1 < bytes.length) {
+      const control = bytes[pc + 1]!;
+      length =
+        control < 0x80
+          ? operandsEnd(pc + 2, 'v'.repeat(control + 1)) - pc
+          : (control & 0x7c) !== 0
+            ? 2
+            : 2 + [1, 2, 4, 8][control & 3]!;
+    } else if (fused.size && (opcode === 0xe2 || opcode === 0xe3) && pc + 1 < bytes.length)
+      length = 2 + (bytes[pc + 1]! + 1) * 2;
     if (length === undefined || pc + length > bytes.length) return null;
     const instruction: Instruction = {pc, opcode, end: pc + length};
     if ([0x05, 0x06, 0x13, 0xee].includes(opcode))
       instruction.target = pc + view.getInt16(pc + 1, true);
-    if (opcode === 0x15 && length === 4) instruction.target = pc + view.getInt16(pc + 2, true);
+    // Fused comparison branches 37/3b share 15's control byte and relative target.
+    if ((opcode === 0x15 && length === 4) || (fused.size && (opcode === 0x37 || opcode === 0x3b)))
+      instruction.target = pc + view.getInt16(pc + 2, true);
     return instruction;
   }
 
@@ -144,7 +213,10 @@ export function inferBurikoBootProductIdentity(
         (current.opcode === 0x80 && bytes[pc + 1] === 0x6a)
       )
         break;
-      if ([0x13, 0x14, 0x15, 0x16, 0xee].includes(current.opcode)) {
+      if (
+        [0x13, 0x14, 0x15, 0x16, 0xee].includes(current.opcode) ||
+        (fused.size && (current.opcode === 0x37 || current.opcode === 0x3b))
+      ) {
         const target = current.target ?? (previous?.opcode === 0x06 ? previous.target : undefined);
         if (target !== undefined && target >= 0 && target < bytes.length) pending.push(target);
         if (current.opcode === 0x13 || current.opcode === 0x14) break;

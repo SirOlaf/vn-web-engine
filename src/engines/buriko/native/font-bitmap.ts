@@ -109,6 +109,8 @@ export function rasterBurikoGlyph(
   recordBurikoBitmapText(bitmap, mapped ?? '', {
     size: raster.geometry.size,
     family: raster.face.cssFamily,
+    ...(raster.face.weight === undefined ? {} : {weight: raster.face.weight}),
+    stretch: raster.face.horizontalScale,
     color,
     vertical: presentation.vertical,
     decorative: presentation.decorative || mapped === null,

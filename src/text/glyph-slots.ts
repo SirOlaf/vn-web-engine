@@ -13,6 +13,19 @@ export interface TextShadow {
   color: number;
   alpha: number;
 }
+/** A native text edge painted beneath the glyph. */
+export interface TextOutline {
+  radiusX: number;
+  radiusY: number;
+  color: number;
+  alpha: number;
+  /**
+   * Coverage weights summed per edge pixel and clamped to full coverage, row-major over
+   * (2 * radiusY + 1) rows of (2 * radiusX + 1) pixel offsets. Without weights the edge
+   * is the glyph dilated by the radii.
+   */
+  weights?: readonly number[];
+}
 export interface TextGlyph extends Rect {
   id: number;
   /** Presentation flow identity keeps neighboring controls outside body text. */
@@ -26,6 +39,7 @@ export interface TextGlyph extends Rect {
   clip?: Rect;
   raster?: GlyphRaster;
   shadows?: readonly TextShadow[];
+  outline?: TextOutline;
 }
 export interface GlyphSlot {
   interactive?: boolean;
@@ -33,6 +47,13 @@ export interface GlyphSlot {
   explicitLines?: boolean;
   vertical?: boolean;
   bold?: boolean;
+  /** CSS font weight; overrides `bold`. */
+  weight?: number;
+  /**
+   * Native glyph width relative to the font size. When set, browser glyphs use this
+   * horizontal scale and letter spacing reproduces the native advances.
+   */
+  stretch?: number;
   id: string;
   glyphs: readonly TextGlyph[];
 }
@@ -46,6 +67,7 @@ export interface SlotText {
   alpha: number;
   lines: number;
   shadows: readonly TextShadow[];
+  outline?: TextOutline;
 }
 /** A complete glyph buffer keeps unrevealed suffixes from changing the slot's bounds. */
 export function slotText(slot: GlyphSlot): SlotText | undefined {
@@ -79,11 +101,14 @@ export function slotText(slot: GlyphSlot): SlotText | undefined {
     lines[g.line - firstLine] +=
       (g.alpha > 0 ? g.text : ' '.repeat(Array.from(g.text ?? '').length)) ?? '';
   }
-  const shadows = visible[0]!.shadows ?? [];
-  const minX = Math.min(0, ...shadows.map((s) => s.x)),
-    minY = Math.min(0, ...shadows.map((s) => s.y)),
-    maxX = Math.max(0, ...shadows.map((s) => s.x)),
-    maxY = Math.max(0, ...shadows.map((s) => s.y));
+  const shadows = visible[0]!.shadows ?? [],
+    outline = visible[0]!.outline,
+    edgeX = outline?.radiusX ?? 0,
+    edgeY = outline?.radiusY ?? 0;
+  const minX = Math.min(0, ...shadows.map((s) => s.x)) - edgeX,
+    minY = Math.min(0, ...shadows.map((s) => s.y)) - edgeY,
+    maxX = Math.max(0, ...shadows.map((s) => s.x)) + edgeX,
+    maxY = Math.max(0, ...shadows.map((s) => s.y)) + edgeY;
   let clip = {
     x: left + minX,
     y: top + minY,
@@ -96,7 +121,8 @@ export function slotText(slot: GlyphSlot): SlotText | undefined {
       y = Math.min(...clipped.map((g) => g.clip!.y)),
       r = Math.max(...clipped.map((g) => g.clip!.x + g.clip!.width)),
       b = Math.max(...clipped.map((g) => g.clip!.y + g.clip!.height));
-    clip = {x, y, width: r - x, height: b - y};
+    // Glyph clips cover the cell only; the outline's dilation extends past it.
+    clip = {x: x - edgeX, y: y - edgeY, width: r - x + 2 * edgeX, height: b - y + 2 * edgeY};
   }
   return {
     text: lines.join(''),
@@ -108,5 +134,6 @@ export function slotText(slot: GlyphSlot): SlotText | undefined {
     alpha: Math.max(...visible.map((g) => g.alpha)),
     lines: lines.length,
     shadows,
+    ...(outline ? {outline} : {}),
   };
 }

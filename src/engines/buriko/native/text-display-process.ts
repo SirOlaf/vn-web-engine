@@ -5,7 +5,7 @@ import {clearBurikoBitmap} from './bitmap-copy.js';
 import type {BurikoNativeClock} from './clock.js';
 import type {BurikoWindowDisplayObject} from './display-window.js';
 import {rasterBurikoGlyph} from './font-bitmap.js';
-import {recordBurikoBitmapText} from './bitmap-dom-text.js';
+import {decorateBurikoBitmapText, recordBurikoBitmapText} from './bitmap-dom-text.js';
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 import type {BurikoNativeInput} from './input.js';
 import {BurikoProcedure, type BurikoProcedureState} from './procedure.js';
@@ -245,6 +245,8 @@ export class BurikoTextDisplayProcess extends BurikoProcedure {
       const damage = rectangle();
       let damagePublished = false;
       if (effect.mode !== 0) {
+        // This path draws the offset shadow for every nonzero mode.
+        decorateBurikoBitmapText(view, {...effect, mode: 1}, dx, dy);
         const shadow = allocateBurikoBitmap(view.width, view.height, 1);
         try {
           clearBurikoBitmap(shadow);

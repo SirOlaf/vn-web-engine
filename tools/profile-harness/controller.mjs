@@ -5,7 +5,7 @@
 // and bypasses the service worker, so reloads always run the current build.
 //
 //   node tools/profile-harness/controller.mjs [--chrome-port 9333] [--port 9444]
-//     [--origin http://127.0.0.1:8001]
+//     [--origin http://127.0.0.1:8001] [--user-data-dir <profile with DevToolsActivePort>]
 //
 // Commands on http://127.0.0.1:<port>/<cmd>?args:
 //   eval?js=...                      evaluate (awaited, returned by value as JSON)
@@ -19,7 +19,8 @@
 //   profstart / profstop?file=path   sampling CPU profile (.cpuprofile JSON)
 //   recstart / recstop?file=path     in-game Performance diagnostics timings JSON
 import {createServer} from 'node:http';
-import {writeFileSync} from 'node:fs';
+import {readFileSync, writeFileSync} from 'node:fs';
+import {join} from 'node:path';
 
 const option = (name, fallback) => {
   const index = process.argv.indexOf(name);
@@ -27,8 +28,19 @@ const option = (name, fallback) => {
 };
 const chromePort = Number(option('--chrome-port', 9333)),
   port = Number(option('--port', 9444));
-const version = await (await fetch(`http://127.0.0.1:${chromePort}/json/version`)).json();
-const socket = new WebSocket(version.webSocketDebuggerUrl);
+// Chrome's in-browser remote-debugging toggle serves no /json endpoints; its profile's
+// DevToolsActivePort names the port and browser socket path instead.
+const profile = option('--user-data-dir', null);
+const endpoint = profile
+  ? (() => {
+      const [activePort, path] = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split(
+        '\n',
+      );
+      return `ws://127.0.0.1:${activePort}${path}`;
+    })()
+  : (await (await fetch(`http://127.0.0.1:${chromePort}/json/version`)).json())
+      .webSocketDebuggerUrl;
+const socket = new WebSocket(endpoint);
 await new Promise((r, j) => ((socket.onopen = r), (socket.onerror = j)));
 let nextId = 0;
 const pending = new Map();

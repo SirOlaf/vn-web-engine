@@ -7,6 +7,7 @@ import {
   fillBurikoBitmap,
 } from '../dist/engines/buriko/native/bitmap.js';
 import {clearBurikoBitmap} from '../dist/engines/buriko/native/bitmap-copy.js';
+import {decorateBurikoBitmapText} from '../dist/engines/buriko/native/bitmap-dom-text.js';
 import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compositor.js';
 import {
   recordRasterText,
@@ -79,6 +80,44 @@ test('raster text survives offscreen composition, clipping, snapshots and scroll
     'AB',
   );
   assert.deepEqual(snapshot.storage.bytes, reference.storage.bytes);
+});
+
+test('native weight, glyph stretch and edge effects travel with composited glyphs into slots', () => {
+  const styled = (text, x, effect) => {
+    const value = bitmap(4, 8, 0xffffff);
+    recordRasterText(value, text, {size: 8, width: 4, weight: 700, stretch: 0.75});
+    decorateBurikoBitmapText(value, effect, 1, 1);
+    // The effect pass is decorative ink: it removes its own ink but adds no glyph.
+    const edge = bitmap(6, 10, 0xffffff);
+    recordRasterText(edge, '', {decorative: true, color: effect.color});
+    compositor.draw(surface, x, 0, edge, 0, 0);
+    compositor.draw(surface, x + 1, 1, value, 0, 0);
+  };
+  const surface = bitmap(40, 12),
+    outline = {mode: 2, color: 0xffffff, opacity: 192},
+    shadow = {mode: 1, color: 0x102030, opacity: 256};
+  styled('A', 0, outline);
+  styled('B', 6, outline);
+  styled('C', 20, shadow);
+  const slots = rasterTextSlots(readRasterText(surface));
+  assert.deepEqual(
+    slots.map(({slot}) => slotText(slot).text),
+    ['AB', 'C'],
+  );
+  const [edged, shaded] = slots.map(({slot}) => slot);
+  assert.equal(edged.weight, 700);
+  assert.equal(edged.stretch, 0.75);
+  const {weights, ...edge} = slotText(edged).outline;
+  assert.deepEqual(edge, {radiusX: 1, radiusY: 1, color: 0xffffff, alpha: 191});
+  // Native radius-one edges sum full orthogonal coverage and sqrt(2) - 1 of each diagonal.
+  assert.deepEqual(
+    weights.map((w) => Math.round(w * 1000) / 1000),
+    [0.414, 1, 0.414, 1, 1, 1, 0.414, 1, 0.414],
+  );
+  // The outline's dilation widens the slot's clip past the glyph cells.
+  assert.equal(slotText(edged).clip.x, 0);
+  assert.deepEqual(slotText(shaded).shadows, [{x: 1, y: 1, color: 0x102030, alpha: 255}]);
+  assert.equal(slotText(shaded).outline, undefined);
 });
 
 test('partial damage and opaque overlays keep only visible semantic text, and full clears retire it', () => {

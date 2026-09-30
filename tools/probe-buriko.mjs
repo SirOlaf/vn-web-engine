@@ -18,6 +18,7 @@ import {readBurikoBootProductIdentity} from '../dist/engines/buriko/native/boot-
 import {burikoInstallationView} from '../dist/engines/buriko/installation-view.js';
 import {createMountedVmFixture} from '../tests/aokana-production-vm-fixture.mjs';
 import {BurikoProductionBootRunner} from '../dist/engines/buriko/native/production-boot-runner.js';
+import {hostPointer} from '../dist/engines/buriko/bp/memory.js';
 
 const defaultRoots = ['targetgame/aokana', 'targetgame/穢翼のユースティアno-patch'];
 const legacyAokanaSha256 = 'f585e28f79923b8aa487d8690165e45ce3377c7e1b8381d3b75c659c7e933d7a';
@@ -27,6 +28,7 @@ const maxFrames = Number.parseInt(process.env.BURIKO_PROBE_FRAMES ?? '4', 10);
 const maxOpcodes = Number.parseInt(process.env.BURIKO_PROBE_OPCODES ?? '20000', 10);
 const timeoutMs = Number.parseInt(process.env.BURIKO_PROBE_TIMEOUT_MS ?? '15000', 10);
 const frameMs = Number.parseInt(process.env.BURIKO_PROBE_FRAME_MS ?? '17', 10);
+const tailLength = Number.parseInt(process.env.BURIKO_PROBE_TAIL ?? '0', 10);
 
 if (
   ![maxFrames, maxOpcodes, timeoutMs, frameMs].every(Number.isSafeInteger) ||
@@ -273,11 +275,9 @@ async function probe(inputRoot) {
     const names = await timeout(runner.reset.run(), timeoutMs, 'ordered boot reset');
     if (names === null) throw new Error('Native boot reset did not select a boot module');
     const archiveText = fixture.text
-      .decodeAuto({bytes: names.archive, offset: 0})
+      .decodeAuto(hostPointer(names.archive, 0))
       .replace(/\0.*$/s, '');
-    const moduleText = fixture.text
-      .decodeAuto({bytes: names.module, offset: 0})
-      .replace(/\0.*$/s, '');
+    const moduleText = fixture.text.decodeAuto(hostPointer(names.module, 0)).replace(/\0.*$/s, '');
     moduleNames.push({archive: archiveText, module: moduleText});
     console.log(
       JSON.stringify({
@@ -314,7 +314,7 @@ async function probe(inputRoot) {
             }
           : {}),
       });
-      if (instructionTail.length > 8) instructionTail.shift();
+      if (instructionTail.length > Math.max(8, tailLength)) instructionTail.shift();
       const result = originalStep(thread, actor);
       opcodeCount++;
       opcodeCounts.set(opcode, (opcodeCounts.get(opcode) ?? 0) + 1);
@@ -404,7 +404,11 @@ async function probe(inputRoot) {
       modules: moduleNames,
       dialogs,
       error,
-      ...(error === null ? {} : {errorFrames, instructionTail}),
+      ...(error === null
+        ? tailLength > 0
+          ? {instructionTail}
+          : {}
+        : {errorFrames, instructionTail}),
     }),
   );
 }

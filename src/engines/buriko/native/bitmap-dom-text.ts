@@ -1,9 +1,47 @@
 import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
+import {burikoGlyphOutlineWeights} from './font-outline.js';
 import {burikoGpuDeferrer, burikoGpuTarget, type BurikoGpuKernel} from './bitmap-gpu-target.js';
-import {withRasterText, type RasterTextOperationOptions} from '../../../text/raster-text.js';
+import {
+  decorateRasterText,
+  withRasterText,
+  type RasterTextBitmap,
+  type RasterTextOperationOptions,
+} from '../../../text/raster-text.js';
 
 /** The transport is shared web presentation code; native bitmaps remain canonical. */
 export {recordRasterText as recordBurikoBitmapText} from '../../../text/raster-text.js';
+
+/**
+ * Attach a native text effect to a rasterized source glyph before its effect passes are
+ * composited. Mode 1 draws the recolored glyph offset by the radii beneath it; mode 2 draws a
+ * weighted edge of those radii around it (`burikoGlyphOutlineWeights`). Both pass `256 - opacity` as the compositor's
+ * transparency, so the effect's alpha is `opacity / 256`.
+ */
+export function decorateBurikoBitmapText(
+  glyph: RasterTextBitmap,
+  effect: {readonly mode: number; readonly color: number; readonly opacity: number},
+  radiusX: number,
+  radiusY: number,
+): void {
+  const mode = effect.mode | 0;
+  if (mode !== 1 && mode !== 2) return;
+  const color = effect.color & 0xffffff,
+    alpha = Math.max(0, Math.min(255, Math.round((effect.opacity * 255) / 256)));
+  decorateRasterText(
+    glyph,
+    mode === 1
+      ? {shadows: [{x: radiusX, y: radiusY, color, alpha}]}
+      : {
+          outline: {
+            radiusX,
+            radiusY,
+            color,
+            alpha,
+            weights: burikoGlyphOutlineWeights(radiusX, radiusY),
+          },
+        },
+  );
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Kernel = (...args: any[]) => any;

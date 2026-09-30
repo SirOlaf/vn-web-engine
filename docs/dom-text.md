@@ -40,11 +40,22 @@ Presentation owners can annotate a bitmap with `rasterTextFlow` to isolate contr
 text. Window overlays use independent flows; decoded wait-marker glyphs remain
 visible without entering dialogue width or line-spacing calculations. Flow
 identity follows copies, crops, clones, transforms and display uploads.
-Vertical text uses browser vertical layout. Shadows
-and outlines can be omitted; arbitrary blend, mask, mesh and displacement effects
-cannot be reproduced exactly by browser text. Fully occluded glyphs are excluded
-using native/textless pixel comparison, while partial occlusion and transformed
-glyph shapes remain best effort.
+Vertical text uses browser vertical layout.
+
+Glyph records carry the native CSS weight and a horizontal `stretch` (native glyph
+width relative to the font size). Slots with a stretch scale browser glyphs by it and
+set letter spacing so each advance equals the first row's native glyph pitch; slots
+without one only compress rows that are wider than native. Engines record effect
+passes as decorative ink and call `decorateRasterText` on the source glyph before
+compositing them, so the glyph carries its edge: offset shadows become SVG offset
+shadows. Outlines are painted beneath the ink: with engine `weights`, each edge
+pixel sums the browser glyph's weighted alpha over the radii and clamps at full
+coverage, as native edge rasterizers do; without them the glyph is dilated by the
+radii. In Buriko, `decorateBurikoBitmapText` maps text effect modes 1 (shadow) and
+2 (outline, with `burikoGlyphOutlineWeights`); effect alpha is `opacity / 256`. Arbitrary blend,
+mask, mesh and displacement effects cannot be reproduced exactly by browser text.
+Fully occluded glyphs are excluded using native/textless pixel comparison, while
+partial occlusion and transformed glyph shapes remain best effort.
 Custom bitmap glyphs retain their private-use character codes; browser fonts may
 show a fallback glyph when they do not contain those characters.
 Tracking retained text requires additional

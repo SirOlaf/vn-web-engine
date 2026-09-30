@@ -68,6 +68,32 @@ function drawOutlinePixels(
     }
 }
 
+/**
+ * The coverage weights 03edb0 sums for an ordinary glyph outline, row-major over
+ * (2 * radiusY + 1) rows of (2 * radiusX + 1) offsets. Presentation copies use them to
+ * redraw the same edge; the native path keeps its fixed-point arithmetic.
+ */
+export function burikoGlyphOutlineWeights(radiusX: number, radiusY: number): number[] {
+  radiusX |= 0;
+  radiusY |= 0;
+  const table =
+    radiusX === radiusY && radiusX >>> 0 <= 5 && radiusY >>> 0 <= 5
+      ? outlineWeightTables[(radiusY - 1) >>> 0]
+      : undefined;
+  const weights: number[] = [];
+  for (let dy = -radiusY; dy <= radiusY; dy++)
+    for (let dx = -radiusX; dx <= radiusX; dx++) {
+      if (table) {
+        weights.push(table[(dy + radiusY) * (radiusY * 2 + 1) + dx + radiusX]! / 0x10000);
+        continue;
+      }
+      const scaledX = (dx * radiusY) / radiusX;
+      const distance = Math.sqrt(scaledX * scaledX + dy * dy) - radiusY;
+      weights.push(distance <= 0 ? 1 : distance >= 1 ? 0 : distance);
+    }
+  return weights;
+}
+
 /** 03edb0 reads the font's actual cached byte glyph and applies its table/ellipse weights. */
 export function drawBurikoCachedGlyphOutline(
   destination: BurikoBitmap,
