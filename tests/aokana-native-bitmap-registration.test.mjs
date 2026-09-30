@@ -33,6 +33,7 @@ import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BurikoNativeInput} from '../dist/engines/buriko/native/input.js';
 import {BurikoNativeDisplayState} from '../dist/engines/buriko/native/display-state.js';
 import {bitmapRead32} from '../dist/engines/buriko/native/bitmap-scalar.js';
+import {modernCbg} from './aokana-resource-direct-fixtures.mjs';
 
 test('91:03/04 register actual image data through shared cache, private decoder and surface consumers', async (t) => {
   // Codec tasks run in 4 ms wall-clock slices; a frozen clock completes them in one host turn
@@ -155,6 +156,12 @@ test('91:03/04 register actual image data through shared cache, private decoder 
     assert.equal(surfaces.record(3).metadataY, 9);
     assert.deepEqual(memory.globalMemory.subarray(512, 569), encoded);
     assert.equal(thread.stackIndex, 0);
+
+    // The skip path's version2 depth24 image leaves its native allocation's tail unwritten.
+    const skipName = encode('skip-image');
+    await fs.commit([{kind: 'write', path: '/skip-image', data: modernCbg(2, 1, 24)}]);
+    assert.equal(await bitmapLoading.synchronous(4, null, skipName), 0);
+    assert.deepEqual(pixels(4), [0x808080, 0x808080]);
   } finally {
     processing.dispose();
   }

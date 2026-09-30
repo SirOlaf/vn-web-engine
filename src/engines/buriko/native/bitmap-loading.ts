@@ -42,18 +42,26 @@ export class BurikoBitmapLoading {
     const runAsActor = <T>(operation: () => T): T =>
       operationAllocator.withActor(operationActor, operation);
 
-    let bytes = this.resources.cache.read(archive, name);
+    let bytes = this.resources.cache.read(archive, name),
+      initialized: Uint8Array | undefined;
     if (bytes === null) {
-      const loaded = await runAsActor(() => this.resources.resources.load(archive, name, false));
+      // Like the loader worker, BDC30 returns a private native allocation: version2 depth24
+      // images leave its tail unwritten, which the validity mask records.
+      const loaded = await runAsActor(() =>
+        this.resources.resources.load(archive, name, false, null),
+      );
       if (loaded.result === 0) return 0x80000019;
       bytes = loaded.bytes;
+      initialized = loaded.initialized;
       if (bytes === null)
         throw new Error('Buriko synchronous bitmap load has no successful resource bytes');
       this.resources.cache.insert(archive, name, bytes.subarray(0, loaded.result >>> 0));
     }
     const bitmap = runAsActor(() => importBurikoWindowsBitmap(this.surfaces, index, bytes));
     if (bitmap !== 0x80000001) return bitmap;
-    const result = runAsActor(() => importBurikoPackedBitmap(this.surfaces, index, bytes));
+    const result = runAsActor(() =>
+      importBurikoPackedBitmap(this.surfaces, index, bytes, initialized),
+    );
     return result === 1 ? 0x80000004 : result === 2 ? 0x80000008 : 0;
   }
 }
