@@ -1,7 +1,7 @@
 import {decodeCp932, isCp932LeadByte} from '../text.js';
 import {compositeOver} from '../graphics/blend.js';
-import {createSurface, type RScriptSurface} from '../graphics/pixels.js';
-import {RScriptContainer, RScriptSprite} from '../graphics/sprite.js';
+import {createSurface, type RScriptRect, type RScriptSurface} from '../graphics/pixels.js';
+import {RScriptContainer, RScriptSprite, type BakedGlyph} from '../graphics/sprite.js';
 
 /** Rasterized glyph coverage in GetGlyphOutline GGO_GRAY8 levels (0..64). */
 export interface GlyphCoverage {
@@ -97,17 +97,6 @@ export interface TextStyle {
   baselineAtBottom?: boolean;
 }
 
-/** A revealed glyph in block coordinates, for selectable browser text. */
-export interface TextBlockGlyph {
-  readonly text: string;
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-  /** The script started a new line here (`^N`) rather than the layout wrapping. */
-  readonly newline: boolean;
-}
-
 interface Glyph {
   sprite: RScriptSprite;
   /** Decoded character(s): one, or the two of a half-width pair. */
@@ -119,7 +108,12 @@ interface Glyph {
   newline: boolean;
   kinsoku: 0 | 1 | 2;
   delay: number;
+  color: number;
+  face: number;
+  bold: boolean;
+  italic: boolean;
   ruby: RScriptSprite[] | null;
+  rubyText: string;
   rubyEnd: number;
 }
 
@@ -227,7 +221,12 @@ export class RScriptTextBlock extends RScriptContainer {
       newline: this.newlineNext,
       kinsoku: HANGING.has(code) ? 1 : OPENING.has(code) ? 2 : 0,
       delay,
+      color,
+      face,
+      bold,
+      italic,
       ruby: null,
+      rubyText: '',
       rubyEnd: 0,
     });
     this.newlineNext = false;
@@ -253,6 +252,7 @@ export class RScriptTextBlock extends RScriptContainer {
     }
     const base = this.glyphs[first]!;
     base.ruby = sprites;
+    base.rubyText = decodeCp932(text);
     base.rubyEnd = last;
   }
 
@@ -431,12 +431,12 @@ export class RScriptTextBlock extends RScriptContainer {
     }
   }
 
-  /** The glyphs revealed so far, with their text and placement. */
-  shownGlyphs(): TextBlockGlyph[] {
-    const shown: TextBlockGlyph[] = [];
-    for (const glyph of this.glyphs) {
+  /** The glyphs revealed so far, with their text, style and placement. */
+  shownGlyphs(): BakedGlyph[] {
+    const shown: BakedGlyph[] = [];
+    this.glyphs.forEach((glyph, index) => {
       const {sprite} = glyph;
-      if (!sprite.visible) continue;
+      if (!sprite.visible) return;
       shown.push({
         text: glyph.text,
         x: sprite.x,
@@ -444,9 +444,23 @@ export class RScriptTextBlock extends RScriptContainer {
         width: glyph.advance,
         height: glyph.height,
         newline: glyph.newline,
+        color: glyph.color,
+        face: glyph.face,
+        bold: glyph.bold,
+        italic: glyph.italic,
+        shadow: this.style.shadow,
+        // Fade mode 2 hides the glyph as its level rises (0x45BC80 fades from 255 to 0).
+        opacity: sprite.fade.active ? 1 - sprite.blend.alpha / 255 : 1,
+        ruby: glyph.ruby?.length ? {text: glyph.rubyText, span: glyph.rubyEnd - index + 1} : null,
       });
-    }
+    });
     return shown;
+  }
+
+  /** Browser text presents the glyphs instead while the screen hides canvas text. */
+  protected override paint(target: RScriptSurface, clip: RScriptRect, x: number, y: number): void {
+    if (this.root()?.textHidden) return;
+    super.paint(target, clip, x, y);
   }
 
   /** Shows every glyph immediately (vtable +96 on a text object). */

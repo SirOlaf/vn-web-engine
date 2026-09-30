@@ -23,7 +23,19 @@ export interface BakedGlyph {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+  /** The script started a new line here (`^N`) rather than the layout wrapping. */
   readonly newline: boolean;
+  /** 0xRRGGBB. */
+  readonly color: number;
+  readonly face: number;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  /** Drawn with the drop shadow of text style +444. */
+  readonly shadow: boolean;
+  /** 0..1 while the glyph fades in. */
+  readonly opacity: number;
+  /** Ruby over this glyph and the `span - 1` glyphs after it. */
+  readonly ruby: {readonly text: string; readonly span: number} | null;
 }
 
 /**
@@ -582,6 +594,13 @@ export class RScriptScreen extends RScriptContainer {
   }
   invalidateAll(): void {
     this.dirty = {left: 0, top: 0, right: this.width, bottom: this.height};
+  }
+  /** Styled browser text presents the game text; text objects and plates draw none. */
+  textHidden = false;
+  hideText(hidden: boolean): void {
+    if (this.textHidden === hidden) return;
+    this.textHidden = hidden;
+    this.invalidateAll();
   }
   /** sub_452F10: redraws the dirty area; returns it for presentation, or null. */
   render(): RScriptRect | null {

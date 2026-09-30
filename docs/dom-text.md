@@ -127,14 +127,26 @@ left to the user.
 
 ## codeX RScript
 
-RScript text objects keep the decoded characters of their glyphs, so the RScript
-player needs no raster tracking. The canvas keeps drawing the native glyphs; DOM
-mode places transparent text over every visible text object (message boxes and
-the backlog pages they show, choices and screen text), one span per glyph cell,
-so selections line up with the native layout. A text object's DOM is rebuilt only
-when its glyphs change, which keeps a selection while the page waits. Copying
-omits the newlines of layout wraps and keeps those the script wrote. Ruby is not
-exposed, so dictionary lookups see the base text.
+RScript text objects keep the decoded characters, colours and faces of their
+glyphs, so the RScript player needs no raster tracking. Without a custom style the
+canvas keeps drawing the native glyphs; DOM mode places transparent text over every
+visible text object (message boxes and the backlog pages they show, choices and
+screen text), one span per glyph cell, so selections line up with the native
+layout, in the font of each glyph's face. Ruby is not exposed there, so dictionary
+lookups see the base text.
+
+With a custom style the DOM text is visible and the canvas draws no text: text
+objects skip their glyphs and choice plates draw their images without the text
+composited into them. Glyphs keep their script colours, bold and italic, the
+native drop shadow (when game shadows are kept) and their reveal fade. Ruby
+becomes `<ruby>` with `rt.game-text-ruby`, which selections skip. **Fit** keeps
+each native row at its place, compressed to its native width and clipped to the
+text object; **Natural** flows a text object's rows through its width, keeping only
+the script's line breaks.
+
+A text object's DOM is rebuilt only when its glyphs change, which keeps a selection
+while the page waits. Copying omits ruby and the newlines of layout wraps, and keeps
+those the script wrote.
 
 Shift is left to dictionary extensions in DOM mode instead of hiding the message
 window, and Control does not start skipping while text is selected, so it can be

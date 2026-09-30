@@ -1,3 +1,10 @@
+import {
+  domTextClasses,
+  domTextFamily,
+  getDomTextStyle,
+  subscribeDomTextStyle,
+  type DomTextStyle,
+} from '../../../text/dom-text-style.js';
 import {RScriptContainer, type BakedGlyph, type RScriptNode} from '../graphics/sprite.js';
 import {RScriptTextBlock} from '../runtime/text-block.js';
 
@@ -9,8 +16,10 @@ export interface RScriptDomTextOptions {
   readonly canvas: HTMLCanvasElement;
   readonly width: number;
   readonly height: number;
-  /** CSS font families of the game text, so selections cover the glyphs. */
-  readonly fontFamilies: string;
+  /** CSS font families of a glyph face, so selections cover the glyphs. */
+  families(face: number): string;
+  /** Stops the canvas drawing text while styled browser text presents it. */
+  hideText(hidden: boolean): void;
   /** Input over the text that belongs to the game. */
   wheel(up: boolean): void;
   cancel(): void;
@@ -19,6 +28,8 @@ export interface RScriptDomTextOptions {
 interface BlockView {
   readonly element: HTMLElement;
   signature: string;
+  /** Glyph elements by glyph index, for reveal fades; empty for transparent text. */
+  spans: HTMLElement[];
 }
 
 const STYLE_ID = 'rscript-dom-text-style';
@@ -26,23 +37,31 @@ const STYLE = `
 .rscript-dom-text { position: absolute; left: 0; top: 0; transform-origin: 0 0;
   overflow: hidden; pointer-events: none; }
 .rscript-dom-text > div { position: absolute; }
-.rscript-dom-text [data-line] { position: absolute; white-space: nowrap; color: transparent;
+.rscript-dom-text [data-line] { position: absolute; white-space: nowrap;
   pointer-events: auto; cursor: text; }
-.rscript-dom-text [data-line] > span { display: inline-block; vertical-align: bottom; }
-.rscript-dom-text ::selection { background: rgb(64 128 255 / 40%); color: transparent; }
+.rscript-dom-text:not([data-styled]) [data-line] { color: transparent; }
+.rscript-dom-text:not([data-styled]) [data-line] > span { display: inline-block;
+  vertical-align: bottom; }
+.rscript-dom-text:not([data-styled]) ::selection { background: rgb(64 128 255 / 40%);
+  color: transparent; }
+.rscript-dom-text rt { user-select: none; }
 `;
 
 /**
- * Selectable text over the game canvas for copying and dictionary extensions. The native
- * glyphs stay on the canvas; transparent browser text is placed over each visible text
- * object (message boxes, the backlog pages they show, choices and screen text), one span
- * per glyph cell so selections line up with the native layout.
+ * Selectable text over the game canvas for copying and dictionary extensions, placed over
+ * each visible text object (message boxes, the backlog pages they show, choices and screen
+ * text). Without a custom style the native glyphs stay on the canvas and transparent
+ * browser text covers them, one span per glyph cell so selections line up with the native
+ * layout. With the reader's custom style (see dom-text-style.ts) the browser text is
+ * visible in the chosen font, size and weight, with ruby, and the canvas draws no text.
  */
 export class RScriptDomText {
   readonly element: HTMLElement;
   private readonly blocks = new Map<RScriptNode, BlockView>();
   private readonly resize: ResizeObserver;
+  private readonly unsubscribeStyle: () => void;
   private enabled = false;
+  private styled = false;
   private frame = 0;
   private root: RScriptContainer | null = null;
 
@@ -55,7 +74,8 @@ export class RScriptDomText {
       document.head.append(style);
     }
     this.element = document.createElement('div');
-    this.element.className = 'rscript-dom-text';
+    // game-glyph-slots scopes the reader stylesheet (domTextStylesheet).
+    this.element.className = 'rscript-dom-text game-glyph-slots';
     this.element.style.width = `${width}px`;
     this.element.style.height = `${height}px`;
     this.element.hidden = true;
@@ -73,6 +93,7 @@ export class RScriptDomText {
     this.resize = new ResizeObserver(fit);
     this.resize.observe(canvas);
     fit();
+    this.unsubscribeStyle = subscribeDomTextStyle(() => this.restyle());
     this.element.addEventListener('copy', (event) => this.copy(event));
     this.element.addEventListener(
       'wheel',
@@ -105,8 +126,17 @@ export class RScriptDomText {
     this.enabled = enabled;
     this.root = root;
     this.element.hidden = !enabled;
-    if (enabled) this.update();
-    else this.clear();
+    if (!enabled) this.clear();
+    this.restyle();
+  }
+
+  /** Applies the reader's style: every block is rebuilt and the canvas text follows. */
+  private restyle(): void {
+    this.styled = this.enabled && getDomTextStyle().enabled;
+    this.element.toggleAttribute('data-styled', this.styled);
+    this.options.hideText(this.styled);
+    for (const view of this.blocks.values()) view.signature = '';
+    this.update();
   }
 
   /** Coalesces updates to one per animation frame after the game presents. */
@@ -130,23 +160,35 @@ export class RScriptDomText {
       keep.add(block);
       const at = block.screenPosition();
       const signature =
-        `${at.x},${at.y}|` +
-        glyphs.map((g) => `${g.text}${g.x},${g.y},${g.width},${g.height}`).join(';');
+        `${at.x},${at.y},${block.width},${block.height}|` +
+        glyphs
+          .map(
+            (g) =>
+              `${g.text}${g.x},${g.y},${g.width},${g.height},${g.color},${g.face},` +
+              `${+g.bold}${+g.italic}${+g.newline}${g.ruby ? `[${g.ruby.text}${g.ruby.span}]` : ''}`,
+          )
+          .join(';');
       let view = this.blocks.get(block);
       if (!view) {
-        view = {element: this.options.document.createElement('div'), signature: ''};
+        view = {element: this.options.document.createElement('div'), signature: '', spans: []};
         this.blocks.set(block, view);
-      }
-      // Rebuilding only on change keeps a selection while the text stays the same.
-      if (view.signature !== signature) {
-        view.signature = signature;
-        this.render(view.element, glyphs);
       }
       view.element.style.left = `${at.x}px`;
       view.element.style.top = `${at.y}px`;
       view.element.style.zIndex = String(order);
       if (this.element.children[order] !== view.element)
         this.element.insertBefore(view.element, this.element.children[order] ?? null);
+      // Rebuilding only on change keeps a selection while the text stays the same.
+      if (view.signature !== signature) {
+        view.signature = signature;
+        if (this.styled) this.renderStyled(view, glyphs, block);
+        else this.render(view, glyphs);
+      }
+      // Glyphs fade in as they are revealed.
+      view.spans.forEach((span, i) => {
+        const opacity = String(glyphs[i]?.opacity ?? 1);
+        if (span.style.opacity !== opacity) span.style.opacity = opacity;
+      });
       order++;
     }
     for (const [block, view] of this.blocks)
@@ -156,10 +198,8 @@ export class RScriptDomText {
       }
   }
 
-  private render(element: HTMLElement, glyphs: readonly BakedGlyph[]): void {
-    const {document, fontFamilies} = this.options;
-    element.replaceChildren();
-    // Glyphs of one row share a bottom edge (0x45AF80 aligns them to the line height).
+  /** Glyphs of one row share a bottom edge (0x45AF80 aligns them to the line height). */
+  private rows(glyphs: readonly BakedGlyph[]): BakedGlyph[][] {
     const rows: BakedGlyph[][] = [];
     for (const glyph of glyphs) {
       const row = rows.at(-1);
@@ -167,7 +207,17 @@ export class RScriptDomText {
       if (row && row[0]!.y + row[0]!.height === bottom && !glyph.newline) row.push(glyph);
       else rows.push([glyph]);
     }
-    rows.forEach((row, index) => {
+    return rows;
+  }
+
+  /** Transparent cells over the native glyphs. */
+  private render(view: BlockView, glyphs: readonly BakedGlyph[]): void {
+    const {document, families} = this.options;
+    const {element} = view;
+    element.replaceChildren();
+    element.style.width = element.style.height = element.style.overflow = '';
+    view.spans = [];
+    this.rows(glyphs).forEach((row, index) => {
       const top = Math.min(...row.map((g) => g.y));
       const height = Math.max(...row.map((g) => g.y + g.height)) - top;
       const line = document.createElement('div');
@@ -179,7 +229,7 @@ export class RScriptDomText {
         top: `${top}px`,
         height: `${height}px`,
         lineHeight: `${height}px`,
-        fontFamily: fontFamilies,
+        fontFamily: families(row[0]!.face),
       });
       row.forEach((glyph, i) => {
         const span = document.createElement('span');
@@ -193,7 +243,124 @@ export class RScriptDomText {
     });
   }
 
-  /** Copies the selection without the newlines of visual wraps. */
+  /**
+   * Visible text in the reader's style. `fit` keeps the native rows, compressed to their
+   * native width and clipped to the text object; `natural` flows the text through the
+   * object's width with the font's own advances and a line height that fits it.
+   */
+  private renderStyled(view: BlockView, glyphs: readonly BakedGlyph[], block: RScriptNode): void {
+    const {document} = this.options;
+    const style = getDomTextStyle();
+    const natural = style.layout === 'natural';
+    const {element} = view;
+    element.replaceChildren();
+    element.style.width = `${block.width}px`;
+    element.style.height = `${block.height}px`;
+    element.style.overflow = natural ? 'visible' : 'hidden';
+    view.spans = [];
+    const rows = this.rows(glyphs);
+    const size = Math.max(...glyphs.map((g) => g.height));
+    const classes = [
+      domTextClasses.text,
+      domTextClasses.horizontal,
+      ...(rows.length > 1 ? [domTextClasses.multiline] : []),
+    ].join(' ');
+    const line = (): HTMLElement => {
+      const text = document.createElement('div');
+      text.dataset.line = '';
+      text.className = classes;
+      text.lang = 'ja';
+      text.dataset.fontSize = String(size);
+      return text;
+    };
+    const tops = rows.map((row) => Math.min(...row.map((g) => g.y)));
+    if (natural) {
+      const text = line();
+      text.dataset.break = '';
+      const left = rows[0]![0]!.x;
+      const pitch = rows.length > 1 ? tops[1]! - tops[0]! : size;
+      Object.assign(text.style, {
+        left: `${left}px`,
+        top: `${tops[0]}px`,
+        width: `${Math.max(size, block.width - left)}px`,
+        whiteSpace: 'pre-wrap',
+        overflowWrap: 'anywhere',
+        lineHeight: `${Math.max(pitch, size * style.scale * 1.25)}px`,
+        fontSize: `${size * style.scale}px`,
+      });
+      rows.forEach((row, index) => {
+        // Only the script's breaks remain; the text wraps at the object's edge.
+        if (index > 0 && row[0]!.newline) text.append('\n');
+        this.appendGlyphs(text, row, glyphs, style, view.spans);
+      });
+      element.append(text);
+      return;
+    }
+    rows.forEach((row, index) => {
+      const text = line();
+      if (index === 0 || row[0]!.newline) text.dataset.break = '';
+      const height = Math.max(...row.map((g) => g.y + g.height)) - tops[index]!;
+      Object.assign(text.style, {
+        left: `${row[0]!.x}px`,
+        top: `${tops[index]}px`,
+        height: `${height}px`,
+        lineHeight: `${height}px`,
+        fontSize: `${height * style.scale}px`,
+        transformOrigin: '0 0',
+      });
+      this.appendGlyphs(text, row, glyphs, style, view.spans);
+      element.append(text);
+      // Rows keep their native width; wider browser text is compressed (reader rules too).
+      const last = row.at(-1)!;
+      const native = last.x + last.width - row[0]!.x,
+        measured = text.offsetWidth;
+      if (measured > native) text.style.transform = `scaleX(${native / measured})`;
+    });
+  }
+
+  /** One span per glyph, with ruby over the glyphs it spans within the row. */
+  private appendGlyphs(
+    parent: HTMLElement,
+    row: readonly BakedGlyph[],
+    glyphs: readonly BakedGlyph[],
+    style: DomTextStyle,
+    spans: HTMLElement[],
+  ): void {
+    const {document, families} = this.options;
+    for (let i = 0; i < row.length;) {
+      const glyph = row[i]!;
+      const span = glyph.ruby ? Math.min(glyph.ruby.span, row.length - i) : 1;
+      const target = glyph.ruby ? document.createElement('ruby') : parent;
+      for (const cell of row.slice(i, i + span)) {
+        const element = document.createElement('span');
+        element.textContent = cell.text;
+        Object.assign(element.style, {
+          color: `#${(cell.color & 0xffffff).toString(16).padStart(6, '0')}`,
+          fontFamily: domTextFamily(style, families(cell.face)),
+          fontWeight: String(style.weight ?? (cell.bold ? 'bold' : 'normal')),
+          fontStyle: cell.italic ? 'italic' : 'normal',
+          // The native shadow (0x456C00) is black, a twelfth of the size down and right.
+          textShadow:
+            style.effects && cell.shadow
+              ? `${Math.trunc(cell.height / 12)}px ${Math.trunc(cell.height / 12)}px #000`
+              : 'none',
+        });
+        spans[glyphs.indexOf(cell)] = element;
+        target.append(element);
+      }
+      if (glyph.ruby) {
+        const rt = document.createElement('rt');
+        rt.className = 'game-text-ruby';
+        rt.textContent = glyph.ruby.text;
+        rt.style.color = `#${(glyph.color & 0xffffff).toString(16).padStart(6, '0')}`;
+        target.append(rt);
+        parent.append(target);
+      }
+      i += span;
+    }
+  }
+
+  /** Copies the selection without ruby or the newlines of visual wraps. */
   private copy(event: ClipboardEvent): void {
     const selection = this.options.document.getSelection();
     if (!selection || selection.rangeCount === 0 || !event.clipboardData) return;
@@ -207,7 +374,9 @@ export class RScriptDomText {
         part.setStart(range.startContainer, range.startOffset);
       if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0)
         part.setEnd(range.endContainer, range.endOffset);
-      const piece = part.toString();
+      const contents = part.cloneContents();
+      for (const rt of contents.querySelectorAll('rt')) rt.remove();
+      const piece = contents.textContent ?? '';
       if (!piece) continue;
       if (text && line.dataset.break !== undefined) text += '\n';
       text += piece;
@@ -225,6 +394,7 @@ export class RScriptDomText {
   }
 
   dispose(): void {
+    this.unsubscribeStyle();
     this.resize.disconnect();
     this.clear();
     this.element.remove();

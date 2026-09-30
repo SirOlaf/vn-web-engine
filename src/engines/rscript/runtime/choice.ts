@@ -1,4 +1,5 @@
-import {createSurface, type RScriptSurface} from '../graphics/pixels.js';
+import {blendSprite} from '../graphics/blend.js';
+import {createSurface, type RScriptRect, type RScriptSurface} from '../graphics/pixels.js';
 import {RScriptContainer, RScriptSprite, type RScriptPoint} from '../graphics/sprite.js';
 import type {RScriptImages} from '../images.js';
 import {RScriptTextBlock, type GlyphRasterizer, type TextStyle} from './text-block.js';
@@ -16,6 +17,21 @@ export interface ChoiceEnvironment {
   readonly textColor: number;
   /** An answer was clicked while the window accepted input (0x41EDF0). */
   answered(): void;
+}
+
+/** A plate with its text composited in; while canvas text is hidden it draws without it. */
+class PlateSprite extends RScriptSprite {
+  constructor(
+    private readonly states: readonly RScriptSurface[],
+    private readonly plain: readonly RScriptSurface[],
+  ) {
+    super();
+  }
+  protected override paint(target: RScriptSurface, clip: RScriptRect, x: number, y: number): void {
+    let surface = this.surface;
+    if (this.root()?.textHidden) surface = this.plain[this.states.indexOf(surface!)] ?? surface;
+    if (surface) blendSprite(target, surface, x, y, clip, this.blend);
+  }
 }
 
 interface Item {
@@ -107,7 +123,8 @@ export class RScriptChoiceWindow extends RScriptContainer {
     block.append(text);
     block.finishReveal();
     block.show(true);
-    const states: RScriptSurface[] = [];
+    const states: RScriptSurface[] = [],
+      plain: RScriptSurface[] = [];
     for (const name of kind === 'q' ? ['body'] : ['body', 'body_f', 'body_c']) {
       const entry = lwg.find(name);
       const body = entry ? await this.env.images.lwgLayer(path, name) : null;
@@ -122,12 +139,13 @@ export class RScriptChoiceWindow extends RScriptContainer {
             surface.data[row * surface.width + column] = body.data[y * body.width + x]!;
         }
       }
+      plain.push({...surface, data: surface.data.slice()});
       const clip = {left: 0, top: 0, right: surface.width, bottom: surface.height};
       block.draw(surface, clip, textRect.x - block.x, textRect.y - block.y);
       states.push(surface);
     }
     if (!states.length) return null;
-    const sprite = new RScriptSprite();
+    const sprite = new PlateSprite(states, plain);
     sprite.setSurface(states[0]!);
     sprite.bakedText = block
       .shownGlyphs()

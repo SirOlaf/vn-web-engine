@@ -7,7 +7,7 @@ import {YuvRenderer} from '../../../video/renderer.js';
 import type {RScriptApini} from '../apini.js';
 import type {RScriptFiles} from '../files.js';
 import {RScriptGame, type RScriptSaveStorage} from '../runtime/game.js';
-import {CanvasGlyphRasterizer, CanvasPresenter, rscriptFontFamilies} from './canvas.js';
+import {CanvasGlyphRasterizer, CanvasPresenter} from './canvas.js';
 import {RScriptDomText} from './dom-text.js';
 import {listRScriptFonts} from './fonts.js';
 
@@ -82,7 +82,6 @@ export class RScriptBrowserPlayer {
     this.movieCanvas.style.cssText = 'display:none;pointer-events:none';
     this.panel.append(this.canvas, this.movieCanvas);
     this.audioHost = new BrowserAudioContextHost(this.audio, document);
-    const families = rscriptFontFamilies(apini.fontName);
     const rasterizer = new CanvasGlyphRasterizer(document);
     this.domText = new RScriptDomText({
       document,
@@ -90,7 +89,11 @@ export class RScriptBrowserPlayer {
       canvas: this.canvas,
       width: apini.width,
       height: apini.height,
-      fontFamilies: families,
+      families: (face) => rasterizer.families(face),
+      hideText: (hidden) => {
+        this.game.display.screen.hideText(hidden);
+        this.game.display.update();
+      },
       wheel: (up) => this.game.wheel(up),
       cancel: () => this.game.cancel(),
     });

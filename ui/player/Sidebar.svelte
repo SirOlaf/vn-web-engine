@@ -61,15 +61,14 @@
       <p id="text-help">
         {#if game === 'rscript'}
           DOM text places selectable text over the game’s own text for copying and dictionary
-          extensions. Click outside the text to continue; Shift is left to the extension.
+          extensions; a custom style shows it in your font instead. Click outside the text to
+          continue; Shift is left to the extension.
         {:else}
           DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and
           visual effects are approximate.
         {/if}
       </p>
-      {#if game !== 'rscript'}
-        <DomTextStyle />
-      {/if}
+      <DomTextStyle />
     </section>
     <SaveFiles {game} runtime />
     {#if game === 'buriko'}
