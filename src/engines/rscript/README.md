@@ -44,12 +44,12 @@ recognizes and reports counts and failures without writing assets.
 
 ## Compatibility
 
-| Title                | Executable SHA-256                                                 | Status                        |
-| -------------------- | ------------------------------------------------------------------ | ----------------------------- |
-| Fairytale Requiem    | `7c5392abef0810ec2ce3ec8c6318a566fce854281bbd52c7c032a8d7477ecd66` | Complete: all twelve endings  |
-| Fairytale Symphony   | `adcc785a849606ffad8748645348392cbc28a44abc5f40f8180f30f81af89396` | Complete: both endings        |
-| Fairytale Encore     | `04d1deb0eef007411d87d2d31f6652286f78b174ab190815d9bee58645a2ec49` | Complete: all six scenarios   |
-| Albatross Koukairoku | `f04c9729c0f60269f6ffdc63ea71c587a2431c501ade698e374978050fd156c4` | In progress: opening chapters |
+| Title                | Executable SHA-256                                                 | Status                       |
+| -------------------- | ------------------------------------------------------------------ | ---------------------------- |
+| Fairytale Requiem    | `7c5392abef0810ec2ce3ec8c6318a566fce854281bbd52c7c032a8d7477ecd66` | Complete: all twelve endings |
+| Fairytale Symphony   | `adcc785a849606ffad8748645348392cbc28a44abc5f40f8180f30f81af89396` | Complete: both endings       |
+| Fairytale Encore     | `04d1deb0eef007411d87d2d31f6652286f78b174ab190815d9bee58645a2ec49` | Complete: all six scenarios  |
+| Albatross Koukairoku | `f04c9729c0f60269f6ffdc63ea71c587a2431c501ade698e374978050fd156c4` | Complete: all seven endings  |
 
 The Fairytale titles are RScript 1.11.0.3. Scenes, maps, choices, backlog, colour effects and the save,
 load, configuration and font screens match the native game pixel for pixel at 1280x720.
@@ -62,8 +62,13 @@ Fairytale Symphony's ending movie.
 Albatross Koukairoku is RScript 1.9.0.0 at 800x600. Its message window
 collects a page of messages in one full-screen box, written in columns or rows at the
 size and placement chosen on the settings panel, and its characters come and go through
-opcode 0xFF. The title, the opening chapters, the backlog, the configuration screen and
-loading native slot saves match the native game; later chapters have not been compared.
+opcode 0xFF. Every story script runs: the three routes with both endings each, and the
+stowaway route the title offers after them, with the CG, scene and music galleries.
+The title, the opening chapters, the backlog, the configuration, save and load screens
+and the galleries match the native game. Native system saves and slots load in the
+browser, and slots and the system save written in the browser load in the native game.
+Its archives lack `wav\2471.wav`, `wav\0103.wav` and the sprite `grpo_bu\1208`, which its
+scripts request.
 
 ## Known gaps
 

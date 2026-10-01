@@ -20,7 +20,7 @@ Zero setup. Visit the page and select your local game files, optionally install 
 | Fairytale Requiem                     | codeX RScript | Complete      |
 | Fairytale Symphony                    | codeX RScript | Complete      |
 | Fairytale Encore                      | codeX RScript | Complete      |
-| Albatross Koukairoku                  | codeX RScript | In progress   |
+| Albatross Koukairoku                  | codeX RScript | Complete      |
 
 The games share browser services for files, storage, audio, video, graphics, and input. Reusable interpreters live under `src/engines/`; installation identity and explicit game compatibility profiles are selected separately.
 See [BGI compatibility](docs/buriko-compatibility.md) for revision selection, optional metadata, native evidence, and current verification limits.
