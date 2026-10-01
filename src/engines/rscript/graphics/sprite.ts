@@ -36,6 +36,8 @@ export interface BakedGlyph {
   readonly opacity: number;
   /** Ruby over this glyph and the `span - 1` glyphs after it. */
   readonly ruby: {readonly text: string; readonly span: number} | null;
+  /** Part of a column of vertical text: its cell is as wide as the font size. */
+  readonly vertical?: boolean;
 }
 
 /**

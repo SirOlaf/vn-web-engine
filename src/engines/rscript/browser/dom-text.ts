@@ -202,13 +202,20 @@ export class RScriptDomText {
       }
   }
 
-  /** Glyphs of one row share a bottom edge (0x45AF80 aligns them to the line height). */
+  /**
+   * Lines of glyphs: a row shares a bottom edge (0x45AF80 aligns them to the line height), a
+   * column of vertical text a left edge.
+   */
   private rows(glyphs: readonly BakedGlyph[]): BakedGlyph[][] {
     const rows: BakedGlyph[][] = [];
     for (const glyph of glyphs) {
       const row = rows.at(-1);
-      const bottom = glyph.y + glyph.height;
-      if (row && row[0]!.y + row[0]!.height === bottom && !glyph.newline) row.push(glyph);
+      const first = row?.[0];
+      const same =
+        first &&
+        !glyph.newline &&
+        (glyph.vertical ? first.x === glyph.x : first.y + first.height === glyph.y + glyph.height);
+      if (same) row.push(glyph);
       else rows.push([glyph]);
     }
     return rows;
@@ -222,12 +229,33 @@ export class RScriptDomText {
     element.style.width = element.style.height = element.style.overflow = '';
     view.spans = [];
     this.rows(glyphs).forEach((row, index) => {
-      const top = Math.min(...row.map((g) => g.y));
-      const height = Math.max(...row.map((g) => g.y + g.height)) - top;
       const line = document.createElement('div');
       line.dataset.line = '';
       // Explicit breaks copy as newlines; the layout's own wraps do not.
       if (index === 0 || row[0]!.newline) line.dataset.break = '';
+      if (row[0]!.vertical) {
+        const width = Math.max(...row.map((g) => g.width));
+        Object.assign(line.style, {
+          left: `${row[0]!.x}px`,
+          top: `${row[0]!.y}px`,
+          width: `${width}px`,
+          lineHeight: `${width}px`,
+          writingMode: 'vertical-rl',
+          fontFamily: families(row[0]!.face),
+        });
+        row.forEach((glyph, i) => {
+          const span = document.createElement('span');
+          span.textContent = glyph.text;
+          const next = row[i + 1];
+          span.style.height = `${next ? next.y - glyph.y : glyph.height}px`;
+          span.style.fontSize = `${glyph.width}px`;
+          line.append(span);
+        });
+        element.append(line);
+        return;
+      }
+      const top = Math.min(...row.map((g) => g.y));
+      const height = Math.max(...row.map((g) => g.y + g.height)) - top;
       Object.assign(line.style, {
         left: `${row[0]!.x}px`,
         top: `${top}px`,
@@ -263,6 +291,10 @@ export class RScriptDomText {
     element.style.overflow = natural ? 'visible' : 'hidden';
     view.spans = [];
     const rows = this.rows(glyphs);
+    if (glyphs[0]!.vertical) {
+      this.renderStyledColumns(view, rows, glyphs, block, style);
+      return;
+    }
     const size = Math.max(...glyphs.map((g) => g.height));
     const classes = [
       domTextClasses.text,
@@ -319,6 +351,79 @@ export class RScriptDomText {
       const native = last.x + last.width - row[0]!.x,
         measured = text.offsetWidth;
       if (measured > native) text.style.transform = `scaleX(${native / measured})`;
+    });
+  }
+
+  /**
+   * Styled vertical text: `fit` keeps the native columns, compressed to their native height;
+   * `natural` flows the text down the object's height and from its right edge leftwards.
+   */
+  private renderStyledColumns(
+    view: BlockView,
+    columns: readonly BakedGlyph[][],
+    glyphs: readonly BakedGlyph[],
+    block: RScriptNode,
+    style: DomTextStyle,
+  ): void {
+    const {document} = this.options;
+    const {element} = view;
+    const size = Math.max(...glyphs.map((g) => g.width));
+    const classes = [
+      domTextClasses.text,
+      domTextClasses.vertical,
+      ...(columns.length > 1 ? [domTextClasses.multiline] : []),
+    ].join(' ');
+    const line = (): HTMLElement => {
+      const text = document.createElement('div');
+      text.dataset.line = '';
+      text.className = classes;
+      text.lang = 'ja';
+      text.dataset.fontSize = String(size);
+      text.style.writingMode = 'vertical-rl';
+      return text;
+    };
+    if (style.layout === 'natural') {
+      const first = columns[0]!;
+      const right = first[0]!.x + size;
+      const top = Math.min(...first.map((g) => g.y));
+      const pitch = columns.length > 1 ? first[0]!.x - columns[1]![0]!.x : size;
+      const text = line();
+      text.dataset.break = '';
+      Object.assign(text.style, {
+        right: `${block.width - right}px`,
+        top: `${top}px`,
+        height: `${Math.max(size, block.height - top)}px`,
+        whiteSpace: 'pre-wrap',
+        overflowWrap: 'anywhere',
+        lineHeight: `${Math.max(pitch, size * style.scale * 1.25)}px`,
+        fontSize: `${size * style.scale}px`,
+      });
+      columns.forEach((column, index) => {
+        if (index > 0 && column[0]!.newline) text.append('\n');
+        this.appendGlyphs(text, column, glyphs, style, view.spans);
+      });
+      element.append(text);
+      return;
+    }
+    columns.forEach((column, index) => {
+      const text = line();
+      if (index === 0 || column[0]!.newline) text.dataset.break = '';
+      const width = Math.max(...column.map((g) => g.width));
+      const top = Math.min(...column.map((g) => g.y));
+      Object.assign(text.style, {
+        left: `${column[0]!.x}px`,
+        top: `${top}px`,
+        width: `${width}px`,
+        lineHeight: `${width}px`,
+        fontSize: `${width * style.scale}px`,
+        transformOrigin: '0 0',
+      });
+      this.appendGlyphs(text, column, glyphs, style, view.spans);
+      element.append(text);
+      const last = column.at(-1)!;
+      const native = last.y + last.height - top,
+        measured = text.offsetHeight;
+      if (measured > native) text.style.transform = `scaleY(${native / measured})`;
     });
   }
 

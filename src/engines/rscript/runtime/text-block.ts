@@ -582,6 +582,7 @@ export class RScriptTextBlock extends RScriptContainer {
         // (0x45BC80) and 1.9 dims earlier messages at 128 (0x430F40).
         opacity: sprite.blend.mode === 2 ? 1 - sprite.blend.alpha / 255 : 1,
         ruby: glyph.ruby?.length ? {text: glyph.rubyText, span: glyph.rubyEnd - index + 1} : null,
+        vertical: !!this.style.vertical,
       });
     });
     return shown;
