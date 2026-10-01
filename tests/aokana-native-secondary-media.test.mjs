@@ -22,6 +22,7 @@ import {
 } from '../dist/engines/buriko/native/distributed-processing.js';
 import {BurikoSecondaryMediaDiscovery} from '../dist/engines/buriko/native/secondary-media.js';
 import {createGroup80SecondaryMedia} from '../dist/engines/buriko/native/group-80-secondary-media.js';
+import {PresentedWindowsLogicalDriveHost} from '../dist/platform/windows-drives.js';
 
 test('80:3F discovers the first eligible mounted marker and publishes the actual secondary resource path', async () => {
   const fs = new StoredFileSystem(new MemoryStore(), (p) => p.toLowerCase()),
@@ -155,4 +156,84 @@ test('80:3F discovers the first eligible mounted marker and publishes the actual
   } finally {
     await processing.dispose();
   }
+});
+
+test('80:3F finds a root marker only on a presented optical drive with inserted media', async () => {
+  const text = new BurikoNativeText(),
+    encode = (s) => text.encodeWide(s, 1);
+  const discover = async (mediaPresent) => {
+    const fs = new StoredFileSystem(new MemoryStore(), (p) => p.toLowerCase());
+    await fs.commit([
+      {kind: 'write', path: '/c/MARKER.FL', data: Uint8Array.of(1)},
+      {kind: 'write', path: '/e/MARKER.FL', data: Uint8Array.of(1)},
+    ]);
+    const drives = new PresentedWindowsLogicalDriveHost([
+        {root: 'C:\\', type: 3, mediaPresent: true},
+        {root: 'E:\\', type: 5, mediaPresent},
+      ]),
+      media = new BurikoProgramMedia();
+    media.bindPresence(drives);
+    media.refreshDriveTypes(drives);
+    const files = new BurikoProgramFiles(
+        fs,
+        text,
+        media,
+        new BurikoMountedProgramPaths(
+          [
+            {native: 'C:\\', mounted: '/c'},
+            {native: 'E:\\', mounted: '/e'},
+          ],
+          'C:\\',
+        ),
+      ),
+      dialogs = new BurikoEngineDialogs(),
+      errors = new BurikoEngineErrors(files, dialogs, encode('C:\\save\\'), encode('C:\\')),
+      processing = new BurikoDistributedProcessing(new BurikoDistributedAllocator(1), 1),
+      config = {
+        nativeFileRoot: 'C:\\game\\',
+        primaryRoot: encode('C:\\game\\'),
+        secondaryRoot: Uint8Array.of(0),
+        secondaryMediaPath: '',
+        searchDirectoriesEnabled: 0,
+        searchDirectories: [],
+        retryTitle: Uint8Array.of(0),
+        retryMessage: Uint8Array.of(0),
+        quitConfirmation: Uint8Array.of(0),
+      },
+      resources = new BurikoProgramResources(files, config, dialogs, errors, processing),
+      localized = new BurikoLocalizedMessages(
+        text,
+        new BurikoNativeLanguage(() => 0x409),
+        new BurikoImportedTextMaps(text),
+      ),
+      discovery = new BurikoSecondaryMediaDiscovery(
+        resources,
+        localized,
+        drives,
+        {sleep: async () => {}},
+        {pumpMessages: () => 0},
+      ),
+      [slot] = createGroup80SecondaryMedia(discovery),
+      memory = new BurikoBpMemory(new Uint8Array(0x1000)),
+      thread = new BurikoBpThread({
+        id: 1,
+        operandCapacity: 16,
+        moduleCapacity: 4096,
+        frameCapacity: 0,
+      });
+    const put = (offset, s) => {
+      thread.moduleMemory.set(encode(s), offset);
+      return 0x10000000 + offset;
+    };
+    try {
+      for (const value of [put(16, 'MARKER.FL'), put(80, 'Title'), put(160, 'Insert disc'), 0])
+        push32(thread, value);
+      assert.equal(await slot.execute({thread, memory}), 0);
+      return {found: pop32(thread), path: config.secondaryMediaPath};
+    } finally {
+      await processing.dispose();
+    }
+  };
+  assert.deepEqual(await discover(true), {found: 1, path: 'E:\\'});
+  assert.deepEqual(await discover(false), {found: 0, path: ''});
 });

@@ -23,7 +23,10 @@ import {BrowserWindowsProcessHost} from '../../../platform/browser-windows-proce
 import {BrowserWindowsDynamicLibraryHost} from '../../../platform/windows-dynamic-library.js';
 import {BurikoD3dxEffectLibrary} from './d3dx-effect-library.js';
 import {BrowserWindowsNamedMutexHost} from '../../../platform/windows-named-mutex.js';
-import {BrowserWindowsLogicalDriveHost} from '../../../platform/windows-drives.js';
+import {
+  BrowserWindowsLogicalDriveHost,
+  isWindowsDriveMediaHost,
+} from '../../../platform/windows-drives.js';
 import {BrowserWindowsDevicePowerHost} from '../../../platform/windows-device-power.js';
 import {BrowserWindowsShellLinkHost} from '../../../platform/windows-shell-link.js';
 import {BrowserWindowsDesktopWallpaperHost} from '../../../platform/windows-desktop-wallpaper.js';
@@ -1012,6 +1015,8 @@ export class BurikoProductionDisplayResourceGraph {
         locks: this.manager.locks,
       });
       rollback.push(() => this.resource.processing.dispose());
+      if (isWindowsDriveMediaHost(sharedDriveHost))
+        this.resource.media.bindPresence(sharedDriveHost);
       this.legacy169Flash =
         this.engineVersion.bpAbi.compatibility === '1.69'
           ? new BurikoLegacy169FlashSurfaces(

@@ -33,6 +33,16 @@ optional `d3dx9_43.dll` `D3DXCreateEffect` export, which also gates the
 presentation shader; the browser dynamic-library host provides none. The engine
 clock keeps DWORD state rather than a 64-bit extension.
 
+A selected disc (a folder with a `<stem>ForInstalling.exe` / `<stem>.hvl` pair)
+mounts its catalog files as the installed game at `C:\game` and the complete
+selection as an inserted CD-ROM at `E:\`. `PresentedWindowsLogicalDriveHost`
+supplies the drive list, drive types and media presence; secondary-media
+discovery (`80:3f`) then finds disc markers through the same `GetFileAttributesW`
+test as the native search. A marker absent from the selected files cannot be found. Disc files report
+`FILE_ATTRIBUTE_READONLY` and disc directories read-only directory attributes, as
+CDFS/UDF do; hidden flags on the original medium are not recoverable from a
+folder selection and are not reported.
+
 The older revision has its own native slot inventory and overrides for changed
 primary bytecodes, text operations, Flash surfaces, and audio archive storage.
 Its x87 integer operations use the shared `src/core/x87-integer.ts` arithmetic

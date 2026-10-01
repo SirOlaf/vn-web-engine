@@ -1,3 +1,4 @@
+import type {WindowsDriveMediaHost} from '../../../platform/windows-drives.js';
 import type {ByteSource} from '../../../core/source.js';
 import {FileError, type FileSystem} from '../../../platform/filesystem.js';
 import {hostPointer, pointerView, type BurikoBpPointer} from '../bp/memory.js';
@@ -140,12 +141,25 @@ export class BurikoProgramMedia {
     return count;
   }
 
+  private presence: WindowsDriveMediaHost | null = null;
+
+  /** The shared drive host answers presence live; unbound fixtures read the two tables. */
+  bindPresence(host: WindowsDriveMediaHost): void {
+    if (this.presence !== null) throw new Error('Buriko drive media presence is already bound');
+    this.presence = host;
+  }
+
+  /** 0046fba0 (1.658.5/1.665): CHECK_VERIFY2 on an openable device, otherwise the volume query. */
   isAvailable(widePath: string): boolean {
     if (widePath.startsWith('"')) widePath = widePath.slice(1);
     const letter = widePath.charCodeAt(0) | 32;
     if (letter >= 97 && letter <= 122 && widePath[1] === ':') {
       const index = letter - 97;
       if (this.probeDrives[index] !== 0 && this.operatingSystemType === 2) {
+        if (this.presence !== null) {
+          const root = `${String.fromCharCode(65 + index)}:\\`;
+          return this.presence.checkDeviceMedia(root) ?? this.presence.hasVolume(root);
+        }
         return this.mediaPresent[index] !== 0 || this.volumePresent[index] !== 0;
       }
       return true;

@@ -43,6 +43,7 @@ import {
 } from '../../src/engines/buriko/native/file-metadata.js';
 import {BurikoMountedProgramPaths} from '../../src/engines/buriko/native/program-paths.js';
 import {BurikoProgramMedia} from '../../src/engines/buriko/native/program-files.js';
+import {PresentedWindowsLogicalDriveHost} from '../../src/platform/windows-drives.js';
 import {BurikoProductionBootRunner} from '../../src/engines/buriko/native/production-boot-runner.js';
 import {BurikoProductionDataOwners} from '../../src/engines/buriko/native/production-data-owners.js';
 import {BurikoProductionDisplayResourceGraph} from '../../src/engines/buriko/native/production-display-resource-graph.js';
@@ -167,6 +168,36 @@ async function selectedInstallation(installation: Installation): Promise<void> {
     console.info('BGI installation metadata:', installation.metadataNotes);
 }
 
+/** CDFS/UDF report every file read-only and directories as read-only directories.
+ * Per-file hidden flags on the medium are not recoverable from a folder selection. */
+function opticalDiscRecords(installation: Installation): BurikoFileMetadataRecord[] {
+  const directories = new Set<string>(installation.selectedDirectories);
+  const records = installation.selectedFiles.map(
+    ({path, lastModifiedMs}): BurikoFileMetadataRecord => {
+      for (let end = path.lastIndexOf('/'); end > 0; end = path.lastIndexOf('/', end - 1))
+        directories.add(path.slice(0, end));
+      return {
+        path: '/disc' + path,
+        kind: 'file',
+        attributes: 0x01,
+        creationTime: null,
+        accessTime: null,
+        writeTime: (BigInt(Math.trunc(lastModifiedMs)) + 11644473600000n) * 10000n,
+      };
+    },
+  );
+  for (const path of directories)
+    records.push({
+      path: '/disc' + path,
+      kind: 'directory',
+      attributes: 0x11,
+      creationTime: null,
+      accessTime: null,
+      writeTime: null,
+    });
+  return records;
+}
+
 function fileTime(): bigint {
   return (BigInt(Date.now()) + 11644473600000n) * 10000n;
 }
@@ -215,6 +246,13 @@ async function launch(
     driveRoot.attachDirectory('/game');
     driveRoot.attachDirectory('/UserData');
     backing.mount('/drive-c', driveRoot);
+    // A selected disc is also presented as the inserted CD-ROM its interpreter searches for.
+    const disc = installation.installationKind === 'disc' ? source() : null;
+    if (disc !== null) {
+      for (const entry of installation.selectedFiles) disc.attach(entry.path, entry.source);
+      for (const path of installation.selectedDirectories) disc.attachDirectory(path);
+      backing.mount('/disc', disc);
+    }
     const mounted = new BurikoMountedFileMetadata(backing, {
       records: [
         ...installation.modifiedFiles.map(({path, lastModifiedMs}): BurikoFileMetadataRecord => ({
@@ -225,6 +263,7 @@ async function launch(
           accessTime: null,
           writeTime: (BigInt(Math.trunc(lastModifiedMs)) + 11644473600000n) * 10000n,
         })),
+        ...(disc === null ? [] : opticalDiscRecords(installation)),
         ...['Desktop', 'Programs', 'Documents'].map((name): BurikoFileMetadataRecord => ({
           path: `/user/${name}`,
           kind: 'directory',
@@ -238,6 +277,7 @@ async function launch(
         {path: '/game', identity: gameStore, writable: true},
         {path: '/user', identity: userStore, writable: true},
         {path: '/temp', identity: temporaryStore, writable: true},
+        ...(disc === null ? [] : [{path: '/disc', identity: disc, writable: false}]),
       ],
       canonical: mountedKey,
       currentFileTime: fileTime,
@@ -250,6 +290,7 @@ async function launch(
         {native: 'C:\\', mounted: '/drive-c'},
         {native: 'T:\\', mounted: '/temp'},
         {native: 'D:\\Drops', mounted: '/drops'},
+        ...(disc === null ? [] : [{native: 'E:\\', mounted: '/disc'}]),
       ],
       'C:\\game',
     );
@@ -257,6 +298,15 @@ async function launch(
     const encode = (value: string): Uint8Array => text.encodeWide(value, 1);
     const media = new BurikoProgramMedia();
     media.setDriveType(2, 3);
+    const driveHost =
+      disc === null
+        ? undefined
+        : new PresentedWindowsLogicalDriveHost([
+            {root: 'C:\\', type: 3, mediaPresent: true},
+            {root: 'D:\\', type: 3, mediaPresent: true},
+            {root: 'E:\\', type: 5, mediaPresent: true},
+          ]);
+    if (driveHost !== undefined) media.refreshDriveTypes(driveHost);
     const cpu = new BrowserX86CompatibilityCpuHost(performance);
     const [width, height] = browserDesktopSize(window);
     graph = new BurikoProductionDisplayResourceGraph({
@@ -336,10 +386,12 @@ async function launch(
       executablePathWide: `C:\\game\\${installation.executableName}`,
       commandLineTailWide: '',
       drop: {mountedRoot: '/drops', nativeRoot: 'D:\\Drops'},
+      ...(driveHost === undefined ? {} : {logicalDriveHost: driveHost}),
       resource: {
         mounted,
         paths,
         media,
+        ...(driveHost === undefined ? {} : {driveHost, driveGeometryHost: driveHost}),
         configuration: {
           nativeFileRoot: 'C:\\game\\',
           primaryRoot: encode('C:\\game\\'),
