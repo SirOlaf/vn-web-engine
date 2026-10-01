@@ -72,18 +72,25 @@ function closeInstallation(): void {
   activeRScriptGame.set(null);
 }
 
-/** Identifies the codeX RScript executable by its APINI block; RsInit.cfg overrides it. */
+/**
+ * Identifies the codeX RScript executable by its APINI block, in the layout of the engine
+ * revision its version resource names; RsInit.cfg replaces the block.
+ */
 async function identify(files: ReadonlyMap<string, ByteSource>): Promise<RScriptApini> {
   const config = files.get('RSINIT.CFG');
-  if (config) return parseApini(await config.read(0, config.size));
+  let unsupported: unknown = null;
   for (const [path, source] of files) {
     if (path.includes('\\') || !path.endsWith('.EXE')) continue;
     try {
-      return findExecutableApini(await source.read(0, source.size));
-    } catch {
+      const executable = await source.read(0, source.size);
+      const apini = findExecutableApini(executable);
+      return config ? parseApini(await config.read(0, config.size), apini.revision) : apini;
+    } catch (error) {
       // Not the game executable (for example an uninstaller); keep looking.
+      if (error instanceof Error && error.message.startsWith('Unsupported')) unsupported = error;
     }
   }
+  if (unsupported) throw unsupported;
   throw new Error('Choose the game folder, including the game executable (.exe).');
 }
 

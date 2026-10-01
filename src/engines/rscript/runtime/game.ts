@@ -8,7 +8,6 @@ import {RScriptContainer, RScriptSprite, type RScriptNode} from '../graphics/spr
 import {RScriptImages} from '../images.js';
 import {Config, GAME_VARIABLE_COUNT, Scene, RScriptMemory} from '../memory.js';
 import {decodeSlotSave, decodeSystemSave, encodeSlotSave, encodeSystemSave} from '../saves.js';
-import {RSCRIPT_1_11_LAYOUTS} from '../vm/layouts.js';
 import {
   RScriptInterpreter,
   RScriptScriptEnd,
@@ -150,7 +149,7 @@ export const RScriptMessages = {
  * coroutine and a fixed-period tick.
  */
 export class RScriptGame {
-  readonly memory = new RScriptMemory();
+  readonly memory: RScriptMemory;
   readonly flags = new RScriptFlags();
   readonly images: RScriptImages;
   readonly audio: RScriptAudio;
@@ -205,6 +204,7 @@ export class RScriptGame {
 
   constructor(readonly host: RScriptGameHost) {
     const {apini} = host;
+    this.memory = new RScriptMemory(apini.revision);
     this.images = new RScriptImages(host.files);
     this.display = new RScriptDisplay(apini.width, apini.height, host.presenter, host.timer);
     this.audio = new RScriptAudio(
@@ -233,16 +233,16 @@ export class RScriptGame {
       this.root.add(layer, 0);
       return layer;
     });
-    const palette = Array.from({length: 10}, (_, i) => apini.u32(440 + 4 * i));
+    const palette = apini.palette;
     this.message = new RScriptMessageWindow({
       memory: this.memory,
       images: this.images,
       rasterizer: host.rasterizer,
       systemDirectory: apini.directories.system,
       palette,
-      shadow: apini.u16(500) !== 0,
+      shadow: apini.textShadow,
       scriptString: (script, index) => this.scriptString(script, index),
-      backlogColor: apini.u16(502) ? apini.u32(504) : null,
+      backlogColor: apini.backlogColor,
       command: (command) => this.panelCommand(command),
       windowAlpha: (value) => this.memory.setConfigWord(Config.windowAlpha, value),
     });
@@ -256,8 +256,8 @@ export class RScriptGame {
       width: apini.width,
       height: apini.height,
       palette,
-      textSize: apini.u16(494),
-      textColor: apini.u32(484),
+      textSize: apini.choiceTextSize,
+      textColor: apini.choiceTextColor,
       answered: () => this.choiceAnswered(),
     });
     this.root.add(this.choice, 100);
@@ -269,8 +269,8 @@ export class RScriptGame {
       width: apini.width,
       height: apini.height,
       palette,
-      dateSize: apini.u16(496),
-      pageCount: apini.u16(438),
+      dateSize: apini.saveDateSize,
+      pageCount: apini.savePageCount,
       readSlot: (slot) => this.readSlot(slot),
       readThumbnail: (slot) => this.host.saves.read(this.slotName(slot, 'wcg')),
       choose: (slot, save) => void this.chooseSlot(slot, save),
@@ -329,7 +329,7 @@ export class RScriptGame {
   }
 
   private createInterpreter(): RScriptInterpreter {
-    return new RScriptInterpreter(this.memory, RSCRIPT_1_11_LAYOUTS, this.handlers, {
+    return new RScriptInterpreter(this.memory, this.apini.revision.layouts, this.handlers, {
       program: (script) => this.program(script),
       yieldFrame: () => this.suspend(),
       beforeStep: () => {
@@ -471,8 +471,8 @@ export class RScriptGame {
     this.stopAuto();
     const memory = this.memory;
     const scene = memory.scene.slice();
-    const backlogStart = Scene.message + MessageState.backlog;
-    const backlog = memory.scene.slice(backlogStart, backlogStart + 0x3840);
+    const {start: backlogStart, length: backlogLength} = this.message.backlogRange();
+    const backlog = memory.scene.slice(backlogStart, backlogStart + backlogLength);
     const outer = {program: this.vm.program, script: this.vm.script, pc: this.vm.pc};
     const generation = this.sceneGeneration;
     this.nesting++;
@@ -516,7 +516,7 @@ export class RScriptGame {
     const memory = this.memory;
     const music = memory.sceneUword(Scene.music);
     if (music) this.playMusic(music, true, 0);
-    for (let channel = 0; channel < 3; channel++) {
+    for (let channel = 0; channel < this.apini.revision.soundChannels; channel++) {
       const base = Scene.soundChannels + channel * Scene.soundChannelStride;
       const sound = memory.sceneUword(base);
       if (!sound) continue;
@@ -596,13 +596,17 @@ export class RScriptGame {
     if (this.flags.fastSkip || !this.config(Config.soundEnabled)) return;
     const loops = repeat === 999 ? -1 : repeat ? repeat - 1 : 0;
     this.audio.setPan(AudioChannel.effect + index, pan);
-    this.audio.play(AudioChannel.effect + index, loops, !!fade && !this.flags.skip);
+    this.audio.play(AudioChannel.effect + index, loops, !!fade && !this.skipCancelsFade);
+  }
+  /** 1.11 plays and stops sound effects without their fade while skipping; 1.9 keeps it. */
+  private get skipCancelsFade(): boolean {
+    return this.flags.skip && this.apini.revision.skipCancelsSoundFade;
   }
   stopSound(channel: number, fade: boolean): void {
     const index = channel > 2 ? 0 : channel;
     this.memory.setSceneWord(this.soundBase(index) + 2, 0);
     if (this.flags.fastSkip) return;
-    this.audio.stop(AudioChannel.effect + index, fade && !this.flags.skip);
+    this.audio.stop(AudioChannel.effect + index, fade && !this.skipCancelsFade);
   }
   playVoice(voice: number, loops: number, fade: boolean, pan: number): void {
     if (!this.config(Config.voiceEnabled)) return;
@@ -1030,7 +1034,7 @@ export class RScriptGame {
     still.data.set(frame.data);
     const size = await this.thumbnailSize();
     this.thumbnail = size ? scaleStill(still, size.width, size.height) : null;
-    if (!this.apini.u16(436)) {
+    if (!this.apini.keepBackdropBrightness) {
       // sub_441A30(80): darkens by 80% through the CMath table row 255 * 80 / 100.
       for (let i = 0; i < still.data.length; i++)
         still.data[i] = scaleRgb(ADD_TABLE, 204, still.data[i]!);
@@ -1143,12 +1147,12 @@ export class RScriptGame {
         break;
       case 'sound':
         if (!this.config(Config.soundEnabled)) {
-          for (let channel = 0; channel < 3; channel++)
+          for (let channel = 0; channel < this.apini.revision.soundChannels; channel++)
             this.audio.stop(AudioChannel.effect + channel, false);
           break;
         }
         // Looping effects start again.
-        for (let channel = 0; channel < 3; channel++) {
+        for (let channel = 0; channel < this.apini.revision.soundChannels; channel++) {
           const base = Scene.soundChannels + channel * Scene.soundChannelStride;
           if (!memory.sceneUword(base + 2)) continue;
           this.loadSound(channel, memory.sceneUword(base));

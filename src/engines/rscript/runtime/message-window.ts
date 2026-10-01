@@ -276,6 +276,13 @@ export class RScriptMessageWindow extends RScriptContainer {
     this.setWord(MessageState.voiceVolume, pan);
     this.panel.setVoice(voice !== 0);
   }
+  /** Native scene bytes of the backlog, which nested calls keep (sub_418980). */
+  backlogRange(): {start: number; length: number} {
+    return {
+      start: this.at(MessageState.backlog),
+      length: MessageState.backlogStride * MessageState.backlogCount,
+    };
+  }
   /** sub_416B70: forgets the backlog. */
   clearBacklog(): void {
     const start = this.at(MessageState.backlog);

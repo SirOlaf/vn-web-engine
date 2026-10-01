@@ -298,7 +298,11 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
     );
   });
   handlers.set(0x42, (vm, raw) => {
-    const voice = raw[0]! >>> 0,
+    // 1.9 reads the voice number as a value (0x4217F0); 1.11 as a raw dword.
+    const voice =
+        memory.revision.layouts.get(0x42)![0] === 'u32'
+          ? raw[0]! >>> 0
+          : vm.value(raw[0]!) & 0xffff,
       repeat = vm.value(raw[1]!),
       fade = vm.value(raw[2]!),
       pan = vm.value(raw[3]!);
@@ -407,15 +411,18 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
     await afterLayers();
   });
 
-  // Text boxes: a zero selector means box 0, anything else boxes 1..3.
+  // Text boxes: a zero selector means box 0, anything else boxes 1..3. 1.9 shows one box
+  // and its setters ignore the selector (0x42DD50).
+  const singleBox = memory.revision.textBoxes === 1;
   const boxes = (selector: number, apply: (box: number) => void): Promise<void> => {
-    const all = selector !== 0;
+    const all = selector !== 0 && !singleBox;
     for (const box of all ? [1, 2, 3] : [0]) apply(box);
     return skipping() ? Promise.resolve() : game.message.applyBoxes(all ? 1 : 0, all);
   };
   const single = (box: number, apply: (box: number) => void): Promise<void> => {
-    apply(u16(box) & 3);
-    return skipping() ? Promise.resolve() : game.message.applyBoxes(u16(box) & 3, false);
+    const index = singleBox ? 0 : u16(box) & 3;
+    apply(index);
+    return skipping() ? Promise.resolve() : game.message.applyBoxes(index, false);
   };
   const setWord = (box: number, field: number, value: number) =>
     game.message.setBoxWord(box, field, value);
@@ -573,6 +580,12 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
     layer.moveTo(kind, x, y, u16(speed), skipping());
   }
 
+  if (memory.revision.soundChannels === 1) {
+    // 1.9 (0x4216C0, 0x421730, 0x4217C0): one sound-effect channel and no channel operand.
+    on(0x3e, ([sound]) => game.loadSound(0, u16(sound!)));
+    on(0x3f, ([repeat, fade, pan]) => game.playSound(0, u16(repeat!), fade!, pan!));
+    on(0x40, ([fade]) => game.stopSound(0, !!fade));
+  }
   return handlers;
 }
 

@@ -3,13 +3,7 @@ import {Config, LayerRecord, Scene, type RScriptMemory} from './memory.js';
 import {BoxRecord} from './runtime/text-box.js';
 import {MessageState} from './runtime/message-window.js';
 
-function field(bytes: Uint8Array, offset: number, length: number): Uint8Array {
-  const value = bytes.subarray(offset, offset + length);
-  const end = value.indexOf(0);
-  return end < 0 ? value : value.subarray(0, end);
-}
-
-/** sub_420EC0: configuration defaults used when no system save exists. */
+/** sub_420EC0 (1.9: sub_419BB0, the same values): defaults used when no system save exists. */
 export function initializeConfig(memory: RScriptMemory, apini: RScriptApini): void {
   memory.config.fill(0);
   memory.variables.fill(0, 7000);
@@ -26,8 +20,7 @@ export function initializeConfig(memory: RScriptMemory, apini: RScriptApini): vo
   set(Config.windowAlpha, 128);
   set(Config.autoWait, 1500);
   for (let bank = 0; bank < 10; bank++) set(Config.voiceBanks + 2 * bank, 1);
-  const font = field(apini.bytes, 360, 32);
-  memory.config.set(font.subarray(0, 31), Config.fontName);
+  memory.setConfigString(Config.fontName, 52, apini.fontNameBytes);
 }
 
 /**
@@ -41,8 +34,13 @@ export function initializeScene(
   seed: number,
 ): void {
   if (clear) memory.clearPlaythrough();
-  const dword = (offset: number, value: number): void => memory.setSceneDword(offset, value);
-  const word = (offset: number, value: number): void => memory.setSceneWord(offset, value);
+  // 1.9 (sub_419CC0) sets the same defaults on the fields its records have.
+  const dword = (offset: number, value: number): void => {
+    if (memory.hasSceneField(offset)) memory.setSceneDword(offset, value);
+  };
+  const word = (offset: number, value: number): void => {
+    if (memory.hasSceneField(offset)) memory.setSceneWord(offset, value);
+  };
   dword(0x6c, 1);
   dword(Scene.messageSnapshots, 1);
   dword(Scene.autoRebuild, 1);
@@ -83,8 +81,8 @@ export function initializeScene(
   dword(message(MessageState.tabEnabled), 1);
   word(message(MessageState.faceOrder), 10);
 
-  const sprites = field(apini.bytes, 171, 21),
-    events = field(apini.bytes, 213, 21);
+  const sprites = apini.spriteDirectoryBytes,
+    events = apini.eventDirectoryBytes;
   for (let layer = 0; layer < Scene.layerCount; layer++) {
     const r = Scene.layers + layer * Scene.layerStride;
     word(r + LayerRecord.image, 0);
@@ -108,7 +106,7 @@ export function initializeScene(
   word(Scene.coordinateScaleX, 1);
   word(Scene.coordinateScaleY, 1);
   for (let register = 0; register < 10; register++) {
-    memory.scene[Scene.stringRegisters + register * Scene.stringStride] = 0;
-    memory.scene[Scene.stringRegisterFlags + 4 * register] = 4;
+    memory.setSceneByte(Scene.stringRegisters + register * Scene.stringStride, 0);
+    memory.setSceneByte(Scene.stringRegisterFlags + 4 * register, 4);
   }
 }

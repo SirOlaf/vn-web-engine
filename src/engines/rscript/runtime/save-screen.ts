@@ -109,7 +109,7 @@ class SlotPanel extends RScriptContainer {
     if (this.slot !== slot) return;
     let header: RScriptSlotHeader | null = null;
     try {
-      header = bytes ? decodeSlotHeader(bytes) : null;
+      header = bytes ? decodeSlotHeader(bytes, this.env.memory.revision) : null;
     } catch {
       header = null;
     }

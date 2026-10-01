@@ -5,7 +5,7 @@
  *
  *   node tools/verify-rscript.mjs "/path/to/game"
  */
-import {readdir} from 'node:fs/promises';
+import {readdir, readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {openSource} from './file-source.mjs';
 import {XflArchive} from '../dist/formats/rscript/xfl.js';
@@ -15,9 +15,13 @@ import {decodePsd} from '../dist/formats/rscript/psd.js';
 import {decodeGscInstruction, parseGsc} from '../dist/formats/rscript/gsc.js';
 import {parseFsc} from '../dist/formats/rscript/fsc.js';
 import {parseWave, waveOggStream} from '../dist/formats/riff/wave.js';
-import {RSCRIPT_1_11_LAYOUTS} from '../dist/engines/rscript/vm/layouts.js';
+import {rscriptRevision} from '../dist/engines/rscript/revision.js';
 
 const root = resolve(process.argv[2] ?? 'targetgame/rscript');
+const executable = (await readdir(root)).find((n) => /\.exe$/i.test(n));
+if (!executable) throw new Error('The installation has no executable');
+const revision = rscriptRevision(new Uint8Array(await readFile(resolve(root, executable))));
+console.log(`codeX RScript ${revision.version}`);
 const counts = {};
 const failures = [];
 const count = (kind) => (counts[kind] = (counts[kind] ?? 0) + 1);
@@ -35,14 +39,17 @@ async function inspect(archive, entry, path) {
   } else if (extension === 'lwg') {
     const lwg = await LwgImage.open(archive.entrySource(entry));
     for (const layer of lwg.entries) {
-      if (layer.format !== 8) throw new Error(`layer format ${layer.format}`);
+      if (!layer.size) {
+        count('lwg layer set');
+        continue;
+      }
       decodeWcg(await lwg.read(layer));
       count('lwg layer');
     }
   } else if (extension === 'gsc') {
     const program = parseGsc(bytes);
     for (let offset = 0; offset < program.code.length;) {
-      const instruction = decodeGscInstruction(program.code, offset, RSCRIPT_1_11_LAYOUTS);
+      const instruction = decodeGscInstruction(program.code, offset, revision.layouts);
       offset = instruction.next;
       count('gsc instruction');
     }

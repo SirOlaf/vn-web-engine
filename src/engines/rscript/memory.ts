@@ -1,5 +1,6 @@
 import {byteDataView} from '../../core/binary.js';
 import {RScriptBitsetStore} from './bitset-store.js';
+import {RSCRIPT_1_11, type RScriptRevision} from './revision.js';
 
 /** Script-visible 16-bit variables (dword_4853B0, 0x4E20 bytes). */
 export const VARIABLE_COUNT = 10000;
@@ -7,12 +8,10 @@ export const VARIABLE_COUNT = 10000;
 export const GAME_VARIABLE_COUNT = 7000;
 /** Expression temporaries (word_4A2EA4); register 0 carries conditions. */
 export const REGISTER_COUNT = 102;
-/** Persistent configuration (dword_4853C0, 0x872 bytes written to the system save). */
-export const CONFIG_SIZE = 0x872;
-/** Scene state (word_485C34) that save slots and nested calls snapshot as a unit. */
-export const SCENE_SIZE = 0x996c;
-
-/** Offsets into the configuration block (relative to 0x4853C0). */
+/**
+ * Offsets into the configuration block (relative to 0x4853C0), as 1.11 lays it out.
+ * `RScriptMemory` maps them to the revision's block.
+ */
 export const Config = {
   screenMode: 0x00,
   messageSpeed: 0x02,
@@ -44,7 +43,10 @@ export const Config = {
   fontName: 0x83e,
 } as const;
 
-/** Offsets into the scene state (relative to 0x485C34). */
+/**
+ * Offsets into the scene state (relative to 0x485C34), as 1.11 lays it out. `RScriptMemory`
+ * maps them to the revision's block.
+ */
 export const Scene = {
   music: 0x0000,
   soundChannels: 0x0004,
@@ -111,66 +113,113 @@ export const LayerRecord = {
   directory: 177,
 } as const;
 
-/** All engine memory that script code, saves and native screens share. */
+/**
+ * All engine memory that script code, saves and native screens share. The configuration
+ * and scene blocks have the revision's native layout, so saves and snapshots copy them
+ * whole; the accessors take 1.11 offsets (`Config`, `Scene`) and map them to the revision.
+ */
 export class RScriptMemory {
   readonly variables = new Int16Array(VARIABLE_COUNT);
   readonly registers = new Int16Array(REGISTER_COUNT);
-  readonly config = new Uint8Array(CONFIG_SIZE + 2);
-  readonly scene = new Uint8Array(SCENE_SIZE);
+  readonly config: Uint8Array;
+  readonly scene: Uint8Array;
   /** State at the last message snapshot point (unk_48F5A0 / lpBuffer). */
-  readonly messageScene = new Uint8Array(SCENE_SIZE);
+  readonly messageScene: Uint8Array;
   readonly messageVariables = new Int16Array(GAME_VARIABLE_COUNT);
   /** Previous snapshot kept for "return to previous choice" (unk_498F0C / dword_4853B8). */
-  readonly previousScene = new Uint8Array(SCENE_SIZE);
+  readonly previousScene: Uint8Array;
   readonly previousVariables = new Int16Array(GAME_VARIABLE_COUNT);
   /** Read-text flags by (script, text) and seen images (dword_4852F8 / dword_4852FC). */
   readonly readText = new RScriptBitsetStore();
   readonly seenImages = new RScriptBitsetStore();
-  readonly configView = byteDataView(this.config);
-  readonly sceneView = byteDataView(this.scene);
+  readonly configView: DataView;
+  readonly sceneView: DataView;
+
+  constructor(readonly revision: RScriptRevision = RSCRIPT_1_11) {
+    // The native configuration is followed by two bytes the font name's end may reach.
+    this.config = new Uint8Array(revision.configSize + 2);
+    this.scene = new Uint8Array(revision.sceneSize);
+    this.messageScene = new Uint8Array(revision.sceneSize);
+    this.previousScene = new Uint8Array(revision.sceneSize);
+    this.configView = byteDataView(this.config);
+    this.sceneView = byteDataView(this.scene);
+  }
+
+  /** The revision's configuration offset of a 1.11 field. */
+  configAt(offset: number): number {
+    const native = this.revision.configOffset(offset);
+    if (native < 0)
+      throw new Error(
+        `RScript ${this.revision.version} has no configuration field 0x${offset.toString(16)}`,
+      );
+    return native;
+  }
+  /** Whether the revision's scene has a 1.11 field. */
+  hasSceneField(offset: number): boolean {
+    return this.revision.sceneOffset(offset) >= 0;
+  }
+  /** The revision's scene offset of a 1.11 field. */
+  sceneAt(offset: number): number {
+    const native = this.revision.sceneOffset(offset);
+    if (native < 0)
+      throw new Error(
+        `RScript ${this.revision.version} has no scene field 0x${offset.toString(16)}`,
+      );
+    return native;
+  }
 
   configWord(offset: number): number {
-    return this.configView.getInt16(offset, true);
+    return this.configView.getInt16(this.configAt(offset), true);
   }
   setConfigWord(offset: number, value: number): void {
-    this.configView.setInt16(offset, value, true);
+    this.configView.setInt16(this.configAt(offset), value, true);
   }
   sceneWord(offset: number): number {
-    return this.sceneView.getInt16(offset, true);
+    return this.sceneView.getInt16(this.sceneAt(offset), true);
   }
   sceneUword(offset: number): number {
-    return this.sceneView.getUint16(offset, true);
+    return this.sceneView.getUint16(this.sceneAt(offset), true);
   }
   setSceneWord(offset: number, value: number): void {
-    this.sceneView.setInt16(offset, value, true);
+    this.sceneView.setInt16(this.sceneAt(offset), value, true);
   }
   sceneDword(offset: number): number {
-    return this.sceneView.getInt32(offset, true);
+    return this.sceneView.getInt32(this.sceneAt(offset), true);
   }
   setSceneDword(offset: number, value: number): void {
-    this.sceneView.setInt32(offset, value, true);
+    this.sceneView.setInt32(this.sceneAt(offset), value, true);
+  }
+  sceneByte(offset: number): number {
+    return this.scene[this.sceneAt(offset)]!;
+  }
+  setSceneByte(offset: number, value: number): void {
+    this.scene[this.sceneAt(offset)] = value;
   }
 
   /** Reads a NUL-terminated Shift-JIS field without decoding it. */
   sceneString(offset: number, capacity: number): Uint8Array {
-    const field = this.scene.subarray(offset, offset + capacity);
+    const at = this.sceneAt(offset);
+    const field = this.scene.subarray(at, at + capacity);
     const end = field.indexOf(0);
     return field.subarray(0, end < 0 ? capacity : end);
   }
   setSceneString(offset: number, capacity: number, value: Uint8Array): void {
+    const at = this.sceneAt(offset);
     const length = Math.min(value.length, capacity - 1);
-    this.scene.fill(0, offset, offset + capacity);
-    this.scene.set(value.subarray(0, length), offset);
+    this.scene.fill(0, at, at + capacity);
+    this.scene.set(value.subarray(0, length), at);
   }
   configString(offset: number, capacity: number): Uint8Array {
-    const field = this.config.subarray(offset, offset + capacity);
+    const at = this.configAt(offset);
+    const field = this.config.subarray(at, at + capacity);
     const end = field.indexOf(0);
     return field.subarray(0, end < 0 ? capacity : end);
   }
   setConfigString(offset: number, capacity: number, value: Uint8Array): void {
+    const at = this.configAt(offset);
     const length = Math.min(value.length, capacity - 1);
-    this.config.fill(0, offset, offset + capacity);
-    this.config.set(value.subarray(0, length), offset);
+    this.config.fill(0, at, at + capacity);
+    this.config.set(value.subarray(0, length), at);
   }
 
   /** sub_421390: remembers the state at a message boundary unless a nested call runs. */

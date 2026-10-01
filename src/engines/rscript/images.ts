@@ -117,7 +117,8 @@ export class RScriptImages {
       const lwg = await this.lwg(path);
       const entry = lwg?.find(name);
       if (!lwg || !entry) return null;
-      if (entry.format !== 8) throw new Error(`${path}.lwg ${name}: unsupported layer format`);
+      // Layer-set markers carry no image.
+      if (!entry.size) return null;
       return surfaceFromImage(decodeWcg(await lwg.read(entry)));
     });
   }
@@ -128,8 +129,7 @@ export class RScriptImages {
       const lwg = await this.lwg(path);
       const entry = lwg?.entries[index];
       if (!lwg || !entry) return null;
-      if (entry.format !== 8)
-        throw new Error(`${path}.lwg frame ${index}: unsupported layer format`);
+      if (!entry.size) return null;
       return surfaceFromImage(decodeWcg(await lwg.read(entry)));
     });
   }

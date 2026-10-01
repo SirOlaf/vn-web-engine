@@ -6,7 +6,10 @@ export interface LwgEntry {
   readonly name: string;
   readonly x: number;
   readonly y: number;
-  /** Image format byte; 8 is WCG, the only format observed in shipped files. */
+  /**
+   * Format flags the native loader keeps but does not interpret. Image layers hold WCG data
+   * (8, and 40 in RScript 1.9 files); empty Photoshop layer-set markers are 56 with no data.
+   */
   readonly format: number;
   /** Absolute offset in the LWG source. */
   readonly offset: number;

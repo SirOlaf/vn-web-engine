@@ -150,3 +150,18 @@ export const RSCRIPT_1_11_LAYOUTS: GscOpcodeLayouts = new Map<number, readonly G
   [0xe7, values(1)],
   [0xff, values(5)],
 ]);
+
+/**
+ * Operand layouts of the RScript 1.9.0.0 dispatcher (0x41BD00). It has one sound-effect
+ * channel, so 0x3E, 0x3F and 0x40 take no channel operand; 0x42 reads its voice number as a
+ * value; 0x54, 0x6A..0x6C and 0x8C..0x8E do not exist.
+ */
+export const RSCRIPT_1_9_LAYOUTS: GscOpcodeLayouts = new Map<number, readonly GscOperandKind[]>([
+  ...[...RSCRIPT_1_11_LAYOUTS].filter(
+    ([opcode]) => ![0x54, 0x6a, 0x6b, 0x6c, 0x8c, 0x8d, 0x8e].includes(opcode),
+  ),
+  [0x3e, values(1)],
+  [0x3f, values(3)],
+  [0x40, values(1)],
+  [0x42, values(4)],
+]);
