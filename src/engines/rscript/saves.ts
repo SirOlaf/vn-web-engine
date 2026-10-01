@@ -81,7 +81,8 @@ export function encodeSlotSave(
     date.getMinutes(),
   ];
   words.forEach((value, i) => view.setUint16(2 * i, value, true));
-  for (let i = 0; i < 3; i++) view.setInt16(10 + 2 * i, memory.messageVariables[1 + i]!, true);
+  const titleVariables = revision.slotLiveVariables ? memory.variables : memory.messageVariables;
+  for (let i = 0; i < 3; i++) view.setInt16(10 + 2 * i, titleVariables[1 + i]!, true);
   // Layer 0's image word in the snapshot (scene +0x8E).
   if (revision.slotBackground)
     view.setUint16(

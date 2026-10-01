@@ -10,6 +10,7 @@ import {
   RScriptMessageWindow19,
 } from '../dist/engines/rscript/runtime/message-window-19.js';
 import {encodeCp932} from '../dist/engines/rscript/text.js';
+import {decodeSlotHeader, decodeSlotSave, encodeSlotSave} from '../dist/engines/rscript/saves.js';
 
 test('RScript 1.9 maps 1.11 configuration and scene offsets to its own blocks', () => {
   assert.equal(RSCRIPT_1_11.configOffset(Config.fontName), Config.fontName);
@@ -160,4 +161,26 @@ test('RScript 1.9 browses backlog pages with voice marks and returns to the page
   assert.equal(await window.exitBacklog(), true);
   assert.equal(window.browsing, false);
   assert.equal(text(window), '　今の頁');
+});
+
+test('RScript 1.9 slots store the live title variables and page text after a 20-byte header', () => {
+  const memory = new RScriptMemory(RSCRIPT_1_9);
+  memory.variables.set([0, 7, 1002, 3], 0);
+  memory.messageVariables.set([0, 1, 1001, 0], 0);
+  memory.messageScene[5] = 42;
+  const text = encodeCp932('【青年】^n「おう」');
+  const bytes = encodeSlotSave(memory, text, new Date(2026, 9, 1, 12, 34));
+  assert.equal(bytes.length, 0x66 + 2 * (0x8f70 + 14000));
+  const header = decodeSlotHeader(bytes, RSCRIPT_1_9);
+  assert.deepEqual(
+    [header.year, header.month, header.day, header.hour, header.minute],
+    [2026, 10, 1, 12, 34],
+  );
+  assert.deepEqual(header.variables, [7, 1002, 3]);
+  assert.equal(header.background, 0);
+  assert.deepEqual([...header.text], [...text]);
+  const loaded = new RScriptMemory(RSCRIPT_1_9);
+  decodeSlotSave(loaded, bytes);
+  assert.equal(loaded.scene[5], 42);
+  assert.equal(loaded.variables[2], 1001);
 });

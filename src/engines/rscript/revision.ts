@@ -69,6 +69,11 @@ export interface RScriptRevision {
   readonly slotHeaderSize: number;
   readonly slotTextOffset: number;
   readonly slotBackground: boolean;
+  /**
+   * The slot header's variables 1..3 (the save screen's chapter images and date colour) come
+   * from the live variables (1.9 sub_41A090) rather than the snapshot (1.11 sub_4213D0).
+   */
+  readonly slotLiveVariables: boolean;
 }
 
 /** RScript 1.11.0.3: the Fairytale Requiem, Symphony and Encore executables. */
@@ -108,6 +113,7 @@ export const RSCRIPT_1_11: RScriptRevision = Object.freeze({
   slotHeaderSize: 0x68,
   slotTextOffset: 22,
   slotBackground: true,
+  slotLiveVariables: false,
 });
 
 /** 1.11 scene offsets where 1.9's message state begins and ends. */
@@ -238,6 +244,7 @@ export const RSCRIPT_1_9: RScriptRevision = Object.freeze({
   slotHeaderSize: 0x66,
   slotTextOffset: 20,
   slotBackground: false,
+  slotLiveVariables: true,
 });
 
 /** Engine revisions by the executable's FileVersion. */

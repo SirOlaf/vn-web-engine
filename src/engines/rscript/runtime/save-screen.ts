@@ -156,7 +156,9 @@ class SlotPanel extends RScriptContainer {
 /**
  * Save and load screen (0x411820): ten slot panels per page placed at the `0`..`9` layers
  * of `savescrn`, next and previous buttons, buttons `01`..`10` that choose a page, the page
- * digit from `nonbl` and the exit button, each where its layers exist.
+ * digit from `nonbl` and the exit button, each where its layers exist. The native screen
+ * also creates two sprites and a text object at fixed 800x600 positions in both revisions,
+ * but never gives them an image or text, so they are not built.
  */
 export class RScriptSaveScreen extends RScriptContainer {
   private readonly background = new RScriptSprite();
