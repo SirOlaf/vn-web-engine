@@ -59,6 +59,11 @@ const SETTINGS: readonly Setting[] = [
   {names: 'vocst', offset: Config.voiceContinues},
   {names: 'awh', offset: Config.autoHide},
   {names: 'bgr', offset: Config.backgroundAudio},
+  // Voice banks `pv00`..`pv09` (sub_40E710 in 1.9).
+  ...Array.from({length: 10}, (_, bank) => ({
+    names: `pv${String(bank).padStart(2, '0')}`,
+    offset: Config.voiceBanks + 2 * bank,
+  })),
 ];
 
 /** Volume sliders and the auto-mode wait (0x40F8A0). */
@@ -71,8 +76,9 @@ const SLIDERS = [
 
 /**
  * Configuration screen (0x40D070) from `confscrn`: option groups, sliders, the save, load,
- * title, close and exit buttons, and the current font name. Tabs, voice-bank toggles and
- * extra option pages of other titles are not built when their layers are absent.
+ * title, close and exit buttons, voice-bank toggles and the current font name. Each part is
+ * built when its layers exist. The `ex` option pages and the `_test` sample buttons are not
+ * built; neither supported title has their layers.
  */
 export class RScriptConfigScreen extends RScriptContainer {
   private readonly groups: {setting: Setting; group: OptionGroup}[] = [];
