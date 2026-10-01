@@ -58,10 +58,51 @@ export interface MessageEnvironment extends TextBoxEnvironment {
 }
 
 /**
+ * The message window as the game and opcodes drive it. Box and state offsets are 1.11's;
+ * each revision's window maps them to its own records.
+ */
+export interface RScriptMessageView extends RScriptContainer {
+  /** Page text shown by save screens. */
+  pageText: Uint8Array;
+  readonly inputActive: boolean;
+  autoHidden: boolean;
+  readonly browsing: boolean;
+  loadPanel(): Promise<void>;
+  setWindowAlpha(value: number): void;
+  updatePanel(allowed?: boolean): void;
+  setInput(active: boolean): void;
+  restorePanel(): void;
+  currentVoice(): {voice: number; pan: number};
+  setVoice(voice: number, pan: number): void;
+  /** A message state field. */
+  dword(offset: number): number;
+  showBox(box: number, visible: boolean, skipping: boolean): Promise<void>;
+  display(box: number, source: MessageSource, newPage: boolean, skipping: boolean): Promise<void>;
+  clear(box: number, skipping: boolean): void;
+  reveal(): void;
+  finish(): void;
+  setWaiting(waiting: boolean): void;
+  tickWaiting(): void;
+  setSpeed(speed: number): void;
+  backlogRange(): {start: number; length: number};
+  clearBacklog(): void;
+  setBoxWord(box: number, field: number, value: number): void;
+  setBoxDword(box: number, field: number, value: number): void;
+  applyBoxes(box: number, all: boolean): Promise<void>;
+  /** Mouse wheel; false leaves it to the click handler. */
+  wheel(up: boolean): Promise<boolean>;
+  /** The panel's `bak` and `fow` buttons; false leaves them to the click handler. */
+  backlogButton(forward: boolean): Promise<boolean>;
+  /** Returns from the backlog; true when it was open. */
+  exitBacklog(): Promise<boolean>;
+  restore(): Promise<void>;
+}
+
+/**
  * Message window (0x415750): four text boxes and the backlog stored as script references
  * in the scene state (0x417490), so saves and nested calls restore the page (0x416C30).
  */
-export class RScriptMessageWindow extends RScriptContainer {
+export class RScriptMessageWindow extends RScriptContainer implements RScriptMessageView {
   readonly boxes: readonly RScriptTextBox[];
   readonly panel: RScriptMessagePanel;
   /** Page text shown by save screens (the global String1). */
@@ -356,6 +397,17 @@ export class RScriptMessageWindow extends RScriptContainer {
     }
     return true;
   }
+  /** Mouse wheel: up browses back, down pages forward and leaves the rest to a click. */
+  async wheel(up: boolean): Promise<boolean> {
+    if (!up) return this.backlogForward();
+    await this.backlogBack();
+    return true;
+  }
+  /** `bak` and `fow` act as the wheel. */
+  backlogButton(forward: boolean): Promise<boolean> {
+    return this.wheel(!forward);
+  }
+
   /** sub_4172F0: returns box 0 to the current page; true when the backlog was open. */
   async exitBacklog(): Promise<boolean> {
     if (!this.browsing) return false;

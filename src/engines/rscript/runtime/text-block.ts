@@ -544,6 +544,22 @@ export class RScriptTextBlock extends RScriptContainer {
     }
   }
 
+  /** sub_455AE0: a glyph's cell (its position and advance box) in the block. */
+  glyphRect(index: number): {x: number; y: number; width: number; height: number} | null {
+    const glyph = this.glyphs[index];
+    if (!glyph) return null;
+    return {x: glyph.sprite.x, y: glyph.sprite.y, width: glyph.advance, height: glyph.height};
+  }
+
+  /** Draws every glyph and its ruby at half strength (blend mode 2, level 128). */
+  dim(): void {
+    for (const glyph of this.glyphs)
+      for (const sprite of [glyph.sprite, ...(glyph.ruby ?? [])]) {
+        sprite.setBlendMode(2);
+        sprite.setAlpha(128);
+      }
+  }
+
   /** The glyphs revealed so far, with their text, style and placement. */
   shownGlyphs(): BakedGlyph[] {
     const shown: BakedGlyph[] = [];
@@ -562,8 +578,9 @@ export class RScriptTextBlock extends RScriptContainer {
         bold: glyph.bold,
         italic: glyph.italic,
         shadow: this.style.shadow,
-        // Fade mode 2 hides the glyph as its level rises (0x45BC80 fades from 255 to 0).
-        opacity: sprite.fade.active ? 1 - sprite.blend.alpha / 255 : 1,
+        // Blend mode 2 hides the glyph as its level rises: reveal fades run from 255 to 0
+        // (0x45BC80) and 1.9 dims earlier messages at 128 (0x430F40).
+        opacity: sprite.blend.mode === 2 ? 1 - sprite.blend.alpha / 255 : 1,
         ruby: glyph.ruby?.length ? {text: glyph.rubyText, span: glyph.rubyEnd - index + 1} : null,
       });
     });

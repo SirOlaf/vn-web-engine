@@ -20,7 +20,13 @@ import {RScriptSaveScreen} from './save-screen.js';
 import {RScriptConfigScreen, type ConfigChange, type ConfigCommand} from './config-screen.js';
 import {RScriptDisplay, type RScriptPresenter, type RScriptTimer} from './display.js';
 import {RScriptLayer} from './layer.js';
-import {MessageState, RScriptMessageWindow} from './message-window.js';
+import {
+  MessageState,
+  RScriptMessageWindow,
+  type MessageEnvironment,
+  type RScriptMessageView,
+} from './message-window.js';
+import {RScriptMessageWindow19} from './message-window-19.js';
 import type {PanelCommand} from './message-panel.js';
 import {createOpcodeHandlers} from './opcodes.js';
 import type {GlyphRasterizer} from './text-block.js';
@@ -157,7 +163,7 @@ export class RScriptGame {
   /** Root of the scene objects (dword_48507C). */
   readonly root: RScriptContainer;
   readonly layers: readonly RScriptLayer[];
-  readonly message: RScriptMessageWindow;
+  readonly message: RScriptMessageView;
   /** Choice window (dword_48509C). */
   readonly choice: RScriptChoiceWindow;
   /** Save and load screen (dword_485098) over a still of the scene (dword_48524C). */
@@ -234,7 +240,7 @@ export class RScriptGame {
       return layer;
     });
     const palette = apini.palette;
-    this.message = new RScriptMessageWindow({
+    const messageEnvironment: MessageEnvironment = {
       memory: this.memory,
       images: this.images,
       rasterizer: host.rasterizer,
@@ -245,7 +251,19 @@ export class RScriptGame {
       backlogColor: apini.backlogColor,
       command: (command) => this.panelCommand(command),
       windowAlpha: (value) => this.memory.setConfigWord(Config.windowAlpha, value),
-    });
+    };
+    // 1.9 collects a page of messages in one full-screen box; 1.11 has four boxes.
+    this.message =
+      apini.revision.textBoxes === 1
+        ? new RScriptMessageWindow19({
+            ...messageEnvironment,
+            files: host.files,
+            voice: (voice, pan) => this.playVoice(voice, 0, false, pan),
+            settingsChanged: () => void this.rebuildForSettings(),
+            listFonts: () => host.listFonts?.() ?? Promise.resolve([]),
+            redraw: () => this.display.update(),
+          })
+        : new RScriptMessageWindow(messageEnvironment);
     this.root.add(this.overlay, 1);
     this.root.add(this.effectScreen, 1);
     this.root.add(this.message, 50);
@@ -526,6 +544,14 @@ export class RScriptGame {
     await this.rebuildObjects();
     this.display.update();
   }
+  /** 1.9 window message 0x433 (sub_421BC0): a message setting changed. */
+  private async rebuildForSettings(): Promise<void> {
+    try {
+      await this.rebuild();
+    } catch (error) {
+      this.fail(error);
+    }
+  }
   /** sub_4292C0 */
   private async rebuildObjects(): Promise<void> {
     const memory = this.memory;
@@ -736,16 +762,14 @@ export class RScriptGame {
       this.active = false;
     }
   }
-  /** Mouse wheel (WM_MOUSEWHEEL): up browses the backlog, down pages forward or clicks. */
+  /** Mouse wheel (WM_MOUSEWHEEL): the message window's backlog, or else a click. */
   wheel(up: boolean): void {
     this.wake();
     if (this.screens.open) return;
-    if (up) void this.message.backlogBack().then(() => this.display.update());
-    else
-      void this.message.backlogForward().then((handled) => {
-        if (handled) this.display.update();
-        else this.click();
-      });
+    void this.message.wheel(up).then((handled) => {
+      if (handled) this.display.update();
+      else this.click();
+    });
   }
   /** Control key held (485360): skipping starts at the next instruction. */
   setSkip(held: boolean): void {
@@ -829,10 +853,11 @@ export class RScriptGame {
         this.click();
         return;
       case 'bak':
-        this.wheel(true);
-        return;
       case 'fow':
-        this.wheel(false);
+        void message.backlogButton(command === 'fow').then((handled) => {
+          if (handled) this.display.update();
+          else this.click();
+        });
         return;
       case 'hide':
         this.hideWindow();

@@ -4,7 +4,8 @@ import type {RScriptImages} from '../images.js';
 import {filterLayerImage} from '../graphics/filters.js';
 import {createSurface, type RScriptSurface} from '../graphics/pixels.js';
 import {RScriptContainer, RScriptSprite, type RScriptPoint} from '../graphics/sprite.js';
-import {FramePlayer, type AnimationFrame, type FrameAnimation} from './animation.js';
+import {FramePlayer, type FrameAnimation} from './animation.js';
+import {FrameSprite} from './widgets.js';
 
 export interface LayerEnvironment {
   readonly memory: RScriptMemory;
@@ -39,46 +40,6 @@ const enum LayerKind {
 }
 
 /**
- * Hover image slot 2 (0x44E0E0): every layer of a layered image as a frame at its own
- * placement. Hovering plays the frames once and holds the last (0x40B070, sub_44F0B0);
- * stopping returns to the first (sub_44F160).
- */
-class OverlayFrames extends RScriptSprite {
-  private frames: readonly AnimationFrame[] = [];
-  private index = 0;
-  private baseX = 0;
-  private baseY = 0;
-
-  setFrames(frames: readonly AnimationFrame[], x: number, y: number): void {
-    this.frames = frames;
-    this.baseX = x;
-    this.baseY = y;
-    this.stop();
-  }
-  private setFrame(index: number): void {
-    this.index = index;
-    const frame = this.frames[index];
-    this.setSurface(frame?.surface ?? null);
-    this.setPosition(this.baseX + (frame?.x ?? 0), this.baseY + (frame?.y ?? 0));
-  }
-  /** sub_44F090 without looping, with the hover's one-tick frame delay. */
-  play(): void {
-    if (this.frames.length < 2) return;
-    this.frameDelay = 1;
-    this.onStep = () => {
-      if (this.index + 1 < this.frames.length) this.setFrame(this.index + 1);
-      return this.index + 1 < this.frames.length;
-    };
-    this.animating = true;
-  }
-  stop(): void {
-    this.animating = false;
-    this.onStep = null;
-    this.setFrame(0);
-  }
-}
-
-/**
  * One of the hundred script layers (0x4061E0). Its state lives in the scene record so that
  * saves and nested calls restore it (0x407480); the sprites here are the visible objects.
  * Kind 2 layers play LWG frames sequenced by an FSC script; kinds 0 and 1 apply the colour
@@ -89,8 +50,11 @@ export class RScriptLayer extends RScriptContainer {
   readonly main = new RScriptSprite();
   /** Crossfade source and hover images for button slots 0 and 1 (+92, +96). */
   readonly under = [new RScriptSprite(), new RScriptSprite()] as const;
-  /** Hover image slot 2 (+100). */
-  readonly special = new OverlayFrames();
+  /**
+   * Hover image slot 2 (+100, 0x44E0E0): hovering plays the frames once and holds the last
+   * (0x40B070), with a one-tick frame delay; stopping returns to the first (sub_44F160).
+   */
+  readonly special = new FrameSprite();
   private loadGeneration = 0;
   private player: FramePlayer | null = null;
 
@@ -678,7 +642,7 @@ export class RScriptLayer extends RScriptContainer {
       if (this.uword(LayerRecord.overlays + slot * 2)) this.under[slot].show(true);
     if (this.uword(LayerRecord.overlays + 4)) {
       this.special.show(true);
-      this.special.play();
+      this.special.play(false, 1);
     }
   }
   private hoverOut(): void {

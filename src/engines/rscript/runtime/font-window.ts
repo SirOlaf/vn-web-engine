@@ -12,9 +12,34 @@ export interface FontWindowEnvironment {
   chosen(index: number): void;
 }
 
-/** Rows per page; each row sits 22 pixels below the previous one (0x430940). */
+/** Rows per page, 22 pixels apart (0x430940). */
 const ROWS = 10;
 const ROW_STEP = 22;
+
+/** Where a font list comes from and how its rows are placed. */
+export interface FontListLayout {
+  /** The system image. */
+  readonly image: string;
+  /** Whether the image's `bg` layer is drawn. */
+  readonly background: boolean;
+  /** Offset of row `row` from the `list` placement. */
+  rowOffset(row: number): number;
+}
+/** The configuration's font window (0x430940): rows run down from `list`. */
+export const FONT_WINDOW: FontListLayout = {
+  image: 'fontwnd',
+  background: true,
+  rowOffset: (row) => row * ROW_STEP,
+};
+/**
+ * The 1.9 message window's font list (0x427C20): rows run up to `list`, the first lowest,
+ * without a background or exit button.
+ */
+export const FONT_PANEL: FontListLayout = {
+  image: 'fontcompane',
+  background: false,
+  rowOffset: (row) => (ROWS - 1 - row) * ROW_STEP,
+};
 /** The sample shown beside a hovered row (0x482070). */
 const SAMPLE = encodeCp932('あぃウェ５＃―壱弐鶴亀ＡｂAb')!;
 
@@ -27,8 +52,8 @@ interface FontRow {
 }
 
 /**
- * The configuration's font window (0x430940) from `fontwnd`: ten font rows per page with
- * previous, next and exit buttons. Each row draws its font's name and, while hovered, a
+ * A font list (0x430940, 1.9 0x427C20): ten font rows per page with previous, next and exit
+ * buttons where the image has them. Each row draws its font's name and, while hovered, a
  * sample in that font (0x430ED0).
  */
 export class RScriptFontWindow extends RScriptContainer {
@@ -39,22 +64,28 @@ export class RScriptFontWindow extends RScriptContainer {
   private page = 0;
   fonts: readonly string[] = [];
 
-  constructor(private readonly env: FontWindowEnvironment) {
+  constructor(
+    private readonly env: FontWindowEnvironment,
+    private readonly layout: FontListLayout = FONT_WINDOW,
+  ) {
     super();
     this.visible = false;
   }
 
-  /** Builds the window from `fontwnd`; false when the image is absent. */
+  /** Builds the window from its image; false when the image is absent. */
   async load(): Promise<boolean> {
-    const image = await ScreenImage.open(this.env.images, `${this.env.systemDirectory}\\fontwnd`);
+    const image = await ScreenImage.open(
+      this.env.images,
+      `${this.env.systemDirectory}\\${this.layout.image}`,
+    );
     if (!image) return false;
     this.resize(image.width, image.height);
-    const background = await image.sprite('bg');
+    const background = this.layout.background ? await image.sprite('bg') : null;
     if (background) this.add(background, 0);
     const nameRect = await image.rect('list_txt'),
       sampleRect = await image.rect('list_ctx');
     for (let row = 0; row < ROWS; row++) {
-      const offset = row * ROW_STEP;
+      const offset = this.layout.rowOffset(row);
       const button = await image.button('list', () => this.press(row));
       if (!button) break;
       button.move(0, offset);
