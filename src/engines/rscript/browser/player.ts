@@ -1,5 +1,10 @@
 import {BrowserAudioContextHost} from '../../../audio/browser-audio-context-host.js';
 import {objectFitPlacement} from '../../../graphics/object-fit.js';
+import {
+  TouchMouse,
+  type TouchMouseFrame,
+  type TouchMousePoint,
+} from '../../../input/touch-mouse.js';
 import {watchBrowserWindowActivation} from '../../../platform/browser-window-activation.js';
 import {BrowserWindowsMessageBoxHost} from '../../../platform/windows-message-box.js';
 import {HttpSource, sourceBlob, type ByteSource} from '../../../core/source.js';
@@ -65,6 +70,16 @@ export class RScriptBrowserPlayer {
   private textMode: 'native' | 'dom' = 'native';
   /** The left button went down on the canvas, so its release belongs to the game. */
   private pressedOnCanvas = false;
+  /**
+   * Touch acts as the mouse through the shared gestures: a tap clicks, a moved finger drags,
+   * and holding still or a second finger is the right button.
+   */
+  private readonly touch = new TouchMouse();
+  private touchButtons = 0;
+  /** Samples the gestures while a finger is down, so holding still becomes a right click. */
+  private touchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Browsers follow touches with compatibility events, such as a long-press contextmenu. */
+  private lastTouch = -Infinity;
   private movieRenderer: YuvRenderer | null = null;
   private skipMovie: (() => void) | null = null;
   private readonly abort = new AbortController();
@@ -184,12 +199,74 @@ export class RScriptBrowserPlayer {
     };
   }
 
+  /** Left button down on the canvas. */
+  private press(x: number, y: number): void {
+    this.pressedOnCanvas = true;
+    this.canvas.focus({preventScroll: true});
+    this.game.pointerDown(x, y);
+  }
+  /** Left button up: skips a movie, or ends a press that began on the canvas. */
+  private release(x: number, y: number): void {
+    // A drag that selected DOM text ending over the canvas is not a click.
+    const pressed = this.pressedOnCanvas;
+    this.pressedOnCanvas = false;
+    if (this.skipMovie) return this.skipMovie();
+    if (pressed) this.game.pointerUp(x, y);
+  }
+  /** Right button (WM_RBUTTONDOWN). */
+  private secondary(): void {
+    if (!this.skipMovie) this.game.cancel();
+  }
+
+  /** Delivers the gesture frames the touch contacts produced as mouse input. */
+  private drainTouch(): void {
+    this.lastTouch = performance.now();
+    let previous: TouchMouseFrame | null = null;
+    // Sampling repeats the last frame once the queue is empty.
+    for (let i = 0; i < 16; i++) {
+      const frame = this.touch.sample();
+      if (
+        previous &&
+        !frame.pressedButtons &&
+        frame.buttons === previous.buttons &&
+        frame.x === previous.x &&
+        frame.y === previous.y
+      )
+        break;
+      previous = frame;
+      this.touchFrame(frame);
+    }
+    if (this.touch.active && !this.touchTimer)
+      this.touchTimer = setTimeout(() => {
+        this.touchTimer = null;
+        this.drainTouch();
+      }, 100);
+  }
+  private touchFrame(frame: TouchMouseFrame): void {
+    const {x, y} = frame;
+    const held = this.touchButtons;
+    this.touchButtons = frame.buttons;
+    this.game.pointerMove(x, y);
+    if (frame.pressedButtons & 1) this.press(x, y);
+    if (held & 1 && !(frame.buttons & 1)) this.release(x, y);
+    if (frame.pressedButtons & 2) this.secondary();
+  }
+
   private bindInput(): void {
     const signal = this.abort.signal;
     const canvas = this.canvas;
+    const touchPoint = (event: PointerEvent): TouchMousePoint => {
+      const {x, y} = this.point(event);
+      return {x, y, inside: x >= 0 && y >= 0 && x < canvas.width && y < canvas.height};
+    };
+    const client = (event: PointerEvent) => ({x: event.clientX, y: event.clientY});
     canvas.addEventListener(
       'pointermove',
       (event) => {
+        if (event.pointerType === 'touch') {
+          this.touch.move(event.pointerId, touchPoint(event), client(event));
+          return this.drainTouch();
+        }
         const {x, y} = this.point(event);
         this.game.pointerMove(x, y);
       },
@@ -198,33 +275,55 @@ export class RScriptBrowserPlayer {
     canvas.addEventListener(
       'pointerdown',
       (event) => {
+        if (event.pointerType === 'touch') {
+          const accepted = this.touch.down(
+            event.pointerId,
+            event.isPrimary,
+            touchPoint(event),
+            client(event),
+          );
+          if (!accepted) return;
+          try {
+            canvas.setPointerCapture(event.pointerId);
+          } catch {
+            // The browser no longer tracks this pointer; its release still arrives here.
+          }
+          event.preventDefault();
+          return this.drainTouch();
+        }
         if (event.button !== 0) return;
-        this.pressedOnCanvas = true;
-        canvas.focus({preventScroll: true});
         const {x, y} = this.point(event);
-        this.game.pointerDown(x, y);
+        this.press(x, y);
       },
       {signal},
     );
     canvas.addEventListener(
       'pointerup',
       (event) => {
+        if (event.pointerType === 'touch') {
+          this.touch.up(event.pointerId, touchPoint(event), client(event));
+          return this.drainTouch();
+        }
         if (event.button !== 0) return;
-        // A drag that selected DOM text ending over the canvas is not a click.
-        const pressed = this.pressedOnCanvas;
-        this.pressedOnCanvas = false;
-        if (this.skipMovie) return this.skipMovie();
-        if (!pressed) return;
         const {x, y} = this.point(event);
-        this.game.pointerUp(x, y);
+        this.release(x, y);
       },
       {signal},
     );
+    const cancelTouch = (event: PointerEvent): void => {
+      if (event.pointerType !== 'touch') return;
+      this.touch.cancel(event.pointerId);
+      this.drainTouch();
+    };
+    canvas.addEventListener('pointercancel', cancelTouch, {signal});
+    canvas.addEventListener('lostpointercapture', cancelTouch, {signal});
     canvas.addEventListener(
       'contextmenu',
       (event) => {
         event.preventDefault();
-        if (!this.skipMovie) this.game.cancel();
+        // The touch gestures already produced the right button for a long press.
+        if (performance.now() - this.lastTouch < 1000) return;
+        this.secondary();
       },
       {signal},
     );
@@ -344,6 +443,8 @@ export class RScriptBrowserPlayer {
   }
 
   dispose(): void {
+    if (this.touchTimer) clearTimeout(this.touchTimer);
+    this.touch.clear();
     this.unwatchActivation?.();
     this.abort.abort();
     this.domText.dispose();
