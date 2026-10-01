@@ -1325,6 +1325,10 @@ export class RScriptGame {
   private async opening(): Promise<void> {
     const {apini} = this.host;
     const generation = this.sceneGeneration;
+    // The movies run in the top-menu scene (0x42A1D0), whose objects start hidden: the game
+    // scene's objects are gone, so nothing of the previous scene shows between them.
+    this.root.show(false);
+    this.display.refresh();
     for (const movie of [2, 1]) {
       if (this.disposed || generation !== this.sceneGeneration) return;
       await this.host.playMovie(`${apini.directories.movies}\\${pad(movie, 4)}.mpg`);
@@ -1355,6 +1359,7 @@ export class RScriptGame {
   }
   private async prepareScene(): Promise<void> {
     // The native scene creates its objects again (sub_4158A0 in 1.9).
+    this.root.show(true);
     this.message.reset();
     this.message.setSpeed(this.config(Config.messageSpeed));
     this.message.setWindowAlpha(this.config(Config.windowAlpha));
