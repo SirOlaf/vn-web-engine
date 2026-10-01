@@ -1354,6 +1354,8 @@ export class RScriptGame {
     await this.vm.run();
   }
   private async prepareScene(): Promise<void> {
+    // The native scene creates its objects again (sub_4158A0 in 1.9).
+    this.message.reset();
     this.message.setSpeed(this.config(Config.messageSpeed));
     this.message.setWindowAlpha(this.config(Config.windowAlpha));
     await this.rebuildObjects();

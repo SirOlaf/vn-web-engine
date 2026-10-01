@@ -95,6 +95,11 @@ export interface RScriptMessageView extends RScriptContainer {
   backlogButton(forward: boolean): Promise<boolean>;
   /** Returns from the backlog; true when it was open. */
   exitBacklog(): Promise<boolean>;
+  /**
+   * The state of a newly created window, before the scene is rebuilt: the native game scene
+   * creates its objects again when it starts, after a load or a return to the title.
+   */
+  reset(): void;
   restore(): Promise<void>;
 }
 
@@ -445,6 +450,14 @@ export class RScriptMessageWindow extends RScriptContainer implements RScriptMes
     await this.showEntryName(index);
     this.pageRecord = entry + Entry.page;
     this.panel.setVoice(this.currentVoice().voice !== 0);
+  }
+
+  reset(): void {
+    this.autoHidden = false;
+    this.browsing = false;
+    this.setWaiting(false);
+    this.setInput(false);
+    this.panel.show(false);
   }
 
   /** sub_416C30: rebuilds boxes and their current page text from the state. */

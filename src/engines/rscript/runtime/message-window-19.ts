@@ -872,6 +872,22 @@ export class RScriptMessageWindow19 extends RScriptContainer implements RScriptM
     return true;
   }
 
+  /** The constructor's state (0x42A0D0): panels, marks and bars hidden, the backlog closed. */
+  reset(): void {
+    this.autoHidden = false;
+    this.browsing = false;
+    this.pages = [];
+    this.setWaiting(false);
+    this.setInput(false);
+    this.panel.show(false);
+    this.settings.show(false);
+    this.marks.show(false);
+    for (const bar of [this.rowBar, this.columnBar]) {
+      bar?.show(false);
+      bar?.setInput(false);
+    }
+  }
+
   /** sub_42C0F0: rebuilds the page, or the backlog page in view, from the state. */
   async restore(): Promise<void> {
     await this.box.apply();
