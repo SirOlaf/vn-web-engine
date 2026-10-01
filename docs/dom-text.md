@@ -142,7 +142,10 @@ native drop shadow (when game shadows are kept) and their reveal fade. Ruby
 becomes `<ruby>` with `rt.game-text-ruby`, which selections skip. **Fit** keeps
 each native row at its place, compressed to its native width and clipped to the
 text object; **Natural** flows a text object's rows through its width, keeping only
-the script's line breaks.
+the script's line breaks. Vertical text (RScript 1.9) is written with
+`writing-mode: vertical-rl` and the `game-text-vertical` class: **Fit** keeps each
+native column, compressed to its height, and **Natural** flows the columns down the
+text area from its right edge.
 
 A text object's DOM is rebuilt only when its glyphs change, which keeps a selection
 while the page waits. Copying omits ruby and the newlines of layout wraps, and keeps

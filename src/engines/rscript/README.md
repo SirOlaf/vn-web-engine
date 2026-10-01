@@ -11,14 +11,19 @@ the title, save prefix, resource directories, screen size, tick period and start
 script, so titles sharing an engine revision need no per-game code. Do not select
 behavior by a game's display name.
 
+- `revision.ts` describes each engine revision, selected by the executable's
+  FileVersion: its `APINI` layout, opcode layouts, block sizes and the maps from 1.11
+  offsets to its own. Executables of other revisions are rejected before launch.
 - `vm/` executes GSC programs. `layouts.ts` lists the operand layout of every
-  opcode in the RScript 1.11.0.3 dispatcher; another engine revision should get its
-  own layout table rather than edits to this one.
+  opcode in the RScript 1.11.0.3 dispatcher and the 1.9.0.0 table derived from it.
 - `memory.ts` mirrors the native configuration block, scene state and variables.
   Save slots snapshot the scene state as a unit, so offsets must stay native.
+  Accessors take 1.11 offsets (`Config`, `Scene`) and map them to the revision.
 - `runtime/` is the game scene: opcode handlers, layers, transitions, message
   boxes, the companion panel, backlog, choices, and the save, load and
-  configuration screens built from the system LWG images.
+  configuration screens built from the system LWG images. `message-window.ts` is
+  1.11's four-box window; `message-window-19.ts` is 1.9's page window with its
+  settings panel and backlog scroll bars, and `characters.ts` its opcode 0xFF.
 - `graphics/` composites sprites in native pixel layout (B, G, R and a
   transparency byte) with the native blend modes.
 - `browser/` adapts the scene to a canvas, Web Audio, the browser's fonts and the
@@ -28,7 +33,9 @@ behavior by a game's display name.
 
 Native address comments refer to the Fairytale Requiem executable with SHA-256
 `7c5392abef0810ec2ce3ec8c6318a566fce854281bbd52c7c032a8d7477ecd66` (RScript
-1.11.0.3). They document recovered behavior, not address compatibility with other
+1.11.0.3), unless they say 1.9: those refer to the Albatross Koukairoku executable with
+SHA-256 `f04c9729c0f60269f6ffdc63ea71c587a2431c501ade698e374978050fd156c4` (RScript
+1.9.0.0). They document recovered behavior, not address compatibility with other
 builds. The Fairytale Symphony and Fairytale Encore executables have identical code
 and differ only in their `APINI` blocks and resources.
 
@@ -37,13 +44,14 @@ recognizes and reports counts and failures without writing assets.
 
 ## Compatibility
 
-| Title              | Executable SHA-256                                                 | Status                       |
-| ------------------ | ------------------------------------------------------------------ | ---------------------------- |
-| Fairytale Requiem  | `7c5392abef0810ec2ce3ec8c6318a566fce854281bbd52c7c032a8d7477ecd66` | Complete: all twelve endings |
-| Fairytale Symphony | `adcc785a849606ffad8748645348392cbc28a44abc5f40f8180f30f81af89396` | Complete: both endings       |
-| Fairytale Encore   | `04d1deb0eef007411d87d2d31f6652286f78b174ab190815d9bee58645a2ec49` | Complete: all six scenarios  |
+| Title                | Executable SHA-256                                                 | Status                        |
+| -------------------- | ------------------------------------------------------------------ | ----------------------------- |
+| Fairytale Requiem    | `7c5392abef0810ec2ce3ec8c6318a566fce854281bbd52c7c032a8d7477ecd66` | Complete: all twelve endings  |
+| Fairytale Symphony   | `adcc785a849606ffad8748645348392cbc28a44abc5f40f8180f30f81af89396` | Complete: both endings        |
+| Fairytale Encore     | `04d1deb0eef007411d87d2d31f6652286f78b174ab190815d9bee58645a2ec49` | Complete: all six scenarios   |
+| Albatross Koukairoku | `f04c9729c0f60269f6ffdc63ea71c587a2431c501ade698e374978050fd156c4` | In progress: opening chapters |
 
-All three are RScript 1.11.0.3. Scenes, maps, choices, backlog, colour effects and the save,
+The Fairytale titles are RScript 1.11.0.3. Scenes, maps, choices, backlog, colour effects and the save,
 load, configuration and font screens match the native game pixel for pixel at 1280x720.
 Slot saves are interchangeable with the native game.
 
@@ -51,9 +59,11 @@ Some diagnostics name files the game's own scripts request but its archives do n
 the native game fails to load them too. Examples are Fairytale Requiem's `wav\4243.wav` and
 Fairytale Symphony's ending movie.
 
-RScript 1.9 executables (for example Railsoft's Albatross Koukairoku) use an older `APINI` layout,
-different operand layouts for opcodes 0x3E and 0x40, and LWG layer formats 40 and 56. They
-are not supported.
+Albatross Koukairoku is RScript 1.9.0.0 at 800x600. Its message window
+collects a page of messages in one full-screen box, written in columns or rows at the
+size and placement chosen on the settings panel, and its characters come and go through
+opcode 0xFF. The title, the opening chapters, the backlog, the configuration screen and
+loading native slot saves match the native game; later chapters have not been compared.
 
 ## Known gaps
 
@@ -62,6 +72,8 @@ are not supported.
   Shift-JIS without that bit; they are left out. Browsers without the API offer
   common Japanese fixed-pitch families they can draw.
 - Timed button and pointer waits do not draw their countdown gauge.
+- The configuration screen's `ex` option pages and `_test` sample buttons, and the 1.9
+  slot text and image thumbnails, are not built; no supported title has their layers.
 - The legacy top menu, text layers and native screens other than the title,
   configuration, save and load screens are reported as diagnostics. Fairytale
   Requiem uses none of them.

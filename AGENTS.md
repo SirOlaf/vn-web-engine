@@ -11,7 +11,7 @@ read for resources and evidence only; they never run in the browser.
 | ------------- | ---------------------- | --------------------------------------------------------------------- |
 | BGI/Buriko    | `src/engines/buriko/`  | Aokana, 穢翼のユースティア, Jewelry Hearts Academia, Subarashiki Hibi |
 | MAGES / SC3   | `src/engines/mages/`   | CHAOS;HEAD NOAH (`games/chaos-head-noah`)                             |
-| codeX RScript | `src/engines/rscript/` | Fairytale Requiem, Fairytale Symphony, Fairytale Encore               |
+| codeX RScript | `src/engines/rscript/` | Fairytale Requiem, Symphony and Encore; Albatross Koukairoku          |
 
 BGI/Buriko is a complete recreation: `bp/` holds the bytecode VM, `native/`
 the native services and script callbacks. codeX RScript runs GSC bytecode
