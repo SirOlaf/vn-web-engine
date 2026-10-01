@@ -580,6 +580,17 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
     layer.moveTo(kind, x, y, u16(speed), skipping());
   }
 
+  if (game.characters) {
+    const characters = game.characters;
+    on(0xff, async ([mode, layer, image, keepFocus]) => {
+      if (mode === 0) await characters.show(u16(layer!), u16(image!), !!keepFocus);
+      else if (mode === 1) characters.hide(u16(layer!));
+      else if (mode === 2) characters.focus(u16(layer!));
+      else return;
+      await afterLayers();
+    });
+  }
+
   if (memory.revision.soundChannels === 1) {
     // 1.9 (0x4216C0, 0x421730, 0x4217C0): one sound-effect channel and no channel operand.
     on(0x3e, ([sound]) => game.loadSound(0, u16(sound!)));

@@ -58,6 +58,11 @@ export interface RScriptRevision {
    * box, and its box opcodes ignore the selector (0x42DD50).
    */
   readonly textBoxes: 1 | 4;
+  /**
+   * Opcode 0xFF shows, hides and focuses characters on layers 1..7 (1.9 0x431320); 1.11
+   * reads its operands and ignores it.
+   */
+  readonly characterOpcode: boolean;
   /** Skipping plays and stops sound effects without their fade (1.11 sub_428D50). */
   readonly skipCancelsSoundFade: boolean;
   /** Slot header size and where the page text starts in it; 1.9 stores no background word. */
@@ -98,6 +103,7 @@ export const RSCRIPT_1_11: RScriptRevision = Object.freeze({
   sceneOffset: (offset: number) => offset,
   soundChannels: 3,
   textBoxes: 4,
+  characterOpcode: false,
   skipCancelsSoundFade: true,
   slotHeaderSize: 0x68,
   slotTextOffset: 22,
@@ -227,6 +233,7 @@ export const RSCRIPT_1_9: RScriptRevision = Object.freeze({
   },
   soundChannels: 1,
   textBoxes: 1,
+  characterOpcode: true,
   skipCancelsSoundFade: false,
   slotHeaderSize: 0x66,
   slotTextOffset: 20,

@@ -27,6 +27,7 @@ import {
   type RScriptMessageView,
 } from './message-window.js';
 import {RScriptMessageWindow19} from './message-window-19.js';
+import {RScriptCharacters} from './characters.js';
 import type {PanelCommand} from './message-panel.js';
 import {createOpcodeHandlers} from './opcodes.js';
 import type {GlyphRasterizer} from './text-block.js';
@@ -164,6 +165,8 @@ export class RScriptGame {
   readonly root: RScriptContainer;
   readonly layers: readonly RScriptLayer[];
   readonly message: RScriptMessageView;
+  /** 1.9 characters of opcode 0xFF. */
+  readonly characters: RScriptCharacters | null;
   /** Choice window (dword_48509C). */
   readonly choice: RScriptChoiceWindow;
   /** Save and load screen (dword_485098) over a still of the scene (dword_48524C). */
@@ -264,6 +267,7 @@ export class RScriptGame {
             redraw: () => this.display.update(),
           })
         : new RScriptMessageWindow(messageEnvironment);
+    this.characters = apini.revision.characterOpcode ? new RScriptCharacters(this) : null;
     this.root.add(this.overlay, 1);
     this.root.add(this.effectScreen, 1);
     this.root.add(this.message, 50);
@@ -564,6 +568,7 @@ export class RScriptGame {
     await this.applyEffectScreen();
     this.root.setPriority(this.overlay, memory.sceneWord(Scene.overlayOrder));
     this.applyOverlay();
+    this.characters?.restore();
   }
   async applyEffectScreen(): Promise<void> {
     const image = this.memory.sceneUword(Scene.effectImage);
