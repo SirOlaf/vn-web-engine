@@ -5,7 +5,7 @@ import type {RScriptImages} from '../images.js';
 import type {RScriptMemory} from '../memory.js';
 import {decodeSlotHeader, type RScriptSlotHeader} from '../saves.js';
 import {RScriptTextBlock, type GlyphRasterizer, type TextStyle} from './text-block.js';
-import {ScreenImage} from './widgets.js';
+import {ScreenImage, type ImageButton} from './widgets.js';
 
 export interface SaveScreenEnvironment {
   readonly memory: RScriptMemory;
@@ -155,7 +155,8 @@ class SlotPanel extends RScriptContainer {
 
 /**
  * Save and load screen (0x411820): ten slot panels per page placed at the `0`..`9` layers
- * of `savescrn`, page buttons, the page digit from `nonbl` and the exit button.
+ * of `savescrn`, next and previous buttons, buttons `01`..`10` that choose a page, the page
+ * digit from `nonbl` and the exit button, each where its layers exist.
  */
 export class RScriptSaveScreen extends RScriptContainer {
   private readonly background = new RScriptSprite();
@@ -167,6 +168,9 @@ export class RScriptSaveScreen extends RScriptContainer {
   private next: RScriptSprite | null = null;
   private previous: RScriptSprite | null = null;
   private exit: RScriptSprite | null = null;
+  /** Page buttons by page; absent layers leave gaps. */
+  private pageButtons: (ImageButton | null)[] = [];
+  private inputEnabled = false;
   save = false;
 
   constructor(private readonly env: SaveScreenEnvironment) {
@@ -202,6 +206,11 @@ export class RScriptSaveScreen extends RScriptContainer {
     this.next = await image.button('next', () => this.turn(1));
     this.previous = await image.button('prev', () => this.turn(-1));
     for (const button of [this.exit, this.next, this.previous]) if (button) this.add(button, 20);
+    for (let page = 0; page < 10; page++) {
+      const button = await image.button(pad(page + 1, 2), () => this.choosePage(page));
+      if (button) this.add(button, 100);
+      this.pageButtons.push(button);
+    }
     this.numberAt = image.position('number');
     if (this.numberAt) {
       const digits = await ScreenImage.open(images, `${systemDirectory}\\nonbl`);
@@ -223,6 +232,13 @@ export class RScriptSaveScreen extends RScriptContainer {
   private turn(direction: number): void {
     const page = this.page + direction;
     if (page < 0 || page > 9) return;
+    this.env.memory.setConfigWord(PAGE, page);
+    this.env.sound(1);
+    void this.refresh();
+  }
+
+  /** The `NN` page buttons (sub_4105F0 in 1.9). */
+  private choosePage(page: number): void {
     this.env.memory.setConfigWord(PAGE, page);
     this.env.sound(1);
     void this.refresh();
@@ -252,6 +268,13 @@ export class RScriptSaveScreen extends RScriptContainer {
       this.digit.setPosition(this.numberAt.x + digit.x, this.numberAt.y + digit.y);
       this.digit.show(!!digit.surface);
     }
+    // The current page's button shows its selected image and ignores input (sub_4101A0).
+    this.pageButtons.forEach((button, index) => {
+      if (!button) return;
+      button.show(true);
+      button.selected = index === page;
+      button.interactive = this.inputEnabled && index !== page;
+    });
   }
 
   /** Refreshes the panel showing `slot`, after saving into it (sub_4124F0). */
@@ -262,9 +285,15 @@ export class RScriptSaveScreen extends RScriptContainer {
   }
 
   setInput(enabled: boolean): void {
+    this.inputEnabled = enabled;
     for (const panel of this.panels) panel.setInput(enabled);
     for (const button of [this.exit, this.next, this.previous])
       if (button) button.interactive = enabled;
+    this.pageButtons.forEach((button, index) => {
+      if (!button) return;
+      button.interactive = enabled && index !== this.page;
+      if (!enabled) button.unfocus();
+    });
   }
 
   close(): void {
