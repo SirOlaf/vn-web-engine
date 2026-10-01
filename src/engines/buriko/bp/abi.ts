@@ -1,6 +1,6 @@
 /** Bytecode ABI, selected from engine metadata rather than an installation title. */
 export interface BurikoBpAbi {
-  readonly revision: '1.520.6' | '1.665' | '1.685.3';
+  readonly revision: '1.520.6' | '1.658.5' | '1.665' | '1.685.3';
   readonly compatibility: '1.69' | '1.72';
   readonly addressBits: 26 | 28;
   readonly addressMask: number;
@@ -14,6 +14,18 @@ export interface BurikoBpAbi {
 export const BURIKO_BP_ABI_169: BurikoBpAbi = Object.freeze({
   revision: '1.520.6',
   compatibility: '1.69',
+  addressBits: 26,
+  addressMask: 0x03ffffff,
+  moduleTag: 0x04000000,
+  frameTag: 0x08000000,
+  heapTag: 0x0c000000,
+  indirectHandles: false,
+});
+
+/** 1.658.5: resolver004999d0 and pools00499870/00499920 match 1.665 byte for byte. */
+export const BURIKO_BP_ABI_1658: BurikoBpAbi = Object.freeze({
+  revision: '1.658.5',
+  compatibility: '1.72',
   addressBits: 26,
   addressMask: 0x03ffffff,
   moduleTag: 0x04000000,
@@ -45,3 +57,9 @@ export const BURIKO_BP_ABI_172: BurikoBpAbi = Object.freeze({
   heapTag: 0x30000000,
   indirectHandles: true,
 });
+
+/** 1.658.5 shares the x86 1.665 pools, CRT arithmetic and storage owners; its
+ * differing instructions and native slots are separate explicit overrides. */
+export function burikoX86Revision1665Family(revision?: BurikoBpAbi['revision']): boolean {
+  return revision === '1.665' || revision === '1.658.5';
+}

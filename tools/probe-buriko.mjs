@@ -137,7 +137,7 @@ async function selectInterpreter(files, root) {
     const isInterpreter =
       versions.some(
         ({values}) =>
-          /BURIKO General Interpreter/i.test(values.FileDescription ?? '') ||
+          /^(?:Ethornell - )?BURIKO General Interpreter$/i.test(values.FileDescription ?? '') ||
           values.InternalName?.toLowerCase() === 'ethornell',
       ) || embeddedProductIdentity(bytes) !== null;
     if (!isInterpreter) continue;

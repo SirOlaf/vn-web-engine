@@ -10,6 +10,7 @@ namespace and product identifier; it does not select engine behavior.
 | Interpreter | Compatibility | Bytecode pointers                          | Boot module / frame capacity |
 | ----------- | ------------- | ------------------------------------------ | ---------------------------- |
 | 1.520.6     | 1.69          | 26-bit offsets, separate 64 MiB pool slots | 512 KiB / 256 KiB            |
+| 1.658.5     | 1.72          | 26-bit offsets, five grouped pool sizes    | 8 MiB / 4 MiB                |
 | 1.665       | 1.72          | 26-bit offsets, five grouped pool sizes    | 8 MiB / 4 MiB                |
 | 1.685.3     | 1.72          | Modern address tags and indirect buffers   | 8 MiB / 4 MiB                |
 
@@ -20,6 +21,17 @@ Unrecognized pairs require native analysis before admission.
 Revision `1.665` has separate primary and native dispatch inventories, grouped
 x86 allocations, and Intel CRT arithmetic. Compatibility `1.72` alone cannot
 select its pointer tags or numeric behavior.
+
+Revision `1.658.5` shares the 1.665 pointer resolver, pools, CRT arithmetic,
+diagnostics and audio archive storage; `burikoX86Revision1665Family` selects
+those shared paths. Its own inventory omits primary opcodes `0f`, `12`, `18`–`1f`,
+`2c`–`2f`, `3b`, `3c`, `46`, `47` and `73`, the `7f` native bank and slots
+`81:01`–`03`, `81:34` and `81:8c`–`8f`. Primary `7f` is a direct verification
+message box. Scalar loads and stores ignore or reject size selectors above two,
+and conditional jump `15` has no relative form. `81:6e` reports the host's
+optional `d3dx9_43.dll` `D3DXCreateEffect` export, which also gates the
+presentation shader; the browser dynamic-library host provides none. The engine
+clock keeps DWORD state rather than a 64-bit extension.
 
 The older revision has its own native slot inventory and overrides for changed
 primary bytecodes, text operations, Flash surfaces, and audio archive storage.

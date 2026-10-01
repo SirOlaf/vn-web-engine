@@ -6,7 +6,7 @@ import {
   provenanceDataView,
   requireDeterminateMemory,
 } from '../../../core/indeterminate-memory.js';
-import {BURIKO_BP_ABI_172, type BurikoBpAbi} from './abi.js';
+import {BURIKO_BP_ABI_172, type BurikoBpAbi, burikoX86Revision1665Family} from './abi.js';
 import {BurikoBpWasmCore} from './wasm-core.js';
 import {
   BurikoBpPointer,
@@ -234,7 +234,9 @@ export class BurikoBpMemory {
     this.wasm = wasm?.core ?? null;
     this.wasm?.attach(this);
     this.globalRegionValue = this.regions.adopt(globalMemory);
-    this.poolLayout = abi.revision === '1.665' ? BURIKO_BP_POOL_LAYOUT_1665 : BURIKO_BP_POOL_LAYOUT;
+    this.poolLayout = burikoX86Revision1665Family(abi.revision)
+      ? BURIKO_BP_POOL_LAYOUT_1665
+      : BURIKO_BP_POOL_LAYOUT;
     // 00463800 assigns one complete 26-bit-offset bank per allocation, in first-free order.
     this.pools =
       abi.revision === '1.520.6'

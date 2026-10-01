@@ -21,6 +21,7 @@ import {BrowserGdiImageCodec} from '../../../graphics/browser-gdi-image.js';
 import {BrowserWindowsSystemProfileHost} from '../../../platform/browser-windows-system-profile.js';
 import {BrowserWindowsProcessHost} from '../../../platform/browser-windows-process.js';
 import {BrowserWindowsDynamicLibraryHost} from '../../../platform/windows-dynamic-library.js';
+import {BurikoD3dxEffectLibrary} from './d3dx-effect-library.js';
 import {BrowserWindowsNamedMutexHost} from '../../../platform/windows-named-mutex.js';
 import {BrowserWindowsLogicalDriveHost} from '../../../platform/windows-drives.js';
 import {BrowserWindowsDevicePowerHost} from '../../../platform/windows-device-power.js';
@@ -502,6 +503,8 @@ export class BurikoProductionDisplayResourceGraph {
   readonly shellExecuteHost: BurikoShellExecuteHost | null;
   readonly externalProcesses: BurikoExternalProcesses | null;
   readonly dynamicLibraryHost: WindowsDynamicLibraryHost | null;
+  /** 1.658.5 only: its optional D3DX9 effect library gates 81 6e and the presentation shader. */
+  readonly effectLibrary: BurikoD3dxEffectLibrary | null;
   readonly externalLibraries: BurikoExternalLibraries | null;
   readonly logicalDriveHost: BurikoLogicalDriveHost | null;
   readonly secondaryMedia: BurikoSecondaryMediaDiscovery | null;
@@ -581,7 +584,10 @@ export class BurikoProductionDisplayResourceGraph {
       this.engineCaption =
         inputs.engineCaption?.slice() ??
         new TextEncoder().encode(BURIKO_INTERNET_USER_AGENT + '\0');
-      this.clock = new BurikoNativeClock(() => inputs.performance.now());
+      this.clock = new BurikoNativeClock(
+        () => inputs.performance.now(),
+        this.engineVersion.bpAbi.revision === '1.658.5' ? 32 : 64,
+      );
       this.threadSleep = inputs.resource.sleep;
       this.cpuHost = inputs.cpuHost;
       this.systemProfileHost =
@@ -1370,6 +1376,11 @@ export class BurikoProductionDisplayResourceGraph {
           if (typeof this.dynamicLibraryHost[operation] !== 'function')
             throw new TypeError(`Buriko dynamic-library host lacks ${operation}`);
       }
+      this.effectLibrary =
+        this.engineVersion.bpAbi.revision === '1.658.5'
+          ? new BurikoD3dxEffectLibrary(this.dynamicLibraryHost)
+          : null;
+      this.device.bindEffectLibrary(this.effectLibrary);
       this.externalLibraries =
         this.dynamicLibraryHost === null
           ? null

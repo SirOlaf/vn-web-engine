@@ -1,5 +1,5 @@
 import type {BurikoBpOpcodeHandler} from '../../native/types.js';
-import type {BurikoBpAbi} from '../abi.js';
+import {burikoX86Revision1665Family, type BurikoBpAbi} from '../abi.js';
 import {x87Atan2Float} from '../../../../core/x87-integer.js';
 import {
   native1665DisplayEasing,
@@ -220,7 +220,7 @@ export function nativeSpatialSineCosine(
 ): {sine: number; cosine: number} {
   if (!Number.isFinite(angle) || Math.abs(angle) > 8)
     throw new RangeError('Buriko spatial trigonometry outside its native argument domain');
-  if (revision === '1.665') return native1665SineCosineRadians(angle);
+  if (burikoX86Revision1665Family(revision)) return native1665SineCosineRadians(angle);
   return {sine: sineBoundedRadians(angle), cosine: cosineBoundedRadians(angle)};
 }
 
@@ -230,7 +230,7 @@ export function nativeGridEvaluatorFacingCosine(
   revision?: BurikoBpAbi['revision'],
 ): number {
   const angle = ((fixedDegrees | 0) / 11796480) * 1.5707963267948966;
-  if (revision === '1.665') return native1665SineCosineRadians(angle).cosine;
+  if (burikoX86Revision1665Family(revision)) return native1665SineCosineRadians(angle).cosine;
   return cosineBoundedRadians(angle);
 }
 
@@ -271,14 +271,14 @@ export function nativeDisplacementSineRadians(
   radians: number,
   revision?: BurikoBpAbi['revision'],
 ): number {
-  if (revision === '1.665') return native1665SineCosineRadians(radians).sine;
+  if (burikoX86Revision1665Family(revision)) return native1665SineCosineRadians(radians).sine;
   return displacementRadians(radians, false);
 }
 export function nativeDisplacementCosineRadians(
   radians: number,
   revision?: BurikoBpAbi['revision'],
 ): number {
-  if (revision === '1.665') return native1665SineCosineRadians(radians).cosine;
+  if (burikoX86Revision1665Family(revision)) return native1665SineCosineRadians(radians).cosine;
   return displacementRadians(radians, true);
 }
 
@@ -296,7 +296,7 @@ export function nativeDisplayEasing(
   easing: number,
   revision?: BurikoBpAbi['revision'],
 ): number {
-  if (revision === '1.665') return native1665DisplayEasing(progress, easing);
+  if (burikoX86Revision1665Family(revision)) return native1665DisplayEasing(progress, easing);
   progress |= 0;
   easing |= 0;
   const scaledAngle = (multiplier: number): number =>
@@ -331,7 +331,7 @@ export function nativeAffineSineCosine(
   perpendicularSine: number;
   perpendicularCosine: number;
 } {
-  if (revision === '1.665') return native1665AffineSineCosine(fixedDegrees);
+  if (burikoX86Revision1665Family(revision)) return native1665AffineSineCosine(fixedDegrees);
   const angle = -(((fixedDegrees | 0) * 3.141592653589793) / 11796480),
     perpendicular = angle + 1.5707963267948966;
   return {
@@ -353,7 +353,7 @@ export function nativeMeshSineCosine(
 } {
   const value = negate ? -fixedDegrees | 0 : fixedDegrees | 0;
   const radians = (value * 3.141592653589793) / 11796480;
-  if (revision === '1.665') return native1665SineCosineRadians(radians);
+  if (burikoX86Revision1665Family(revision)) return native1665SineCosineRadians(radians);
   return {cosine: cosineBoundedRadians(radians), sine: sineBoundedRadians(radians)};
 }
 
@@ -363,7 +363,8 @@ export function nativeSpatialAngle(
   x: number,
   revision?: BurikoBpAbi['revision'],
 ): number {
-  if (revision === '1.665') return x87Atan2Float(Math.fround(y), Math.fround(x), 32);
+  if (burikoX86Revision1665Family(revision))
+    return x87Atan2Float(Math.fround(y), Math.fround(x), 32);
   y = Math.fround(y);
   x = Math.fround(x);
   if (!Number.isFinite(y) || !Number.isFinite(x))
@@ -512,7 +513,8 @@ export function nativeCursorInterpolation(
   steps: number,
   revision?: BurikoBpAbi['revision'],
 ): number {
-  if (revision === '1.665') return native1665CursorInterpolation(delta, easing, progress, steps);
+  if (burikoX86Revision1665Family(revision))
+    return native1665CursorInterpolation(delta, easing, progress, steps);
   delta |= 0;
   easing |= 0;
   progress >>>= 0;

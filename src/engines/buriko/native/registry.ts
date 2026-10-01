@@ -5,6 +5,10 @@ import {
   BURIKO_1665_NATIVE_SLOT_ADDRESSES,
   BURIKO_1665_PRIMARY_SLOT_ADDRESSES,
 } from './inventory-1665.js';
+import {
+  BURIKO_1658_NATIVE_SLOT_ADDRESSES,
+  BURIKO_1658_PRIMARY_SLOT_ADDRESSES,
+} from './inventory-1658.js';
 import {BURIKO_BP_ABI_172, type BurikoBpAbi} from '../bp/abi.js';
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
 import type {
@@ -19,6 +23,7 @@ const hexSlot = (primary: number, secondary: number): string =>
 
 export function burikoNativeSlots(abi: BurikoBpAbi = BURIKO_BP_ABI_172) {
   if (abi.revision === '1.665') return BURIKO_1665_NATIVE_SLOT_ADDRESSES;
+  if (abi.revision === '1.658.5') return BURIKO_1658_NATIVE_SLOT_ADDRESSES;
   return abi.revision === '1.520.6'
     ? BURIKO_169_NATIVE_SLOT_ADDRESSES
     : BURIKO_NATIVE_SLOT_ADDRESSES;
@@ -26,6 +31,7 @@ export function burikoNativeSlots(abi: BurikoBpAbi = BURIKO_BP_ABI_172) {
 
 export function burikoPrimarySlots(abi: BurikoBpAbi = BURIKO_BP_ABI_172) {
   if (abi.revision === '1.665') return BURIKO_1665_PRIMARY_SLOT_ADDRESSES;
+  if (abi.revision === '1.658.5') return BURIKO_1658_PRIMARY_SLOT_ADDRESSES;
   return abi.revision === '1.520.6'
     ? BURIKO_169_PRIMARY_SLOT_ADDRESSES
     : BURIKO_PRIMARY_SLOT_ADDRESSES;

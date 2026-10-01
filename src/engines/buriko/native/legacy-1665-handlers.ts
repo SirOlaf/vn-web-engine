@@ -1,9 +1,13 @@
 import {BURIKO_1665_NATIVE_SLOT_ADDRESSES} from './inventory-1665.js';
 import type {BurikoNativeSlotDefinition} from './types.js';
 
-/** 1.665 E0 dispatch 004688d0: the diagnostic leaves occupy different slots. */
+/** 1.665 E0 dispatch 004688d0: the diagnostic leaves occupy different slots.
+ * 1.658.5 E0 dispatch 004669e0 installs the identical leaves at its own addresses. */
 export function createLegacy1665NativeDefinitions(
   shared: readonly BurikoNativeSlotDefinition[],
+  slots: Readonly<
+    Record<number, Readonly<Record<number, number>>>
+  > = BURIKO_1665_NATIVE_SLOT_ADDRESSES,
 ): BurikoNativeSlotDefinition[] {
   // 004683a0 enumerate; 004683d0 flags; 00468410 write; 00468450 clear.
   return [
@@ -18,7 +22,7 @@ export function createLegacy1665NativeDefinitions(
     return {
       ...definition,
       secondary: secondary!,
-      nativeAddress: BURIKO_1665_NATIVE_SLOT_ADDRESSES[0xe0]![secondary!]!,
+      nativeAddress: slots[0xe0]![secondary!]!,
     };
   });
 }

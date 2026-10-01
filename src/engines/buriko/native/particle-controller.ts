@@ -1,3 +1,4 @@
+import {burikoX86Revision1665Family} from '../bp/abi.js';
 import {nativeParticleSineCosine} from '../bp/opcodes/native-math.js';
 import {native1665SineCosine} from '../bp/opcodes/legacy-1665.js';
 import {
@@ -149,8 +150,9 @@ export class BurikoParticleController {
   ): boolean {
     projection |= 0;
     if (projection <= 0) return false;
-    const sineCosine =
-      this.compositor.revision === '1.665' ? native1665SineCosine : nativeParticleSineCosine;
+    const sineCosine = burikoX86Revision1665Family(this.compositor.revision)
+      ? native1665SineCosine
+      : nativeParticleSineCosine;
     const {sine: sineX, cosine: cosineX} = sineCosine(angleX);
     const {sine: sineY, cosine: cosineY} = sineCosine(angleY);
     const {sine: sineZ, cosine: cosineZ} = sineCosine(angleZ);

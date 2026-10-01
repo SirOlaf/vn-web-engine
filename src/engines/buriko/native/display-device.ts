@@ -1,3 +1,4 @@
+import type {BurikoD3dxEffectLibrary} from './d3dx-effect-library.js';
 import type {BurikoBitmapRectangle} from './bitmap.js';
 import {
   rasterTextBitmap,
@@ -115,6 +116,8 @@ export class BurikoDisplayDevice {
   private baseVertices: Uint8Array | null = null;
   private vertices: Uint8Array | null = null;
   private shader: {readonly profile: typeof BURIKO_PRESENTATION_NUMERICAL_PROFILE} | null = null;
+  private effects: BurikoD3dxEffectLibrary | null = null;
+  private effectsBound = false;
   private sampler: BurikoPresentationSampler = 'point';
   private rasterValid = false;
   private rasterCubic = false;
@@ -223,9 +226,22 @@ export class BurikoDisplayDevice {
     this.dialogBoxMode = dialogBoxMode;
   }
 
-  /** b0f20: capability gate precedes creating the implemented title shader and replacement. */
+  /** Revisions without a D3DX effect library bind null; the owner is fixed once bound. */
+  bindEffectLibrary(effects: BurikoD3dxEffectLibrary | null): void {
+    if (this.effectsBound) throw new Error('Buriko display device effect library is already bound');
+    this.effects = effects;
+    this.effectsBound = true;
+  }
+  /** The effect library loaded by 1.658.5 0046a590 after its adapter checks. */
+  get effectLibrary(): BurikoD3dxEffectLibrary | null {
+    return this.effects;
+  }
+
+  /** b0f20: capability gate precedes creating the implemented title shader and replacement.
+   * 1.658.5 0046a900 also requires its D3DX effect library before using SHADER/129. */
   private createShader(): number {
     if (this.adapter.pixelShaderVersion >>> 0 < 0xffff0300) return 15;
+    if (this.effects !== null && !this.effects.available) return 15;
     const shader = {profile: this.numericalProfile};
     this.releaseShader();
     this.shader = shader;

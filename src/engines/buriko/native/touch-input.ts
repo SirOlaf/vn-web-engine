@@ -2,7 +2,7 @@ import {pointerView} from '../bp/memory.js';
 import type {BurikoBpPointer} from '../bp/memory.js';
 import {nativeVectorAngle} from '../bp/opcodes/native-math.js';
 import {native1665VectorAngle} from '../bp/opcodes/legacy-1665.js';
-import type {BurikoBpAbi} from '../bp/abi.js';
+import {burikoX86Revision1665Family, type BurikoBpAbi} from '../bp/abi.js';
 import type {BurikoNativeClock} from './clock.js';
 import type {BurikoNativeInput} from './input.js';
 
@@ -184,10 +184,9 @@ export class BurikoNativeTouch {
       const angle =
         next === undefined
           ? 0xffffffff
-          : (this.revision === '1.665' ? native1665VectorAngle : nativeVectorAngle)(
-              (point.x - next.x) | 0,
-              (point.y - next.y) | 0,
-            );
+          : (burikoX86Revision1665Family(this.revision)
+              ? native1665VectorAngle
+              : nativeVectorAngle)((point.x - next.x) | 0, (point.y - next.y) | 0);
       if (angles === null) throw new Error('Buriko native touch-history null angle output');
       pointerView(angles.add(copied * 4), 4).setUint32(0, angle, true);
     }

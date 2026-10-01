@@ -109,6 +109,7 @@ export class BurikoDisplayController {
       if ((capabilities.checkDeviceFormat(0, 1, 22, 0x200, 3, 22) | 0) < 0)
         return this.initializationError('DISPLAYADAPTORDOESNOTSUPPORTREQUISITESURFACEFORMAT');
       this.display.pixelShaderVersion = caps.pixelShaderVersion >>> 0;
+      this.device.effectLibrary?.load();
       return runAsActor(() => this.reconfigure(2, 1, 0, null, 1));
     }
   }

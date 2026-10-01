@@ -19,6 +19,10 @@ import {
 } from './legacy-169-handlers.js';
 import {BurikoLegacy169Registration} from './legacy-169-registration.js';
 import {createLegacy1665NativeDefinitions} from './legacy-1665-handlers.js';
+import {
+  createLegacy1658NativeDefinitions,
+  createLegacy1658PrimaryOpcodes,
+} from './legacy-1658-handlers.js';
 
 /**
  * The complete BP dispatch owner. Bank validation is deliberately first: an
@@ -39,6 +43,8 @@ export class BurikoProductionInterpreter {
     const legacy = abi.compatibility === '1.69';
     if (legacy && (graph.systemProfile === null || graph.legacy169Flash === null))
       throw new Error('Buriko1.69 interpreter requires its system profile and Flash service');
+    if (abi.revision === '1.658.5' && graph.effectLibrary === null)
+      throw new Error('Buriko 1.658.5 interpreter requires its D3DX effect-library owner');
     const legacyRegistration =
       legacy && graph.systemProfile !== null
         ? new BurikoLegacy169Registration(
@@ -75,7 +81,9 @@ export class BurikoProductionInterpreter {
           )
         : abi.revision === '1.665'
           ? createLegacy1665NativeDefinitions(definitions)
-          : [],
+          : abi.revision === '1.658.5'
+            ? createLegacy1658NativeDefinitions(definitions, graph.effectLibrary!)
+            : [],
     );
     this.extensions = new BurikoBpModuleExtensions(graph.resource.resources);
     const primary = createPrimaryOpcodes(
@@ -96,6 +104,9 @@ export class BurikoProductionInterpreter {
           graph.localized.language,
         ),
         ...(legacy ? createLegacy169PrimaryOpcodes(graph.surfaces) : {}),
+        ...(abi.revision === '1.658.5'
+          ? createLegacy1658PrimaryOpcodes(graph.text, graph.dialogs)
+          : {}),
       },
       abi,
     );

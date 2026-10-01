@@ -1,4 +1,4 @@
-import {BURIKO_BP_ABI_172, type BurikoBpAbi} from '../../bp/abi.js';
+import {BURIKO_BP_ABI_172, type BurikoBpAbi, burikoX86Revision1665Family} from '../../bp/abi.js';
 import {hostPointer} from '../../bp/memory.js';
 import type {BurikoProgramFiles} from '../program-files.js';
 import {Buriko1665ArchiveFileStorage} from './1665-archive-storage.js';
@@ -202,12 +202,11 @@ export class BurikoAudioResourceStreams {
       second: BurikoLiveAudioStorage | undefined,
       handedOff = false;
     try {
-      if (this.abi.revision === '1.520.6' || this.abi.revision === '1.665') {
+      if (this.abi.revision === '1.520.6' || burikoX86Revision1665Family(this.abi.revision)) {
         // 46fc80/004c6490: independent embedded owners; the later cache is not consulted.
-        const Storage =
-          this.abi.revision === '1.665'
-            ? Buriko1665ArchiveFileStorage
-            : BurikoLegacy169ArchiveFileStorage;
+        const Storage = burikoX86Revision1665Family(this.abi.revision)
+          ? Buriko1665ArchiveFileStorage
+          : BurikoLegacy169ArchiveFileStorage;
         const firstInput = new Storage(this.files);
         first = firstInput;
         if (!(await firstInput.open(path, memberA)))
@@ -305,12 +304,11 @@ export class BurikoAudioResourceStreams {
     const status = this.validate(index, actor);
     if (status !== 0) return status;
     try {
-      if (this.abi.revision === '1.520.6' || this.abi.revision === '1.665') {
+      if (this.abi.revision === '1.520.6' || burikoX86Revision1665Family(this.abi.revision)) {
         // 46fa30/004c5f40: a single stream embeds its revision's load-once archive reader.
-        const Storage =
-          this.abi.revision === '1.665'
-            ? Buriko1665ArchiveFileStorage
-            : BurikoLegacy169ArchiveFileStorage;
+        const Storage = burikoX86Revision1665Family(this.abi.revision)
+          ? Buriko1665ArchiveFileStorage
+          : BurikoLegacy169ArchiveFileStorage;
         const input = new Storage(this.files);
         if (!(await input.open(path, member))) {
           input.dispose();

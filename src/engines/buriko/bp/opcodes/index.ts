@@ -9,7 +9,8 @@ import {nativeMathOpcodes} from './native-math.js';
 import {createTextOpcodes} from './text.js';
 import {createLegacy169CoreOpcodes} from './legacy-169.js';
 import {createLegacy1665CoreOpcodes} from './legacy-1665.js';
-import {BURIKO_BP_ABI_172, type BurikoBpAbi} from '../abi.js';
+import {createLegacy1658CoreOpcodes} from './legacy-1658.js';
+import {BURIKO_BP_ABI_172, burikoX86Revision1665Family, type BurikoBpAbi} from '../abi.js';
 
 /** Per-runtime text and host state are shared with that runtime's native bank. */
 export function createPrimaryOpcodes(
@@ -26,7 +27,8 @@ export function createPrimaryOpcodes(
     ...nativeMathOpcodes,
     ...createTextOpcodes(text),
     ...(abi.compatibility === '1.69' ? createLegacy169CoreOpcodes() : {}),
-    ...(abi.revision === '1.665' ? createLegacy1665CoreOpcodes() : {}),
+    ...(burikoX86Revision1665Family(abi.revision) ? createLegacy1665CoreOpcodes() : {}),
+    ...(abi.revision === '1.658.5' ? createLegacy1658CoreOpcodes() : {}),
     ...hostOpcodes,
   });
 }

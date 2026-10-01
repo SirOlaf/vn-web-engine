@@ -1,3 +1,4 @@
+import {burikoX86Revision1665Family} from '../abi.js';
 import {pop32, push32} from '../state.js';
 import type {BurikoBpOpcodeHandler} from '../../native/types.js';
 import {BurikoNativeText, textBytes} from '../../native/text.js';
@@ -41,8 +42,8 @@ export function createDiagnosticHostOpcodes(
       );
       const formatted = diagnostics.formatThreadMessage(thread, message);
       const answer = await dialogs.show(formatted, title('数値の表示'), 0x1041);
-      // 1.665's 00483c20 ignores the numeric diagnostic's modal result.
-      return memory.abi.revision === '1.665' || answer === 1 ? 0 : 6;
+      // 1.665's 00483c20 and 1.658.5's identical 00481260 ignore the numeric diagnostic's modal result.
+      return burikoX86Revision1665Family(memory.abi.revision) || answer === 1 ? 0 : 6;
     },
     0x7b: async (context): Promise<0> => {
       const {thread, memory} = context;

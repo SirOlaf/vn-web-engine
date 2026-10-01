@@ -1,6 +1,6 @@
 import {nativeParticleSineCosine} from '../bp/opcodes/native-math.js';
 import {native1665SineCosine} from '../bp/opcodes/legacy-1665.js';
-import type {BurikoBpAbi} from '../bp/abi.js';
+import {burikoX86Revision1665Family, type BurikoBpAbi} from '../bp/abi.js';
 
 export interface BurikoSpriteBoundsInput {
   width: number;
@@ -44,9 +44,9 @@ export function burikoSpriteBounds(
     expandedWidth = (Math.imul((input.extraWidth + 65536) | 0, width) >>> 0) / 65536,
     pivotX = (expandedWidth - width) * 0.5 + (input.centerX | 0) / 65536,
     pivotY = (input.centerY | 0) / 65536,
-    {cosine, sine} = (revision === '1.665' ? native1665SineCosine : nativeParticleSineCosine)(
-      input.angle,
-    ),
+    {cosine, sine} = (
+      burikoX86Revision1665Family(revision) ? native1665SineCosine : nativeParticleSineCosine
+    )(input.angle),
     scaleX = (input.scaleX >>> 0) / 65536,
     scaleY = (input.scaleY >>> 0) / 65536;
   const xs = [-pivotX, expandedWidth - pivotX - 1],

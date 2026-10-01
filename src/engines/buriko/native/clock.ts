@@ -13,7 +13,11 @@ export class BurikoNativeClock {
   private excluded = 0n;
   private gapLimit = 500n;
 
-  constructor(private readonly readRawTick32: () => number) {}
+  /** 1.658.5 004a6060 keeps DWORD state; later revisions extend the raw tick to 64 bits. */
+  constructor(
+    private readonly readRawTick32: () => number,
+    private readonly width: 32 | 64 = 64,
+  ) {}
 
   /** FE670/FE6D0 read the live 1e8b7c input bit in a composed engine. */
   bindSuspensionInput(input: BurikoNativeInput): void {
@@ -37,6 +41,7 @@ export class BurikoNativeClock {
 
   /** 0x1400fe730 uses an unsigned raw clock and returns a signed 64-bit elapsed value. */
   read(): bigint {
+    if (this.width === 32) return this.read32();
     const low = this.readRawTick32() >>> 0;
     if (low < this.previousLow) this.high = (this.high + 1) >>> 0;
     this.previousLow = low;
@@ -46,6 +51,16 @@ export class BurikoNativeClock {
     }
     this.previousRaw = raw;
     return this.frozen !== 0n ? this.frozen : BigInt.asIntN(64, raw - this.excluded);
+  }
+
+  /** 004a6060: a backward step or long gap adds the wrapped DWORD delta to the exclusion. */
+  private read32(): bigint {
+    const raw = this.readRawTick32() >>> 0,
+      previous = Number(this.previousRaw);
+    if (raw < previous || (Number(this.gapLimit) + previous) >>> 0 < raw)
+      this.excluded = BigInt((Number(this.excluded) + raw - previous) >>> 0);
+    this.previousRaw = BigInt(raw);
+    return this.frozen !== 0n ? this.frozen : BigInt((raw - Number(this.excluded)) >>> 0);
   }
 
   setGapLimit(milliseconds: number): boolean {
@@ -85,7 +100,10 @@ export class BurikoNativeClock {
       if (frozen !== 0n) {
         this.frozen = 0n;
         const current = this.read();
-        this.excluded = BigInt.asIntN(64, this.excluded + current - frozen);
+        this.excluded =
+          this.width === 32
+            ? BigInt((Number(this.excluded) + Number(current - frozen)) >>> 0)
+            : BigInt.asIntN(64, this.excluded + current - frozen);
         result = true;
       }
       this.suspended = false;

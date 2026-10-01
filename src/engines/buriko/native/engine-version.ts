@@ -1,5 +1,6 @@
 import {
   BURIKO_BP_ABI_169,
+  BURIKO_BP_ABI_1658,
   BURIKO_BP_ABI_1665,
   BURIKO_BP_ABI_172,
   type BurikoBpAbi,
@@ -23,6 +24,16 @@ export const BURIKO_ENGINE_1520 = Object.freeze({
   bootOperandCells: 0x1000,
   bootModuleBytes: 0x80000,
   bootFrameBytes: 0x40000,
+}) satisfies BurikoEngineVersion;
+
+/** 1.658.5 x86: boot 00498250, loader 0044bcb0, constructor 0044b970. */
+export const BURIKO_ENGINE_1658 = Object.freeze({
+  interpreterVersion: '1.658.5',
+  compatibilityVersion: '1.72',
+  bpAbi: BURIKO_BP_ABI_1658,
+  bootOperandCells: 0x1000,
+  bootModuleBytes: 0x800000,
+  bootFrameBytes: 0x400000,
 }) satisfies BurikoEngineVersion;
 
 /** 1.665 x86: boot 0049ae20, loader 0044c900, constructor 0044c5c0. */
@@ -49,7 +60,12 @@ export function burikoEngineVersion(
   interpreterVersion: string | null,
   compatibilityVersion: string | null,
 ): BurikoEngineVersion {
-  for (const version of [BURIKO_ENGINE_1520, BURIKO_ENGINE_1665, BURIKO_ENGINE_1685]) {
+  for (const version of [
+    BURIKO_ENGINE_1520,
+    BURIKO_ENGINE_1658,
+    BURIKO_ENGINE_1665,
+    BURIKO_ENGINE_1685,
+  ]) {
     if (
       version.interpreterVersion === interpreterVersion &&
       version.compatibilityVersion === compatibilityVersion
