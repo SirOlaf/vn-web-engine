@@ -39,6 +39,8 @@ An import or a factory declaration is evidence of source structure, not evidence
 - [Dedicated Ghidra bridge](ghidra-bridge.md) and [small MCP](native-mcp.md): health and exact function exports to files, with separate raw/high representations and compact receipts.
 - [Implementation mapping database](native-mappings.md): source-pinned direct imports, explicit signatures/ABI bindings, rich types and same-address variant identities.
 - [Decoded graph importer](ghidra-cfg-import.md) and [CFG backend](native-cfg.md): branches, loops, phi nodes, database-defined calls and scoped code/type variant stacks. [Run the synthetic export-to-TypeScript example](../../tools/native-lift/examples/ghidra/README.md).
+- [BGI bytecode processor for Ghidra](ghidra-bgi.md): disassembly and decompilation of
+  `._bp` program modules, native call names, cross-module calls and archive import.
 - [Generational address slots](generational-address-slots.md): variable storage,
   canonical address aliases, derived parent generations, typed fields/arrays,
   implementation-owned globals, safe merges, and exact whole-function routes.

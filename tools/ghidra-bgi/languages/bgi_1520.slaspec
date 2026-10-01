@@ -1,0 +1,6 @@
+# BGI 1.520.6 bytecode.
+@define REV "1520"
+@define MODULE_TAG "0x04000000"
+@define FRAME_TAG "0x08000000"
+@include "bgi.sinc"
+@include "bgi_natives_1520.sinc"

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language_definitions>
+  <language processor="BGI" endian="little" size="32" variant="1.685.3" version="1.0"
+            slafile="bgi_1685.sla" processorspec="bgi.pspec" id="BGI:LE:32:1.685.3">
+    <description>BGI/Buriko ._bp bytecode, engine 1.685.3 (x64, 28-bit VM addresses)</description>
+    <compiler name="default" spec="bgi.cspec" id="default"/>
+  </language>
+  <language processor="BGI" endian="little" size="32" variant="1.665" version="1.0"
+            slafile="bgi_1665.sla" processorspec="bgi.pspec" id="BGI:LE:32:1.665">
+    <description>BGI/Buriko ._bp bytecode, engine 1.665 (x86, 26-bit VM addresses)</description>
+    <compiler name="default" spec="bgi.cspec" id="default"/>
+  </language>
+  <language processor="BGI" endian="little" size="32" variant="1.658.5" version="1.0"
+            slafile="bgi_1658.sla" processorspec="bgi.pspec" id="BGI:LE:32:1.658.5">
+    <description>BGI/Buriko ._bp bytecode, engine 1.658.5 (x86, 26-bit VM addresses)</description>
+    <compiler name="default" spec="bgi.cspec" id="default"/>
+  </language>
+  <language processor="BGI" endian="little" size="32" variant="1.520.6" version="1.0"
+            slafile="bgi_1520.sla" processorspec="bgi.pspec" id="BGI:LE:32:1.520.6">
+    <description>BGI/Buriko ._bp bytecode, engine 1.520.6 (compatibility 1.69, 26-bit VM addresses)</description>
+    <compiler name="default" spec="bgi.cspec" id="default"/>
+  </language>
+</language_definitions>

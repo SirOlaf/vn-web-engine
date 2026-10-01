@@ -4,3 +4,4 @@ node_modules/
 third_party/
 docs/*.json
 package-lock.json
+tools/ghidra-bgi/out/

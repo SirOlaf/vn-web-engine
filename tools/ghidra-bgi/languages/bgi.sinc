@@ -1,0 +1,589 @@
+# BGI/Buriko ._bp bytecode.
+#
+# Address model (one 32-bit `ram` space holding VM-tagged addresses):
+#   bank 0  globals           0
+#   bank 1  module code/data  MODULE_TAG   (the loaded module is mapped here)
+#   bank 2  frames/locals     FRAME_TAG    (fp is the tagged frame cursor)
+#   bank 3  thread heap       HEAP_TAG
+# Code addresses therefore carry the module tag. The VM pushes untagged program
+# counters for 06/16/ee; this model pushes the tagged address of the same byte.
+#
+# The operand stack is the register file S0..S255. The context field `sd` holds
+# the stack depth before each instruction; T1 is the top cell, Q0 the first
+# free cell. The BGI stack analyzer computes `sd` and the call counts (cn, cm,
+# fe, fn, fm) and writes them as instruction context. Function parameters are
+# passed in P0.., results in R0... Native slots are calls to stub functions at
+# 0xf0000000 + primary * 0x400 + secondary * 4 with the same convention.
+#
+# Locals live in the frame bank below fp: a local descriptor addresses
+# fp - displacement. The frame bank is the compiler-visible stack. The VM keeps
+# return addresses in the frame bank; this model passes them in `ra` instead, so
+# call sites and frames decompile without return-address slots.
+
+define endian=little;
+define alignment=1;
+
+define space ram type=ram_space size=4 default;
+define space register type=register_space size=4;
+
+define register offset=0x00 size=4 [ pc fp ra ];
+# Hidden temporaries carrying values between a constructor and its subtables.
+define register offset=0x40 size=4 [ tA tV tL tR ];
+
+define register offset=0x2000 size=8 [ contextreg ];
+define context contextreg
+  sd = (0,7) noflow     # operand-stack depth before the instruction
+  cn = (8,13) noflow    # call: arguments consumed / formatted text: conversions
+  cm = (14,16) noflow   # call: results produced
+  fe = (17,17) noflow   # first instruction of an analyzed function
+  fn = (18,23) noflow   # that function's parameter count
+  fm = (24,26) noflow   # ret: results returned
+  jk = (27,27) noflow   # 14/15/16: the popped code address is known
+  rc = (32,39) noflow   # instruction-local repeat counter
+  ri = (40,47) noflow   # instruction-local repeat index
+  jo = (48,63) signed noflow  # known code address relative to the instruction
+;
+
+define token opbyte(8)
+  op = (0,7)
+;
+define token secbyte(8)
+  sec = (0,7)
+;
+# Control and type bytes.
+define token ctlbyte(8)
+  ctl = (0,7)
+  ctl_cond = (0,2)
+  ctl_rel = (3,3)
+  ctl_op4 = (0,3)
+  ctl_true = (7,7)
+  ctl_op5 = (0,4)
+  ctl_cmp = (5,5)
+  ctl_type = (6,7)
+;
+define token typebyte(8)
+  tb = (0,7)
+  stt = (0,7)
+;
+define token countbyte(8)
+  cnt = (0,7)
+;
+define token inlinebyte(8)
+  ib = (0,7)
+;
+define token simm8(8)
+  s8 = (0,7) signed
+  s8neg = (7,7)
+;
+define token imm16(16)
+  u16 = (0,15)
+  s16 = (0,15) signed
+;
+# Local descriptor: displacement below fp and scalar type.
+define token loc16(16)
+  ld_disp = (0,13)
+  ld_type = (14,15)
+;
+define token imm32(32)
+  u32 = (0,31)
+  s32 = (0,31) signed
+;
+# Global descriptor: masked address and scalar type.
+define token glob32(32)
+  gd_addr = (0,29)
+  gd_type = (30,31)
+;
+define token imm64(64)
+  u64lo = (0,31)
+;
+# Variable-length integers: 7 payload bits per byte, high bit continues.
+define token vbyte1(8) v1c=(7,7) v1v=(0,6) tvt=(0,1) tv1=(2,6) ;
+define token vbyte2(8) v2c=(7,7) v2v=(0,6) ;
+define token vbyte3(8) v3c=(7,7) v3v=(0,6) ;
+define token vbyte4(8) v4c=(7,7) v4v=(0,6) ;
+define token vbyte5(8) v5c=(7,7) v5v=(0,6) ;
+
+define pcodeop format_text;
+define pcodeop copy_inline;
+define pcodeop store_sequence;
+define pcodeop call_extension;
+define pcodeop register_extension;
+define pcodeop unregister_extension;
+define pcodeop fixed_div;
+define pcodeop fixed_pow;
+define pcodeop fixed_sin;
+define pcodeop fixed_cos;
+define pcodeop vector_angle;
+define pcodeop vector_length;
+define pcodeop vector_rotate;
+define pcodeop lerp_ratio;
+define pcodeop lerp_fixed;
+define pcodeop vector_add;
+define pcodeop vector_sub;
+define pcodeop vector_mul_fixed;
+define pcodeop vector_div_fixed;
+define pcodeop vector_normalize;
+define pcodeop vector_scale_fixed;
+define pcodeop vector_div_scalar_fixed;
+define pcodeop memory_copy;
+define pcodeop memory_zero;
+define pcodeop memory_set;
+define pcodeop memory_equal;
+define pcodeop memory_fill;
+define pcodeop memory_find;
+define pcodeop text_find;
+define pcodeop text_replace;
+define pcodeop text_length;
+define pcodeop text_equal;
+define pcodeop text_copy;
+define pcodeop text_concat;
+define pcodeop text_character;
+define pcodeop text_lowercase;
+define pcodeop text_wrap;
+define pcodeop heap_alloc;
+define pcodeop heap_free;
+define pcodeop write_watch_enable;
+define pcodeop write_watch_add;
+define pcodeop display_category_count;
+define pcodeop confirm_dialog;
+define pcodeop show_text;
+define pcodeop show_number;
+define pcodeop dump_memory;
+define pcodeop choose_font;
+define pcodeop draw_hex;
+define pcodeop copy_to_clipboard;
+define pcodeop verification_message;
+define pcodeop reduce_bitmap_half;
+
+@include "bgi_stack.sinc"
+
+# ---------------------------------------------------------------------------
+# Immediates
+
+VI: val is v1c=0 & v1v [ val = (v1v ^ 0x40) - 0x40; ] { export *[const]:4 val; }
+VI: val is v1c=1 & v1v; v2c=0 & v2v
+  [ val = ((v1v | (v2v << 7)) ^ 0x2000) - 0x2000; ] { export *[const]:4 val; }
+VI: val is v1c=1 & v1v; v2c=1 & v2v; v3c=0 & v3v
+  [ val = ((v1v | (v2v << 7) | (v3v << 14)) ^ 0x100000) - 0x100000; ] { export *[const]:4 val; }
+VI: val is v1c=1 & v1v; v2c=1 & v2v; v3c=1 & v3v; v4c=0 & v4v
+  [ val = ((v1v | (v2v << 7) | (v3v << 14) | (v4v << 21)) ^ 0x8000000) - 0x8000000; ] { export *[const]:4 val; }
+VI: val is v1c=1 & v1v; v2c=1 & v2v; v3c=1 & v3v; v4c=1 & v4v; v5c=0 & v5v
+  [ val = (((v1v | (v2v << 7) | (v3v << 14) | (v4v << 21) | (v5v << 28)) & 0xffffffff) ^ 0x80000000) - 0x80000000; ]
+  { export *[const]:4 val; }
+
+# Typed varint: the first byte's low two bits select the scalar type.
+TV: val is v1c=0 & tv1 [ val = (tv1 ^ 0x10) - 0x10; ] { export *[const]:4 val; }
+TV: val is v1c=1 & tv1; v2c=0 & v2v
+  [ val = ((tv1 | (v2v << 5)) ^ 0x800) - 0x800; ] { export *[const]:4 val; }
+TV: val is v1c=1 & tv1; v2c=1 & v2v; v3c=0 & v3v
+  [ val = ((tv1 | (v2v << 5) | (v3v << 12)) ^ 0x40000) - 0x40000; ] { export *[const]:4 val; }
+TV: val is v1c=1 & tv1; v2c=1 & v2v; v3c=1 & v3v; v4c=0 & v4v
+  [ val = ((tv1 | (v2v << 5) | (v3v << 12) | (v4v << 19)) ^ 0x2000000) - 0x2000000; ] { export *[const]:4 val; }
+TV: val is v1c=1 & tv1; v2c=1 & v2v; v3c=1 & v3v; v4c=1 & v4v; v5c=0 & v5v
+  [ val = (((tv1 | (v2v << 5) | (v3v << 12) | (v4v << 19) | (v5v << 26)) & 0xffffffff) ^ 0x80000000) - 0x80000000; ]
+  { export *[const]:4 val; }
+
+TSZ: ".1" is tvt=0 { }
+TSZ: ".2" is tvt=1 { }
+TSZ: ".4" is tvt=2 { }
+TSZ: ".1" is tvt=3 { }
+
+# Typed varint store/load through tA, sized by the varint's own type bits.
+TVW: is tvt=1 { *[ram]:2 tA = tV:2; }
+TVW: is tvt=2 { *[ram]:4 tA = tV; }
+TVW: is tvt { *[ram]:1 tA = tV:1; }
+TVR: is tvt=1 { local v:4 = sext(*[ram]:2 tA); export v; }
+TVR: is tvt=2 { local v:4 = *[ram]:4 tA; export v; }
+TVR: is tvt { local v:4 = sext(*[ram]:1 tA); export v; }
+
+# A popped code address the analyzer resolved to a constant pushed by 06.
+JREL: dest is jo [ dest = inst_start + jo; ] { export *[ram]:4 dest; }
+
+# Code and data addresses relative to the instruction.
+REL: dest is s16 [ dest = inst_start + s16; ] { export *[ram]:4 dest; }
+DATA: dest is s16 [ dest = inst_start + s16; ] { export *[ram]:1 dest; }
+
+# ---------------------------------------------------------------------------
+# Scalar access
+
+# Type byte (08/09/0a): 2 is 32-bit, 1 is 16-bit, every other value is 8-bit.
+TBS: ".2" is tb=1 { }
+TBS: ".4" is tb=2 { }
+TBS: ".1" is tb { }
+TBR: is tb=1 { local v:4 = sext(*[ram]:2 tA); export v; }
+TBR: is tb=2 { local v:4 = *[ram]:4 tA; export v; }
+TBR: is tb { local v:4 = sext(*[ram]:1 tA); export v; }
+TBW: is tb=1 { *[ram]:2 tA = tV:2; }
+TBW: is tb=2 { *[ram]:4 tA = tV; }
+TBW: is tb { *[ram]:1 tA = tV:1; }
+
+# Locals.
+LSZ: ".1" is ld_type=0 { }
+LSZ: ".2" is ld_type=1 { }
+LSZ: ".4" is ld_type=2 { }
+LSZ: ".1" is ld_type=3 { }
+LDA: "[fp-"^ld_disp^"]"^LSZ is ld_disp & LSZ { local a:4 = fp - ld_disp; export a; }
+LDR: is ld_disp & ld_type=1 { local v:4 = sext(*[ram]:2 (fp - ld_disp)); export v; }
+LDR: is ld_disp & ld_type=2 { local v:4 = *[ram]:4 (fp - ld_disp); export v; }
+LDR: is ld_disp & ld_type { local v:4 = sext(*[ram]:1 (fp - ld_disp)); export v; }
+LDW: is ld_disp & ld_type=1 { *[ram]:2 (fp - ld_disp) = tV:2; }
+LDW: is ld_disp & ld_type=2 { *[ram]:4 (fp - ld_disp) = tV; }
+LDW: is ld_disp & ld_type { *[ram]:1 (fp - ld_disp) = tV:1; }
+# Native reads a full DWORD from a local regardless of its type selector.
+LD32: is ld_disp { local v:4 = *[ram]:4 (fp - ld_disp); export v; }
+# A local's type selects the width of an access through tA.
+LTR: is ld_type=1 { local v:4 = sext(*[ram]:2 tA); export v; }
+LTR: is ld_type=2 { local v:4 = *[ram]:4 tA; export v; }
+LTR: is ld_type { local v:4 = sext(*[ram]:1 tA); export v; }
+LTW: is ld_type=1 { *[ram]:2 tA = tV:2; }
+LTW: is ld_type=2 { *[ram]:4 tA = tV; }
+LTW: is ld_type { *[ram]:1 tA = tV:1; }
+
+# A plain 16-bit displacement naming a local DWORD or its address.
+LOC: "[fp-"^u16^"]" is u16 { local a:4 = fp - u16; export a; }
+LOC32: is u16 { local v:4 = *[ram]:4 (fp - u16); export v; }
+
+# Globals: absolute descriptor addresses with a type selector.
+GSZ: ".1" is gd_type=0 { }
+GSZ: ".2" is gd_type=1 { }
+GSZ: ".4" is gd_type=2 { }
+GSZ: ".1" is gd_type=3 { }
+GREF: "["^gd_addr^"]"^GSZ is gd_addr & GSZ { export *[ram]:1 gd_addr; }
+GDR: is gd_addr & gd_type=1 { local v:4 = sext(*[ram]:2 gd_addr:4); export v; }
+GDR: is gd_addr & gd_type=2 { local v:4 = *[ram]:4 gd_addr:4; export v; }
+GDR: is gd_addr & gd_type { local v:4 = sext(*[ram]:1 gd_addr:4); export v; }
+
+# Second plain-local and signed-16 operands for instructions using two.
+LOC2: "[fp-"^u16^"]" is u16 { local a:4 = fp - u16; export a; }
+LOC32_2: is u16 { local v:4 = *[ram]:4 (fp - u16); export v; }
+s16a: s16 is s16 { export *[const]:4 s16; }
+
+ABS: u32 is u32 { export *[ram]:4 u32; }
+
+# ---------------------------------------------------------------------------
+# Operators on tL/tR
+
+# Arithmetic selectors 0..10; others produce INT_MIN.
+AOP: "add" is ctl_op5=0 { local r:4 = tL + tR; export r; }
+AOP: "sub" is ctl_op5=1 { local r:4 = tL - tR; export r; }
+AOP: "mul" is ctl_op5=2 { local r:4 = tL * tR; export r; }
+AOP: "div" is ctl_op5=3 { local r:4 = tL s/ tR; export r; }
+AOP: "mod" is ctl_op5=4 { local r:4 = tL s% tR; export r; }
+AOP: "and" is ctl_op5=5 { local r:4 = tL & tR; export r; }
+AOP: "or" is ctl_op5=6 { local r:4 = tL | tR; export r; }
+AOP: "xor" is ctl_op5=7 { local r:4 = tL ^ tR; export r; }
+AOP: "shl" is ctl_op5=8 { local r:4 = tL << tR; export r; }
+AOP: "shr" is ctl_op5=9 { local r:4 = tL >> tR; export r; }
+AOP: "sar" is ctl_op5=10 { local r:4 = tL s>> tR; export r; }
+AOP: "invalid" is ctl_op5 { local r:4 = 0x80000000; export r; }
+
+# Comparison selectors 0..9; bit operators yield the bit result; others 0.
+COP: "eq" is ctl_op5=0 { local r:4 = zext(tL == tR); export r; }
+COP: "ne" is ctl_op5=1 { local r:4 = zext(tL != tR); export r; }
+COP: "lt" is ctl_op5=2 { local r:4 = zext(tL s< tR); export r; }
+COP: "le" is ctl_op5=3 { local r:4 = zext(tL s<= tR); export r; }
+COP: "ge" is ctl_op5=4 { local r:4 = zext(tL s>= tR); export r; }
+COP: "gt" is ctl_op5=5 { local r:4 = zext(tL s> tR); export r; }
+COP: "band" is ctl_op5=6 { local r:4 = tL & tR; export r; }
+COP: "bor" is ctl_op5=7 { local r:4 = tL | tR; export r; }
+COP: "land" is ctl_op5=8 { local r:4 = zext((tL != 0) && (tR != 0)); export r; }
+COP: "lor" is ctl_op5=9 { local r:4 = zext((tL != 0) || (tR != 0)); export r; }
+COP: "never" is ctl_op5 { local r:4 = 0; export r; }
+
+# Calculate-and-store selector: bit 5 chooses comparison, bits 6-7 the store width.
+UOP: AOP is ctl_cmp=0 & AOP { export AOP; }
+UOP: COP is ctl_cmp=1 & COP { export COP; }
+USZ: ".1" is ctl_type=0 { }
+USZ: ".2" is ctl_type=1 { }
+USZ: ".4" is ctl_type=2 { }
+USZ: ".1" is ctl_type=3 { }
+UW: is ctl_type=1 { *[ram]:2 tA = tV:2; }
+UW: is ctl_type=2 { *[ram]:4 tA = tV; }
+UW: is ctl_type { *[ram]:1 tA = tV:1; }
+
+# Compare-and-branch (37/3b): bit 7 jumps when the comparison holds.
+JCC: "jt."^COP is ctl_true=1 & COP { export COP; }
+JCC: "jf."^COP is ctl_true=0 & COP { local r:4 = zext(COP == 0); export r; }
+
+# ---------------------------------------------------------------------------
+# Repeated operands
+
+# 03: push a list of varints. PS (cell sd + ri - 1) and ES (cell sd - ri) are generated with
+# one constructor per ri: operand expressions read the context as it is after the whole
+# instruction is parsed, but constructor selection sees the value at that recursion level.
+PLIST: is rc=0 { }
+# Context-only operands go after the variable-length one: the next operand is placed
+# after the first operand of an &-group.
+PLIST: ","^VI^PLIST is rc!=0 & VI & PS; PLIST [ ri = ri + 1; rc = rc - 1; ] { PS = VI; build PLIST; }
+
+# 0b: inline bytes copied from the instruction stream.
+IBYTES: is rc=0 { }
+IBYTES: is rc!=0 & ib; IBYTES [ rc = rc - 1; ] { }
+
+# e2: pop into a list of locals; e3: push a list of locals.
+ELPOP: is rc=0 { }
+ELPOP: ","^LDA^ELPOP is rc!=0 & LDA & LDW & ES; ELPOP [ ri = ri + 1; rc = rc - 1; ]
+  { tV = ES; build LDW; build ELPOP; }
+ELPUSH: is rc=0 { }
+ELPUSH: ","^LDA^ELPUSH is rc!=0 & LDA & LDR & PS; ELPUSH [ ri = ri + 1; rc = rc - 1; ]
+  { PS = LDR; build ELPUSH; }
+
+# ---------------------------------------------------------------------------
+# Function entry: the first instruction of an analyzed function also copies the
+# parameters P0.. into the operand-stack cells below the entry depth. This wraps
+# whichever instruction is there; ENTRY selects on fn, which only entries carry.
+
+:^instruction is fe=1 & ENTRY & instruction [ fe = 0; ] { build ENTRY; build instruction; }
+
+# ---------------------------------------------------------------------------
+# Constants and addresses
+
+:push s8 is op=0x00; s8 & Q0 { Q0 = s8; }
+:push s16 is op=0x01; s16 & Q0 { Q0 = s16; }
+:push u32 is op=0x02; u32 & Q0 { Q0 = u32; }
+:push s8 is op=0x03; ctl=0x80; s8 & Q0 { Q0 = s8; }
+:push s16 is op=0x03; ctl=0x81; s16 & Q0 { Q0 = s16; }
+:push u32 is op=0x03; ctl=0x82; u32 & Q0 { Q0 = u32; }
+:push u64lo is op=0x03; ctl=0x83; u64lo & Q0 { Q0 = u64lo; }
+:pushn VI^PLIST is op=0x03; ctl & ctl_true=0; VI & Q0; PLIST [ rc = ctl; ri = 1; ] { Q0 = VI; build PLIST; }
+:nop.03 ctl is op=0x03; ctl { }
+:push.la LOC is op=0x04; LOC & Q0 { Q0 = LOC; }
+:push.da DATA is op=0x05; DATA & Q0 { Q0 = &DATA; }
+:push.ca REL is op=0x06; REL & Q0 { Q0 = &REL; }
+
+# ---------------------------------------------------------------------------
+# Memory
+
+:load^TBS is op=0x08 & T1; TBS & TBR { tA = T1; build TBR; T1 = TBR; }
+@if REV == "1685"
+:store^TBS is op=0x09 & T1 & T2; TBS & TBW { tV = T1; tA = T2; build TBW; }
+@else
+# Earlier revisions push the stored value back.
+:store^TBS is op=0x09 & T1 & T2; TBS & TBW { tV = T1; tA = T2; build TBW; T2 = tV; }
+@endif
+:store.r^TBS is op=0x0a & T1 & T2; TBS & TBW { tA = T1; tV = T2; build TBW; }
+:store.inline cnt is op=0x0b & T1; cnt; IBYTES [ rc = cnt; ]
+  { copy_inline(T1, inst_start + 2:4, cnt:4); }
+:store.i^TSZ TV is op=0x0d & T1; TSZ ... & TVW ... & TV { tA = T1; tV = TV; build TVW; }
+:mov LOC^TSZ, TV is op=0x0e; LOC; TSZ ... & TVW ... & TV { tA = LOC; tV = TV; build TVW; }
+:pop LDA is op=0x0f & T1; LDA & LDW { tV = T1; build LDW; }
+:push GREF is op=0x18; GREF & GDR & Q0 { Q0 = GDR; }
+:push LDA is op=0x19; LDA & LDR & Q0 { Q0 = LDR; }
+:push.add LDA, VI is op=0x1a; LDA & LDR; VI & Q0 { Q0 = LDR + VI; }
+:push.madd LDA, VI is op=0x1b & T1; LDA & LDR; VI { T1 = LDR * VI + T1; }
+:push.shift LDA, s8 is op=0x1c; LDA & LDR; s8 & s8neg=0 & Q0 { Q0 = LDR << s8; }
+:push.shift LDA, s8 is op=0x1c; LDA & LDR; s8 & s8neg=1 & Q0 { local n:4 = -s8; Q0 = LDR s>> n; }
+:push.mul LDA is op=0x1d & T1; LDA & LDR { T1 = LDR * T1; }
+:push.div LDA is op=0x1e & T1; LDA & LDR { T1 = T1 s/ LDR; }
+:load.off^TSZ TV is op=0x1f & T1; TSZ ... & TVR ... & TV { tA = T1 + TV; build TVR; T1 = TVR; }
+
+:load.local^TSZ LDA, TV is op=0xe4; LDA & LDR; TSZ ... & TVR ... & TV & Q0 { tA = LDR + TV; build TVR; Q0 = TVR; }
+:load.index^TSZ LDA, TV is op=0xe5 & T1; LDA & LDR; TSZ ... & TVR ... & TV { tA = T1 + LDR * TV; build TVR; T1 = TVR; }
+:store.add^TSZ LDA, TV is op=0xe6 & T1; LDA & LDR; TSZ ... & TVW ... & TV { tA = T1; tV = LDR + TV; build TVW; }
+:store.madd^TSZ LDA, TV is op=0xe7 & T1 & T2; LDA & LDR; TSZ ... & TVW ... & TV
+  { tA = T2; tV = LDR * TV + T1; build TVW; }
+:select LDA is op=0xe8 & T1 & T2 & T3; LDA & LDW
+  { tV = T2; if (T3 != 0) goto <done>; tV = T1; <done> build LDW; }
+:store.field LDA, u16 is op=0xe9 & T1; LDA & LD32 & LTW; u16
+  { tA = LD32 + u16; tV = T1; build LTW; }
+:mov.field LDA, u16, VI is op=0xea; LDA & LD32 & LTW; u16; VI
+  { tA = LD32 + u16; tV = VI; build LTW; }
+:copy VI is op=0xec & T1 & T2; VI { memory_copy(T2, T1, VI); }
+:copy.local LOC, VI is op=0xed & T1; LOC; VI { memory_copy(T1, LOC, VI); }
+
+:mov ABS, LDA, VI is op=0xf0; ABS; LDA & LD32 & LTW; VI
+  { tA = &ABS; tV = LD32 + VI; build LTW; }
+:mov LOC, LDA, VI is op=0xf1; LOC; LDA & LD32 & LTW; VI
+  { tA = LOC; tV = LD32 + VI; build LTW; }
+:mov.field LOC, u16, LDA, VI is op=0xf2; LOC & LOC32; u16; LDA & LD32 & LTW; VI
+  { tA = LOC32 + u16; tV = LD32 + VI; build LTW; }
+:mov.madd LOC, u32, LDA, s16 is op=0xf4; LOC; u32; LDA & LD32 & LTW; s16
+  { tA = LOC; tV = LD32 * s16 + u32; build LTW; }
+:mov.madd LOC, LOC2, s16a, LDA, s16 is op=0xf5; LOC; LOC2 & LOC32_2; s16a; LDA & LD32 & LTW; s16
+  { tA = LOC; tV = LD32 * s16 + LOC32_2 + s16a; build LTW; }
+:push.field.madd LDA, u16, s16 is op=0xf7 & T1; LDA & LD32 & LTR; u16; s16
+  { tA = LD32 + u16; build LTR; T1 = LTR * s16 + T1; }
+:push.madd u32, LOC, s16 is op=0xf8; u32; LOC & LOC32; s16 & Q0 { Q0 = LOC32 * s16 + u32; }
+:push.madd LOC, s16a, LOC2, s16 is op=0xf9; LOC & LOC32; s16a; LOC2 & LOC32_2; s16 & Q0
+  { Q0 = LOC32_2 * s16 + LOC32 + s16a; }
+:push.index u32, LDA, s16 is op=0xfa; u32; LDA & LD32 & LTR; s16 & Q0
+  { tA = LD32 * s16 + u32; build LTR; Q0 = LTR; }
+:push.index LOC, LDA, s16 is op=0xfb; LOC; LDA & LD32 & LTR; s16 & Q0
+  { tA = LD32 * s16 + LOC; build LTR; Q0 = LTR; }
+
+:store.seq cnt is op=0x0c; stt; cnt { store_sequence(stt:4, cnt:4); }
+
+:pop LDA^ELPOP is op=0xe2; cnt; LDA & LDW & T1; ELPOP [ rc = cnt; ri = 1; ]
+  { tV = T1; build LDW; build ELPOP; }
+:push LDA^ELPUSH is op=0xe3; cnt; LDA & LDR & Q0; ELPUSH [ rc = cnt; ri = 1; ]
+  { Q0 = LDR; build ELPUSH; }
+
+# ---------------------------------------------------------------------------
+# Frame and control flow
+
+:push.fp is op=0x10 & Q0 { Q0 = fp - $(FRAME_TAG); }
+:pop.fp is op=0x11 & T1 { fp = T1 + $(FRAME_TAG); }
+:frame VI is op=0x12; VI { fp = fp + VI; }
+:jmp REL is op=0x13; REL { goto REL; }
+:jmp JREL is op=0x14 & jk=1 & JREL { goto JREL; }
+:jmp.ind is op=0x14 & T1 { goto [T1]; }
+
+@if REV == "1685" || REV == "1665"
+CND: "nz" is ctl_cond=0 { local r:1 = tV != 0; export r; }
+CND: "z" is ctl_cond=1 { local r:1 = tV == 0; export r; }
+CND: "gt" is ctl_cond=2 { local r:1 = tV s> 0; export r; }
+CND: "ge" is ctl_cond=3 { local r:1 = tV s>= 0; export r; }
+CND: "le" is ctl_cond=4 { local r:1 = tV s<= 0; export r; }
+CND: "lt" is ctl_cond=5 { local r:1 = tV s< 0; export r; }
+CND: "invalid" is ctl_cond { local r:1 = 0; export r; }
+:j^CND REL is op=0x15 & T1; ctl_rel=1 & CND; REL { tV = T1; build CND; if (CND) goto REL; }
+:j^CND JREL is op=0x15 & T2 & jk=1 & JREL; ctl_rel=0 & CND
+  { tV = T2; build CND; if (CND) goto JREL; }
+:j^CND^".ind" is op=0x15 & T1 & T2; ctl_rel=0 & CND
+  { tV = T2; build CND; if (!CND) goto inst_next; goto [T1]; }
+@else
+# The legacy selector is the complete byte and the target is always popped.
+CND: "nz" is ctl=0 { local r:1 = tV != 0; export r; }
+CND: "z" is ctl=1 { local r:1 = tV == 0; export r; }
+CND: "gt" is ctl=2 { local r:1 = tV s> 0; export r; }
+CND: "ge" is ctl=3 { local r:1 = tV s>= 0; export r; }
+CND: "le" is ctl=4 { local r:1 = tV s<= 0; export r; }
+CND: "lt" is ctl=5 { local r:1 = tV s< 0; export r; }
+CND: "invalid" is ctl { local r:1 = 0; export r; }
+:j^CND JREL is op=0x15 & T2 & jk=1 & JREL; CND
+  { tV = T2; build CND; if (CND) goto JREL; }
+:j^CND^".ind" is op=0x15 & T1 & T2; CND
+  { tV = T2; build CND; if (!CND) goto inst_next; goto [T1]; }
+@endif
+
+:call JREL is op=0x16 & jk=1 & JREL & ARGSI & RETSI
+  { build ARGSI; ra = inst_next; call JREL; build RETSI; }
+:call.ind is op=0x16 & T1 & ARGSI & RETSI
+  { build ARGSI; ra = inst_next; call [T1]; build RETSI; }
+:ret is op=0x17 & RETV { build RETV; return [ra]; }
+:call REL is op=0xee; REL & ARGS & RETS
+  { build ARGS; ra = inst_next; call REL; build RETS; }
+:call GREF is op=0xef; GREF & GDR & ARGS & RETS
+  { build ARGS; ra = inst_next; local t:4 = GDR; call [t]; build RETS; }
+
+:^JCC VI, REL is op=0x37 & T1; JCC; REL; VI { tL = T1; tR = VI; build JCC; if (JCC != 0) goto REL; }
+:^JCC REL is op=0x3b & T1 & T2; JCC; REL { tL = T2; tR = T1; build JCC; if (JCC != 0) goto REL; }
+
+# ---------------------------------------------------------------------------
+# Integer arithmetic
+
+:add is op=0x20 & T1 & T2 { T2 = T2 + T1; }
+:sub is op=0x21 & T1 & T2 { T2 = T2 - T1; }
+:mul is op=0x22 & T1 & T2 { T2 = T2 * T1; }
+:div is op=0x23 & T1 & T2 { T2 = T2 s/ T1; }
+:mod is op=0x24 & T1 & T2 { T2 = T2 s% T1; }
+:and is op=0x25 & T1 & T2 { T2 = T2 & T1; }
+:or is op=0x26 & T1 & T2 { T2 = T2 | T1; }
+:xor is op=0x27 & T1 & T2 { T2 = T2 ^ T1; }
+:not is op=0x28 & T1 { T1 = ~T1; }
+:shl is op=0x29 & T1 & T2 { T2 = T2 << T1; }
+:shr is op=0x2a & T1 & T2 { T2 = T2 >> T1; }
+:sar is op=0x2b & T1 & T2 { T2 = T2 s>> T1; }
+:add VI is op=0x2c & T1; VI { T1 = T1 + VI; }
+:mul VI is op=0x2d & T1; VI { T1 = T1 * VI; }
+:madd VI is op=0x2e & T1 & T2; VI { T2 = T1 * VI + T2; }
+:div VI is op=0x2f & T1; VI { T1 = T1 s/ VI; }
+:eq is op=0x30 & T1 & T2 { T2 = zext(T2 == T1); }
+:ne is op=0x31 & T1 & T2 { T2 = zext(T2 != T1); }
+:le is op=0x32 & T1 & T2 { T2 = zext(T2 s<= T1); }
+:ge is op=0x33 & T1 & T2 { T2 = zext(T2 s>= T1); }
+:lt is op=0x34 & T1 & T2 { T2 = zext(T2 s< T1); }
+:gt is op=0x35 & T1 & T2 { T2 = zext(T2 s> T1); }
+:cmp.^COP VI is op=0x36 & T1; COP; VI { tL = T1; tR = VI; build COP; T1 = COP; }
+:land is op=0x38 & T1 & T2 { T2 = zext((T2 != 0) && (T1 != 0)); }
+:lor is op=0x39 & T1 & T2 { T2 = zext((T2 != 0) || (T1 != 0)); }
+:lnot is op=0x3a & T1 { T1 = zext(T1 == 0); }
+:shift s8 is op=0x3c & T1; s8 & s8neg=0 { T1 = T1 << s8; }
+:shift s8 is op=0x3c & T1; s8 & s8neg=1 { local n:4 = -s8; T1 = T1 s>> n; }
+:update^USZ UOP is op=0x3e & T1 & T2 & T3; USZ & UOP & UW
+  { tR = T1; tL = T2; tA = T3; build UOP; tV = UOP; build UW; }
+:update^USZ UOP, VI is op=0x3f & T1 & T2; USZ & UOP & UW; VI
+  { tR = VI; tL = T1; tA = T2; build UOP; tV = UOP; build UW; }
+:select is op=0x40 & T1 & T2 & T3 { tV = T2; if (T3 != 0) goto <done>; tV = T1; <done> T3 = tV; }
+:muldiv is op=0x42 & T1 & T2 & T3 { local q:8 = (sext(T3) * sext(T2)) s/ sext(T1); T3 = q:4; }
+:drop is op=0x73 & T1 { }
+
+# ---------------------------------------------------------------------------
+# Fixed point, 64-bit and vector arithmetic
+
+:angle is op=0x43 & T1 & T2 { T2 = vector_angle(T2, T1); }
+:length3 is op=0x44 & T1 & T2 & T3 { T3 = vector_length(T3, T2, T1); }
+:rotate3 is op=0x45 & T1 & T2 & T3 & T4 & T5 { vector_rotate(T5, T4, T3, T2, T1); }
+:lerp is op=0x46 & T1 & T2 & T3 & T4 { T4 = lerp_ratio(T4, T3, T2, T1); }
+:lerp.fx is op=0x47 & T1 & T2 & T3 { T3 = lerp_fixed(T3, T2, T1); }
+:sin.fx is op=0x48 & T1 { T1 = fixed_sin(T1); }
+:cos.fx is op=0x49 & T1 { T1 = fixed_cos(T1); }
+:add64 is op=0x50 & T1 & T2 & T3 { *[ram]:8 T3 = *[ram]:8 T2 + *[ram]:8 T1; }
+:sub64 is op=0x51 & T1 & T2 & T3 { *[ram]:8 T3 = *[ram]:8 T2 - *[ram]:8 T1; }
+:mul64 is op=0x52 & T1 & T2 & T3 { *[ram]:8 T3 = *[ram]:8 T2 * *[ram]:8 T1; }
+:div64 is op=0x53 & T1 & T2 & T3 { *[ram]:8 T3 = *[ram]:8 T2 s/ *[ram]:8 T1; }
+:mod64 is op=0x54 & T1 & T2 & T3 { *[ram]:8 T3 = *[ram]:8 T2 s% *[ram]:8 T1; }
+:pow.fx is op=0x55 & T1 & T2 { T2 = fixed_pow(T2, T1); }
+:mul.fx is op=0x56 & T1 & T2 { local q:8 = (sext(T2) * sext(T1)) s>> 16; T2 = q:4; }
+:div.fx is op=0x57 & T1 & T2 { T2 = fixed_div(T2, T1); }
+:vadd is op=0x58 & T1 & T2 & T3 { vector_add(T3, T2, T1); }
+:vsub is op=0x59 & T1 & T2 & T3 { vector_sub(T3, T2, T1); }
+:vmul.fx is op=0x5a & T1 & T2 & T3 { vector_mul_fixed(T3, T2, T1); }
+:vdiv.fx is op=0x5b & T1 & T2 & T3 { vector_div_fixed(T3, T2, T1); }
+:vnorm is op=0x5d & T1 & T2 { vector_normalize(T2, T1); }
+:vscale.fx is op=0x5e & T1 & T2 & T3 { vector_scale_fixed(T3, T2, T1); }
+:vdiv.s.fx is op=0x5f & T1 & T2 & T3 { vector_div_scalar_fixed(T3, T2, T1); }
+
+# ---------------------------------------------------------------------------
+# Bulk memory, text and heap
+
+:memcpy is op=0x60 & T1 & T2 & T3 { memory_copy(T3, T2, T1); }
+:memzero is op=0x61 & T1 & T2 { memory_zero(T2, T1); }
+:memset is op=0x62 & T1 & T2 & T3 { memory_set(T3, T2, T1); }
+:memeq is op=0x63 & T1 & T2 & T3 { T3 = memory_equal(T3, T2, T1); }
+:memfill is op=0x64 & T1 & T2 & T3 & T4 { memory_fill(T4, T3, T2, T1); }
+:memfind is op=0x65 & T1 & T2 & T3 & T4 { T4 = memory_find(T4, T3, T2, T1); }
+:strfind is op=0x66 & T1 & T2 { T2 = text_find(T2, T1); }
+:strreplace is op=0x67 & T1 & T2 & T3 & T4 { T4 = text_replace(T4, T3, T2, T1); }
+:strlen is op=0x68 & T1 { T1 = text_length(T1); }
+:streq is op=0x69 & T1 & T2 { T2 = text_equal(T2, T1); }
+:strcpy is op=0x6a & T1 & T2 { text_copy(T2, T1); }
+:strcat is op=0x6b & T1 & T2 & T3 { text_concat(T3, T2, T1); }
+:strchar is op=0x6c & T1 & Q0 & Q1 & Q2
+  { tA = T1; T1 = text_character(tA, 0:4); Q0 = text_character(tA, 1:4);
+    Q1 = text_character(tA, 2:4); Q2 = text_character(tA, 3:4); }
+:strlower is op=0x6d & T1 { text_lowercase(T1); }
+:strwrap is op=0x6e & T1 & T2 & T3 { text_wrap(T3, T2, T1); }
+:sprintf is op=0x6f & FMT { build FMT; }
+:alloc is op=0x70 & T1 { T1 = heap_alloc(T1); }
+:free is op=0x71 & T1 { T1 = heap_free(T1); }
+
+# ---------------------------------------------------------------------------
+# Host services with fixed operands
+
+:watch.enable is op=0x74 & T1 { write_watch_enable(T1); }
+:watch.add is op=0x75 & T1 & T2 & T3 { T3 = write_watch_add(T3, T2, T1); }
+:display.categories is op=0x77 & T1 { T1 = display_category_count(T1); }
+:confirm is op=0x78 & T1 & T2 { T2 = confirm_dialog(T2, T1); }
+:show.text is op=0x79 & T1 { show_text(T1); }
+:show.number is op=0x7a & T1 { show_number(T1); }
+:dump is op=0x7b & T1 & T2 & T3 { dump_memory(T3, T2, T1); }
+:choosefont is op=0x7c & T1 & T2 { T2 = choose_font(T2, T1); }
+:drawhex is op=0x7d & T1 & T2 & T3 & T4 & T5 & T6 & T7 { draw_hex(T7, T6, T5, T4, T3, T2, T1); }
+:clipboard is op=0x7e & T1 { T1 = copy_to_clipboard(T1); }
+@if REV == "1658"
+:verify is op=0x7f & T1 & T2 { verification_message(T2, T1); }
+@endif
+@if REV == "1520"
+:reduce.half is op=0x7f & T1 & T2 { reduce_bitmap_half(T2, T1); }
+@endif
+
+# ---------------------------------------------------------------------------
+# Module extensions
+
+:ext.register is op=0xff; sec=0xf0 & T1 & T2 & T3 { register_extension(T3, T2, T1); }
+:ext.unregister is op=0xff; sec=0xf1 & T1 { unregister_extension(T1); }
+:ext.return is op=0xff; sec=0xf8 & RETV
+  { build RETV; return [ra]; }
+:ext.call sec is op=0xff; sec & ARGS & RETS
+  { build ARGS; ra = inst_next; R0 = call_extension(sec:1); build RETS; }
