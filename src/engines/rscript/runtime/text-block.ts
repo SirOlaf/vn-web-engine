@@ -23,12 +23,17 @@ export const DEFAULT_FACES: readonly string[] = ['ＭＳ ゴシック', 'ＭＳ 
  * (0x457200).
  */
 export interface GlyphRasterizer {
+  /**
+   * `vertical` draws with the face's `@` variant and turns the cell clockwise (0x4566A0):
+   * full-width cells stay `size` square, half-width ones become `size` wide.
+   */
   rasterize(
     code: number,
     size: number,
     face: number,
     bold: boolean,
     italic: boolean,
+    vertical?: boolean,
   ): GlyphCoverage;
   /** sub_456F60: appends a face and returns its index. */
   addFace(name: string): number;
@@ -90,6 +95,11 @@ export interface TextStyle {
   rubySize: number;
   rubyRaise: number;
   /**
+   * Vertical writing (+432, set with the face by 0x459A10): glyphs come from the face's `@`
+   * variant, columns run top to bottom from the right, and ruby sits right of its column.
+   */
+  vertical?: boolean;
+  /**
    * The plain text object (0x44BD50, laid out by 0x44D490) sits each glyph's baseline on
    * the bottom of its `size`-high line, `size - ascent` pixels below where message text
    * (0x45AF80) puts it.
@@ -101,6 +111,7 @@ interface Glyph {
   sprite: RScriptSprite;
   /** Decoded character(s): one, or the two of a half-width pair. */
   text: string;
+  /** The cell's width and height (glyph +112, +114): its advance across and down. */
   advance: number;
   height: number;
   /** Extra downward offset from `baselineAtBottom`. */
@@ -167,12 +178,12 @@ export class RScriptTextBlock extends RScriptContainer {
     color: number,
   ): RScriptSurface {
     const pair = PAIRS.has(code);
-    const width = code < 0x100 ? size >> 1 : size;
-    const cell = createSurface(width, size, 0xff000000);
+    const {width, height} = this.cellSize(code, size);
+    const cell = createSurface(width, height, 0xff000000);
     // sub_442390 fills the glyph with the colour as a raw 0xRRGGBB pixel, not a COLORREF.
     const pixel = color & 0xffffff;
     const draw = (coverage: GlyphCoverage, offset: number): void => {
-      for (let y = 0; y < Math.min(coverage.height, size); y++)
+      for (let y = 0; y < Math.min(coverage.height, height); y++)
         for (let x = 0; x < coverage.width && x + offset < width; x++) {
           const v = coverage.levels[y * coverage.width + x]!;
           if (v)
@@ -180,18 +191,28 @@ export class RScriptTextBlock extends RScriptContainer {
               (pixel | ((255 - Math.trunc((255 * v) / 65)) << 24)) >>> 0;
         }
     };
+    const vertical = !!this.style.vertical;
     if (pair) {
+      // A half-width pair stays side by side in its full-width cell, upright in columns too.
       draw(this.rasterizer.rasterize(code >>> 8, size, face, bold, italic), 0);
       draw(this.rasterizer.rasterize(code & 0xff, size, face, bold, italic), size >> 1);
-    } else draw(this.rasterizer.rasterize(code, size, face, bold, italic), 0);
+    } else draw(this.rasterizer.rasterize(code, size, face, bold, italic, vertical), 0);
     if (!this.style.shadow) return cell;
     const dx = Math.trunc(width / 12),
-      dy = Math.trunc(size / 12);
-    const out = createSurface(width + dx, size + dy, 0xff000000);
-    const shadow = {width, height: size, data: cell.data.map((p) => p & 0xff000000)};
+      dy = Math.trunc(height / 12);
+    const out = createSurface(width + dx, height + dy, 0xff000000);
+    const shadow = {width, height, data: cell.data.map((p) => p & 0xff000000)};
     compositeOver(out, shadow, dx, dy);
     compositeOver(out, cell, 0, 0);
     return out;
+  }
+
+  /** Cell of a character (0x4566A0): half-width cells lie on their side in columns. */
+  private cellSize(code: number, size: number): {width: number; height: number} {
+    if (code >= 0x100 || PAIRS.has(code)) return {width: size, height: size};
+    return this.style.vertical
+      ? {width: size, height: size >> 1}
+      : {width: size >> 1, height: size};
   }
 
   private addGlyph(
@@ -208,15 +229,15 @@ export class RScriptTextBlock extends RScriptContainer {
     sprite.setSurface(this.glyphSurface(code, size, face, bold, italic, color));
     this.add(sprite, 0);
     let drop = 0;
-    if (this.style.baselineAtBottom) {
+    if (this.style.baselineAtBottom && !this.style.vertical) {
       const lead = PAIRS.has(code) ? code >>> 8 : code;
       drop = size - (this.rasterizer.rasterize(lead, size, face, bold, italic).ascent ?? size);
     }
     this.glyphs.push({
       sprite,
       text: decodeCp932(code > 0xff ? Uint8Array.of(code >>> 8, code & 0xff) : Uint8Array.of(code)),
-      advance: code < 0x100 && !PAIRS.has(code) ? size >> 1 : size,
-      height: size,
+      advance: this.cellSize(code, size).width,
+      height: this.cellSize(code, size).height,
       drop,
       newline: this.newlineNext,
       kinsoku: HANGING.has(code) ? 1 : OPENING.has(code) ? 2 : 0,
@@ -358,8 +379,68 @@ export class RScriptTextBlock extends RScriptContainer {
     return this.fits;
   }
 
-  /** Horizontal layout (0x45AF80); returns false when a line exceeds the area height. */
+  /** Layout (0x45AF80); returns false when the text does not fit the area. */
   private layout(): boolean {
+    return this.style.vertical ? this.layoutVertical() : this.layoutHorizontal();
+  }
+
+  /**
+   * The vertical branch of 0x45AF80: columns from the right edge, each as tall as the area.
+   * A glyph that would pass the bottom starts the next column, with the same kinsoku rules
+   * as rows; `align` centres each column. Fails when a column passes the left edge.
+   */
+  private layoutVertical(): boolean {
+    const {width, height, lineSpacing, charSpacing, align, size} = this.style;
+    const glyphs = this.glyphs;
+    let index = 0,
+      x = lineSpacing;
+    for (;;) {
+      const start = index;
+      let y = 0,
+        hung = false,
+        last = false;
+      for (;;) {
+        if (index === glyphs.length) {
+          last = true;
+          break;
+        }
+        const glyph = glyphs[index]!;
+        const end = y + glyph.height;
+        if (end > height) {
+          if (y === 0) return false;
+          if (glyph.kinsoku === 1 && !hung) hung = true;
+          else {
+            if (index > start + 1 && glyphs[index - 1]!.kinsoku === 2) index--;
+            break;
+          }
+        }
+        index++;
+        y = end + charSpacing;
+        if (glyphs[index]?.newline) break;
+      }
+      let columnWidth = 0,
+        total = 0;
+      for (let i = start; i < index; i++) {
+        columnWidth = Math.max(columnWidth, glyphs[i]!.advance);
+        total += glyphs[i]!.height;
+      }
+      let cursor = align ? (height - total) >> 1 : 0;
+      for (let i = start; i < index; i++) {
+        const glyph = glyphs[i]!;
+        glyph.sprite.setPosition(width - x - columnWidth, cursor);
+        cursor += charSpacing + glyph.height;
+      }
+      if (last) {
+        for (let i = 0; i < glyphs.length; i++) this.placeRuby(i);
+        return true;
+      }
+      x += lineSpacing + columnWidth;
+      if (x + size > width) return false;
+    }
+  }
+
+  /** The horizontal branch of 0x45AF80; false when a line exceeds the area height. */
+  private layoutHorizontal(): boolean {
     const {width, height, lineSpacing, charSpacing, indent, firstIndent, align, size} = this.style;
     const glyphs = this.glyphs;
     const firstLine = lineSpacing === 0 ? 1 : 0;
@@ -406,10 +487,18 @@ export class RScriptTextBlock extends RScriptContainer {
     return fits;
   }
 
-  /** 0x461160 without the line-wrap split: spread over the base span, or centre if wider. */
+  /**
+   * 0x461160 (rows) and 0x4613A0 (columns) without the line-wrap split: spread over the base
+   * span, or centred when wider. In columns the ruby's right edge is the raise past the base
+   * column's right edge.
+   */
   private placeRuby(index: number): void {
     const base = this.glyphs[index]!;
     if (!base.ruby?.length) return;
+    if (this.style.vertical) {
+      this.placeRubyVertical(base);
+      return;
+    }
     const first = base.sprite,
       last = this.glyphs[base.rubyEnd]!;
     const span = last.sprite.x + last.advance - first.x;
@@ -427,6 +516,30 @@ export class RScriptTextBlock extends RScriptContainer {
       for (const sprite of base.ruby) {
         sprite.setPosition(x, y);
         x += sprite.width;
+      }
+    }
+  }
+
+  /** 0x4613A0: ruby down the right side of the base glyphs of a column. */
+  private placeRubyVertical(base: Glyph): void {
+    const ruby = base.ruby!;
+    const first = base.sprite,
+      last = this.glyphs[base.rubyEnd]!;
+    const span = last.sprite.y + last.height - first.y;
+    const total = ruby.reduce((n, s) => n + s.height, 0);
+    const right = first.x + base.advance + this.style.rubyRaise;
+    if (total <= span) {
+      const step = Math.trunc(span / ruby.length);
+      let y = first.y + Math.trunc(step / 2);
+      for (const sprite of ruby) {
+        sprite.setPosition(right - sprite.width, y - Math.trunc(sprite.height / 2));
+        y += step;
+      }
+    } else {
+      let y = first.y - Math.trunc((total - span) / 2);
+      for (const sprite of ruby) {
+        sprite.setPosition(right - sprite.width, y);
+        y += sprite.height;
       }
     }
   }

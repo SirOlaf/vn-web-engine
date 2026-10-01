@@ -1,5 +1,6 @@
 import type {RScriptRect, RScriptSurface} from '../graphics/pixels.js';
 import type {RScriptPresenter} from '../runtime/display.js';
+import {gdiVerticalCell, gdiVerticalForms} from '../../../text/gdi-vertical-forms.js';
 import {DEFAULT_FACES, type GlyphCoverage, type GlyphRasterizer} from '../runtime/text-block.js';
 
 /** Presents native frames on a 2D canvas the size of the game screen. */
@@ -96,6 +97,8 @@ const PROBE_SIZE = 256;
 /** A face as CreateFont sees it: `size` is the cell height, ascent plus descent. */
 interface CanvasFace {
   readonly families: string;
+  /** Which vertical alternates the face's `@` variant has. */
+  readonly design: 'mincho' | 'gothic';
   /** CSS font size per pixel of cell height. */
   readonly em: number;
   /** The ascent's share of the cell (tmAscent / tmHeight). */
@@ -147,7 +150,8 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
   private face(name: string): CanvasFace {
     let face = this.known.get(name);
     if (face) return face;
-    const families = rscriptFontFamilies(name);
+    const families = rscriptFontFamilies(name),
+      design = gdiVerticalForms(name);
     const context = this.context;
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.font = `${PROBE_SIZE}px ${families}`;
@@ -157,9 +161,9 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
     const cell = above + below;
     face =
       Number.isFinite(cell) && cell > 0
-        ? {families, em: PROBE_SIZE / cell, ascent: above / cell}
+        ? {families, design, em: PROBE_SIZE / cell, ascent: above / cell}
         : // MS Gothic's winAscent and winDescent are 220 and 36 of 256 units.
-          {families, em: 1, ascent: 220 / 256};
+          {families, design, em: 1, ascent: 220 / 256};
     this.known.set(name, face);
     return face;
   }
@@ -170,12 +174,17 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
     faceIndex: number,
     bold: boolean,
     italic: boolean,
+    vertical = false,
   ): GlyphCoverage {
     const face = this.faces[faceIndex] ?? this.faces[0]!;
-    const key = `${face.families}:${code}:${size}:${bold ? 1 : 0}${italic ? 1 : 0}`;
+    const key = `${face.families}:${code}:${size}:${bold ? 1 : 0}${italic ? 1 : 0}${vertical ? 'v' : ''}`;
     let glyph = this.cache.get(key);
     if (!glyph) {
-      glyph = this.draw(face, code, size, bold, italic);
+      if (vertical) {
+        const horizontal = this.rasterize(code, size, faceIndex, bold, italic);
+        const bytes = code > 0xff ? Uint8Array.of(code >>> 8, code & 0xff) : Uint8Array.of(code);
+        glyph = gdiVerticalCell(this.decoder.decode(bytes), horizontal, face.design);
+      } else glyph = this.draw(face, code, size, bold, italic);
       if (this.cache.size > 8192) this.cache.clear();
       this.cache.set(key, glyph);
     }
