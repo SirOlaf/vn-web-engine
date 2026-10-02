@@ -1,3 +1,4 @@
+import {ByteView} from '../../../core/binary.js';
 /** ISO/QuickTime sample tables at the browser media boundary, independent of VM timing. */
 export class BurikoIsoSampleError extends Error {
   constructor(message: string) {
@@ -63,53 +64,26 @@ export interface BurikoIsoMovie {
   readonly tracks: readonly BurikoIsoTrack[];
 }
 
-class Reader {
-  readonly view: DataView;
-  constructor(readonly bytes: Uint8Array) {
-    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  }
-  require(at: number, length: number, end = this.bytes.length): void {
-    if (
-      !Number.isSafeInteger(at) ||
-      !Number.isSafeInteger(length) ||
-      at < 0 ||
-      length < 0 ||
-      at + length > end
-    )
-      throw new BurikoIsoSampleError('ISO sample metadata reads beyond its encoded box');
-  }
-  u32(at: number, end?: number): number {
-    this.require(at, 4, end);
-    return this.view.getUint32(at);
-  }
-  i32(at: number, end?: number): number {
-    return this.u32(at, end) | 0;
-  }
-  u64(at: number, end?: number): bigint {
-    this.require(at, 8, end);
-    return this.view.getBigUint64(at);
-  }
-  i64(at: number, end?: number): bigint {
-    return BigInt.asIntN(64, this.u64(at, end));
-  }
-  type(at: number): string {
-    this.require(at, 4);
-    return String.fromCharCode(...this.bytes.subarray(at, at + 4));
+class Reader extends ByteView {
+  constructor(bytes: Uint8Array) {
+    super(bytes, {
+      error: () => new BurikoIsoSampleError('ISO sample metadata reads beyond its encoded box'),
+    });
   }
   boxes(start: number, end: number): BurikoIsoBox[] {
     const result: BurikoIsoBox[] = [];
     for (let at = start; at < end;) {
-      this.require(at, 8, end);
+      this.check(at, 8, end);
       const short = this.u32(at),
-        type = this.type(at + 4),
+        type = this.ascii(at + 4, 4),
         header = short === 1 ? 16 : 8;
-      this.require(at, header, end);
+      this.check(at, header, end);
       const size = short === 0 ? BigInt(end - at) : short === 1 ? this.u64(at + 8) : BigInt(short);
       if (size < BigInt(header) || size > BigInt(end - at))
         throw new BurikoIsoSampleError('Invalid ISO box size');
       const next = at + Number(size),
         body = at + header + (type === 'uuid' ? 16 : 0);
-      this.require(body, 0, next);
+      this.check(body, 0, next);
       result.push({type, start: at, body, end: next});
       at = next;
     }
@@ -140,7 +114,7 @@ class Reader {
     const version = this.full(box, maxVersion) >>> 24,
       count = this.u32(box.body + 4, box.end),
       at = box.body + 8;
-    this.require(at, count * stride, box.end);
+    this.check(at, count * stride, box.end);
     return {count, at, version};
   }
 }
@@ -211,10 +185,10 @@ function readDescriptions(reader: Reader, table: BurikoIsoBox): BurikoIsoDescrip
   if (descriptions.length !== count)
     throw new BurikoIsoSampleError('ISO sample-description count differs from its entries');
   return descriptions.map((entry) => {
-    reader.require(entry.body, 8, entry.end);
+    reader.check(entry.body, 8, entry.end);
     return {
       type: entry.type,
-      dataReference: reader.view.getUint16(entry.body + 6),
+      dataReference: reader.u16(entry.body + 6),
       bytes: reader.bytes.subarray(entry.start, entry.end),
       headerSize: entry.body - entry.start,
     };
@@ -247,19 +221,19 @@ function readSizes(reader: Reader, table: BurikoIsoBox): number[] {
     output: number[] = [];
   if (normal !== undefined) {
     const constant = reader.u32(box.body + 4, box.end);
-    if (constant === 0) reader.require(box.body + 12, count * 4, box.end);
+    if (constant === 0) reader.check(box.body + 12, count * 4, box.end);
     for (let index = 0; index < count; index++)
       output.push(constant || reader.u32(box.body + 12 + index * 4));
   } else {
     const bits = reader.u32(box.body + 4, box.end) & 255;
     if (bits !== 4 && bits !== 8 && bits !== 16)
       throw new BurikoIsoSampleError('Invalid ISO compact sample-size width');
-    reader.require(box.body + 12, Math.ceil((count * bits) / 8), box.end);
+    reader.check(box.body + 12, Math.ceil((count * bits) / 8), box.end);
     for (let index = 0; index < count; index++) {
       const at = box.body + 12 + Math.floor((index * bits) / 8);
       output.push(
         bits === 16
-          ? reader.view.getUint16(at)
+          ? reader.u16(at)
           : bits === 8
             ? reader.bytes[at]!
             : (reader.bytes[at]! >>> ((index & 1) === 0 ? 4 : 0)) & 15,
@@ -312,7 +286,7 @@ function readOrdinarySamples(reader: Reader, table: BurikoIsoBox, track: BurikoI
   const dependency = reader.child(table, 'sdtp');
   if (dependency !== undefined) {
     reader.full(dependency);
-    reader.require(dependency.body + 4, sizes.length, dependency.end);
+    reader.check(dependency.body + 4, sizes.length, dependency.end);
   }
   let sample = 0,
     map = 0,
@@ -372,7 +346,7 @@ function readFragments(
     for (const box of reader.children(extensions))
       if (box.type === 'trex') {
         reader.full(box);
-        reader.require(box.body, 24, box.end);
+        reader.check(box.body, 24, box.end);
         const id = reader.u32(box.body + 4);
         if (defaults.has(id))
           throw new BurikoIsoSampleError('ISO movie repeats track fragment defaults');
@@ -443,7 +417,7 @@ function readFragments(
           Number((runFlags & 0x200) !== 0) +
           Number((runFlags & 0x400) !== 0) +
           Number((runFlags & 0x800) !== 0);
-        reader.require(p, count * fieldCount * 4, run.end);
+        reader.check(p, count * fieldCount * 4, run.end);
         for (let index = 0; index < count; index++) {
           const duration = (runFlags & 0x100) !== 0 ? read() : defaultDuration;
           const size = (runFlags & 0x200) !== 0 ? read() : defaultSize;
@@ -498,7 +472,7 @@ export function readBurikoIsoMovie(bytes: Uint8Array): BurikoIsoMovie {
     if (id === 0 || tracks.some((track) => track.id === id))
       throw new BurikoIsoSampleError('ISO track ID is zero or repeated');
     const matrixAt = tkhd.body + (version === 1 ? 52 : 40);
-    reader.require(matrixAt, 44, tkhd.end);
+    reader.check(matrixAt, 44, tkhd.end);
     const media = reader.required(box, 'mdia'),
       mdhd = reader.required(media, 'mdhd'),
       mediaVersion = reader.full(mdhd, 1) >>> 24;
@@ -507,13 +481,13 @@ export function readBurikoIsoMovie(bytes: Uint8Array): BurikoIsoMovie {
     if (mediaScale === 0) throw new BurikoIsoSampleError('ISO track has a zero timescale');
     const hdlr = reader.required(media, 'hdlr');
     reader.full(hdlr);
-    reader.require(hdlr.body, 12, hdlr.end);
+    reader.check(hdlr.body, 12, hdlr.end);
     const information = reader.required(media, 'minf'),
       table = reader.required(information, 'stbl');
     const track: BurikoIsoTrack = {
       id,
       enabled: (trackFlags & 1) !== 0,
-      handler: reader.type(hdlr.body + 8),
+      handler: reader.ascii(hdlr.body + 8, 4),
       timescale: mediaScale,
       duration:
         mediaVersion === 1

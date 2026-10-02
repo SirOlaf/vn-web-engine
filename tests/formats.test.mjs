@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BinaryReader, checkRange, safeNumber} from '../dist/core/binary.js';
+import {BinaryReader, ByteView, checkRange, safeNumber} from '../dist/core/binary.js';
 import {BlobSource, HttpSource} from '../dist/core/source.js';
 import {subscribeSourceActivity} from '../dist/core/source-activity.js';
 import {
@@ -53,6 +53,19 @@ test('binary bounds and 64-bit values retain precision', () => {
     2n ** 64n - 1n,
   );
 });
+test('byte views check every read against their limit and record ends', () => {
+  const bytes = Uint8Array.of(0, 1, 2, 3, 4, 5, 6, 7, 8);
+  const view = new ByteView(bytes.subarray(1), {littleEndian: true, end: 6});
+  assert.equal(view.u16(0), 0x0201);
+  assert.equal(view.u32(2), 0x06050403);
+  assert.throws(() => view.u32(3), RangeError);
+  assert.throws(() => view.u16(1, 2), RangeError);
+  assert.throws(() => view.u8(0, 7), RangeError);
+  assert.equal(new ByteView(bytes).sub(4, 4).u16(0), 0x0405);
+  class Custom extends Error {}
+  assert.throws(() => new ByteView(bytes, {error: () => new Custom()}).range(8, 2), Custom);
+});
+
 test('CRILAYLA literal order and untouched 256-byte prefix', () => {
   const result = decodeCrilayla(compressed(prefix, 3), 259);
   assert.deepEqual(

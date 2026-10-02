@@ -1,4 +1,4 @@
-import {byteDataView} from '../../core/binary.js';
+import {ByteView} from '../../core/binary.js';
 import {RSCRIPT_1_11, rscriptRevision, type RScriptRevision} from './revision.js';
 
 /**
@@ -64,14 +64,15 @@ export interface RScriptApini {
   readonly backlogColor: number | null;
 }
 
-function field(bytes: Uint8Array, offset: number, length: number): Uint8Array {
-  const value = bytes.subarray(offset, offset + length);
+/** A zero-terminated field of at most `length` bytes. */
+function field(view: ByteView, offset: number, length: number): Uint8Array {
+  const value = view.range(offset, length);
   const end = value.indexOf(0);
   return end < 0 ? value : value.subarray(0, end);
 }
 const decoder = new TextDecoder('shift-jis');
-function sjis(bytes: Uint8Array, offset: number, length: number): string {
-  return decoder.decode(field(bytes, offset, length));
+function sjis(view: ByteView, offset: number, length: number): string {
+  return decoder.decode(field(view, offset, length));
 }
 
 export function parseApini(
@@ -81,21 +82,19 @@ export function parseApini(
   const layout = revision.apini;
   if (block.length < layout.size) throw new Error('Truncated RScript APINI block');
   const bytes = block.slice(0, layout.size);
-  if (sjis(bytes, 0, 6) !== 'APINI') throw new Error('Not an RScript APINI block');
-  const view = byteDataView(bytes);
-  const u16 = (offset: number): number => view.getUint16(offset, true);
-  const u32 = (offset: number): number => view.getUint32(offset, true);
-  const path = (index: number): string => sjis(bytes, layout.directories + 21 * index, 21);
-  const width = u32(layout.width),
-    height = u32(layout.height);
+  const view = new ByteView(bytes, {littleEndian: true});
+  if (sjis(view, 0, 6) !== 'APINI') throw new Error('Not an RScript APINI block');
+  const path = (index: number): string => sjis(view, layout.directories + 21 * index, 21);
+  const width = view.u32(layout.width),
+    height = view.u32(layout.height);
   if (width < 1 || height < 1 || width > 8192 || height > 8192)
     throw new Error(`Invalid RScript screen size ${width}x${height}`);
   return {
     revision,
     bytes,
-    title: sjis(bytes, 6, layout.titleLength),
-    savePrefix: sjis(bytes, layout.savePrefix, 30),
-    saveDirectory: sjis(bytes, layout.saveDirectory, 21),
+    title: sjis(view, 6, layout.titleLength),
+    savePrefix: sjis(view, layout.savePrefix, 30),
+    saveDirectory: sjis(view, layout.saveDirectory, 21),
     directories: {
       scripts: path(0),
       system: path(1),
@@ -108,29 +107,29 @@ export function parseApini(
       music: path(8),
       voices: path(9),
     },
-    fontName: sjis(bytes, layout.fontName, 52),
-    fontNameBytes: field(bytes, layout.fontName, 32).slice(0, 31),
-    spriteDirectoryBytes: field(bytes, layout.directories + 21 * 3, 21).slice(),
-    eventDirectoryBytes: field(bytes, layout.directories + 21 * 5, 21).slice(),
+    fontName: sjis(view, layout.fontName, 52),
+    fontNameBytes: field(view, layout.fontName, 32).slice(0, 31),
+    spriteDirectoryBytes: field(view, layout.directories + 21 * 3, 21).slice(),
+    eventDirectoryBytes: field(view, layout.directories + 21 * 5, 21).slice(),
     width,
     height,
-    tickMilliseconds: Math.max(1, u16(layout.tick)),
-    skipTopMenu: u16(layout.skipTopMenu) !== 0,
-    startScript: u16(layout.startScript),
-    defaultLayerKind: u16(layout.defaultLayerKind),
-    keepBackdropBrightness: u16(layout.keepBackdropBrightness) !== 0,
-    savePageCount: u16(layout.savePageCount),
-    palette: Array.from({length: 10}, (_, i) => u32(layout.palette + 4 * i)),
-    textDefaults: bytes.slice(layout.palette, layout.palette + 40),
-    questionTextColor: u32(layout.questionTextColor),
-    questionTextSize: u16(layout.questionTextSize),
-    choiceTextColor: u32(layout.choiceTextColor),
-    choiceTextSize: u16(layout.choiceTextSize),
-    saveDateSize: u16(layout.saveDateSize),
-    textShadow: layout.textShadow !== null && u16(layout.textShadow) !== 0,
+    tickMilliseconds: Math.max(1, view.u16(layout.tick)),
+    skipTopMenu: view.u16(layout.skipTopMenu) !== 0,
+    startScript: view.u16(layout.startScript),
+    defaultLayerKind: view.u16(layout.defaultLayerKind),
+    keepBackdropBrightness: view.u16(layout.keepBackdropBrightness) !== 0,
+    savePageCount: view.u16(layout.savePageCount),
+    palette: Array.from({length: 10}, (_, i) => view.u32(layout.palette + 4 * i)),
+    textDefaults: view.range(layout.palette, 40).slice(),
+    questionTextColor: view.u32(layout.questionTextColor),
+    questionTextSize: view.u16(layout.questionTextSize),
+    choiceTextColor: view.u32(layout.choiceTextColor),
+    choiceTextSize: view.u16(layout.choiceTextSize),
+    saveDateSize: view.u16(layout.saveDateSize),
+    textShadow: layout.textShadow !== null && view.u16(layout.textShadow) !== 0,
     backlogColor:
-      layout.backlogColor !== null && u16(layout.backlogColor)
-        ? u32(layout.backlogColor + 2)
+      layout.backlogColor !== null && view.u16(layout.backlogColor)
+        ? view.u32(layout.backlogColor + 2)
         : null,
   };
 }

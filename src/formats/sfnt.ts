@@ -1,3 +1,4 @@
+import {ByteView} from '../core/binary.js';
 import type {ByteSource} from '../core/source.js';
 
 /** Font tables are read only from user-provided resources; no font data is bundled. */
@@ -39,27 +40,8 @@ function fontRange(size: number, offset: number, length: number): void {
     throw new RangeError('Font table exceeds supplied resource');
 }
 
-class FontReader {
-  readonly view: DataView;
-  constructor(readonly bytes: Uint8Array) {
-    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  }
-  range(offset: number, length: number): Uint8Array {
-    fontRange(this.bytes.length, offset, length);
-    return this.bytes.subarray(offset, offset + length);
-  }
-  u16(offset: number): number {
-    this.range(offset, 2);
-    return this.view.getUint16(offset);
-  }
-  i16(offset: number): number {
-    this.range(offset, 2);
-    return this.view.getInt16(offset);
-  }
-  u32(offset: number): number {
-    this.range(offset, 4);
-    return this.view.getUint32(offset);
-  }
+function fontView(bytes: Uint8Array): ByteView {
+  return new ByteView(bytes, {error: () => new RangeError('Font table exceeds supplied resource')});
 }
 
 interface Table {
@@ -119,7 +101,7 @@ function standalone(signature: number, tables: readonly Table[]): Uint8Array {
   return bytes;
 }
 
-function names(table: FontReader): SfntFontName[] {
+function names(table: ByteView): SfntFontName[] {
   const version = table.u16(0);
   if (version > 1) throw new RangeError('Font naming table version is invalid');
   const count = table.u16(2);
@@ -169,7 +151,7 @@ interface TableRange {
   readonly length: number;
 }
 
-function faceHeader(header: FontReader): {signature: number; count: number} {
+function faceHeader(header: ByteView): {signature: number; count: number} {
   const signature = header.u32(0);
   if (
     signature !== 0x00010000 &&
@@ -183,7 +165,7 @@ function faceHeader(header: FontReader): {signature: number; count: number} {
   return {signature, count};
 }
 
-function tableDirectory(reader: FontReader, count: number, size: number): TableRange[] {
+function tableDirectory(reader: ByteView, count: number, size: number): TableRange[] {
   reader.range(0, count * 16);
   const result: TableRange[] = [];
   const seen = new Set<number>();
@@ -200,7 +182,7 @@ function tableDirectory(reader: FontReader, count: number, size: number): TableR
   return result;
 }
 
-function metadata(map: ReadonlyMap<number, FontReader>): SfntFontMetadata {
+function metadata(map: ReadonlyMap<number, ByteView>): SfntFontMetadata {
   const head = map.get(tags.head);
   const hhea = map.get(tags.hhea);
   const os2 = map.get(tags.os2);
@@ -228,10 +210,10 @@ function metadata(map: ReadonlyMap<number, FontReader>): SfntFontMetadata {
   };
 }
 
-function face(reader: FontReader, directoryOffset: number, collection: boolean): SfntFontData {
-  const {signature, count} = faceHeader(new FontReader(reader.range(directoryOffset, 12)));
+function face(reader: ByteView, directoryOffset: number, collection: boolean): SfntFontData {
+  const {signature, count} = faceHeader(reader.sub(directoryOffset, 12));
   const directory = tableDirectory(
-    new FontReader(reader.range(directoryOffset + 12, count * 16)),
+    reader.sub(directoryOffset + 12, count * 16),
     count,
     reader.bytes.length,
   );
@@ -239,12 +221,12 @@ function face(reader: FontReader, directoryOffset: number, collection: boolean):
     tag,
     bytes: reader.range(offset, length),
   }));
-  const map = new Map(tables.map(({tag, bytes}) => [tag, new FontReader(bytes)]));
+  const map = new Map(tables.map(({tag, bytes}) => [tag, fontView(bytes)]));
   const data = metadata(map);
   return {...data, bytes: collection ? standalone(signature, tables) : reader.bytes.slice()};
 }
 
-function collectionCount(reader: FontReader, size: number): number | null {
+function collectionCount(reader: ByteView, size: number): number | null {
   if (reader.u32(0) !== 0x74746366) return null;
   const version = reader.u32(4);
   if (version !== 0x00010000 && version !== 0x00020000)
@@ -258,21 +240,17 @@ function collectionCount(reader: FontReader, size: number): number | null {
 
 /** sfnt and TTC/OTC share the same directory; TTC table offsets remain file-relative. */
 export function readSfntFontData(bytes: Uint8Array): readonly SfntFontData[] {
-  const reader = new FontReader(bytes);
+  const reader = fontView(bytes);
   const count = collectionCount(reader, bytes.length);
   if (count === null) return [face(reader, 0, false)];
   return Array.from({length: count}, (_, index) => face(reader, reader.u32(12 + index * 4), true));
 }
 
-async function sourceReader(
-  source: ByteSource,
-  offset: number,
-  length: number,
-): Promise<FontReader> {
+async function sourceReader(source: ByteSource, offset: number, length: number): Promise<ByteView> {
   fontRange(source.size, offset, length);
   const bytes = await source.read(offset, length);
   if (bytes.length !== length) throw new RangeError('Font source returned a truncated range');
-  return new FontReader(bytes);
+  return fontView(bytes);
 }
 
 /** Needed tables separated by fewer skipped bytes than this share one source read. */
@@ -337,7 +315,7 @@ function clipped(bytes: Uint8Array, offset: number, length: number): Uint8Array 
 async function faceMetadata(
   source: ByteSource,
   directoryOffset: number,
-  header?: FontReader,
+  header?: ByteView,
 ): Promise<SfntFontMetadata> {
   const {count} = faceHeader(header ?? (await sourceReader(source, directoryOffset, 12)));
   const directory = tableDirectory(
@@ -350,7 +328,7 @@ async function faceMetadata(
     return bytes === null ? [] : [{tag, offset, length: Math.min(length, bytes)}];
   });
   if (source instanceof MetadataSource) source.prefetch(needed);
-  const map = new Map<number, FontReader>();
+  const map = new Map<number, ByteView>();
   for (const {tag, offset, length} of needed)
     map.set(tag, await sourceReader(source, offset, length));
   return metadata(map);

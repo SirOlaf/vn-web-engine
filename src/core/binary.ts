@@ -96,49 +96,154 @@ export function ascii(b: Uint8Array, start = 0, length = b.length - start): stri
   checkRange(b.length, start, length);
   return Array.from(b.subarray(start, start + length), (v) => String.fromCharCode(v)).join('');
 }
-export class BinaryReader {
+/** Builds the error a ByteView throws for a read outside its limit. */
+export type ByteRangeError = (offset: number, length: number, end: number) => Error;
+
+const invalidRange: ByteRangeError = (offset, length, end) =>
+  new RangeError(`Invalid range ${offset}+${length} of ${end}`);
+
+export interface ByteViewOptions {
+  readonly littleEndian?: boolean;
+  /** Reads end here instead of at the end of the bytes. */
+  readonly end?: number;
+  readonly error?: ByteRangeError;
+}
+
+/**
+ * Bounds-checked random access to a byte span. Every read is checked against the view's
+ * end, or against a nearer `end` passed to the read, such as the end of an enclosing record.
+ * Offsets are relative to the start of `bytes`.
+ */
+export class ByteView {
   readonly view: DataView;
-  position = 0;
+  readonly littleEndian: boolean;
+  readonly end: number;
+  private readonly error: ByteRangeError;
   constructor(
     readonly bytes: Uint8Array,
-    readonly littleEndian = false,
+    options: ByteViewOptions = {},
   ) {
-    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    this.view = byteDataView(bytes);
+    this.littleEndian = options.littleEndian ?? false;
+    this.error = options.error ?? invalidRange;
+    this.end = options.end ?? bytes.length;
+    if (!Number.isSafeInteger(this.end) || this.end < 0 || this.end > bytes.length)
+      throw this.error(0, this.end, bytes.length);
   }
+  /** Throws unless `length` bytes at `offset` end at or before `end`; returns `offset`. */
+  check(offset: number, length: number, end = this.end): number {
+    if (
+      !Number.isSafeInteger(offset) ||
+      !Number.isSafeInteger(length) ||
+      offset < 0 ||
+      length < 0 ||
+      end > this.end ||
+      offset > end - length
+    )
+      throw this.error(offset, length, Math.min(end, this.end));
+    return offset;
+  }
+  /** The checked bytes, sharing storage. */
+  range(offset: number, length: number, end?: number): Uint8Array {
+    this.check(offset, length, end);
+    return this.bytes.subarray(offset, offset + length);
+  }
+  /** A view of the checked bytes with the same endianness and errors. */
+  sub(offset: number, length: number, end?: number): ByteView {
+    return new ByteView(this.range(offset, length, end), {
+      littleEndian: this.littleEndian,
+      error: this.error,
+    });
+  }
+  u8(offset: number, end?: number): number {
+    return this.bytes[this.check(offset, 1, end)]!;
+  }
+  i8(offset: number, end?: number): number {
+    return this.view.getInt8(this.check(offset, 1, end));
+  }
+  u16(offset: number, end?: number): number {
+    return this.view.getUint16(this.check(offset, 2, end), this.littleEndian);
+  }
+  i16(offset: number, end?: number): number {
+    return this.view.getInt16(this.check(offset, 2, end), this.littleEndian);
+  }
+  u32(offset: number, end?: number): number {
+    return this.view.getUint32(this.check(offset, 4, end), this.littleEndian);
+  }
+  i32(offset: number, end?: number): number {
+    return this.view.getInt32(this.check(offset, 4, end), this.littleEndian);
+  }
+  u64(offset: number, end?: number): bigint {
+    return this.view.getBigUint64(this.check(offset, 8, end), this.littleEndian);
+  }
+  i64(offset: number, end?: number): bigint {
+    return this.view.getBigInt64(this.check(offset, 8, end), this.littleEndian);
+  }
+  f32(offset: number, end?: number): number {
+    return this.view.getFloat32(this.check(offset, 4, end), this.littleEndian);
+  }
+  f64(offset: number, end?: number): number {
+    return this.view.getFloat64(this.check(offset, 8, end), this.littleEndian);
+  }
+  /** Latin-1 characters of the checked bytes, e.g. a four-character tag. */
+  ascii(offset: number, length: number, end?: number): string {
+    return String.fromCharCode(...this.range(offset, length, end));
+  }
+}
+
+/** A cursor over a ByteView: each read advances `position` past the bytes it consumed. */
+export class BinaryReader {
+  readonly data: ByteView;
+  position = 0;
+  constructor(bytes: Uint8Array, littleEndian = false) {
+    this.data = new ByteView(bytes, {littleEndian});
+  }
+  get bytes(): Uint8Array {
+    return this.data.bytes;
+  }
+  get littleEndian(): boolean {
+    return this.data.littleEndian;
+  }
+  /** Consumes `length` bytes and returns their offset. */
   take(length: number): number {
-    checkRange(this.bytes.length, this.position, length);
-    const p = this.position;
+    const p = this.data.check(this.position, length);
     this.position += length;
     return p;
   }
+  skip(length: number): void {
+    this.take(length);
+  }
+  range(length: number): Uint8Array {
+    return this.data.range(this.take(length), length);
+  }
   u8(): number {
-    return this.view.getUint8(this.take(1));
+    return this.data.u8(this.take(1));
   }
   i8(): number {
-    return this.view.getInt8(this.take(1));
+    return this.data.i8(this.take(1));
   }
   u16(): number {
-    return this.view.getUint16(this.take(2), this.littleEndian);
+    return this.data.u16(this.take(2));
   }
   i16(): number {
-    return this.view.getInt16(this.take(2), this.littleEndian);
+    return this.data.i16(this.take(2));
   }
   u32(): number {
-    return this.view.getUint32(this.take(4), this.littleEndian);
+    return this.data.u32(this.take(4));
   }
   i32(): number {
-    return this.view.getInt32(this.take(4), this.littleEndian);
+    return this.data.i32(this.take(4));
   }
   u64(): bigint {
-    return this.view.getBigUint64(this.take(8), this.littleEndian);
+    return this.data.u64(this.take(8));
   }
   i64(): bigint {
-    return this.view.getBigInt64(this.take(8), this.littleEndian);
+    return this.data.i64(this.take(8));
   }
   f32(): number {
-    return this.view.getFloat32(this.take(4), this.littleEndian);
+    return this.data.f32(this.take(4));
   }
   f64(): number {
-    return this.view.getFloat64(this.take(8), this.littleEndian);
+    return this.data.f64(this.take(8));
   }
 }
