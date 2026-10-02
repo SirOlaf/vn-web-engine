@@ -131,22 +131,16 @@ export function decodeSlotHeader(
   revision: RScriptRevision = RSCRIPT_1_11,
 ): RScriptSlotHeader {
   if (bytes.length < revision.slotHeaderSize) throw new Error('Truncated save slot');
-  const view = new DataView(bytes.buffer, bytes.byteOffset, revision.slotHeaderSize);
-  const word = (i: number): number => view.getUint16(2 * i, true);
-  const text = bytes.subarray(
-    revision.slotTextOffset,
-    revision.slotTextOffset + SLOT_TEXT_CAPACITY,
-  );
-  const end = text.indexOf(0);
+  const view = new ByteView(bytes, {littleEndian: true, end: revision.slotHeaderSize});
   return {
-    year: word(0),
-    month: word(1),
-    day: word(2),
-    hour: word(3),
-    minute: word(4),
-    variables: [view.getInt16(10, true), view.getInt16(12, true), view.getInt16(14, true)],
-    background: revision.slotBackground ? word(10) : 0,
-    text: text.slice(0, end < 0 ? text.length : end),
+    year: view.u16(0),
+    month: view.u16(2),
+    day: view.u16(4),
+    hour: view.u16(6),
+    minute: view.u16(8),
+    variables: [view.i16(10), view.i16(12), view.i16(14)],
+    background: revision.slotBackground ? view.u16(20) : 0,
+    text: view.cString(revision.slotTextOffset, SLOT_TEXT_CAPACITY).slice(),
   };
 }
 

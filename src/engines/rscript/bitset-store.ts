@@ -1,4 +1,4 @@
-import {byteDataView, checkRange} from '../../core/binary.js';
+import {ByteView, byteDataView} from '../../core/binary.js';
 
 /**
  * Keyed growable bitsets (std::map<WORD, bytes>, 0x4332F0/0x433370). The system save
@@ -57,17 +57,15 @@ export class RScriptBitsetStore {
   /** Replaces the contents; returns the number of bytes consumed. */
   decode(bytes: Uint8Array, offset = 0): number {
     this.sets.clear();
-    const view = byteDataView(bytes);
-    checkRange(bytes.length, offset, 4);
-    const count = view.getUint32(offset, true);
+    const view = new ByteView(bytes, {littleEndian: true});
+    const count = view.u32(offset);
     let cursor = offset + 4;
     for (let i = 0; i < count; i++) {
-      checkRange(bytes.length, cursor, 6);
-      const key = view.getUint16(cursor, true);
-      const length = view.getUint32(cursor + 2, true);
+      const key = view.u16(cursor);
+      const length = view.u32(cursor + 2);
       cursor += 6;
-      checkRange(bytes.length, cursor, length);
-      if (length && !this.sets.has(key)) this.sets.set(key, bytes.slice(cursor, cursor + length));
+      const set = view.range(cursor, length);
+      if (length && !this.sets.has(key)) this.sets.set(key, set.slice());
       cursor += length;
     }
     return cursor - offset;
