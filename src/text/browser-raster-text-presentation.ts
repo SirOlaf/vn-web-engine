@@ -1,4 +1,4 @@
-import type {Rect} from '../graphics/surface.js';
+import {intersectRect, type Rect} from '../graphics/surface.js';
 import {BrowserRasterText} from './browser-raster-text.js';
 import type {RasterTextGlyph} from './raster-text.js';
 import {beginRuntimeSpan, recordRuntimeMetric} from '../platform/runtime-performance.js';
@@ -25,14 +25,6 @@ interface Presentation {
   overlay?: BrowserRasterText;
 }
 
-export function intersectTextRect(a: Rect, b: Rect): Rect | null {
-  const x = Math.max(a.x, b.x),
-    y = Math.max(a.y, b.y);
-  const width = Math.min(a.x + a.width, b.x + b.width) - x;
-  const height = Math.min(a.y + a.height, b.y + b.height) - y;
-  return width > 0 && height > 0 ? {x, y, width, height} : null;
-}
-
 /** Map glyph geometry separately from the native pixels, with the same destination clip. */
 export function mapRasterTextGlyphs(
   glyphs: readonly RasterTextGlyph[],
@@ -49,7 +41,7 @@ export function mapRasterTextGlyphs(
     height: r.height * scaleY,
   });
   return glyphs.flatMap((glyph) => {
-    const clipped = intersectTextRect(rect(glyph.clip), clip);
+    const clipped = intersectRect(rect(glyph.clip), clip);
     return clipped
       ? [{...glyph, ...rect(glyph), clip: clipped, size: glyph.size * Math.abs(scaleY)}]
       : [];
@@ -61,7 +53,7 @@ export function rasterTextOutsideRegion(
   region: Rect,
 ): RasterTextGlyph[] {
   return glyphs.flatMap((glyph) => {
-    const hit = intersectTextRect(glyph.clip, region);
+    const hit = intersectRect(glyph.clip, region);
     if (!hit) return [glyph];
     const c = glyph.clip;
     return [

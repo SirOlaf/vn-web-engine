@@ -1,9 +1,9 @@
+import {intersectRect} from '../../../graphics/surface.js';
 import {BurikoDisplayManager} from './display-manager.js';
 import type {BurikoBitmap} from './bitmap.js';
 import {burikoChildDibPixels, captureBurikoChildText} from './child-bitmap.js';
 import {
   BrowserRasterTextPresentation,
-  intersectTextRect,
   mapRasterTextGlyphs,
 } from '../../../text/browser-raster-text-presentation.js';
 import {burikoDisplayScaleSize, burikoDisplayViewport} from './display-geometry.js';
@@ -529,13 +529,13 @@ export class BurikoBrowserMainWindow {
     context.drawImage(source, destinationX, destinationY, width, height);
     context.restore();
     if (this.textPresentation !== null) {
-      const region = intersectTextRect(
+      const region = intersectRect(
         {x: destinationX, y: destinationY, width, height},
         {x: left, y: top, width: (right - left) | 0, height: (bottom - top) | 0},
       );
       const visible =
         region &&
-        intersectTextRect(region, {
+        intersectRect(region, {
           x: 0,
           y: 0,
           width: this.surface.width,

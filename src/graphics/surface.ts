@@ -6,6 +6,14 @@ export interface Rect {
   width: number;
   height: number;
 }
+/** The overlap of two rectangles, or null when they share no area. */
+export function intersectRect(a: Rect, b: Rect): Rect | null {
+  const x = Math.max(a.x, b.x),
+    y = Math.max(a.y, b.y);
+  const width = Math.min(a.x + a.width, b.x + b.width) - x;
+  const height = Math.min(a.y + a.height, b.y + b.height) - y;
+  return width > 0 && height > 0 ? {x, y, width, height} : null;
+}
 export interface BlitOptions {
   source?: Rect;
   destination?: Rect;

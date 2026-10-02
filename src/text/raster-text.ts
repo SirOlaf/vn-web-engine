@@ -1,4 +1,4 @@
-import type {Rect} from '../graphics/surface.js';
+import {intersectRect, type Rect} from '../graphics/surface.js';
 import type {TextOutline, TextShadow} from './glyph-slots.js';
 import {recordRuntimeMetric} from '../platform/runtime-performance.js';
 
@@ -75,13 +75,6 @@ export function isRasterTextPresentation(): boolean {
   return presentationReplay;
 }
 
-function intersection(a: Rect, b: Rect): Rect | undefined {
-  const x = Math.max(a.x, b.x),
-    y = Math.max(a.y, b.y);
-  const width = Math.min(a.x + a.width, b.x + b.width) - x;
-  const height = Math.min(a.y + a.height, b.y + b.height) - y;
-  return width > 0 && height > 0 ? {x, y, width, height} : undefined;
-}
 function bounds(bitmap: RasterTextBitmap): Rect {
   return {x: 0, y: 0, width: bitmap.width, height: bitmap.height};
 }
@@ -242,7 +235,7 @@ export function visibleRasterText(bitmap: RasterTextBitmap): RasterTextGlyph[] {
       visible.add(identity);
       continue;
     }
-    const c = intersection(g.clip, bounds(bitmap));
+    const c = intersectRect(g.clip, bounds(bitmap));
     if (!c) continue;
     let ink = false;
     for (
@@ -376,7 +369,7 @@ export function recordRasterText(
       Array.from(text).reduce((n, c) => n + (c.charCodeAt(0) < 0x100 ? 0.5 : 1), 0) * size,
     );
   const glyph = {x: style.x ?? 0, y: style.y ?? 0, width, height: style.height ?? size};
-  const clip = intersection(glyph, bounds(bitmap));
+  const clip = intersectRect(glyph, bounds(bitmap));
   if (!clip) return;
   const weight = style.weight ?? (style.bold ? 700 : 400);
   plane.glyphs.push({
@@ -412,7 +405,7 @@ export function decorateRasterText(bitmap: RasterTextBitmap, effect: RasterTextE
   const [x, y] = origin(bitmap, plane),
     region = shifted(bounds(bitmap), x, y);
   plane.glyphs = plane.glyphs.map((g) =>
-    intersection(g.clip, region)
+    intersectRect(g.clip, region)
       ? {
           ...g,
           ...(effect.outline ? {outline: effect.outline} : {}),
@@ -532,7 +525,7 @@ export function withRasterText<T extends Kernel>(
         if (!(glyph.alpha * alpha > 0)) continue;
         const map = options.map,
           rect = transformBounds(glyph, map, args),
-          clip = intersection(transformBounds(glyph.clip, map, args), bounds(destination));
+          clip = intersectRect(transformBounds(glyph.clip, map, args), bounds(destination));
         if (!clip || !Number.isFinite(rect.x + rect.y + rect.width + rect.height)) continue;
         const item = {
           ...glyph,

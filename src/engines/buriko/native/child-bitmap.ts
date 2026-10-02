@@ -1,8 +1,8 @@
+import {intersectRect} from '../../../graphics/surface.js';
 import {burikoBitmapPixelSize, bitmapStorage, type BurikoBitmap} from './bitmap.js';
 import {rasterTextBitmap, visibleRasterText} from '../../../text/raster-text.js';
 import {
   BrowserRasterTextPresentation,
-  intersectTextRect,
   mapRasterTextGlyphs,
 } from '../../../text/browser-raster-text-presentation.js';
 import {invalidateCanvasFrame} from '../../../graphics/canvas-frame-presenter.js';
@@ -91,7 +91,7 @@ export function presentBurikoChildBitmap(
   if (textPresentation !== null) {
     x |= 0;
     y |= 0;
-    const region = intersectTextRect(
+    const region = intersectRect(
       {x, y, width: bitmap.width, height: bitmap.height},
       {x: 0, y: 0, width: canvas.width, height: canvas.height},
     );

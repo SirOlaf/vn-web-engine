@@ -8,14 +8,13 @@ import {
 import {
   BrowserRasterTextPresentation,
   mapRasterTextGlyphs,
-  intersectTextRect,
   rasterTextOutsideRegion,
   type BrowserRasterTextFrame,
 } from '../../../text/browser-raster-text-presentation.js';
 import {LinearRgbWasm} from '../../../graphics/linear-rgb-wasm.js';
 import {getRuntimeProfile} from '../../../platform/runtime-profile.js';
 import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
-import type {Rect} from '../../../graphics/surface.js';
+import {type Rect, intersectRect} from '../../../graphics/surface.js';
 import {
   CanvasFramePresenter,
   invalidateCanvasFrame,
@@ -1054,7 +1053,7 @@ export class BurikoDisplayDevice {
         height = quad.getFloat32(60, true) - top;
       const u = quad.getFloat32(48, true) * draw.texture.width;
       const v = quad.getFloat32(80, true) * draw.texture.height;
-      const clip = intersectTextRect(
+      const clip = intersectRect(
         {
           x: Math.ceil(left),
           y: Math.ceil(top),
