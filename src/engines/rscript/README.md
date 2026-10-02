@@ -26,8 +26,10 @@ behavior by a game's display name.
   settings panel and backlog scroll bars, and `characters.ts` its opcode 0xFF.
 - `graphics/` composites sprites in native pixel layout (B, G, R and a
   transparency byte) with the native blend modes.
-- `browser/` adapts the scene to a canvas, Web Audio, the browser's fonts and the
-  selectable DOM text layer. Message boxes, window activation and fullscreen come from
+- `browser/` adapts the scene to a canvas, Web Audio and the browser's fonts.
+  `dom-text.ts` turns the visible text objects into slots of the shared DOM text layer
+  (`src/text/dom-glyph-slots.ts`): transparent over the canvas glyphs, or in the reader's
+  style with the canvas text hidden. Message boxes, window activation and fullscreen come from
   `src/platform`; the page's display host decides what the configuration's screen mode
   does. Other hosts implement `RScriptGameHost` in `runtime/game.ts`.
 

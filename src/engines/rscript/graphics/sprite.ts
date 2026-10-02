@@ -17,6 +17,15 @@ export interface RScriptPoint {
 }
 
 /** A glyph of text composited into a node's image, relative to the node. */
+/** One ruby character where the block draws it. */
+export interface BakedRubyGlyph {
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface BakedGlyph {
   readonly text: string;
   readonly x: number;
@@ -34,10 +43,31 @@ export interface BakedGlyph {
   readonly shadow: boolean;
   /** 0..1 while the glyph fades in. */
   readonly opacity: number;
-  /** Ruby over this glyph and the `span - 1` glyphs after it. */
-  readonly ruby: {readonly text: string; readonly span: number} | null;
+  /** Ruby over this glyph and the `span - 1` glyphs after it, with its drawn glyphs. */
+  readonly ruby: {
+    readonly text: string;
+    readonly span: number;
+    readonly glyphs: readonly BakedRubyGlyph[];
+  } | null;
   /** Part of a column of vertical text: its cell is as wide as the font size. */
   readonly vertical?: boolean;
+}
+
+/** Glyphs moved by (`dx`, `dy`), with their ruby. */
+export function offsetBakedGlyphs(
+  glyphs: readonly BakedGlyph[],
+  dx: number,
+  dy: number,
+): BakedGlyph[] {
+  return glyphs.map((glyph) => ({
+    ...glyph,
+    x: glyph.x + dx,
+    y: glyph.y + dy,
+    ruby: glyph.ruby && {
+      ...glyph.ruby,
+      glyphs: glyph.ruby.glyphs.map((ruby) => ({...ruby, x: ruby.x + dx, y: ruby.y + dy})),
+    },
+  }));
 }
 
 /**

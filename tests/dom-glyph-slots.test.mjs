@@ -458,3 +458,59 @@ test('natural reflow joins soft rows, keeps deliberate breaks and hangs closing 
   // A smaller font joins soft rows into fewer lines.
   assert.deepEqual(reflowTextRows(['あいう', 'えお'], [false], advance, 100, 100), ['あいうえお']);
 });
+
+test('overlay slots stay transparent without effects until a reader style shows them', async () => {
+  const original = globalThis.document;
+  class Node {
+    constructor() {
+      this.children = [];
+      this.style = {};
+      this.dataset = {};
+    }
+    append(...children) {
+      for (const child of children) {
+        child.parent = this;
+        this.children.push(child);
+      }
+    }
+    getContext() {
+      return {measureText: (text) => ({width: [...text].length * 20})};
+    }
+    setAttribute() {}
+    replaceChildren() {
+      this.children = [];
+    }
+  }
+  globalThis.document = {
+    createElement: () => new Node(),
+    createElementNS: () => new Node(),
+    createTextNode: (data) => ({data, length: data.length, replaceData() {}}),
+    addEventListener() {},
+    removeEventListener() {},
+    getSelection: () => null,
+  };
+  try {
+    const {DomGlyphSlots} = await import('../dist/text/dom-glyph-slots.js');
+    const shadow = {shadows: [{x: 2, y: 2, color: 0, alpha: 255}]};
+    const glyphs = [
+      {...glyph('日', 0, 0, 0), ...shadow},
+      {...glyph('本', 0, 20, 0), ...shadow, color: 0xff0000},
+    ];
+    const overlay = new DomGlyphSlots(new Node(), {overlay: true});
+    overlay.show({id: 'body', glyphs, italic: true}, 1, 'serif', false);
+    const text = overlay.element.children[0].children[0];
+    assert.match(text.style.cssText, /color:transparent/);
+    assert.match(text.style.cssText, /font:italic /);
+    assert.doesNotMatch(text.style.cssText, /filter:url/);
+    // An ordinary layer draws the text and its shadow.
+    const visible = new DomGlyphSlots(new Node());
+    visible.show({id: 'body', glyphs}, 1, 'serif', false);
+    const shown = visible.element.children[0].children.find(
+      (child) => child.dataset.gameText === '',
+    );
+    assert.match(shown.style.cssText, /filter:url/);
+    assert.doesNotMatch(shown.style.cssText, /color:transparent/);
+  } finally {
+    globalThis.document = original;
+  }
+});

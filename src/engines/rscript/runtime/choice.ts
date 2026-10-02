@@ -1,6 +1,11 @@
 import {blendSprite} from '../graphics/blend.js';
 import {createSurface, type RScriptRect, type RScriptSurface} from '../graphics/pixels.js';
-import {RScriptContainer, RScriptSprite, type RScriptPoint} from '../graphics/sprite.js';
+import {
+  offsetBakedGlyphs,
+  RScriptContainer,
+  RScriptSprite,
+  type RScriptPoint,
+} from '../graphics/sprite.js';
 import type {RScriptImages} from '../images.js';
 import {RScriptTextBlock, type GlyphRasterizer, type TextStyle} from './text-block.js';
 
@@ -146,9 +151,7 @@ export class RScriptChoiceWindow extends RScriptContainer {
     });
     const sprite = new PlateSprite(states, plain);
     sprite.setSurface(states[0]!);
-    sprite.bakedText = block
-      .shownGlyphs()
-      .map((glyph) => ({...glyph, x: glyph.x + rect.x, y: glyph.y + rect.y}));
+    sprite.bakedText = offsetBakedGlyphs(block.shownGlyphs(), rect.x, rect.y);
     return {sprite, states, final: {x: 0, y: 0}, start: {x: 0, y: 0}, end: {x: 0, y: 0}};
   }
 

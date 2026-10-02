@@ -49,6 +49,7 @@ export interface GlyphSlot {
   bold?: boolean;
   /** CSS font weight; overrides `bold`. */
   weight?: number;
+  italic?: boolean;
   /**
    * Native glyph width relative to the font size. When set, browser glyphs use this
    * horizontal scale and letter spacing reproduces the native advances.

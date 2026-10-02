@@ -101,6 +101,14 @@ export function reflowTextRows(
   return lines;
 }
 
+export interface DomGlyphSlotsOptions {
+  /**
+   * The game keeps drawing its glyphs and the text is transparent over them, for selection
+   * and dictionary lookups only. A reader style still shows the text in its own style.
+   */
+  readonly overlay?: boolean;
+}
+
 /** One light-DOM Text node per slot. Raster adapters preserve native line
  * boundaries explicitly; adapters with complete buffers can use CSS wrapping. */
 export class DomGlyphSlots {
@@ -143,7 +151,9 @@ export class DomGlyphSlots {
       return;
     }
   };
-  constructor(parent: HTMLElement) {
+  private readonly overlay: boolean;
+  constructor(parent: HTMLElement, options: DomGlyphSlotsOptions = {}) {
+    this.overlay = options.overlay ?? false;
     installLayoutRules();
     this.element.className = 'game-glyph-slots';
     this.element.style.cssText =
@@ -168,6 +178,8 @@ export class DomGlyphSlots {
       family = domTextFamily(custom, family);
     }
     const natural = styled && custom.layout === 'natural';
+    // Transparent text over the game's own glyphs carries no colour or effects.
+    const overlay = this.overlay && !styled;
     const slotContent = slotText(slot);
     const content =
       slotContent && styled
@@ -176,7 +188,9 @@ export class DomGlyphSlots {
             shadows: custom.effects ? slotContent.shadows : [],
             outline: custom.effects ? slotContent.outline : undefined,
           }
-        : slotContent;
+        : slotContent && overlay
+          ? {...slotContent, shadows: [], outline: undefined}
+          : slotContent;
     let nodes = this.nodes.get(slot.id);
     if (!content) {
       if (nodes) {
@@ -241,7 +255,7 @@ export class DomGlyphSlots {
     }
     const size = Math.min(content.size, bounds.height) * (styled ? custom.scale : 1),
       weight = (styled ? custom.weight : null) ?? slot.weight ?? (slot.bold ? 'bold' : 'normal'),
-      font = `${weight} ${size}px ${family ?? 'serif'}`;
+      font = `${slot.italic ? 'italic ' : ''}${weight} ${size}px ${family ?? 'serif'}`;
     this.measure.font = font;
     this.measure.fontKerning = 'none';
     let fullLines = Array.from({length: content.lines}, () => '');
@@ -356,7 +370,7 @@ export class DomGlyphSlots {
     box.style.cssText = `position:absolute;left:${clip.x}px;top:${clip.y}px;width:${clip.width}px;height:${clip.height}px;overflow:${natural ? 'visible' : 'hidden'};pointer-events:none;z-index:${z}`;
     let filter = '';
     const outline = content.outline;
-    if ((family && atlasTint) || content.shadows.length || outline) {
+    if (!overlay && ((family && atlasTint) || content.shadows.length || outline)) {
       const ns = 'http://www.w3.org/2000/svg';
       if (!nodes.tint) {
         const svg = document.createElementNS(ns, 'svg'),
@@ -485,15 +499,18 @@ export class DomGlyphSlots {
       }
       filter = `filter:url(#${nodes.tint.id});`;
     }
-    text.style.cssText = `position:absolute;display:block;left:${origin - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;text-indent:${indent}px;--text-wrap-height:${lines * lineHeight}px;--text-wrap-shape:${shape};white-space:${newlines ? 'pre' : 'break-spaces'};word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;letter-spacing:${spacing}px;${filter}line-height:${lineHeight}px;color:#${(content.color & 0xffffff).toString(16).padStart(6, '0')};opacity:${filter ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
-    // Reveal alpha belongs to glyphs, not paragraph identity. Custom highlight
-    // ranges preserve that alpha without fragmenting text or changing wrapping.
+    text.style.cssText = `position:absolute;display:block;left:${origin - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;text-indent:${indent}px;--text-wrap-height:${lines * lineHeight}px;--text-wrap-shape:${shape};white-space:${newlines ? 'pre' : 'break-spaces'};word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;letter-spacing:${spacing}px;${filter}line-height:${lineHeight}px;color:${overlay ? 'transparent' : `#${(content.color & 0xffffff).toString(16).padStart(6, '0')}`};opacity:${filter || overlay ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
+    // Reveal alpha and glyph colours belong to glyphs, not paragraph identity. Custom
+    // highlight ranges preserve them without fragmenting text or changing wrapping.
     if (nodes.ink) this.clearInk(nodes.ink);
+    const inked = (g: TextGlyph) =>
+      g.alpha > 0 && (g.alpha < content.alpha || g.color !== content.color);
     if (
+      !overlay &&
       typeof CSS !== 'undefined' &&
       CSS.highlights &&
       typeof Highlight !== 'undefined' &&
-      slot.glyphs.some((g) => g.alpha > 0 && g.alpha < content.alpha)
+      slot.glyphs.some(inked)
     ) {
       if (!nodes.ink) {
         const style = document.createElement('style');
@@ -508,14 +525,14 @@ export class DomGlyphSlots {
         previousLine = g.line;
         const length = g.alpha > 0 ? (g.text?.length ?? 0) : Array.from(g.text ?? '').length,
           end = Math.min(node.length, offset + length);
-        if (g.alpha > 0 && g.alpha < content.alpha && end > offset) {
+        if (inked(g) && end > offset) {
           const range = document.createRange(),
             name = `game-ink-${++nextInk}`;
           range.setStart(node, offset);
           range.setEnd(node, end);
           CSS.highlights.set(name, new Highlight(range));
           nodes.ink.names.push(name);
-          const c = content.color;
+          const c = g.color;
           rules.push(
             `.game-glyph-slots [data-game-text]::highlight(${name}){color:rgb(${(c >>> 16) & 255} ${(c >>> 8) & 255} ${c & 255}/${g.alpha / content.alpha})}`,
           );
@@ -534,7 +551,7 @@ export class DomGlyphSlots {
       text.style.lineHeight = `${bounds.width}px`;
       text.style.transform = `scaleY(${Math.min(1, bounds.height / measured)})`;
       text.style.filter = '';
-      text.style.opacity = String(Math.min(255, content.alpha) / 255);
+      text.style.opacity = overlay ? '1' : String(Math.min(255, content.alpha) / 255);
     }
     // Reader CSS is applied last so that it overrides every computed declaration.
     if (document.getSelection()?.containsNode(node, true) || nodes.highlights.length)
