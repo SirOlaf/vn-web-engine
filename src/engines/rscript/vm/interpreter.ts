@@ -260,7 +260,11 @@ export class RScriptInterpreter {
     }
     const handler = this.handlers.get(opcode);
     if (handler) await handler(this, operands);
-    else await this.host.yieldFrame();
+    else {
+      // A native handler without a browser implementation: its operands are consumed.
+      this.host.diagnostic?.(`Opcode 0x${opcode.toString(16)} is not implemented`);
+      await this.host.yieldFrame();
+    }
   }
 
   /** 0x424D90: replaces the current depth's script, then jumps to the label or start. */

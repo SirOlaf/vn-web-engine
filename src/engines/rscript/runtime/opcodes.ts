@@ -269,6 +269,8 @@ export function createOpcodeHandlers(game: RScriptGame): Map<number, RScriptNati
     await game.rebuild();
     game.display.refresh();
   });
+  // sub_427C90: input waits promote the message snapshot while this is set.
+  on(0x35, ([enabled]) => memory.setSceneDword(Scene.autoRebuild, u16(enabled!)));
   on(0x37, () => {
     if (!game.nesting) memory.captureMessageSnapshot();
   });

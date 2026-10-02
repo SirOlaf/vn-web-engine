@@ -78,7 +78,13 @@ scripts request.
   bits. GDI also offers Chinese fixed-pitch fonts such as NSimSun, which cover
   Shift-JIS without that bit; they are left out. Browsers without the API offer
   common Japanese fixed-pitch families they can draw.
-- Timed button and pointer waits do not draw their countdown gauge.
+- Gauges are not drawn: opcode 0x84 stores a gauge's visibility, the other gauge opcodes
+  are not implemented, and timed button and pointer waits show no countdown on gauge 0.
+- These opcodes have operand layouts but no handler: 0x11, 0x19, 0x20, 0x23, 0x30, 0x3A,
+  0x3B, 0x50, 0x54, 0x6E..0x75, 0x78, 0x82, 0x83, 0x86..0x88, 0x8C..0x8E, 0x96..0x9F,
+  0xC9, 0xD2..0xD5, 0xDC..0xDF and 0xE7. They consume their operands, report a
+  diagnostic and yield one frame. No script of Fairytale Symphony or Albatross Koukairoku
+  uses them.
 - The configuration screen's `ex` option pages and `_test` sample buttons, and the 1.9
   slot text and image thumbnails, are not built; no supported title has their layers.
 - The legacy top menu, text layers and native screens other than the title,
