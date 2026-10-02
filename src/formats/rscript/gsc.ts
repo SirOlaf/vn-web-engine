@@ -1,4 +1,4 @@
-import {byteDataView, checkRange} from '../../core/binary.js';
+import {BinaryReader, ByteView} from '../../core/binary.js';
 
 /**
  * Compiled codeX RScript program (`.gsc`, loaded by 0x41ADA0). A nine-dword header
@@ -20,40 +20,33 @@ export interface GscLabel {
 
 const HEADER_SIZE = 36;
 
-function cString(bytes: Uint8Array, offset: number, what: string): Uint8Array {
-  if (offset >= bytes.length) throw new Error(`GSC ${what} offset out of range`);
-  const end = bytes.indexOf(0, offset);
-  if (end < 0) throw new Error(`Unterminated GSC ${what}`);
-  return bytes.subarray(offset, end);
+function cString(data: ByteView, offset: number, what: string): Uint8Array {
+  if (offset >= data.end) throw new Error(`GSC ${what} offset out of range`);
+  try {
+    return data.cString(offset);
+  } catch {
+    throw new Error(`Unterminated GSC ${what}`);
+  }
 }
 
 export function parseGsc(bytes: Uint8Array): GscProgram {
   if (bytes.length < HEADER_SIZE) throw new Error('Truncated GSC program');
-  const view = byteDataView(bytes);
-  const header = Array.from({length: 9}, (_, i) => view.getUint32(i * 4, true));
-  const [fileSize, headerSize, codeSize, stringIndexSize, stringSize, arrayIndexSize] = header as [
-    number,
-    number,
-    number,
-    number,
-    number,
-    number,
-  ];
-  const arrayWords = header[6]!,
-    labelIndexSize = header[7]!,
-    labelSize = header[8]!;
+  const r = new BinaryReader(bytes, true);
+  const fileSize = r.u32(),
+    headerSize = r.u32(),
+    codeSize = r.u32(),
+    stringIndexSize = r.u32(),
+    stringSize = r.u32(),
+    arrayIndexSize = r.u32(),
+    arrayWords = r.u32(),
+    labelIndexSize = r.u32(),
+    labelSize = r.u32();
   if (headerSize !== HEADER_SIZE || fileSize !== bytes.length)
     throw new Error('Invalid GSC header');
   if (stringIndexSize % 4 || arrayIndexSize % 4 || labelIndexSize % 4)
     throw new Error('Misaligned GSC index');
-  let cursor = headerSize;
-  const section = (size: number): Uint8Array => {
-    checkRange(bytes.length, cursor, size);
-    const result = bytes.subarray(cursor, cursor + size);
-    cursor += size;
-    return result;
-  };
-  const code = section(codeSize);
+  const section = (size: number): ByteView => r.data.sub(r.take(size), size);
+  const code = section(codeSize).bytes;
   const stringIndex = section(stringIndexSize);
   const stringData = section(stringSize);
   const arrayIndex = section(arrayIndexSize);
@@ -61,24 +54,24 @@ export function parseGsc(bytes: Uint8Array): GscProgram {
   const labelNames = section(labelIndexSize);
   const labelOffsets = section(labelIndexSize);
   const labelData = section(labelSize);
-  if (cursor !== bytes.length) throw new Error('GSC section sizes do not match the file');
+  if (r.position !== bytes.length) throw new Error('GSC section sizes do not match the file');
 
-  const u32 = (data: Uint8Array, index: number): number =>
-    byteDataView(data).getUint32(index * 4, true);
   const strings = Array.from({length: stringIndexSize / 4}, (_, i) =>
-    cString(stringData, u32(stringIndex, i), 'string'),
+    cString(stringData, stringIndex.u32(i * 4), 'string'),
   );
-  const words = byteDataView(arrayData);
   const arrays = Array.from({length: arrayIndexSize / 4}, (_, i) => {
-    const start = u32(arrayIndex, i);
+    const start = arrayIndex.u32(i * 4);
     if (start >= arrayWords) return new Int16Array();
-    const length = words.getInt16(start * 2, true);
+    const length = arrayData.i16(start * 2);
     if (length < 0 || start + 1 + length > arrayWords) throw new Error('Invalid GSC array');
-    return Int16Array.from({length}, (_, j) => words.getInt16((start + 1 + j) * 2, true));
+    return Int16Array.from({length}, (_, j) => arrayData.i16((start + 1 + j) * 2));
   });
   const labels = Array.from({length: labelIndexSize / 4}, (_, i): GscLabel => {
-    const offset = u32(labelOffsets, i);
-    return {name: i ? cString(labelData, u32(labelNames, i), 'label') : new Uint8Array(), offset};
+    const offset = labelOffsets.u32(i * 4);
+    return {
+      name: i ? cString(labelData, labelNames.u32(i * 4), 'label') : new Uint8Array(),
+      offset,
+    };
   });
   return {code, strings, arrays, labels};
 }
@@ -135,22 +128,19 @@ export function decodeGscInstruction(
   offset: number,
   layouts: GscOpcodeLayouts,
 ): GscInstruction {
-  const view = byteDataView(code);
-  checkRange(code.length, offset, 2);
-  const opcode = view.getUint16(offset, true);
+  const view = new ByteView(code, {littleEndian: true});
+  const opcode = view.u16(offset);
   let cursor = offset + 2;
   const operands: number[] = [];
   const take = (kind: GscOperandKind): void => {
-    const size = OPERAND_SIZE[kind];
-    checkRange(code.length, cursor, size);
     operands.push(
       kind === 'i16'
-        ? view.getInt16(cursor, true)
-        : size === 2
-          ? view.getUint16(cursor, true)
-          : view.getUint32(cursor, true),
+        ? view.i16(cursor)
+        : OPERAND_SIZE[kind] === 2
+          ? view.u16(cursor)
+          : view.u32(cursor),
     );
-    cursor += size;
+    cursor += OPERAND_SIZE[kind];
   };
   if (isGscExpression(opcode)) {
     take('u16');

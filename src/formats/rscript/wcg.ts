@@ -1,4 +1,5 @@
-import {byteDataView, checkRange} from '../../core/binary.js';
+import {byteDataView, ByteView} from '../../core/binary.js';
+import {BitReader} from '../../core/bits.js';
 
 /**
  * Decoded codeX RScript image. `pixels` keeps the native 32-bit layout: bytes are
@@ -21,46 +22,14 @@ const WCG_SIGNATURE = 0x4757; // "WG"
 
 export function readWcgHeader(bytes: Uint8Array): WcgHeader {
   if (bytes.length < 16) throw new Error('Truncated WCG image');
-  const view = byteDataView(bytes);
-  if (view.getUint16(0, true) !== WCG_SIGNATURE) throw new Error('Not a WCG image');
-  const flags = view.getUint16(2, true);
-  const width = view.getUint32(8, true);
-  const height = view.getUint32(12, true);
+  const view = new ByteView(bytes, {littleEndian: true});
+  if (view.u16(0) !== WCG_SIGNATURE) throw new Error('Not a WCG image');
+  const flags = view.u16(2);
+  const width = view.u32(8);
+  const height = view.u32(12);
   if (width < 1 || height < 1 || width * height > 0x4000000)
     throw new Error(`Invalid WCG dimensions ${width}x${height}`);
   return {flags, width, height};
-}
-
-/** MSB-first reader matching 0x43EDB0: reads fail instead of padding past the end. */
-class WcgBits {
-  private position = 0;
-  private remaining = 8;
-  constructor(
-    private readonly bytes: Uint8Array,
-    private readonly start: number,
-    private readonly end: number,
-  ) {
-    this.position = start;
-  }
-  read(count: number): number {
-    let value = 0;
-    while (count) {
-      if (this.position >= this.end) throw new Error('Truncated WCG bitstream');
-      const available = this.remaining;
-      const byte = this.bytes[this.position]! & ((1 << available) - 1);
-      if (available <= count) {
-        count -= available;
-        value += byte * 2 ** count;
-        this.position++;
-        this.remaining = 8;
-      } else {
-        this.remaining = available - count;
-        value += byte >>> this.remaining;
-        count = 0;
-      }
-    }
-    return value;
-  }
 }
 
 /**
@@ -68,12 +37,12 @@ class WcgBits {
  * prefixes below `escape` read `prefix - 1` bits under an implicit leading one; the
  * escape prefix adds one extra bit per leading `1`, bounded by `extensions`.
  */
-function readIndex(bits: WcgBits, prefix: number, escape: number, extensions: number): number {
-  if (prefix === 1) return bits.read(1);
+function readIndex(bits: BitReader, prefix: number, escape: number, extensions: number): number {
+  if (prefix === 1) return bits.readBit();
   let width = prefix - 1;
   if (prefix === escape) {
     let extra = 0;
-    while (bits.read(1)) if (++extra > extensions) throw new Error('Invalid WCG escape code');
+    while (bits.readBit()) if (++extra > extensions) throw new Error('Invalid WCG escape code');
     width += extra;
   }
   return bits.read(width) + 2 ** width;
@@ -81,25 +50,22 @@ function readIndex(bits: WcgBits, prefix: number, escape: number, extensions: nu
 
 /** Decodes one plane into `pixels`, writing one byte or one 16-bit word every 4 bytes. */
 function decodePlane(
-  bytes: Uint8Array,
+  view: ByteView,
   cursor: number,
   pixels: Uint8Array,
   start: number,
   wide: boolean,
 ): number {
-  checkRange(bytes.length, cursor, 12);
-  const view = byteDataView(bytes);
-  const packed = view.getUint32(cursor + 4, true);
-  const entries = view.getUint16(cursor + 8, true);
+  view.check(cursor, 12);
+  const packed = view.u32(cursor + 4);
+  const entries = view.u16(cursor + 8);
   cursor += 12;
-  const tableSize = entries * (wide ? 2 : 1);
-  checkRange(bytes.length, cursor, tableSize);
   const table = new Uint16Array(entries);
   for (let i = 0; i < entries; i++)
-    table[i] = wide ? view.getUint16(cursor + i * 2, true) : bytes[cursor + i]!;
-  cursor += tableSize;
-  checkRange(bytes.length, cursor, packed);
-  const bits = new WcgBits(bytes, cursor, cursor + packed);
+    table[i] = wide ? view.u16(cursor + i * 2) : view.u8(cursor + i);
+  cursor += entries * (wide ? 2 : 1);
+  // MSB first, as 0x43EDB0 reads; reads fail instead of padding past the end.
+  const bits = new BitReader(view.range(cursor, packed));
   // 16-bit planes with large palettes use four-bit prefixes (0x43E130).
   const prefixBits = wide && entries > 0x1000 ? 4 : 3;
   const escape = prefixBits === 4 ? 15 : 7;
@@ -136,15 +102,16 @@ export function decodeWcg(bytes: Uint8Array): RScriptImage {
   const {flags, width, height} = readWcgHeader(bytes);
   if ((flags & 0xf) !== 1) throw new Error(`Unsupported WCG version ${flags & 0xf}`);
   const pixels = new Uint8Array(width * height * 4);
+  const view = new ByteView(bytes, {littleEndian: true});
   let cursor = 16;
   if ((flags & 0x1c0) === 0x40) {
-    cursor = decodePlane(bytes, cursor, pixels, 2, true);
-    decodePlane(bytes, cursor, pixels, 0, true);
+    cursor = decodePlane(view, cursor, pixels, 2, true);
+    decodePlane(view, cursor, pixels, 0, true);
   } else {
-    cursor = decodePlane(bytes, cursor, pixels, 3, false);
+    cursor = decodePlane(view, cursor, pixels, 3, false);
     // Without flag 0x10 the native decoder fills only transparency.
     if (flags & 0x10)
-      for (const channel of [2, 1, 0]) cursor = decodePlane(bytes, cursor, pixels, channel, false);
+      for (const channel of [2, 1, 0]) cursor = decodePlane(view, cursor, pixels, channel, false);
   }
   return {width, height, pixels};
 }

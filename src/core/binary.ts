@@ -185,6 +185,22 @@ export class ByteView {
   f64(offset: number, end?: number): number {
     return this.view.getFloat64(this.check(offset, 8, end), this.littleEndian);
   }
+  /**
+   * Bytes of a zero-terminated string, excluding the zero. With `length` the string is a
+   * field of that many bytes and ends at its first zero or at the field's end; without it a
+   * zero must follow before `end`.
+   */
+  cString(offset: number, length?: number, end = this.end): Uint8Array {
+    if (length !== undefined) {
+      const field = this.range(offset, length, end),
+        zero = field.indexOf(0);
+      return zero < 0 ? field : field.subarray(0, zero);
+    }
+    this.check(offset, 1, end);
+    const zero = this.bytes.subarray(offset, end).indexOf(0);
+    if (zero < 0) throw this.error(offset, end - offset + 1, end);
+    return this.bytes.subarray(offset, offset + zero);
+  }
   /** Latin-1 characters of the checked bytes, e.g. a four-character tag. */
   ascii(offset: number, length: number, end?: number): string {
     return String.fromCharCode(...this.range(offset, length, end));

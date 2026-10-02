@@ -1,4 +1,4 @@
-import {byteDataView, checkRange} from '../../core/binary.js';
+import {ByteView, checkRange} from '../../core/binary.js';
 import {SliceSource, type ByteSource} from '../../core/source.js';
 
 export interface LwgEntry {
@@ -33,37 +33,33 @@ export class LwgImage {
   static async open(source: ByteSource): Promise<LwgImage> {
     if (source.size < 24) throw new Error('Not an LWG image');
     const header = await source.read(0, 24);
-    const view = byteDataView(header);
-    if (view.getUint16(0, true) !== 0x474c || view.getUint16(2, true) !== 1)
-      throw new Error('Not an LWG image');
-    const height = view.getUint32(4, true);
-    const width = view.getUint32(8, true);
-    const count = view.getUint16(12, true);
-    const indexSize = view.getUint32(20, true);
+    const view = new ByteView(header, {littleEndian: true});
+    if (view.u16(0) !== 0x474c || view.u16(2) !== 1) throw new Error('Not an LWG image');
+    const height = view.u32(4);
+    const width = view.u32(8);
+    const count = view.u16(12);
+    const indexSize = view.u32(20);
     checkRange(source.size, 24, indexSize + 4);
-    const index = await source.read(24, indexSize + 4);
-    const data = byteDataView(index);
+    const index = new ByteView(await source.read(24, indexSize + 4), {littleEndian: true});
     const decoder = new TextDecoder('shift-jis', {fatal: true});
     const parsed: Omit<LwgEntry, 'offset'>[] = [];
     const relative: number[] = [];
     let cursor = 0;
     for (let i = 0; i < count; i++) {
-      checkRange(indexSize, cursor, 18);
-      const nameLength = index[cursor + 17]!;
-      checkRange(indexSize, cursor + 18, nameLength);
+      const nameLength = index.u8(cursor + 17, indexSize);
       parsed.push({
         index: i,
-        x: data.getInt32(cursor, true),
-        y: data.getInt32(cursor + 4, true),
-        format: index[cursor + 8]!,
-        size: data.getUint32(cursor + 13, true),
-        name: decoder.decode(index.subarray(cursor + 18, cursor + 18 + nameLength)),
+        x: index.i32(cursor),
+        y: index.i32(cursor + 4),
+        format: index.u8(cursor + 8),
+        size: index.u32(cursor + 13),
+        name: decoder.decode(index.range(cursor + 18, nameLength, indexSize)),
       });
-      relative.push(data.getUint32(cursor + 9, true));
+      relative.push(index.u32(cursor + 9));
       cursor += 18 + nameLength;
     }
     if (cursor !== indexSize) throw new Error('LWG index size mismatch');
-    const dataSize = data.getUint32(indexSize, true);
+    const dataSize = index.u32(indexSize);
     const base = 24 + indexSize + 4;
     checkRange(source.size, base, dataSize);
     const entries = parsed.map((entry, i): LwgEntry => {

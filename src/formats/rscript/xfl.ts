@@ -1,4 +1,4 @@
-import {byteDataView, checkRange} from '../../core/binary.js';
+import {ByteView, checkRange} from '../../core/binary.js';
 import {SliceSource, type ByteSource} from '../../core/source.js';
 
 export interface XflEntry {
@@ -46,24 +46,23 @@ export class XflArchive {
     const header = await source.read(0, 12);
     if (header[0] !== 0x4c || header[1] !== 0x42 || header[2] !== 1)
       throw new Error('Not an XFL archive');
-    const count = byteDataView(header).getUint32(8, true);
+    const count = new ByteView(header, {littleEndian: true}).u32(8);
     const indexSize = count * ENTRY_SIZE;
     checkRange(source.size, 12, indexSize);
-    const index = await source.read(12, indexSize);
-    const view = byteDataView(index);
+    const index = new ByteView(await source.read(12, indexSize), {littleEndian: true});
     const base = 12 + indexSize;
     const decoder = new TextDecoder('shift-jis', {fatal: true});
     const entries: XflEntry[] = [];
     for (let i = 0; i < count; i++) {
       const p = i * ENTRY_SIZE;
-      const field = index.subarray(p, p + NAME_SIZE);
-      const end = field.indexOf(0);
-      if (end <= 0) throw new Error(`XFL entry ${i}: invalid name`);
-      const relative = view.getUint32(p + 32, true);
-      const size = view.getUint32(p + 36, true);
+      const name = index.cString(p, NAME_SIZE);
+      if (name.length === 0 || name.length === NAME_SIZE)
+        throw new Error(`XFL entry ${i}: invalid name`);
+      const relative = index.u32(p + 32);
+      const size = index.u32(p + 36);
       const offset = base + relative;
       checkRange(source.size, offset, size);
-      entries.push({index: i, name: decoder.decode(field.subarray(0, end)), offset, size});
+      entries.push({index: i, name: decoder.decode(name), offset, size});
     }
     return new XflArchive(source, entries);
   }
