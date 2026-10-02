@@ -177,8 +177,8 @@ test('missing window registration awaits the actual dialog before process comple
   const s = setup();
   let finish;
   const dialog = {
-    show(message) {
-      assert.equal(message.buttons, 'ok');
+    messageBox(text, caption, type) {
+      assert.equal(type, 0);
       return new Promise((resolve) => {
         finish = resolve;
       });

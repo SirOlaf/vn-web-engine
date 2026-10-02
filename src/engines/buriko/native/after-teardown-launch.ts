@@ -1,5 +1,5 @@
 import {duplicateWindowsShellPrimaryToken} from '../../../platform/windows-process.js';
-import type {WindowsPostTeardownDialogHost} from '../../../platform/windows-post-teardown-dialog.js';
+import {MB_OK, type WindowsMessageBoxHost} from '../../../platform/windows-message-box.js';
 import type {BurikoExitLaunchRequest} from './exit-launch-handoff.js';
 import {BurikoExitLaunchHandoff} from './exit-launch-handoff.js';
 import {BurikoExternalProcesses, type BurikoExitLaunchProcessPlan} from './external-process.js';
@@ -26,14 +26,14 @@ export class BurikoAfterTeardownLaunch {
     private readonly handoff: BurikoExitLaunchHandoff,
     private readonly pending: BurikoExitLaunchRequest,
     private readonly plan: BurikoExitLaunchProcessPlan,
-    private readonly dialogs: WindowsPostTeardownDialogHost,
+    private readonly dialogs: WindowsMessageBoxHost,
   ) {}
 
   /** Call after the VM stops, before core.close() or graph.shutdown(). */
   static capture(
     handoff: BurikoExitLaunchHandoff,
     processes: BurikoExternalProcesses,
-    dialogs: WindowsPostTeardownDialogHost,
+    dialogs: WindowsMessageBoxHost,
   ): BurikoAfterTeardownLaunch | null {
     const pending = handoff.snapshotPendingForTeardown();
     return pending === null
@@ -78,9 +78,10 @@ export class BurikoAfterTeardownLaunch {
       }
       if (created === null) {
         if (this.plan.failureDialog !== null)
-          await this.dialogs.showInformation(
-            this.plan.failureDialog.title,
+          await this.dialogs.messageBox(
             this.plan.failureDialog.text,
+            this.plan.failureDialog.title,
+            MB_OK,
           );
         return 0;
       }

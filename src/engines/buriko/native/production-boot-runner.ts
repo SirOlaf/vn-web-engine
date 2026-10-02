@@ -1,6 +1,8 @@
-import {BrowserWindowsPostTeardownDialogHost} from '../../../platform/windows-post-teardown-dialog.js';
+import {
+  BrowserWindowsMessageBoxHost,
+  type WindowsMessageBoxHost,
+} from '../../../platform/windows-message-box.js';
 import {beginRuntimeActivity} from '../../../platform/runtime-activity.js';
-import type {WindowsPostTeardownDialogHost} from '../../../platform/windows-post-teardown-dialog.js';
 import {BrowserWindowsProcessInstanceHost} from '../../../platform/windows-process-instance.js';
 import type {
   WindowsProcessInstanceHost,
@@ -21,7 +23,7 @@ export class BurikoProductionBootRunner {
   private constructor(
     readonly core: BurikoProductionVmCore,
     readonly interpreter: BurikoProductionInterpreter,
-    readonly postTeardownDialogs: WindowsPostTeardownDialogHost,
+    readonly postTeardownDialogs: WindowsMessageBoxHost,
     readonly instanceLease: WindowsProcessInstanceLease | null,
   ) {
     if (interpreter.core !== core)
@@ -33,7 +35,7 @@ export class BurikoProductionBootRunner {
   /** C3900's selected display leg precedes FDEE0's one shared worker start. */
   static async start(
     core: BurikoProductionVmCore,
-    postTeardownDialogs?: WindowsPostTeardownDialogHost,
+    postTeardownDialogs?: WindowsMessageBoxHost,
     processInstances: WindowsProcessInstanceHost = new BrowserWindowsProcessInstanceHost(),
   ): Promise<BurikoProductionBootRunner> {
     if (!(core instanceof BurikoProductionVmCore))
@@ -60,7 +62,8 @@ export class BurikoProductionBootRunner {
       return new BurikoProductionBootRunner(
         core,
         interpreter,
-        postTeardownDialogs ?? new BrowserWindowsPostTeardownDialogHost(graph.host.document),
+        // The document body outlives the engine surface, which teardown removes.
+        postTeardownDialogs ?? new BrowserWindowsMessageBoxHost(graph.host.document.body),
         instanceLease,
       );
     } catch (error) {

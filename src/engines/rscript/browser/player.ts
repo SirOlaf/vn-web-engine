@@ -147,7 +147,7 @@ export class RScriptBrowserPlayer {
       saves: options.saves,
       playMovie: (path) => this.playMovie(path),
       stopMovie: () => this.skipMovie?.(),
-      confirm: (caption, text) => messageBox.confirm(caption, text),
+      messageBox,
       listFonts: () => listRScriptFonts(document),
       setFullscreen: (fullscreen) => options.setFullscreen?.(fullscreen),
       // The shared audio host resumes the context again on activation.

@@ -66,7 +66,7 @@ function setup(present = async () => 1) {
   const display = new BurikoNativeDisplayState(1920, 1080),
     input = new BurikoNativeInput(display, clock);
   const dialogs = new BurikoEngineDialogs(
-    {show: present},
+    {messageBox: present},
     text,
     clock,
     input,
@@ -265,8 +265,8 @@ test('deferred archive pointers are consumed only after a primary loose miss, in
 });
 test('resource retry cancellation preserves native quit code and follows both dialogs', async () => {
   const calls = [];
-  const s = setup(async (dialog) => {
-    calls.push(dialog);
+  const s = setup(async (text, caption, type) => {
+    calls.push({text, type});
     return calls.length === 1 ? 2 : 6;
   });
   await assert.rejects(
@@ -274,10 +274,10 @@ test('resource retry cancellation preserves native quit code and follows both di
     (error) => error.code === 0x7fffffff,
   );
   assert.deepEqual(
-    calls.map((c) => [c.text, c.buttons, c.defaultSecondButton]),
+    calls.map((c) => [c.text, c.type & 0xf, c.type & 0xf00]),
     [
-      ['Insert', 'ok-cancel', false],
-      ['Quit?', 'yes-no', true],
+      ['Insert', 1, 0],
+      ['Quit?', 4, 0x100],
     ],
   );
 });

@@ -1,6 +1,12 @@
 import {parseGsc, type GscProgram} from '../../../formats/rscript/gsc.js';
 import type {RScriptApini} from '../apini.js';
 import type {RScriptMessages} from '../messages.js';
+import {
+  IDOK,
+  MB_ICONQUESTION,
+  MB_OKCANCEL,
+  type WindowsMessageBoxHost,
+} from '../../../platform/windows-message-box.js';
 import {initializeConfig, initializeScene} from '../defaults.js';
 import type {RScriptFiles} from '../files.js';
 import {ADD_TABLE, createSurface, scaleRgb, type RScriptSurface} from '../graphics/pixels.js';
@@ -60,11 +66,8 @@ export interface RScriptGameHost {
   playMovie(path: string): Promise<void>;
   /** Ends a movie started by `playMovie` early, when the scene restarts. */
   stopMovie(): void;
-  /**
-   * Asks the player to confirm (the MessageBox with OK and Cancel that titles without a
-   * custom dialog image use); resolves true for OK.
-   */
-  confirm(caption: string, text: string): Promise<boolean>;
+  /** MessageBoxA of the game window (the native confirmations call it through sub_452BE0). */
+  readonly messageBox: WindowsMessageBoxHost;
   /**
    * Font families the configuration's font window lists (0x4572F0): fixed-pitch TrueType
    * families with Shift-JIS support, by their Japanese names. Called from the font button's
@@ -802,11 +805,20 @@ export class RScriptGame {
     else this.wheel(key === 'up');
   }
 
+  /**
+   * sub_452BE0: an OK/Cancel question box; true for OK. A title-supplied dialog replaces
+   * it natively when a callback is installed (+0x2A4); no supported title installs one.
+   */
+  private async confirm(caption: string, text: string): Promise<boolean> {
+    const type = MB_OKCANCEL | MB_ICONQUESTION;
+    return (await this.host.messageBox.messageBox(text, caption, type)) === IDOK;
+  }
+
   /** sub_41F200: loads slot 0 after a confirmation. */
   private async quickLoad(): Promise<void> {
     if (!(await this.readSlot(0))) return;
     const {confirm, quickLoad} = this.host.messages;
-    if (quickLoad === null || !(await this.host.confirm(confirm, quickLoad))) return;
+    if (quickLoad === null || !(await this.confirm(confirm, quickLoad))) return;
     await this.loadSlot(0);
   }
 
@@ -1172,7 +1184,7 @@ export class RScriptGame {
     this.playSystemSound(1);
     if (command === 'save' || command === 'load') return this.openSaveScreen(command === 'save');
     if (command === 'close' || this.screens.standalone) return this.closeScreen();
-    if (await this.host.confirm(this.host.messages.confirm, this.host.messages.returnToTitle))
+    if (await this.confirm(this.host.messages.confirm, this.host.messages.returnToTitle))
       await this.returnToTitle();
   }
 
@@ -1217,10 +1229,9 @@ export class RScriptGame {
   /** sub_41EA70 (save) / sub_41EB60 (load) and the standalone load (sub_420200). */
   private async chooseSlot(slot: number, save: boolean): Promise<void> {
     const exists = !!(await this.readSlot(slot));
-    const {confirm} = this.host;
     if (save) {
       this.playSystemSound(1);
-      if (exists && !(await confirm(this.host.messages.confirm, this.host.messages.overwrite)))
+      if (exists && !(await this.confirm(this.host.messages.confirm, this.host.messages.overwrite)))
         return;
       const previous = this.memory.configWord(0x3a) & 0xffff;
       this.memory.setConfigWord(0x3a, slot);
@@ -1233,7 +1244,7 @@ export class RScriptGame {
     if (!exists) return;
     if (
       !this.screens.standalone &&
-      !(await confirm(this.host.messages.confirm, this.host.messages.load))
+      !(await this.confirm(this.host.messages.confirm, this.host.messages.load))
     )
       return;
     this.playSystemSound(1);
@@ -1259,7 +1270,7 @@ export class RScriptGame {
 
   /** WM_CLOSE of the game window: quits after the native confirmation. */
   async quit(): Promise<void> {
-    if (!(await this.host.confirm(this.host.messages.quitCaption, this.host.messages.quit))) return;
+    if (!(await this.confirm(this.host.messages.quitCaption, this.host.messages.quit))) return;
     await this.saveSystem();
     this.dispose();
     this.host.exit();

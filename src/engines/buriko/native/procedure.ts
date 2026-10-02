@@ -1,3 +1,4 @@
+import {MB_OK} from '../../../platform/windows-message-box.js';
 import {push32, type BurikoBpThread} from '../bp/state.js';
 import type {BurikoNativeClock} from './clock.js';
 import type {BurikoDiagnosticDialogs} from './modal.js';
@@ -227,11 +228,7 @@ export class BurikoWaitWindowMessage extends BurikoProcedure {
     const event = this.registry.consume(this.thread, this.message);
     if (event === null) {
       return this.dialogs
-        .show({
-          title: 'バグ発見！！',
-          text: '検出対象となるWindowsMessageが削除されてしまっている',
-          buttons: 'ok',
-        })
+        .messageBox('検出対象となるWindowsMessageが削除されてしまっている', 'バグ発見！！', MB_OK)
         .then(() => 1);
     }
     if (!this.canRun()) {

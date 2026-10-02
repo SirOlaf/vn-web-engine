@@ -89,7 +89,7 @@ test('80:E1 launches its copied request through selected primitives after engine
     },
   });
   assert.equal(handoff.request(bytes('D:\\Tools\0'), bytes('helper.exe --flag\0'), null), 6);
-  const dialogs = {showInformation: () => assert.fail('successful launch showed failure dialog')};
+  const dialogs = {messageBox: () => assert.fail('successful launch showed failure dialog')};
   const continuation = BurikoAfterTeardownLaunch.capture(handoff, processes, dialogs);
   assert.ok(continuation);
   await processes.closeAndJoin();

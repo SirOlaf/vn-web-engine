@@ -28,10 +28,10 @@ test('mounted B0 modals share the graph title, DOM presenter, BP results and sel
     assert.equal(matches.length, 1);
     return matches[0];
   };
+  const buttons = (element) =>
+    element.children.flatMap((child) => (child.tagName === 'BUTTON' ? [child] : buttons(child)));
   const button = (dialog, label) => {
-    const match = dialog.children.find(
-      (child) => child.tagName === 'BUTTON' && child.textContent === label,
-    );
+    const match = buttons(dialog).find((child) => child.textContent === label);
     assert.ok(match);
     return match;
   };
@@ -100,9 +100,7 @@ test('mounted B0 modals share the graph title, DOM presenter, BP results and sel
         assert.equal(dialog.children[0].textContent, 'Preferred title');
         assert.equal(dialog.children[1].textContent, 'First\nSecond');
         assert.deepEqual(
-          dialog.children
-            .filter(({tagName}) => tagName === 'BUTTON')
-            .map(({textContent}) => textContent),
+          buttons(dialog).map(({textContent}) => textContent),
           ['OK'],
         );
       },
@@ -115,13 +113,11 @@ test('mounted B0 modals share the graph title, DOM presenter, BP results and sel
       (dialog) => {
         assert.equal(dialog.children[1].textContent, 'Continue?');
         assert.deepEqual(
-          dialog.children
-            .filter(({tagName}) => tagName === 'BUTTON')
-            .map(({textContent}) => textContent),
-          ['はい', 'いいえ'],
+          buttons(dialog).map(({textContent}) => textContent),
+          ['はい(Y)', 'いいえ(N)'],
         );
       },
-      'はい',
+      'はい(Y)',
       1,
     );
     await invokeModal(
@@ -130,9 +126,7 @@ test('mounted B0 modals share the graph title, DOM presenter, BP results and sel
       (dialog) => {
         assert.equal(dialog.children[1].textContent, 'Accept?');
         assert.deepEqual(
-          dialog.children
-            .filter(({tagName}) => tagName === 'BUTTON')
-            .map(({textContent}) => textContent),
+          buttons(dialog).map(({textContent}) => textContent),
           ['OK', 'キャンセル'],
         );
       },

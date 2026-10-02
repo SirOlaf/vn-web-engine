@@ -1,11 +1,8 @@
-export type BurikoDiagnosticButtons = 'ok' | 'ok-cancel' | 'yes-no';
-
-export interface BurikoDiagnosticDialog {
-  readonly title: string;
-  readonly text: string;
-  readonly buttons: BurikoDiagnosticButtons;
-  readonly defaultSecondButton?: boolean;
-}
+import {
+  BrowserWindowsMessageBoxHost,
+  type WindowsMessageBoxHost,
+  type WindowsMessageBoxResult,
+} from '../../../platform/windows-message-box.js';
 
 export interface BurikoFontDialog {
   readonly title: string;
@@ -13,54 +10,18 @@ export interface BurikoFontDialog {
   readonly faces: readonly string[];
 }
 
-/** Browser presentation of Buriko's diagnostic dialogs; native result IDs remain intact. */
-export class BurikoDiagnosticDialogs {
+/** Browser presentation of Buriko's message boxes and list dialogs. */
+export class BurikoDiagnosticDialogs implements WindowsMessageBoxHost {
+  private readonly messageBoxes: WindowsMessageBoxHost;
   constructor(
     private readonly document: Document,
     private readonly parent: HTMLElement,
-  ) {}
+  ) {
+    this.messageBoxes = new BrowserWindowsMessageBoxHost(parent);
+  }
 
-  show(message: BurikoDiagnosticDialog): Promise<1 | 2 | 6 | 7> {
-    return new Promise((resolve, reject) => {
-      const dialog = this.create(message.title, message.text);
-      const choices: readonly (readonly [string, 1 | 2 | 6 | 7])[] =
-        message.buttons === 'yes-no'
-          ? [
-              ['はい', 6],
-              ['いいえ', 7],
-            ]
-          : message.buttons === 'ok-cancel'
-            ? [
-                ['OK', 1],
-                ['キャンセル', 2],
-              ]
-            : [['OK', 1]];
-      const finish = (result: 1 | 2 | 6 | 7): void => {
-        dialog.close();
-        dialog.remove();
-        resolve(result);
-      };
-      const buttons = choices.map(([label, result]) => {
-        const button = this.document.createElement('button');
-        button.type = 'button';
-        button.textContent = label;
-        button.addEventListener('click', () => finish(result));
-        dialog.append(button);
-        return button;
-      });
-      dialog.addEventListener('cancel', (event) => {
-        event.preventDefault();
-        if (message.buttons !== 'yes-no') finish(message.buttons === 'ok-cancel' ? 2 : 1);
-      });
-      try {
-        this.parent.append(dialog);
-        dialog.showModal();
-        buttons[message.defaultSecondButton && buttons.length > 1 ? 1 : 0]!.focus();
-      } catch (error) {
-        dialog.remove();
-        reject(error);
-      }
-    });
+  messageBox(text: string, caption: string, type: number): Promise<WindowsMessageBoxResult> {
+    return this.messageBoxes.messageBox(text, caption, type);
   }
 
   chooseFont(message: BurikoFontDialog): Promise<{accepted: boolean; index: number | null}> {

@@ -1,3 +1,4 @@
+import type {WindowsMessageBoxResult} from '../../../platform/windows-message-box.js';
 import type {BurikoNativeClock} from './clock.js';
 import type {BurikoNativeInput} from './input.js';
 import {BurikoDiagnosticDialogs} from './modal.js';
@@ -124,7 +125,7 @@ export class BurikoEngineDialogs {
     message: Uint8Array | BurikoBpPointer | null,
     title: Uint8Array | BurikoBpPointer | null,
     flags: number,
-  ): Promise<1 | 2 | 6 | 7> {
+  ): Promise<WindowsMessageBoxResult> {
     return this.withNativeModal(async () => {
       // f8e00's narrow replacement runs on UTF-8: the ASCII sequence backslash+n becomes LF.
       if (message === null) throw new Error('Buriko engine modal dereferences a null message');
@@ -137,16 +138,7 @@ export class BurikoEngineDialogs {
           ? hostPointer(terminatedNativeBytes(captionSource))
           : captionSource,
       );
-      const buttonKind = flags & 15;
-      if (buttonKind !== 0 && buttonKind !== 1 && buttonKind !== 4)
-        throw new RangeError('Buriko engine modal uses unsupported native button kind');
-      const result = await this.presenter.show({
-        title: caption,
-        text: content,
-        buttons: buttonKind === 4 ? 'yes-no' : buttonKind === 1 ? 'ok-cancel' : 'ok',
-        defaultSecondButton: (flags & 0x300) === 0x100,
-      });
-      return result;
+      return this.presenter.messageBox(content, caption, flags);
     });
   }
 

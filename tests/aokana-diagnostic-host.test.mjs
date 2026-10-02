@@ -35,13 +35,13 @@ test('engine modal freezes title clock, updates native cursor, and restores inpu
   };
   const dialogs = new BurikoEngineDialogs(
     {
-      async show(message) {
+      async messageBox(text, caption, type) {
         events.push('show');
         assert.equal(element.style.cursor, '');
         tick = 200;
         assert.equal(clock.read(), 100n);
-        assert.equal(message.text, 'a\nb');
-        assert.equal(message.defaultSecondButton, true);
+        assert.equal(text, 'a\nb');
+        assert.equal(type, 0x124);
         return 7;
       },
     },
