@@ -91,7 +91,10 @@ async function identify(files: ReadonlyMap<string, ByteSource>): Promise<Identif
       const apini = config
         ? parseApini(await config.read(0, config.size), embedded.revision)
         : embedded;
-      return {apini, messages: readRScriptMessages(executable, apini.revision)};
+      const {messages, fromExecutable} = readRScriptMessages(executable, apini.revision);
+      if (!fromExecutable)
+        console.warn('[RScript] The executable stores its messages elsewhere; using defaults.');
+      return {apini, messages};
     } catch (error) {
       // Not the game executable (for example an uninstaller); keep looking.
       if (error instanceof Error && error.message.startsWith('Unsupported')) unsupported = error;

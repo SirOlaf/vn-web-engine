@@ -1,6 +1,6 @@
 import type {GscOpcodeLayouts} from '../../formats/rscript/gsc.js';
 import {readPeVersionStrings} from '../../formats/pe/version-info.js';
-import type {RScriptMessageAddresses} from './messages.js';
+import type {RScriptMessageAddresses, RScriptMessages} from './messages.js';
 import {RSCRIPT_1_11_LAYOUTS, RSCRIPT_1_9_LAYOUTS} from './vm/layouts.js';
 
 /**
@@ -47,8 +47,10 @@ export interface RScriptRevision {
   /** The executable's FileVersion, dotted. */
   readonly version: '1.9.0.0' | '1.11.0.3';
   readonly apini: RScriptApiniLayout;
-  /** Where the executable stores its message box strings. */
+  /** Where the reference executable stores its message box strings. */
   readonly messages: RScriptMessageAddresses;
+  /** The reference executable's message box strings. */
+  readonly messageDefaults: RScriptMessages;
   readonly layouts: GscOpcodeLayouts;
   /** The configuration block written to the system save. */
   readonly configSize: number;
@@ -84,6 +86,16 @@ export interface RScriptRevision {
 }
 
 /** RScript 1.11.0.3: the Fairytale Requiem, Symphony and Encore executables. */
+const MESSAGES_1_11: RScriptMessages = Object.freeze({
+  confirm: '確認',
+  returnToTitle: 'タイトル画面に戻ります。\nよろしいですか？',
+  overwrite: 'セーブデータを上書きします。\nよろしいですか？',
+  load: 'セーブデータをロードします。\nよろしいですか？',
+  quickLoad: 'クイックロードしますか？',
+  quitCaption: '終了確認',
+  quit: '本当にゲームを終了しますか？',
+});
+
 export const RSCRIPT_1_11: RScriptRevision = Object.freeze({
   version: '1.11.0.3',
   apini: Object.freeze({
@@ -132,6 +144,7 @@ export const RSCRIPT_1_11: RScriptRevision = Object.freeze({
     quitCaption: 0x4821d0,
     quit: 0x4821dc,
   }),
+  messageDefaults: MESSAGES_1_11,
 });
 
 /** 1.11 scene offsets where 1.9's message state begins and ends. */
@@ -274,6 +287,7 @@ export const RSCRIPT_1_9: RScriptRevision = Object.freeze({
     quitCaption: 0x47eff8,
     quit: 0x47f004,
   }),
+  messageDefaults: Object.freeze({...MESSAGES_1_11, quickLoad: null}),
 });
 
 /** Engine revisions by the executable's FileVersion. */

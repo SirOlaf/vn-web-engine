@@ -290,7 +290,7 @@ function peImage(data) {
   return bytes;
 }
 
-test('RScript message box texts come from the revision addresses in the executable', () => {
+test('RScript message box texts come from the executable when its addresses hold strings', () => {
   const strings = [
     '確認',
     '戻ります。\nよろしいですか？',
@@ -299,7 +299,7 @@ test('RScript message box texts come from the revision addresses in the executab
     '終了確認',
     '終了？',
   ];
-  const data = [],
+  const data = [0],
     addresses = [];
   for (const text of strings) {
     addresses.push(0x401000 + data.length);
@@ -308,19 +308,31 @@ test('RScript message box texts come from the revision addresses in the executab
   const [confirm, returnToTitle, overwrite, load, quitCaption, quit] = addresses;
   const revision = {
     messages: {confirm, returnToTitle, overwrite, load, quickLoad: null, quitCaption, quit},
+    messageDefaults: RSCRIPT_1_9.messageDefaults,
   };
   assert.deepEqual(readRScriptMessages(peImage(data), revision), {
-    confirm: '確認',
-    returnToTitle: '戻ります。\nよろしいですか？',
-    overwrite: '上書き',
-    load: 'ロード',
-    quickLoad: null,
-    quitCaption: '終了確認',
-    quit: '終了？',
+    messages: {
+      confirm: '確認',
+      returnToTitle: '戻ります。\nよろしいですか？',
+      overwrite: '上書き',
+      load: 'ロード',
+      quickLoad: null,
+      quitCaption: '終了確認',
+      quit: '終了？',
+    },
+    fromExecutable: true,
   });
-  // An unterminated string may not run past its section.
-  const unterminated = peImage(new Uint8Array(0x200).fill(0x41));
-  assert.throws(() => readRScriptMessages(unterminated, revision), RangeError);
-  for (const known of [RSCRIPT_1_9, RSCRIPT_1_11])
-    assert.ok(Object.values(known.messages).every((a) => a === null || a > 0x400000));
+  // A shifted mapping, an unterminated string or another file falls back to the defaults.
+  const defaults = {messages: RSCRIPT_1_9.messageDefaults, fromExecutable: false};
+  const shifted = {...revision, messages: {...revision.messages, load: load + 1}};
+  assert.deepEqual(readRScriptMessages(peImage(data), shifted), defaults);
+  assert.deepEqual(
+    readRScriptMessages(peImage(new Uint8Array(0x200).fill(0x41)), revision),
+    defaults,
+  );
+  assert.deepEqual(readRScriptMessages(new Uint8Array(16), revision), defaults);
+  assert.equal(
+    RSCRIPT_1_11.messageDefaults.returnToTitle,
+    'タイトル画面に戻ります。\nよろしいですか？',
+  );
 });
