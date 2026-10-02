@@ -1,8 +1,8 @@
+import {addLanesSaturated24} from '../../../graphics/packed-pixels.js';
 import {
   ADD_TABLE,
   DEL_TABLE,
   mixRgb,
-  saturatingAdd,
   scaleRgb,
   type RScriptRect,
   type RScriptSurface,
@@ -164,7 +164,7 @@ export function blendSprite(
     case 0x0e:
       if (mask === 1) return;
       eachPixel(target, source, span, (src, dst) =>
-        saturatingAdd(
+        addLanesSaturated24(
           scaleRgb(ADD_TABLE, mask === 0 ? Math.max(src >>> 24, alpha) : alpha, src),
           dst,
         ),
@@ -218,7 +218,7 @@ export function blendSprite(
       // 0x4482E0: adds the sprite colour scaled by level and the source red channel.
       const color = state.color;
       eachPixel(target, source, span, (src, dst) =>
-        saturatingAdd(
+        addLanesSaturated24(
           scaleRgb(ADD_TABLE, 255 - ((alpha * ((src >>> 16) & 0xff)) >> 8), color),
           dst,
         ),
@@ -275,7 +275,7 @@ function blendNormal(
         if (t > limit) return undefined;
         if (t <= threshold) return mask === 3 ? 0 : mask === 4 ? 0xffffff : src;
         const w = (8 * (t - threshold)) & 0xff;
-        if (mask === 5) return saturatingAdd(scaleRgb(ADD_TABLE, w, src), dst);
+        if (mask === 5) return addLanesSaturated24(scaleRgb(ADD_TABLE, w, src), dst);
         return (scaleRgb(ADD_TABLE, 255 - w, dst) + (mask === 4 ? gray(w) : 0)) >>> 0;
       });
       return;

@@ -1,4 +1,5 @@
 import {checkRange} from '../../core/binary.js';
+import {addLanes, averageLanesFloor} from '../../graphics/packed-pixels.js';
 import {finishTask, runCooperativeTask, type CooperativeTask} from '../../core/cooperative-task.js';
 import {
   borrowedBytes,
@@ -105,15 +106,6 @@ export function legacyImageHeader(plan: CompressedBgLegacyPlan): Uint8Array {
   return plan.destination === undefined
     ? plan.bytes.slice(16, 32)
     : plan.destination.bytes.subarray(0, 16);
-}
-
-/** Add four byte lanes independently, retaining each native byte store's wraparound. */
-function addPixelBytes(first: number, second: number): number {
-  const mask = 0x00ff00ff;
-  return (
-    (((first & mask) + (second & mask)) & mask) |
-    (((((first >>> 8) & mask) + ((second >>> 8) & mask)) & mask) << 8)
-  );
 }
 
 function* decodeLegacy(
@@ -385,20 +377,20 @@ function* decodeLegacyStages(plan: CompressedBgLegacyPlan): CooperativeTask<Buri
           const row = y * width,
             end = row + width;
           if (y !== 0) words = outputWords();
-          let left = y === 0 ? input[row]! : addPixelBytes(input[row]!, words[row - width]!);
+          let left = y === 0 ? input[row]! : addLanes(input[row]!, words[row - width]!);
           words[row] = left;
           for (let i = row + 1; i < end;) {
             const limit = Math.min(end, i + 16384);
             if (y === 0) {
               for (; i < limit; i++) {
-                left = addPixelBytes(input[i]!, left);
+                left = addLanes(input[i]!, left);
                 words[i] = left;
               }
             } else {
               for (; i < limit; i++) {
                 const up = words[i - width]!,
-                  average = (up & left) + (((up ^ left) & 0xfefefefe) >>> 1);
-                left = addPixelBytes(input[i]!, average);
+                  average = averageLanesFloor(up, left);
+                left = addLanes(input[i]!, average);
                 words[i] = left;
               }
             }

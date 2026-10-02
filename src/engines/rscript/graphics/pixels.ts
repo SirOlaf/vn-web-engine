@@ -30,17 +30,6 @@ export function surfaceFromImage(image: {
   };
 }
 
-/** Converts a Windows COLORREF (0x00BBGGRR) to a native pixel with the given transparency. */
-export function colorrefPixel(colorref: number, transparency = 0): number {
-  return (
-    (((colorref >>> 16) & 0xff) |
-      (colorref & 0xff00) |
-      ((colorref & 0xff) << 16) |
-      (transparency << 24)) >>>
-    0
-  );
-}
-
 /**
  * CMath::Init (0x4489E0). `add[t][c] = c * (256 - t) / 256` darkens by t;
  * `del[t][c] = (256 - c) * t / 256 + c` brightens by t. Rows are indexed `t << 8 | c`.
@@ -85,12 +74,6 @@ export function mixRgb(src: number, dst: number, t: number): number {
       ((ADD_TABLE[a | ((src >>> 16) & 0xff)]! + ADD_TABLE[b | ((dst >>> 16) & 0xff)]!) << 16)) >>>
     0
   );
-}
-
-/** Per-channel saturating add of the low 24 bits (the native carry-mask idiom). */
-export function saturatingAdd(a: number, b: number): number {
-  const carry = ((((((a ^ b) & 0xfefefe) + ((a & b) << 1)) >>> 8) & 0x10101) + 0x7f7f7f) ^ 0x7f7f7f;
-  return (carry | ((a + b - carry) >>> 0)) >>> 0;
 }
 
 export interface RScriptRect {

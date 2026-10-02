@@ -1,3 +1,4 @@
+import {averageLanesCeil} from '../../../graphics/packed-pixels.js';
 import {withBurikoBitmapText} from './bitmap-dom-text.js';
 import {
   initializedBurikoBitmapView,
@@ -7,9 +8,7 @@ import {
 import {bitmapRead32, bitmapWrite32} from './bitmap-scalar.js';
 import {tryBurikoBitmapReduceWasm} from './bitmap-alpha-wasm.js';
 
-// ceil((a + b) / 2) = (a | b) - ((a ^ b) / 2), independently for all four bytes.
-const average = (first: number, second: number): number =>
-  ((first | second) - (((first ^ second) & 0xfefefefe) >>> 1)) >>> 0;
+const average = averageLanesCeil;
 
 /** Checked bulk access retains pair-before-store aliasing and marks only completed row bytes. */
 function reduceInitialized(
