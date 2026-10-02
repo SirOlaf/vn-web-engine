@@ -1,4 +1,12 @@
-import {oggPageChecksum} from '../formats/ogg/checksum.js';
+import {
+  isOggPageStart,
+  OGG_CONTINUED,
+  OGG_LAST_PAGE,
+  OGG_PAGE_HEADER_SIZE,
+  oggPageChecksumValid,
+  OggPacketAssembler,
+  readOggPage,
+} from '../formats/ogg/page.js';
 
 export interface VorbisPcm {
   readonly sampleRate: number;
@@ -30,63 +38,45 @@ let module: Promise<DecoderModule> | undefined;
 /** Assemble one logical Ogg stream. Engines own multiplexing, chaining and damaged-page policy. */
 function vorbisPackets(bytes: Uint8Array): {packets: Uint8Array[]; finalGranule: number | null} {
   const packets: Uint8Array[] = [];
-  let parts: Uint8Array[] = [],
-    packetSize = 0,
-    serial: number | undefined;
+  const assembler = new OggPacketAssembler();
+  let serial: number | undefined;
   let cursor = 0,
     finalGranule: number | null = null,
     ended = false;
-  const fail = (message: string): never => {
+  const fail: (message: string) => never = (message) => {
     throw new VorbisDecodeError(message);
   };
+  // The pinned packet decoder has a fixed 128 KiB input allocation.
+  // Comments are not passed to libvorbis and may legally exceed that size.
+  const limit = (index: number, size: number): void => {
+    if (index !== 1 && size > 128 * 1024)
+      fail('Vorbis packet exceeds the decoder input allocation');
+  };
   while (cursor < bytes.length) {
-    if (ended || cursor + 27 > bytes.length) fail('Incomplete or chained Ogg stream');
-    const view = new DataView(bytes.buffer, bytes.byteOffset + cursor, bytes.length - cursor);
-    if (view.getUint32(0, false) !== 0x4f676753 || view.getUint8(4) !== 0)
-      fail('Invalid Ogg page header');
-    const flags = view.getUint8(5),
-      segments = view.getUint8(26),
-      headerSize = 27 + segments;
-    if (cursor + headerSize > bytes.length) fail('Incomplete Ogg segment table');
-    let pageSize = headerSize;
-    for (let index = 0; index < segments; index++) pageSize += view.getUint8(27 + index);
-    if (cursor + pageSize > bytes.length) fail('Incomplete Ogg page');
-    const page = bytes.subarray(cursor, cursor + pageSize);
-    if (oggPageChecksum(page) !== view.getUint32(22, true)) fail('Invalid Ogg page checksum');
-    serial ??= view.getUint32(14, true);
-    if (serial !== view.getUint32(14, true)) fail('Multiplexed Ogg streams must be separated');
-    if (Boolean(flags & 1) !== parts.length > 0) fail('Incomplete Ogg packet continuation');
-    let read = headerSize;
-    for (let index = 0; index < segments; index++) {
-      const length = view.getUint8(27 + index);
-      parts.push(page.subarray(read, read + length));
-      packetSize += length;
-      read += length;
-      // The pinned packet decoder has a fixed 128 KiB input allocation.
-      // Comments are not passed to libvorbis and may legally exceed that size.
-      if (packets.length !== 1 && packetSize > 128 * 1024)
-        fail('Vorbis packet exceeds the decoder input allocation');
-      if (length < 255) {
-        const packet = new Uint8Array(packetSize);
-        let at = 0;
-        for (const part of parts) {
-          packet.set(part, at);
-          at += part.length;
-        }
-        packets.push(packet);
-        parts = [];
-        packetSize = 0;
-      }
+    if (ended || cursor + OGG_PAGE_HEADER_SIZE > bytes.length)
+      fail('Incomplete or chained Ogg stream');
+    if (!isOggPageStart(bytes, cursor)) fail('Invalid Ogg page header');
+    const page = readOggPage(bytes, cursor);
+    if (page === null)
+      fail(
+        cursor + OGG_PAGE_HEADER_SIZE + bytes[cursor + 26]! > bytes.length
+          ? 'Incomplete Ogg segment table'
+          : 'Incomplete Ogg page',
+      );
+    if (!oggPageChecksumValid(page)) fail('Invalid Ogg page checksum');
+    serial ??= page.serial;
+    if (serial !== page.serial) fail('Multiplexed Ogg streams must be separated');
+    if (Boolean(page.flags & OGG_CONTINUED) !== assembler.pending)
+      fail('Incomplete Ogg packet continuation');
+    packets.push(...assembler.push(page, limit));
+    if (page.granule >= 0) {
+      if (page.granule > BigInt(Number.MAX_SAFE_INTEGER)) fail('Ogg sample position is too large');
+      finalGranule = Number(page.granule);
     }
-    const granule = view.getBigInt64(6, true);
-    if (granule >= 0) {
-      if (granule > BigInt(Number.MAX_SAFE_INTEGER)) fail('Ogg sample position is too large');
-      finalGranule = Number(granule);
-    }
-    ended = Boolean(flags & 4);
-    cursor += pageSize;
+    ended = Boolean(page.flags & OGG_LAST_PAGE);
+    cursor += page.bytes.length;
   }
-  if (parts.length || packets.length < 3) fail('Incomplete Vorbis headers or packet');
+  if (assembler.pending || packets.length < 3) fail('Incomplete Vorbis headers or packet');
   for (let index = 0; index < 3; index++) {
     const packet = packets[index]!;
     if (

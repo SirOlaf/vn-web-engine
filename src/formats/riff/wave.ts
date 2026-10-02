@@ -1,4 +1,5 @@
 import {byteDataView, checkRange} from '../../core/binary.js';
+import {isOggPageStart, readOggPage, type OggPage} from '../ogg/page.js';
 
 export const WAVE_FORMAT_PCM = 1;
 /** Vorbis ACM codec tags ("Og"/"Pg"/"Qg"/"og"/"pg"/"qg"). */
@@ -56,16 +57,6 @@ export function parseWave(bytes: Uint8Array): WaveFile {
   return {...format, sampleFrames, data};
 }
 
-function isOggPage(d: Uint8Array, offset: number): boolean {
-  return (
-    offset + 27 <= d.length &&
-    d[offset] === 0x4f &&
-    d[offset + 1] === 0x67 &&
-    d[offset + 2] === 0x67 &&
-    d[offset + 3] === 0x53
-  );
-}
-
 /**
  * Returns the embedded Ogg stream of a Vorbis ACM WAVE whose data keeps Ogg framing. The
  * ACM encoder interleaves empty pages of a second logical stream and may pad the chunk,
@@ -74,30 +65,26 @@ function isOggPage(d: Uint8Array, offset: number): boolean {
 export function waveOggStream(wave: WaveFile): Uint8Array | null {
   if (!(WAVE_FORMAT_VORBIS_ACM as readonly number[]).includes(wave.formatTag)) return null;
   const d = wave.data;
-  if (!isOggPage(d, 0)) return null;
-  const view = byteDataView(d);
-  const serial = view.getUint32(14, true);
-  const pages: [number, number][] = [];
+  if (!isOggPageStart(d, 0)) return null;
+  const serial = readOggPage(d, 0)?.serial;
+  const pages: OggPage[] = [];
   let kept = 0,
     offset = 0;
-  while (isOggPage(d, offset)) {
-    const segments = d[offset + 26]!;
-    let size = 27 + segments;
-    if (offset + size > d.length) break;
-    for (let i = 0; i < segments; i++) size += d[offset + 27 + i]!;
-    if (offset + size > d.length) break;
-    if (view.getUint32(offset + 14, true) === serial) {
-      pages.push([offset, size]);
-      kept += size;
+  while (isOggPageStart(d, offset)) {
+    const page = readOggPage(d, offset);
+    if (page === null) break;
+    if (page.serial === serial) {
+      pages.push(page);
+      kept += page.bytes.length;
     }
-    offset += size;
+    offset += page.bytes.length;
   }
   if (kept === d.length) return d;
   const stream = new Uint8Array(kept);
   let cursor = 0;
-  for (const [start, size] of pages) {
-    stream.set(d.subarray(start, start + size), cursor);
-    cursor += size;
+  for (const page of pages) {
+    stream.set(page.bytes, cursor);
+    cursor += page.bytes.length;
   }
   return stream;
 }

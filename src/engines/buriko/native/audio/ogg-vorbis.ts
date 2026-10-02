@@ -1,5 +1,14 @@
 import {oggPageChecksum as burikoOggChecksum} from '../../../../formats/ogg/checksum.js';
 import {decodeVorbis, VorbisDecodeError} from '../../../../audio/vorbis-decoder.js';
+import {
+  isOggPageStart,
+  OGG_FIRST_PAGE,
+  OGG_LAST_PAGE,
+  OGG_PAGE_HEADER_SIZE,
+  oggPageChecksumValid,
+  OggPacketAssembler,
+  readOggPage,
+} from '../../../../formats/ogg/page.js';
 import {BurikoWaveBoxError} from './wavebox-header.js';
 
 export {burikoOggChecksum};
@@ -51,7 +60,7 @@ function identification(packet: Uint8Array): BurikoVorbisIdentification {
 interface PendingLink {
   serial: number;
   pages: Uint8Array[];
-  packet: number[];
+  packets: OggPacketAssembler;
   identification: BurikoVorbisIdentification | null;
   ended: boolean;
   finalGranule: bigint | null;
@@ -62,59 +71,36 @@ export function parseBurikoOggVorbisLinks(bytes: Uint8Array): readonly BurikoOgg
   const links: PendingLink[] = [];
   let current: PendingLink | null = null,
     cursor = 0;
-  while (cursor + 27 <= bytes.length) {
-    if (
-      bytes[cursor] !== 79 ||
-      bytes[cursor + 1] !== 103 ||
-      bytes[cursor + 2] !== 103 ||
-      bytes[cursor + 3] !== 83 ||
-      bytes[cursor + 4] !== 0
-    ) {
+  while (cursor + OGG_PAGE_HEADER_SIZE <= bytes.length) {
+    if (!isOggPageStart(bytes, cursor)) {
       cursor++;
       continue;
     }
-    const segments = bytes[cursor + 26]!,
-      headerSize = 27 + segments;
-    if (cursor + headerSize > bytes.length) break;
-    let size = headerSize;
-    for (let index = 0; index < segments; index++) size += bytes[cursor + 27 + index]!;
-    if (cursor + size > bytes.length) break;
-    const page = bytes.subarray(cursor, cursor + size),
-      view = new DataView(page.buffer, page.byteOffset, page.byteLength);
-    if (burikoOggChecksum(page) !== view.getUint32(22, true)) {
+    const page = readOggPage(bytes, cursor);
+    if (page === null) break;
+    if (!oggPageChecksumValid(page)) {
       cursor++;
       continue;
     }
-    cursor += size;
-    const serial = view.getUint32(14, true),
-      flags = page[5]!;
-    if (current === null || (current.ended && (flags & 2) !== 0)) {
+    cursor += page.bytes.length;
+    if (current === null || (current.ended && (page.flags & OGG_FIRST_PAGE) !== 0)) {
       current = {
-        serial,
+        serial: page.serial,
         pages: [],
-        packet: [],
+        packets: new OggPacketAssembler(),
         identification: null,
         ended: false,
         finalGranule: null,
       };
       links.push(current);
     }
-    if (current.serial !== serial) continue;
-    current.pages.push(page);
-    const granule = view.getBigInt64(6, true);
-    if (granule >= 0) current.finalGranule = granule;
-    current.ended = (flags & 4) !== 0;
+    if (current.serial !== page.serial) continue;
+    current.pages.push(page.bytes);
+    if (page.granule >= 0) current.finalGranule = page.granule;
+    current.ended = (page.flags & OGG_LAST_PAGE) !== 0;
     if (current.identification === null) {
-      let read = headerSize;
-      for (let index = 0; index < segments; index++) {
-        const length = page[27 + index]!;
-        for (let at = 0; at < length; at++) current.packet.push(page[read + at]!);
-        read += length;
-        if (length !== 255) {
-          current.identification = identification(Uint8Array.from(current.packet));
-          break;
-        }
-      }
+      const [first] = current.packets.push(page);
+      if (first !== undefined) current.identification = identification(first);
     }
   }
   if (links.length === 0)
