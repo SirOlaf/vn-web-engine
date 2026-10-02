@@ -19,7 +19,22 @@ export interface RScriptInterpreterHost {
   /** Runs before every instruction, where the native loop latches skip requests. */
   beforeStep?(): void;
   diagnostic?(message: string): void;
+  /**
+   * Shows a script error's MB_OK message box. The script thread then ends as opcode 0x08
+   * ends it.
+   */
+  scriptError?(error: RScriptScriptError): Promise<void>;
 }
+
+/**
+ * Script errors the native loop reports in a message box before its thread returns: a
+ * call past the deepest level (0x424E10, 0x424EF0), a return from level 0 (0x424F80) and a
+ * script that neither loads nor compiles (0x424D30).
+ */
+export type RScriptScriptError =
+  | {readonly kind: 'nest-overflow'}
+  | {readonly kind: 'nest-underflow'}
+  | {readonly kind: 'load'; readonly script: number; readonly message: string};
 
 /** Thrown by opcode 0x08 and by `stop()` to unwind the script coroutine. */
 export class RScriptScriptEnd extends Error {
@@ -125,13 +140,32 @@ export class RScriptInterpreter {
   async load(script: number): Promise<void> {
     this.setScriptAt(this.depth, script);
     if (this.script !== script || !this.program) {
-      this.program = await this.host.program(script);
+      let program: GscProgram;
+      try {
+        program = await this.host.program(script);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return this.fail({kind: 'load', script, message});
+      }
+      this.program = program;
       this.script = script;
     }
   }
+  /** Reports a script error and ends the thread, as the native loop returns after it. */
+  private async fail(error: RScriptScriptError): Promise<never> {
+    await this.host.scriptError?.(error);
+    throw new RScriptScriptEnd('end');
+  }
+  /**
+   * Natively a target past the program reads zero opcodes, which yield frames; the step
+   * loop does the same for a program counter past the code.
+   */
   jump(offset: number): void {
-    if (!this.program || offset < 0 || offset >= this.program.code.length)
-      throw new Error(`GSC jump to 0x${offset.toString(16)} is outside script ${this.script}`);
+    if (!this.program) throw new Error('No GSC program is loaded');
+    if (offset >= this.program.code.length)
+      this.host.diagnostic?.(
+        `GSC jump to 0x${offset.toString(16)} is outside script ${this.script}`,
+      );
     this.pc = offset;
   }
   /** Label names come from the calling program's strings, before the target loads. */
@@ -221,7 +255,7 @@ export class RScriptInterpreter {
         await this.return(this.value(operands[0]!));
         return;
       case 0xc8:
-        this.localCall(operands[0]!, operands.slice(1));
+        await this.localCall(operands[0]!, operands.slice(1));
         return;
     }
     const handler = this.handlers.get(opcode);
@@ -242,7 +276,7 @@ export class RScriptInterpreter {
 
   /** 0x424E10: calls a script label with ten parameters in variables 10..19. */
   async call(script: number, label: number, parameters: readonly number[]): Promise<void> {
-    if (this.depth >= MAX_CALL_DEPTH) throw new Error('RScript call stack overflow');
+    if (this.depth >= MAX_CALL_DEPTH) return this.fail({kind: 'nest-overflow'});
     const values = parameters.map((raw) => this.value(raw));
     this.setReturnAt(this.depth, this.pc);
     const name = this.labelName(label);
@@ -253,8 +287,8 @@ export class RScriptInterpreter {
   }
 
   /** 0x424EF0: calls a code offset in the current script. */
-  localCall(target: number, parameters: readonly number[]): void {
-    if (this.depth >= MAX_CALL_DEPTH) throw new Error('RScript call stack overflow');
+  async localCall(target: number, parameters: readonly number[]): Promise<void> {
+    if (this.depth >= MAX_CALL_DEPTH) return this.fail({kind: 'nest-overflow'});
     this.setReturnAt(this.depth, this.pc);
     this.setScriptAt(this.depth + 1, this.scriptAt(this.depth));
     this.depth++;
@@ -264,7 +298,7 @@ export class RScriptInterpreter {
 
   /** 0x424F80: returns to the caller and stores the result in variable 0. */
   async return(result: number): Promise<void> {
-    if (!this.depth) throw new Error('RScript call stack underflow');
+    if (!this.depth) return this.fail({kind: 'nest-underflow'});
     this.depth--;
     await this.load(this.scriptAt(this.depth));
     this.jump(this.returnAt(this.depth));

@@ -213,3 +213,41 @@ test('RScript slot saves keep the message snapshot, its header and the previous 
   assert.throws(() => decodeSlotSave(untouched, deep), /call depth 10/);
   assert.equal(untouched.scene[0x1000], 0);
 });
+
+test('RScript script errors show their message box and end the thread like opcode 0x08', async () => {
+  const run = async (code, programs = {}) => {
+    const errors = [];
+    const memory = new RScriptMemory();
+    const vm = new RScriptInterpreter(
+      memory,
+      RSCRIPT_1_11_LAYOUTS,
+      new Map(),
+      {
+        program: async (script) => {
+          if (script === 1) return parseGsc(gsc({code}));
+          if (!programs[script]) throw new Error(`gsc\\${script}.gsc is missing`);
+          return parseGsc(programs[script]);
+        },
+        yieldFrame: async () => {},
+        scriptError: async (error) => void errors.push(error),
+      },
+      new MsvcRandom(1),
+    );
+    await vm.load(1);
+    await vm.run();
+    return {errors, depth: vm.depth};
+  };
+  // 0x424F80: a return from level 0.
+  assert.deepEqual((await run(new Code().op(0x10, 0).build())).errors, [{kind: 'nest-underflow'}]);
+  // 0x424EF0: a call from the deepest level.
+  const nested = new Code()
+    .label('top')
+    .op(0xc8, 'top', ...params())
+    .build();
+  const overflow = await run(nested);
+  assert.deepEqual(overflow.errors, [{kind: 'nest-overflow'}]);
+  assert.equal(overflow.depth, 9);
+  // 0x424D30: a script that does not load.
+  const missing = await run(new Code().op(0x0c, 7, 0).build());
+  assert.deepEqual(missing.errors, [{kind: 'load', script: 7, message: 'gsc\\7.gsc is missing'}]);
+});

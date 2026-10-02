@@ -94,6 +94,9 @@ const MESSAGES_1_11: RScriptMessages = Object.freeze({
   quickLoad: 'クイックロードしますか？',
   quitCaption: '終了確認',
   quit: '本当にゲームを終了しますか？',
+  nestOverflow: 'スクリプトネストオーバーフロー',
+  nestUnderflow: 'スクリプトネストアンダーフロー',
+  compileErrorCaption: 'コンパイルエラー',
 });
 
 export const RSCRIPT_1_11: RScriptRevision = Object.freeze({
@@ -143,6 +146,9 @@ export const RSCRIPT_1_11: RScriptRevision = Object.freeze({
     quickLoad: 0x48161c,
     quitCaption: 0x4821d0,
     quit: 0x4821dc,
+    nestOverflow: 0x481a40,
+    nestUnderflow: 0x481a60,
+    compileErrorCaption: 0x481a2c,
   }),
   messageDefaults: MESSAGES_1_11,
 });
@@ -286,6 +292,9 @@ export const RSCRIPT_1_9: RScriptRevision = Object.freeze({
     quickLoad: null,
     quitCaption: 0x47eff8,
     quit: 0x47f004,
+    nestOverflow: 0x47e910,
+    nestUnderflow: 0x47e930,
+    compileErrorCaption: 0x47e8fc,
   }),
   messageDefaults: Object.freeze({...MESSAGES_1_11, quickLoad: null}),
 });

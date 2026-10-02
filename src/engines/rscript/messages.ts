@@ -12,6 +12,10 @@ export interface RScriptMessages {
   readonly quickLoad: string | null;
   readonly quitCaption: string;
   readonly quit: string;
+  /** Script errors; the nesting errors have no caption (MessageBoxA shows エラー). */
+  readonly nestOverflow: string;
+  readonly nestUnderflow: string;
+  readonly compileErrorCaption: string;
 }
 
 /** Virtual addresses of the message strings in a revision's executable. */

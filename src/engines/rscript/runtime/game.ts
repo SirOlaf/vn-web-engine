@@ -4,6 +4,7 @@ import type {RScriptMessages} from '../messages.js';
 import {
   IDOK,
   MB_ICONQUESTION,
+  MB_OK,
   MB_OKCANCEL,
   type WindowsMessageBoxHost,
 } from '../../../platform/windows-message-box.js';
@@ -26,6 +27,7 @@ import {
   RScriptInterpreter,
   RScriptScriptEnd,
   type RScriptNativeHandler,
+  type RScriptScriptError,
 } from '../vm/interpreter.js';
 import {loadFrameAnimation} from './animation.js';
 import {AudioChannel, RScriptAudio} from './audio.js';
@@ -366,7 +368,21 @@ export class RScriptGame {
         }
       },
       diagnostic: (m) => this.diagnostic(m),
+      scriptError: (error) => this.scriptError(error),
     });
+  }
+
+  /** MessageBoxA(MB_OK) of a script error, with no caption except for a failed load. */
+  private async scriptError(error: RScriptScriptError): Promise<void> {
+    const {messages} = this.host;
+    if (error.kind === 'load') this.diagnostic(`Script ${error.script}: ${error.message}`);
+    const [text, caption] =
+      error.kind === 'nest-overflow'
+        ? [messages.nestOverflow, '']
+        : error.kind === 'nest-underflow'
+          ? [messages.nestUnderflow, '']
+          : [error.message, messages.compileErrorCaption];
+    await this.host.messageBox.messageBox(text, caption || 'エラー', MB_OK);
   }
 
   program(script: number): Promise<GscProgram> {
