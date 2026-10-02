@@ -2,7 +2,10 @@ import {RScriptContainer, type RScriptSprite} from '../graphics/sprite.js';
 import type {RScriptImages} from '../images.js';
 import {ScreenImage, Slider, type ImageButton} from './widgets.js';
 
-/** Companion panel commands in `compane.lwg` order of construction (0x415750). */
+/**
+ * Companion panel commands in `compane.lwg` order of construction (0x415750). A revision
+ * builds the ones it has (`RScriptRevision.panelCommands`).
+ */
 export const PANEL_COMMANDS = [
   'skip',
   'next',
@@ -38,13 +41,17 @@ export class RScriptMessagePanel extends RScriptContainer {
     this.visible = false;
   }
 
-  async load(images: RScriptImages, systemDirectory: string): Promise<void> {
+  async load(
+    images: RScriptImages,
+    systemDirectory: string,
+    commands: readonly PanelCommand[],
+  ): Promise<void> {
     const image = await ScreenImage.open(images, `${systemDirectory}\\compane`);
     if (!image) return;
     this.resize(image.width, image.height);
     const background = await image.sprite('bg');
     if (background) this.add(background, 0);
-    for (const name of PANEL_COMMANDS) {
+    for (const name of commands) {
       const button = await image.button(name, () => this.command(name));
       if (!button) continue;
       this.buttons.set(name, button);

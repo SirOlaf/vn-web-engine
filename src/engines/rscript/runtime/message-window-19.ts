@@ -421,7 +421,7 @@ export class RScriptMessageWindow19 extends RScriptContainer implements RScriptM
   /** 0x42AA80, 0x42B790 and the bars and font list of 0x42A0D0. */
   async loadPanel(): Promise<void> {
     const {images, systemDirectory} = this.env;
-    await this.panel.load(images, systemDirectory);
+    await this.panel.load(images, systemDirectory, this.env.memory.revision.panelCommands);
     this.panel.setPosition(585, 572);
     const image = await ScreenImage.open(images, `${systemDirectory}\\excompane`);
     if (image) {

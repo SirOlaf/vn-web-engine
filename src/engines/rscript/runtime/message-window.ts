@@ -154,7 +154,11 @@ export class RScriptMessageWindow extends RScriptContainer implements RScriptMes
   }
 
   loadPanel(): Promise<void> {
-    return this.panel.load(this.env.images, this.env.systemDirectory);
+    return this.panel.load(
+      this.env.images,
+      this.env.systemDirectory,
+      this.env.memory.revision.panelCommands,
+    );
   }
 
   /**

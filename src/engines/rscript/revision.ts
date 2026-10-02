@@ -1,6 +1,7 @@
 import type {GscOpcodeLayouts} from '../../formats/rscript/gsc.js';
 import {readPeVersionStrings} from '../../formats/pe/version-info.js';
 import type {RScriptMessageAddresses, RScriptMessages} from './messages.js';
+import {PANEL_COMMANDS, type PanelCommand} from './runtime/message-panel.js';
 import {RSCRIPT_1_11_LAYOUTS, RSCRIPT_1_9_LAYOUTS} from './vm/layouts.js';
 
 /**
@@ -47,6 +48,8 @@ export interface RScriptRevision {
   /** The executable's FileVersion, dotted. */
   readonly version: '1.9.0.0' | '1.11.0.3';
   readonly apini: RScriptApiniLayout;
+  /** Buttons of the message companion panel; 1.9 (0x42AA80) has no quick save or load. */
+  readonly panelCommands: readonly PanelCommand[];
   /** Where the reference executable stores its message box strings. */
   readonly messages: RScriptMessageAddresses;
   /** The reference executable's message box strings. */
@@ -151,6 +154,7 @@ export const RSCRIPT_1_11: RScriptRevision = Object.freeze({
     compileErrorCaption: 0x481a2c,
   }),
   messageDefaults: MESSAGES_1_11,
+  panelCommands: PANEL_COMMANDS,
 });
 
 /** 1.11 scene offsets where 1.9's message state begins and ends. */
@@ -297,6 +301,7 @@ export const RSCRIPT_1_9: RScriptRevision = Object.freeze({
     compileErrorCaption: 0x47e8fc,
   }),
   messageDefaults: Object.freeze({...MESSAGES_1_11, quickLoad: null}),
+  panelCommands: PANEL_COMMANDS.filter((command) => command !== 'qsave' && command !== 'qload'),
 });
 
 /** Engine revisions by the executable's FileVersion. */
