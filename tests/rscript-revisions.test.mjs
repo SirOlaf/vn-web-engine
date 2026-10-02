@@ -9,7 +9,7 @@ import {
   MessageSettings19,
   RScriptMessageWindow19,
 } from '../dist/engines/rscript/runtime/message-window-19.js';
-import {encodeCp932} from '../dist/engines/rscript/text.js';
+import {encodeCp932} from '../dist/text/cp932.js';
 import {decodeSlotHeader, decodeSlotSave, encodeSlotSave} from '../dist/engines/rscript/saves.js';
 import {parseApini} from '../dist/engines/rscript/apini.js';
 import {RScriptChoiceWindow} from '../dist/engines/rscript/runtime/choice.js';

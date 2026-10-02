@@ -1,6 +1,6 @@
 import {RScriptContainer, type RScriptSprite} from '../graphics/sprite.js';
 import type {RScriptImages} from '../images.js';
-import {encodeCp932} from '../text.js';
+import {encodeCp932Exact} from '../../../text/cp932.js';
 import {RScriptTextBlock, type GlyphRasterizer} from './text-block.js';
 import {ScreenImage, type ImageButton} from './widgets.js';
 
@@ -41,7 +41,7 @@ export const FONT_PANEL: FontListLayout = {
   rowOffset: (row) => (ROWS - 1 - row) * ROW_STEP,
 };
 /** The sample shown beside a hovered row (0x482070). */
-const SAMPLE = encodeCp932('あぃウェ５＃―壱弐鶴亀ＡｂAb')!;
+const SAMPLE = encodeCp932Exact('あぃウェ５＃―壱弐鶴亀ＡｂAb')!;
 
 /** One list button (0x4501E0 over `list`): the font name, and a caption with a sample. */
 interface FontRow {
@@ -183,7 +183,7 @@ export class RScriptFontWindow extends RScriptContainer {
         return;
       }
       const face = rasterizer.addFace(name);
-      write(row.name, encodeCp932(name) ?? new Uint8Array(), face);
+      write(row.name, encodeCp932Exact(name) ?? new Uint8Array(), face);
       write(row.sample, SAMPLE, face);
       rasterizer.removeFace();
     });

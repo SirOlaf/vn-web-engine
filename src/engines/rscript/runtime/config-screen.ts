@@ -1,7 +1,7 @@
 import {RScriptContainer, type RScriptNode} from '../graphics/sprite.js';
 import type {RScriptImages} from '../images.js';
 import {Config, type RScriptMemory} from '../memory.js';
-import {encodeCp932} from '../text.js';
+import {encodeCp932Exact} from '../../../text/cp932.js';
 import {RScriptFontWindow} from './font-window.js';
 import {RScriptTextBlock, type GlyphRasterizer} from './text-block.js';
 import {ImageButton, OptionGroup, ScreenImage, Slider} from './widgets.js';
@@ -225,7 +225,7 @@ export class RScriptConfigScreen extends RScriptContainer {
     if (!window) return;
     window.close();
     const name = window.fonts[index];
-    const bytes = name === undefined ? null : encodeCp932(name);
+    const bytes = name === undefined ? null : encodeCp932Exact(name);
     if (!name || !bytes) return;
     this.env.memory.setConfigString(Config.fontName, 52, bytes);
     this.env.rasterizer.setFace(2, name);

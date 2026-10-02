@@ -1,6 +1,6 @@
 import {Config, Scene, type RScriptMemory} from '../memory.js';
 import {RScriptContainer, RScriptSprite} from '../graphics/sprite.js';
-import {encodeCp932} from '../text.js';
+import {encodeCp932Exact} from '../../../text/cp932.js';
 import {loadFrameAnimation} from './animation.js';
 import {FONT_PANEL, RScriptFontWindow} from './font-window.js';
 import {RScriptMessagePanel} from './message-panel.js';
@@ -79,11 +79,11 @@ const Entry = {
 const NEW_MESSAGE = 1;
 const PAGE_START = 2;
 
-const LINE_BREAK = encodeCp932('^n')!;
+const LINE_BREAK = encodeCp932Exact('^n')!;
 /** The blank line around a speaker's message (byte_47EE80). */
-const BLANK_LINE = encodeCp932('　^n')!;
+const BLANK_LINE = encodeCp932Exact('　^n')!;
 /** Speaker messages start with 【 (byte_47EE94). */
-const SPEAKER = encodeCp932('【')!;
+const SPEAKER = encodeCp932Exact('【')!;
 
 /** Text layouts by direction then size (0x4301B0): glyph size, line spacing, ruby size and area. */
 const LAYOUTS = [
@@ -515,7 +515,7 @@ export class RScriptMessageWindow19 extends RScriptContainer implements RScriptM
     if (!fonts) return;
     fonts.close();
     const name = fonts.fonts[index];
-    const bytes = name === undefined ? null : encodeCp932(name);
+    const bytes = name === undefined ? null : encodeCp932Exact(name);
     if (!name || !bytes) return;
     this.memory.setConfigString(Config.fontName, 52, bytes);
     this.env.rasterizer.setFace(2, name);

@@ -1,4 +1,4 @@
-import {decodeCp932} from '../text.js';
+import {decodeCp932} from '../../../text/cp932.js';
 import {LayerRecord, Scene, type RScriptMemory} from '../memory.js';
 import type {RScriptImages} from '../images.js';
 import {filterLayerImage} from '../graphics/filters.js';

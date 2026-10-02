@@ -1,4 +1,4 @@
-import {decodeCp932, isCp932LeadByte} from '../text.js';
+import {decodeCp932, isCp932LeadByte} from '../../../text/cp932.js';
 import {compositeOver} from '../graphics/blend.js';
 import {createSurface, type RScriptRect, type RScriptSurface} from '../graphics/pixels.js';
 import {RScriptContainer, RScriptSprite, type BakedGlyph} from '../graphics/sprite.js';

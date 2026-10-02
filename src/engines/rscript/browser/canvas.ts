@@ -1,3 +1,4 @@
+import {decodeCp932} from '../../../text/cp932.js';
 import type {RScriptRect, RScriptSurface} from '../graphics/pixels.js';
 import type {RScriptPresenter} from '../runtime/display.js';
 import {gdiVerticalCell, gdiVerticalForms} from '../../../text/gdi-vertical-forms.js';
@@ -112,7 +113,6 @@ interface CanvasFace {
  */
 export class CanvasGlyphRasterizer implements GlyphRasterizer {
   private readonly context: CanvasRenderingContext2D;
-  private readonly decoder = new TextDecoder('shift-jis');
   private readonly cache = new Map<string, GlyphCoverage>();
   private readonly faces: CanvasFace[] = [];
   /** Faces by name, so the per-page font window faces keep their glyphs. */
@@ -183,7 +183,7 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
       if (vertical) {
         const horizontal = this.rasterize(code, size, faceIndex, bold, italic);
         const bytes = code > 0xff ? Uint8Array.of(code >>> 8, code & 0xff) : Uint8Array.of(code);
-        glyph = gdiVerticalCell(this.decoder.decode(bytes), horizontal, face.design);
+        glyph = gdiVerticalCell(decodeCp932(bytes), horizontal, face.design);
       } else glyph = this.draw(face, code, size, bold, italic);
       if (this.cache.size > 8192) this.cache.clear();
       this.cache.set(key, glyph);
@@ -212,7 +212,7 @@ export class CanvasGlyphRasterizer implements GlyphRasterizer {
     if (!width || !height) return {width, height, levels, ascent};
     const scale = Math.max(1, Math.min(SUPERSAMPLE, Math.floor(SUPERSAMPLE_LIMIT / size)));
     const bytes = code > 0xff ? Uint8Array.of(code >>> 8, code & 0xff) : Uint8Array.of(code);
-    const text = this.decoder.decode(bytes);
+    const text = decodeCp932(bytes);
     const context = this.context;
     const canvas = context.canvas;
     const w = width * scale,

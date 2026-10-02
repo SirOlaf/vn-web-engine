@@ -8,7 +8,7 @@ import {
   gdiFamilyName,
   supportsGdiCharset,
 } from '../../../text/gdi-font-families.js';
-import {encodeCp932} from '../text.js';
+import {encodeCp932Exact} from '../../../text/cp932.js';
 
 const SHIFTJIS_CHARSET = 0x80;
 /** LOGFONTA::lfFaceName holds 31 bytes and a terminator. */
@@ -40,7 +40,7 @@ export function rscriptFontCatalog(faces: readonly BrowserLocalFontMetadata[]): 
     const {data} = face;
     if (!data.fixedPitch || !supportsGdiCharset(data, SHIFTJIS_CHARSET)) continue;
     const name = gdiFamilyName(data, face.family, true);
-    const bytes = encodeCp932(name);
+    const bytes = encodeCp932Exact(name);
     if (bytes && bytes.length > 0 && bytes.length <= FACE_NAME_BYTES) names.add(name);
   }
   return [...names];

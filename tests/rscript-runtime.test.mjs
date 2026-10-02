@@ -11,7 +11,7 @@ import {
 } from '../dist/engines/rscript/runtime/audio.js';
 import {decodeVorbis} from '../dist/audio/vorbis-decoder.js';
 import {rscriptFontCatalog} from '../dist/engines/rscript/browser/fonts.js';
-import {decodeCp932, encodeCp932} from '../dist/engines/rscript/text.js';
+import {decodeCp932, encodeCp932, encodeCp932Exact} from '../dist/text/cp932.js';
 
 test('RScript font catalog lists Shift-JIS fixed-pitch families by their Japanese names', () => {
   const name = (unicode, language) => ({id: 1, platform: 3, language, unicode});
@@ -38,8 +38,8 @@ test('RScript font catalog lists Shift-JIS fixed-pitch families by their Japanes
   assert.deepEqual(catalog, ['ＭＳ ゴシック', 'Plain Mono']);
 });
 
-test('RScript text encodes code page 932 for face names', () => {
-  const bytes = encodeCp932('ＭＳ ゴシック Ab');
+test('code page 932 encodes face names exactly or not at all', () => {
+  const bytes = encodeCp932Exact('ＭＳ ゴシック Ab');
   assert.deepEqual(
     [...bytes],
     [
@@ -48,10 +48,11 @@ test('RScript text encodes code page 932 for face names', () => {
     ],
   );
   assert.equal(
-    decodeCp932(encodeCp932('あぃウェ５＃―壱弐鶴亀ＡｂAb')),
+    decodeCp932(encodeCp932Exact('あぃウェ５＃―壱弐鶴亀ＡｂAb')),
     'あぃウェ５＃―壱弐鶴亀ＡｂAb',
   );
-  assert.equal(encodeCp932('한'), null);
+  assert.equal(encodeCp932Exact('한'), null);
+  assert.deepEqual([...encodeCp932('한')], [0x3f]);
 });
 
 /** Web Audio stand-in that records buffers and the source schedule. */

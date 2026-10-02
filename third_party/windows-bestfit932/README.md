@@ -1,6 +1,6 @@
 # Windows CP932 mapping data
 
-`src/engines/buriko/games/aokana/native/text-cp932-data.ts` contains the MBTABLE, DBCSTABLE and WCTABLE hexadecimal records from Microsoft's Windows code page mapping file hosted by the Unicode Consortium:
+`src/text/cp932-data.ts` contains the MBTABLE, DBCSTABLE and WCTABLE hexadecimal records from Microsoft's Windows code page mapping file hosted by the Unicode Consortium:
 
 - Source: https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt
 - Format documentation: https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/readme.txt

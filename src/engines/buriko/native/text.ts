@@ -4,7 +4,7 @@ import {
   hasIndeterminateMemory,
   requireDeterminateMemory,
 } from '../../../core/indeterminate-memory.js';
-import {CP932_TO_UNICODE, UNICODE_TO_CP932} from './text-cp932-data.js';
+import {decodeCp932, encodeCp932Unit} from '../../../text/cp932.js';
 
 export type BurikoTextMode = 0 | 1 | 0x80000000;
 export interface BurikoTextCharacter {
@@ -13,18 +13,6 @@ export interface BurikoTextCharacter {
   fullWidth: number;
 }
 
-function mapping(data: string, fallback: number): Uint16Array {
-  const table = new Uint16Array(65536).fill(fallback);
-  for (let offset = 0; offset < data.length; offset += 8) {
-    table[Number.parseInt(data.slice(offset, offset + 4), 16)] = Number.parseInt(
-      data.slice(offset + 4, offset + 8),
-      16,
-    );
-  }
-  return table;
-}
-const cp932Decode = mapping(CP932_TO_UNICODE, 0x30fb);
-const cp932Encode = mapping(UNICODE_TO_CP932, 0x3f);
 const utf8Decoder = new TextDecoder('utf-8', {ignoreBOM: true});
 const utf8Encoder = new TextEncoder();
 
@@ -256,15 +244,7 @@ export class BurikoNativeText {
   }
 
   decodeCp932(bytes: Uint8Array): string {
-    let output = '';
-    for (let offset = 0; offset < bytes.length; offset++) {
-      const first = bytes[offset]!;
-      const lead = (first >= 0x81 && first <= 0x9f) || (first >= 0xe0 && first <= 0xfc);
-      if (lead && offset + 1 < bytes.length && bytes[offset + 1] !== 0) {
-        output += String.fromCharCode(cp932Decode[(first << 8) | bytes[++offset]!]!);
-      } else output += String.fromCharCode(cp932Decode[first]!);
-    }
-    return output;
+    return decodeCp932(bytes);
   }
 
   decodeBytes(bytes: Uint8Array, mode: 0 | 1): string {
@@ -394,7 +374,7 @@ export class BurikoNativeText {
     }
     const bytes: number[] = [];
     for (let index = 0; index < value.length; index++) {
-      const encoded = cp932Encode[value.charCodeAt(index)]!;
+      const encoded = encodeCp932Unit(value.charCodeAt(index));
       if (encoded > 255) bytes.push(encoded >>> 8);
       bytes.push(encoded & 255);
     }

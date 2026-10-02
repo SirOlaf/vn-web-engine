@@ -31,7 +31,7 @@ import {RScriptCharacters} from './characters.js';
 import type {PanelCommand} from './message-panel.js';
 import {createOpcodeHandlers} from './opcodes.js';
 import type {GlyphRasterizer} from './text-block.js';
-import {decodeCp932} from '../text.js';
+import {decodeCp932} from '../../../text/cp932.js';
 
 /** Installation-local persistent files such as `FRsave.dat` and `FRsave01.dat`. */
 export interface RScriptSaveStorage {

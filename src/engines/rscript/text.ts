@@ -1,44 +1,4 @@
-/** Code page 932 lead bytes as reported by IsDBCSLeadByteEx(CP_ACP) on Japanese Windows. */
-export function isCp932LeadByte(byte: number): boolean {
-  return (byte >= 0x81 && byte <= 0x9f) || (byte >= 0xe0 && byte <= 0xfc);
-}
-
-const decoder = new TextDecoder('shift-jis');
-export function decodeCp932(bytes: Uint8Array): string {
-  return decoder.decode(bytes);
-}
-
-let encoding: Map<string, number> | null = null;
-/** Characters to their code page 932 codes, from the decoder; the first code wins. */
-function cp932Codes(): Map<string, number> {
-  if (encoding) return encoding;
-  const codes = new Map<string, number>();
-  const add = (code: number, bytes: Uint8Array): void => {
-    const text = decoder.decode(bytes);
-    if (text.length === 1 && text !== '�' && !codes.has(text)) codes.set(text, code);
-  };
-  for (let byte = 0; byte < 0x100; byte++)
-    if (!isCp932LeadByte(byte)) add(byte, Uint8Array.of(byte));
-  for (let lead = 0x81; lead <= 0xfc; lead++) {
-    if (!isCp932LeadByte(lead)) continue;
-    for (let trail = 0x40; trail <= 0xfc; trail++)
-      if (trail !== 0x7f) add((lead << 8) | trail, Uint8Array.of(lead, trail));
-  }
-  return (encoding = codes);
-}
-
-/** WideCharToMultiByte(CP_ACP) for Japanese Windows; null when a character has no code. */
-export function encodeCp932(text: string): Uint8Array | null {
-  const codes = cp932Codes();
-  const out: number[] = [];
-  for (const character of text) {
-    const code = codes.get(character);
-    if (code === undefined) return null;
-    if (code > 0xff) out.push(code >>> 8, code & 0xff);
-    else out.push(code);
-  }
-  return Uint8Array.from(out);
-}
+import {isCp932LeadByte} from '../../text/cp932.js';
 
 /** Parses an `@@-12` reference like 0x4593C0: '@' count in the high word, signed value low. */
 export function parseVariableReference(bytes: Uint8Array): {levels: number; value: number} {

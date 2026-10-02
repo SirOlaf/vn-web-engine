@@ -1,4 +1,5 @@
 import {ByteView} from '../../core/binary.js';
+import {decodeCp932} from '../../text/cp932.js';
 import {RSCRIPT_1_11, rscriptRevision, type RScriptRevision} from './revision.js';
 
 /**
@@ -70,9 +71,8 @@ function field(view: ByteView, offset: number, length: number): Uint8Array {
   const end = value.indexOf(0);
   return end < 0 ? value : value.subarray(0, end);
 }
-const decoder = new TextDecoder('shift-jis');
 function sjis(view: ByteView, offset: number, length: number): string {
-  return decoder.decode(field(view, offset, length));
+  return decodeCp932(field(view, offset, length));
 }
 
 export function parseApini(
