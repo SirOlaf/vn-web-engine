@@ -1,96 +1,58 @@
 <script lang="ts">
-  import {onMount} from 'svelte';
-  import {
-    BurikoSaveTransfer,
-    type BurikoSaveEntry,
-  } from '../../src/engines/buriko/save-transfer.js';
-  import {burikoRegistryFold} from '../../src/engines/buriko/native/registry-case.js';
-  import {
-    downloadBytes,
-    noahSaveFiles,
-    readNoahSave,
-    writeNoahSave,
-    type GameId,
-  } from '../library.js';
+  import {onMount, untrack, type Snippet} from 'svelte';
+  import {downloadBytes} from '../library.js';
   import {playerRuntimeState, setSaveBusy} from './runtime-state.js';
-  import {
-    activeRScriptGame,
-    listRScriptSaves,
-    readRScriptSave,
-    writeRScriptSave,
-  } from './rscript-library.js';
-  import {IndexedDbStore} from '../../src/platform/store.js';
-  import {
-    activeBurikoGame,
-    burikoSavedGames,
-    loadBurikoSavedGames,
-    type BurikoSavedGame,
-  } from './buriko-library.js';
+  import type {SaveFileEntry, SaveFilesAdapter} from './save-files.js';
 
-  export let game: GameId;
-  export let runtime = false;
-  export let heading = true;
-  let savedGameId = '';
-  $: if (!savedGameId && $burikoSavedGames[0]) savedGameId = $burikoSavedGames[0].id;
-  let previousSavedGameId: string | undefined;
-  $: savedGame = runtime
-    ? $activeBurikoGame
-    : $burikoSavedGames.find((entry) => entry.id === savedGameId);
-  function transferFor(game: BurikoSavedGame): BurikoSaveTransfer {
-    const namespace = [...game.namespace];
-    return new BurikoSaveTransfer((area) => IndexedDbStore.open([...namespace, area]));
-  }
-  $: transfer = savedGame ? transferFor(savedGame) : null;
-  $: if (game === 'buriko' && savedGame?.id !== previousSavedGameId) {
-    previousSavedGameId = savedGame?.id;
-    void refresh().catch((error) => {
-      message = error instanceof Error ? error.message : String(error);
-    });
-  }
-  let entries: BurikoSaveEntry[] = [];
-  let selection = '';
-  let noahSelection: string = noahSaveFiles[0].id;
-  let busy = false;
-  let message = '';
+  let {
+    adapter,
+    runtime = false,
+    heading = true,
+    scope,
+  }: {
+    adapter: SaveFilesAdapter;
+    /** In the player: follows the running game and waits while it saves. */
+    runtime?: boolean;
+    heading?: boolean;
+    /** The game whose saves are shown, above the file list. */
+    scope?: Snippet<[{busy: boolean}]>;
+  } = $props();
+
+  let entries: readonly SaveFileEntry[] = $state([]);
+  let selection = $state('');
+  let busy = $state(false);
+  let message = $state('');
   let input: HTMLInputElement;
   let revision = 0;
-  let wasRunning = false;
-  $: if (runtime) {
-    if (wasRunning && !$playerRuntimeState.running) {
-      void refresh().catch((error) => {
-        message = error instanceof Error ? error.message : String(error);
-      });
-    }
-    wasRunning = $playerRuntimeState.running;
-  }
-  let rscriptEntries: string[] = [];
-  let rscriptSelection = '';
-  $: rscriptGame = $activeRScriptGame;
-  $: if (game === 'rscript') void refreshRScript(rscriptGame);
-  async function refreshRScript(target = rscriptGame, prefer?: string): Promise<void> {
-    rscriptEntries = target ? await listRScriptSaves(target) : [];
-    if (prefer) rscriptSelection = prefer;
-    if (!rscriptEntries.includes(rscriptSelection)) rscriptSelection = rscriptEntries[0] ?? '';
-  }
-  $: selected = entries.find((entry) => `${entry.area}:${entry.path}` === selection);
-  $: locked =
-    busy ||
-    (runtime && $playerRuntimeState.busy) ||
-    (game === 'buriko' && !savedGame) ||
-    (game === 'rscript' && !rscriptGame);
-  $: importLocked = locked || (runtime && $playerRuntimeState.running);
 
-  async function refresh(prefer?: BurikoSaveEntry): Promise<void> {
+  const locked = $derived(
+    busy || (runtime && $playerRuntimeState.busy) || adapter.unavailable !== null,
+  );
+  const importLocked = $derived(locked || (runtime && $playerRuntimeState.running));
+
+  async function refresh(target = adapter, prefer?: string | null): Promise<void> {
     const current = ++revision;
-    const found = transfer ? await transfer.list() : [];
+    const found = target.unavailable === null ? await target.list() : [];
     if (current !== revision) return;
     entries = found;
-    if (prefer) selection = `${prefer.area}:${prefer.path}`;
-    if (!entries.some((entry) => `${entry.area}:${entry.path}` === selection)) {
-      const first = entries[0];
-      selection = first ? `${first.area}:${first.path}` : '';
-    }
+    if (prefer) selection = prefer;
+    if (!entries.some((entry) => entry.id === selection)) selection = entries[0]?.id ?? '';
   }
+  function report(error: unknown): void {
+    message = error instanceof Error ? error.message : String(error);
+  }
+
+  // Refreshes follow the adapter only, not the list state they write.
+  $effect(() => {
+    const target = adapter;
+    untrack(() => void refresh(target).catch(report));
+  });
+  let wasRunning = false;
+  $effect(() => {
+    const running = $playerRuntimeState.running;
+    if (runtime && wasRunning && !running) untrack(() => void refresh().catch(report));
+    wasRunning = running;
+  });
 
   async function action(work: () => Promise<void>): Promise<void> {
     if (locked) return;
@@ -116,71 +78,33 @@
     const file = input.files?.[0];
     input.value = '';
     if (!file || importLocked) return;
-    const targetGame = game;
-    const targetTransfer = transfer;
-    const targetSave = selected;
-    const targetNoahSave = noahSelection;
-    const targetRScript = rscriptGame;
+    const target = adapter,
+      selected = selection || null;
     void action(async () => {
       if (file.size > 64 * 1024 * 1024) throw new Error('Import exceeds 64 MiB.');
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      if (targetGame === 'rscript') {
-        if (!targetRScript) throw new Error('Choose the game folder first.');
-        await writeRScriptSave(targetRScript, file.name, bytes);
-        await refreshRScript(targetRScript, file.name.toUpperCase());
-        message = `${file.name} imported.`;
-      } else if (targetGame === 'buriko') {
-        if (!targetTransfer) throw new Error('Choose a BGI installation first.');
-        const destination =
-          targetSave && burikoRegistryFold(targetSave.name) === burikoRegistryFold(file.name)
-            ? targetSave
-            : undefined;
-        const entry = await targetTransfer.import(file.name, bytes, destination);
-        await refresh(entry);
-        message = `${entry.name} imported into browser ${entry.kind === 'user-data' ? 'UserData' : entry.area} data.`;
-      } else {
-        await writeNoahSave(targetNoahSave, bytes);
-        message = `${noahSaveFiles.find((entry) => entry.id === targetNoahSave)?.name} imported.`;
-      }
+      const result = await target.import(
+        file.name,
+        new Uint8Array(await file.arrayBuffer()),
+        selected,
+      );
+      await refresh(target, result.id);
+      message = result.message;
     });
   }
 
   function exportFile(): void {
-    const targetGame = game;
-    const targetTransfer = transfer;
-    const targetSave = selected;
-    const targetNoahSave = noahSelection;
-    const targetRScript = rscriptGame;
-    const targetRScriptSave = rscriptSelection;
+    const target = adapter,
+      selected = selection;
     void action(async () => {
-      if (targetGame === 'rscript') {
-        if (!targetRScript) throw new Error('Choose the game folder first.');
-        if (!targetRScriptSave) throw new Error('Select a save file.');
-        downloadBytes(targetRScriptSave, await readRScriptSave(targetRScript, targetRScriptSave));
-        message = `${targetRScriptSave} exported.`;
-      } else if (targetGame === 'buriko') {
-        if (!targetTransfer) throw new Error('Choose a BGI installation first.');
-        if (!targetSave) throw new Error('Select a save file.');
-        downloadBytes(targetSave.name, await targetTransfer.read(targetSave));
-        message = `${targetSave.name} exported.`;
-      } else {
-        const file = noahSaveFiles.find((entry) => entry.id === targetNoahSave)!;
-        downloadBytes(file.name, await readNoahSave(targetNoahSave));
-        message = `${file.name} exported.`;
-      }
+      if (!selected) throw new Error('Select a save file.');
+      const {name, bytes} = await target.read(selected);
+      downloadBytes(name, bytes);
+      message = `${name} exported.`;
     });
   }
 
   onMount(() => {
-    const update = () =>
-      void refresh().catch((error) => {
-        message = error instanceof Error ? error.message : String(error);
-      });
-    void loadBurikoSavedGames()
-      .then(update)
-      .catch((error) => {
-        message = error instanceof Error ? error.message : String(error);
-      });
+    const update = () => void refresh().catch(report);
     window.addEventListener('focus', update);
     return () => window.removeEventListener('focus', update);
   });
@@ -188,65 +112,32 @@
 
 <section id="save-files" class="save-controls">
   {#if heading}<h2>Save files</h2>{/if}
-  {#if game === 'buriko'}
-    {#if runtime}
-      <p>{savedGame ? savedGame.title : 'Choose a game installation to access its saves.'}</p>
-    {:else}
-      <label for="save-game">Installation</label>
-      <select id="save-game" bind:value={savedGameId} disabled={busy}>
-        {#each $burikoSavedGames as entry (entry.id)}
-          <option value={entry.id}>{entry.title}</option>
-        {/each}
-      </select>
-    {/if}
-  {/if}
+  {@render scope?.({busy})}
   <label for="save-file">Saved in this browser</label>
-  {#if game === 'rscript'}
-    {#if !rscriptGame}<p>Open the game folder in the player to manage its saves.</p>{/if}
-    <select
-      id="save-file"
-      bind:value={rscriptSelection}
-      disabled={locked || rscriptEntries.length === 0}
-    >
-      {#if rscriptEntries.length === 0}<option value="">No browser saves yet</option>{/if}
-      {#each rscriptEntries as name (name)}<option value={name}>{name}</option>{/each}
-    </select>
-  {:else if game === 'buriko'}
-    <select id="save-file" bind:value={selection} disabled={locked || entries.length === 0}>
-      {#if entries.length === 0}<option value="">No browser saves yet</option>{/if}
-      {#each entries as entry (`${entry.area}:${entry.path}`)}
-        <option value={`${entry.area}:${entry.path}`}
-          >{entry.name} · {entry.kind === 'user-data'
-            ? 'UserData'
-            : entry.area === 'game'
-              ? 'Game data'
-              : 'User data'}</option
-        >
-      {/each}
-    </select>
-  {:else}
-    <select id="save-file" bind:value={noahSelection} disabled={locked}>
-      {#each noahSaveFiles as file}<option value={file.id}>{file.name}</option>{/each}
-    </select>
-  {/if}
+  {#if adapter.unavailable !== null}<p>{adapter.unavailable}</p>{/if}
+  <select
+    id="save-file"
+    bind:value={selection}
+    disabled={locked || (adapter.emptyLabel !== null && entries.length === 0)}
+  >
+    {#if entries.length === 0 && adapter.emptyLabel !== null}
+      <option value="">{adapter.emptyLabel}</option>
+    {/if}
+    {#each entries as entry (entry.id)}<option value={entry.id}>{entry.label}</option>{/each}
+  </select>
   <div class="file-actions">
     <button id="save-import" type="button" onclick={() => input.click()} disabled={importLocked}
       >Import</button
     >
-    <button
-      id="save-export"
-      type="button"
-      onclick={exportFile}
-      disabled={locked ||
-        (game === 'buriko' && !selected) ||
-        (game === 'rscript' && !rscriptSelection)}>Export</button
+    <button id="save-export" type="button" onclick={exportFile} disabled={locked || !selection}
+      >Export</button
     >
   </div>
   <input
     id="save-import-file"
     bind:this={input}
     type="file"
-    accept={game === 'buriko' ? '.gdb,.cad,.sud' : game === 'rscript' ? '.dat,.wcg' : '.dat'}
+    accept={adapter.accept}
     onchange={importFile}
     hidden
   />

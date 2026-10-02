@@ -319,3 +319,35 @@ a {
   max-height: 14em;
   overflow-y: auto;
 }
+#display {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+#display[data-expanded] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+}
+#display #welcome {
+  position: relative;
+  z-index: 1;
+}
+#display #sidebar {
+  z-index: 20;
+}
+#fatal-error {
+  color: #ffd1cb;
+}
+#save-files .file-actions button {
+  min-width: 0;
+}
+#save-status:empty {
+  display: none;
+}

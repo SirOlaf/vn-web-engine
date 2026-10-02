@@ -5,22 +5,17 @@ import {BrowserInstallationCache} from '../src/platform/installation-cache.js';
 import {BrowserInstallationDirectoryStore} from '../src/platform/installation-directory-store.js';
 import {installationDirectoryPermission} from '../src/platform/installation-picker.js';
 import {NOAH_PATHS, NOAH_WINDOWS} from '../src/engines/mages/games/chaos-head-noah/paths.js';
-import {RSCRIPT_INSTALLATION_KEY} from './player/rscript-library.js';
+import type {PlayerEntry} from './players/registry.js';
 
-export type GameId = 'buriko' | 'noah' | 'rscript';
 export interface InstallationStatus {
   ready: boolean;
   label: string;
   detail: string;
 }
 
-export async function installationStatus(game: GameId): Promise<InstallationStatus> {
-  const key =
-    game === 'buriko'
-      ? 'buriko'
-      : game === 'rscript'
-        ? RSCRIPT_INSTALLATION_KEY
-        : 'chaos-head-noah-gog';
+/** Whether a player's remembered folder or browser copy of the installation is ready. */
+export async function installationStatus(player: PlayerEntry): Promise<InstallationStatus> {
+  const key = player.installationKey;
   const directory = await new BrowserInstallationDirectoryStore().get(key).catch(() => null);
   if (
     directory &&
@@ -46,11 +41,10 @@ export async function installationStatus(game: GameId): Promise<InstallationStat
   try {
     const cached = await new BrowserInstallationCache().open(key);
     if (!cached) return unavailable;
-    const title = game === 'noah' ? 'game archives' : 'game files';
     return {
       ready: true,
       label: 'Browser copy ready',
-      detail: `${cached.files.length} ${title} saved in this browser`,
+      detail: `${cached.files.length} ${player.installationFiles} saved in this browser`,
     };
   } catch {
     return unavailable;

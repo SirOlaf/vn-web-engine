@@ -1,0 +1,5 @@
+import {mountPlayer} from '../../player/mount.js';
+import '../../player/buriko.css';
+import Player from './Player.svelte';
+
+mountPlayer(Player);

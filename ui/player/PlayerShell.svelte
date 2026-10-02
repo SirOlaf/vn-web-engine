@@ -1,14 +1,33 @@
 <script lang="ts">
-  import {onMount} from 'svelte';
-  import type {GameId} from './library.js';
-  import Sidebar from './player/Sidebar.svelte';
-  import RuntimeNotices from './player/RuntimeNotices.svelte';
-  import SourceActivity from './player/SourceActivity.svelte';
-  import {burikoTitle} from './player/buriko-library.js';
-  import {playerRuntimeState} from './player/runtime-state.js';
-  export let game: GameId;
-  $: title =
-    game === 'buriko' ? $burikoTitle : game === 'rscript' ? 'codeX RScript' : 'CHAOS;HEAD NOAH';
+  import {onMount, type Snippet} from 'svelte';
+  import type {PlayerEntry} from '../players/registry.js';
+  import Sidebar from './Sidebar.svelte';
+  import RuntimeNotices from './RuntimeNotices.svelte';
+  import SourceActivity from './SourceActivity.svelte';
+  import {playerRuntimeState} from './runtime-state.js';
+
+  let {
+    entry,
+    title = entry.title,
+    surface,
+    textHelp,
+    saveFiles,
+    options,
+    boot,
+  }: {
+    entry: PlayerEntry;
+    /** The page title; a player may name the game it opened. */
+    title?: string;
+    /** The game display the runtime draws into. */
+    surface: Snippet;
+    /** What DOM text does in this player. */
+    textHelp: Snippet;
+    saveFiles: Snippet;
+    /** Further sidebar sections of the player. */
+    options?: Snippet;
+    /** Starts the player's runtime controller once the shell is in the document. */
+    boot: () => Promise<unknown>;
+  } = $props();
 
   onMount(() => {
     const warnBeforeClosing = (event: BeforeUnloadEvent): void => {
@@ -19,13 +38,7 @@
       if (running || saveBusy) window.addEventListener('beforeunload', warnBeforeClosing);
       else window.removeEventListener('beforeunload', warnBeforeClosing);
     });
-    const boot =
-      game === 'buriko'
-        ? import('./runtimes/buriko.js')
-        : game === 'rscript'
-          ? import('./runtimes/rscript.js')
-          : import('./runtimes/noah.js');
-    void boot.catch((error: unknown) => {
+    void boot().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       const fatal = document.getElementById('fatal-error')!;
       fatal.textContent = `Unable to start the player: ${message}`;
@@ -42,16 +55,7 @@
 
 <main id="game" aria-label="Game">
   <section id="display" aria-label={`${title} display`}>
-    {#if game === 'buriko'}
-      <div id="display-viewport">
-        <div id="surface"><canvas id="game-canvas" tabindex="0"></canvas></div>
-        <div id="window-layer"></div>
-      </div>
-    {:else if game === 'rscript'}
-      <div id="rscript-surface"></div>
-    {:else}
-      <div id="noah-surface"></div>
-    {/if}
+    {@render surface()}
     <div id="welcome">
       <span class="eyebrow">VN / WEB ENGINE</span>
       <h1 id="game-title">{title}</h1>
@@ -62,7 +66,7 @@
       <p id="fatal-error" role="alert" hidden></p>
       <button id="play" type="button" disabled>Play</button>
     </div>
-    <Sidebar {game} />
+    <Sidebar {entry} {textHelp} {saveFiles} {options} />
     <RuntimeNotices />
     <SourceActivity />
   </section>

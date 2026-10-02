@@ -1,3 +1,4 @@
+import {playerEntry} from '../players/registry.js';
 import {BlobSource, type ByteSource} from '../../src/core/source.js';
 import {IndexedDbStore} from '../../src/platform/store.js';
 import type {CachedInstallation, InstallationFile} from '../../src/platform/installation-cache.js';
@@ -17,7 +18,6 @@ import {mountGameViewer} from '../player/game-viewer.js';
 import {setRuntimeState, subscribeSaveBusy} from '../player/runtime-state.js';
 import {mountFullscreenControls} from '../player/fullscreen.js';
 import {
-  RSCRIPT_INSTALLATION_KEY,
   activeRScriptGame,
   rscriptPathKey,
   rscriptSaveNamespace,
@@ -153,7 +153,7 @@ async function selectInstallation(selection: InstallationSelection): Promise<voi
 }
 
 const installationControls = mountInstallationControls({
-  key: RSCRIPT_INSTALLATION_KEY,
+  key: playerEntry('rscript').installationKey,
   choose: element<HTMLButtonElement>('choose'),
   input: element<HTMLInputElement>('files'),
   current: () => selectedInstallation,

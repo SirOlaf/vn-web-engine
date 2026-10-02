@@ -1,13 +1,17 @@
 <script lang="ts">
-  import type {GameId} from '../library.js';
+  import type {Snippet} from 'svelte';
+  import {PLAYERS, type PlayerEntry} from '../players/registry.js';
   import InstallationFiles from './InstallationFiles.svelte';
-  import SaveFiles from './SaveFiles.svelte';
   import AudioDiagnostics from './AudioDiagnostics.svelte';
   import PerformanceDiagnostics from './PerformanceDiagnostics.svelte';
-  import RuntimeProfile from './RuntimeProfile.svelte';
-  import BitmapMemory from './BitmapMemory.svelte';
   import DomTextStyle from './DomTextStyle.svelte';
-  export let game: GameId;
+
+  let {
+    entry,
+    textHelp,
+    saveFiles,
+    options,
+  }: {entry: PlayerEntry; textHelp: Snippet; saveFiles: Snippet; options?: Snippet} = $props();
 </script>
 
 <aside id="sidebar" aria-label="Game options">
@@ -29,9 +33,9 @@
       <h2>Game</h2>
       <a class="sidebar-library-link" href="./">← Library</a>
       <label for="viewer-game">Select player</label>
-      <select id="viewer-game" value={game}>
-        <option value="noah">CHAOS;HEAD NOAH</option><option value="buriko">BGI / Ethornell</option
-        ><option value="rscript">codeX RScript</option>
+      <select id="viewer-game" value={entry.id}>
+        {#each PLAYERS as player (player.id)}<option value={player.id}>{player.title}</option
+          >{/each}
       </select>
     </section>
     <section>
@@ -58,29 +62,11 @@
       <select id="text-mode" aria-describedby="text-help">
         <option value="native">Native</option><option value="dom">DOM text</option>
       </select>
-      <p id="text-help">
-        {#if game === 'rscript'}
-          DOM text places selectable text over the game’s own text for copying and dictionary
-          extensions; a custom style shows it in your font instead. Click outside the text to
-          continue; Shift is left to the extension.
-        {:else}
-          DOM text uses selectable browser fonts with the game’s line breaks. Glyph placement and
-          visual effects are approximate.
-        {/if}
-      </p>
+      <p id="text-help">{@render textHelp()}</p>
       <DomTextStyle />
     </section>
-    <SaveFiles {game} runtime />
-    {#if game === 'buriko'}
-      <RuntimeProfile />
-      <BitmapMemory />
-      <section id="playback-options" hidden>
-        <h2>Playback</h2>
-        <button id="skip-startup" type="button" aria-pressed="false" disabled hidden
-          >Skip startup sequence</button
-        >
-      </section>
-    {/if}
+    {@render saveFiles()}
+    {@render options?.()}
     <AudioDiagnostics />
     <PerformanceDiagnostics />
   </div>

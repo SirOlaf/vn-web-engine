@@ -1,58 +1,23 @@
 <script lang="ts">
   import {onMount, tick} from 'svelte';
-  import {installationStatus, type GameId, type InstallationStatus} from './library.js';
-  import SaveFiles from './player/SaveFiles.svelte';
+  import {installationStatus, type InstallationStatus} from './library.js';
+  import {PLAYERS, playerEntry, type PlayerId} from './players/registry.js';
 
-  const games = {
-    buriko: {
-      title: 'BGI / Ethornell',
-      engine: 'BURIKO',
-      route: './buriko.html',
-      explorerRoute: './buriko-assets.html',
-      initials: 'BG',
-    },
-    noah: {
-      title: 'CHAOS;HEAD NOAH',
-      engine: 'MAGES',
-      route: './noah.html',
-      explorerRoute: './assets.html',
-      initials: 'CH',
-    },
-    rscript: {
-      title: 'codeX RScript',
-      engine: 'RSCRIPT',
-      route: './rscript.html',
-      explorerRoute: null,
-      initials: 'RS',
-    },
-  } as const;
-  let selected: GameId = 'buriko';
+  let selected: PlayerId = 'buriko';
   let tab: 'overview' | 'files' = 'overview';
-  let installations: Record<GameId, InstallationStatus | null> = {
-    buriko: null,
-    noah: null,
-    rscript: null,
-  };
+  let installations: Partial<Record<PlayerId, InstallationStatus>> = {};
   let checking = false;
   let overviewTab: HTMLButtonElement;
   let filesTab: HTMLButtonElement;
 
-  $: game = games[selected];
-  $: installation = installations[selected];
+  $: game = playerEntry(selected);
+  $: installation = installations[selected] ?? null;
 
   async function refreshInstallations(): Promise<void> {
     checking = true;
-    const [buriko, noah, rscript] = await Promise.all([
-      installationStatus('buriko'),
-      installationStatus('noah'),
-      installationStatus('rscript'),
-    ]);
-    installations = {buriko, noah, rscript};
+    const statuses = await Promise.all(PLAYERS.map((entry) => installationStatus(entry)));
+    installations = Object.fromEntries(PLAYERS.map((entry, i) => [entry.id, statuses[i]]));
     checking = false;
-  }
-
-  function chooseGame(id: GameId): void {
-    selected = id;
   }
 
   async function moveTab(event: KeyboardEvent): Promise<void> {
@@ -92,30 +57,29 @@
       <section class="shelf" aria-label="Games">
         <div class="section-heading">
           <h2>Library</h2>
-          <span>3 players</span>
+          <span>{PLAYERS.length} players</span>
           <button class="refresh" type="button" onclick={refreshInstallations} disabled={checking}>
             <span aria-hidden="true">↻</span>
             {checking ? 'Checking…' : 'Refresh browser files'}
           </button>
         </div>
-        {#each ['buriko', 'noah', 'rscript'] as GameId[] as id}
+        {#each PLAYERS as entry (entry.id)}
           <button
             type="button"
-            class:selected={selected === id}
+            class:selected={selected === entry.id}
             class="game-card"
-            aria-pressed={selected === id}
-            onclick={() => chooseGame(id)}
+            aria-pressed={selected === entry.id}
+            onclick={() => (selected = entry.id)}
           >
-            <span class:card-noah={id === 'noah'} class="card-art" aria-hidden="true">
-              <span class="card-orbit"></span><span class="card-initials">{games[id].initials}</span
-              >
+            <span class:title-art={entry.art === 'title'} class="card-art" aria-hidden="true">
+              <span class="card-orbit"></span><span class="card-initials">{entry.initials}</span>
             </span>
             <span class="card-copy">
-              <strong>{games[id].title}</strong>
-              <span>{games[id].engine} engine</span>
-              <small class:ready={installations[id]?.ready}>
+              <strong>{entry.title}</strong>
+              <span>{entry.summary}</span>
+              <small class:ready={installations[entry.id]?.ready}>
                 <i aria-hidden="true"></i>
-                {installations[id] === null ? 'Checking files' : installations[id]?.label}
+                {installations[entry.id]?.label ?? 'Checking files'}
               </small>
             </span>
             <span class="card-arrow" aria-hidden="true">›</span>
@@ -202,7 +166,9 @@
                 <p>Import or download the game’s local save files.</p>
               </div>
             </div>
-            <SaveFiles game={selected} heading={false} />
+            {#await game.saveFiles() then saveFiles}
+              <saveFiles.default heading={false} />
+            {/await}
           </div>
         {/if}
       </section>

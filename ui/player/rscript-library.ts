@@ -2,9 +2,6 @@ import {writable} from 'svelte/store';
 import type {RScriptApini} from '../../src/engines/rscript/apini.js';
 import {IndexedDbStore} from '../../src/platform/store.js';
 
-/** One remembered installation for codeX RScript titles. */
-export const RSCRIPT_INSTALLATION_KEY = 'rscript';
-
 /** Native paths fold ASCII letters only; Japanese file names keep their spelling. */
 export function rscriptPathKey(path: string): string {
   return path.replace(/[a-z]/g, (c) => c.toUpperCase());

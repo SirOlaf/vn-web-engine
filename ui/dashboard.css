@@ -198,7 +198,7 @@ h1 {
     radial-gradient(circle at 75% 20%, #557d88, transparent 42%),
     linear-gradient(145deg, #173f4b, #102126 70%);
 }
-.card-art.card-noah {
+.card-art.title-art {
   background:
     radial-gradient(circle at 70% 10%, #87586f, transparent 48%),
     linear-gradient(145deg, #482837, #1b171c 75%);
@@ -213,7 +213,7 @@ h1 {
   border-radius: 50%;
   transform: rotate(-20deg) scaleY(0.35);
 }
-.card-noah .card-orbit {
+.title-art .card-orbit {
   border-color: #f6c8d477;
   transform: rotate(28deg) scaleY(0.5);
 }

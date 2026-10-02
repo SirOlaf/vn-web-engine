@@ -1,3 +1,4 @@
+import {playerEntry} from '../players/registry.js';
 import {BlobSource} from '../../src/core/source.js';
 import {CpkArchive} from '../../src/formats/cri/cpk.js';
 import {SourceFileSystem} from '../../src/platform/filesystem.js';
@@ -29,7 +30,7 @@ textMode.onchange = () => {
 };
 const status = element('status'),
   sidebar = element('sidebar');
-const {collapseOptions: collapse} = mountGameViewer('noah');
+const {collapseOptions: collapse} = mountGameViewer('chaos-head-noah');
 let fullscreenControls: ReturnType<typeof mountFullscreenControls> | undefined;
 const displayHost = new BrowserPageFullscreenHost(
   element('display'),
@@ -155,7 +156,7 @@ async function selectInstallation(selection: InstallationSelection): Promise<voi
   });
 }
 const installationControls = mountInstallationControls({
-  key: 'chaos-head-noah-gog',
+  key: playerEntry('chaos-head-noah').installationKey,
   choose: element<HTMLButtonElement>('choose'),
   input: files,
   current: () => selectedInstallation,

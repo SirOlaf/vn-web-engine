@@ -1,7 +1,7 @@
-export type ViewerGame = 'noah' | 'buriko' | 'rscript';
+import {playerEntry, type PlayerId} from '../players/registry.js';
 
 /** Behavior bridge for controls rendered by the shared Svelte player shell. */
-export function mountGameViewer(game: ViewerGame): {collapseOptions(collapsed: boolean): void} {
+export function mountGameViewer(game: PlayerId): {collapseOptions(collapsed: boolean): void} {
   const sidebar = document.querySelector<HTMLElement>('#sidebar')!;
   const toggle = document.querySelector<HTMLButtonElement>('#sidebar-toggle')!;
   const body = document.querySelector<HTMLElement>('#sidebar-body')!;
@@ -15,12 +15,7 @@ export function mountGameViewer(game: ViewerGame): {collapseOptions(collapsed: b
 
   gameSelect.value = game;
   gameSelect.addEventListener('change', () => {
-    const destination =
-      gameSelect.value === 'buriko'
-        ? './buriko.html'
-        : gameSelect.value === 'rscript'
-          ? './rscript.html'
-          : './noah.html';
+    const destination = playerEntry(gameSelect.value as PlayerId).route;
     window.location.assign(new URL(destination, window.location.href));
   });
   toggle.addEventListener('click', () =>
