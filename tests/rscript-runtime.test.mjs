@@ -10,7 +10,7 @@ import {
   volumeAttenuation,
 } from '../dist/engines/rscript/runtime/audio.js';
 import {decodeVorbis} from '../dist/audio/vorbis-decoder.js';
-import {rscriptFontCatalog} from '../dist/engines/rscript/browser/fonts.js';
+import {rscriptFontCatalog} from '../dist/engines/rscript/browser/font-catalog.js';
 import {decodeCp932, encodeCp932, encodeCp932Exact} from '../dist/text/cp932.js';
 
 test('RScript font catalog lists Shift-JIS fixed-pitch families by their Japanese names', () => {

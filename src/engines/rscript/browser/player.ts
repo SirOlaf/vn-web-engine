@@ -17,7 +17,7 @@ import type {RScriptFiles} from '../files.js';
 import {RScriptGame, type RScriptSaveStorage} from '../runtime/game.js';
 import {CanvasGlyphRasterizer, CanvasPresenter} from './canvas.js';
 import {RScriptDomText} from './dom-text.js';
-import {listRScriptFonts} from './fonts.js';
+import {listRScriptFonts} from './font-catalog.js';
 
 export interface RScriptBrowserPlayerOptions {
   readonly files: RScriptFiles;

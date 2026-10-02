@@ -3,16 +3,9 @@ import {
   type BrowserLocalFontHost,
   type BrowserLocalFontMetadata,
 } from '../../../text/browser-local-fonts.js';
-import {
-  browserDrawsFamily,
-  gdiFamilyName,
-  supportsGdiCharset,
-} from '../../../text/gdi-font-families.js';
-import {encodeCp932Exact} from '../../../text/cp932.js';
+import {browserDrawsFamily, enumerateGdiFontFamiliesA} from '../../../text/gdi-font-families.js';
 
 const SHIFTJIS_CHARSET = 0x80;
-/** LOGFONTA::lfFaceName holds 31 bytes and a terminator. */
-const FACE_NAME_BYTES = 31;
 
 /**
  * Japanese fixed-pitch families that are commonly installed, for browsers without the
@@ -30,20 +23,14 @@ const COMMON_FIXED_PITCH = [
 ];
 
 /**
- * The font window's catalog (0x4572F0 with the 0x457340 filter) from installed faces:
- * families EnumFontFamiliesExA lists for SHIFTJIS_CHARSET on Japanese Windows whose
- * vertical `@` faces are fixed pitch, once each. Names must fit a LOGFONTA face name.
+ * The families the font window offers (0x4572F0 with the 0x457340 filter): those
+ * EnumFontFamiliesExA lists for SHIFTJIS_CHARSET whose vertical `@` faces are fixed pitch.
  */
 export function rscriptFontCatalog(faces: readonly BrowserLocalFontMetadata[]): string[] {
-  const names = new Set<string>();
-  for (const face of faces) {
-    const {data} = face;
-    if (!data.fixedPitch || !supportsGdiCharset(data, SHIFTJIS_CHARSET)) continue;
-    const name = gdiFamilyName(data, face.family, true);
-    const bytes = encodeCp932Exact(name);
-    if (bytes && bytes.length > 0 && bytes.length <= FACE_NAME_BYTES) names.add(name);
-  }
-  return [...names];
+  return enumerateGdiFontFamiliesA(
+    faces.filter((face) => face.data.fixedPitch),
+    SHIFTJIS_CHARSET,
+  ).map((family) => family.name);
 }
 
 /**

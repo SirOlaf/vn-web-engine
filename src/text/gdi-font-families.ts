@@ -1,4 +1,6 @@
 import type {SfntFontMetadata} from '../formats/sfnt.js';
+import type {BrowserLocalFontMetadata} from './browser-local-fonts.js';
+import {encodeCp932Exact} from './cp932.js';
 
 /** Windows character sets by the OS/2 code page range bit that declares them. */
 const CHARSET_BITS = new Map([
@@ -64,4 +66,34 @@ export function browserDrawsFamily(document: Document, family: string, sample = 
     return `${metrics.width}:${metrics.fontBoundingBoxAscent}:${metrics.fontBoundingBoxDescent}`;
   };
   return measure('monospace') === measure('serif');
+}
+
+export interface GdiFontFamily {
+  /** The name EnumFontFamiliesEx reports. */
+  readonly name: string;
+  /** The first face listed under the name. */
+  readonly face: BrowserLocalFontMetadata;
+}
+
+/** LOGFONTA::lfFaceName holds 31 bytes and a terminator. */
+const ANSI_FACE_NAME_BYTES = 31;
+
+/**
+ * Families EnumFontFamiliesExA lists for `charset` on Japanese Windows, once each, in face
+ * order: names come from `gdiFamilyName` and must fit a LOGFONTA face name in code page 932.
+ */
+export function enumerateGdiFontFamiliesA(
+  faces: readonly BrowserLocalFontMetadata[],
+  charset: number,
+): GdiFontFamily[] {
+  const families = new Map<string, GdiFontFamily>();
+  for (const face of faces) {
+    if (!supportsGdiCharset(face.data, charset)) continue;
+    const name = gdiFamilyName(face.data, face.family, true);
+    if (families.has(name)) continue;
+    const bytes = encodeCp932Exact(name);
+    if (bytes && bytes.length > 0 && bytes.length <= ANSI_FACE_NAME_BYTES)
+      families.set(name, {name, face});
+  }
+  return [...families.values()];
 }
