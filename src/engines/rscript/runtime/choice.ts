@@ -10,8 +10,13 @@ export interface ChoiceEnvironment {
   readonly systemDirectory: string;
   readonly width: number;
   readonly height: number;
-  /** Choice text defaults from the APINI block: palette (+440), size (+494), colour (+484). */
+  /**
+   * Choice text defaults from the APINI block: the palette (+440), the question's size (+492)
+   * and colour (+480), and the answers' size (+494) and colour (+484).
+   */
   readonly palette: readonly number[];
+  readonly questionTextSize: number;
+  readonly questionTextColor: number;
   readonly textSize: number;
   /** 0xRRGGBB, stored as the text colour itself (sub_40FA00), not a palette index. */
   readonly textColor: number;
@@ -45,6 +50,22 @@ interface Item {
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
+type PlateKind = 'q' | 'a';
+interface TextRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+/** Glyph capacity of the text on an LWG plate and on a plain fallback plate. */
+const PLATE_GLYPHS = 50;
+const FALLBACK_GLYPHS = 25;
+/** Text areas on the plain `sel_q` and `sel_a` plates. */
+const FALLBACK_TEXT: Readonly<Record<PlateKind, TextRect>> = {
+  q: {x: 20, y: 14, width: 510, height: 29},
+  a: {x: 20, y: 11, width: 510, height: 27},
+};
+
 /** A leading `<N>` selects image set N (0x4151F0, 0x412C30). */
 function imageSet(text: Uint8Array): {set: number; text: Uint8Array} {
   if (text[0] !== 0x3c) return {set: 0, text};
@@ -72,12 +93,12 @@ export class RScriptChoiceWindow extends RScriptContainer {
     this.visible = false;
   }
 
-  private style(width: number, height: number): TextStyle {
+  private style(kind: PlateKind, width: number, height: number): TextStyle {
     const env = this.env;
     return {
       face: 0,
-      size: env.textSize,
-      color: env.textColor,
+      size: kind === 'q' ? env.questionTextSize : env.textSize,
+      color: kind === 'q' ? env.questionTextColor : env.textColor,
       palette: env.palette,
       // The plain text object (0x44BEE0) keeps its default unshadowed glyph style.
       shadow: false,
@@ -96,12 +117,47 @@ export class RScriptChoiceWindow extends RScriptContainer {
     };
   }
 
-  /** Composites text into each state image of `sel_{kind}NN` (0x413190). */
-  private async build(kind: 'q' | 'a', source: Uint8Array): Promise<Item | null> {
+  /** A plain text object of `capacity` glyphs holding the plate's text, fully shown. */
+  private text(
+    kind: PlateKind,
+    text: Uint8Array,
+    capacity: number,
+    rect: TextRect,
+  ): RScriptTextBlock {
+    const block = new RScriptTextBlock(
+      this.env.rasterizer,
+      capacity,
+      this.style(kind, rect.width, rect.height),
+    );
+    block.resize(rect.width, rect.height);
+    block.append(text);
+    block.finishReveal();
+    block.show(true);
+    return block;
+  }
+
+  /** Composites the text into a copy of each state image (0x413190). */
+  private plate(plain: RScriptSurface[], block: RScriptTextBlock, rect: TextRect): Item {
+    const states = plain.map((surface) => {
+      const state = {...surface, data: surface.data.slice()};
+      const clip = {left: 0, top: 0, right: state.width, bottom: state.height};
+      block.draw(state, clip, rect.x - block.x, rect.y - block.y);
+      return state;
+    });
+    const sprite = new PlateSprite(states, plain);
+    sprite.setSurface(states[0]!);
+    sprite.bakedText = block
+      .shownGlyphs()
+      .map((glyph) => ({...glyph, x: glyph.x + rect.x, y: glyph.y + rect.y}));
+    return {sprite, states, final: {x: 0, y: 0}, start: {x: 0, y: 0}, end: {x: 0, y: 0}};
+  }
+
+  /** Builds the plate of `sel_{kind}NN` (0x4151F0, 0x412C30). */
+  private async build(kind: PlateKind, source: Uint8Array): Promise<Item | null> {
     const {set, text} = imageSet(source);
     const path = `${this.env.systemDirectory}\\sel_${kind}${pad(set)}`;
     const lwg = await this.env.images.lwg(path);
-    if (!lwg) return null;
+    if (!lwg) return this.fallback(kind, text);
     // The `text` layer's placement and size give the text rectangle.
     const rect = lwg.find('text');
     const rectImage = rect ? await this.env.images.lwgLayer(path, 'text') : null;
@@ -114,17 +170,7 @@ export class RScriptChoiceWindow extends RScriptContainer {
             width: Math.trunc((80 * lwg.width) / 100),
             height: Math.trunc((90 * lwg.height) / 100),
           };
-    const block = new RScriptTextBlock(
-      this.env.rasterizer,
-      50,
-      this.style(textRect.width, textRect.height),
-    );
-    block.resize(textRect.width, textRect.height);
-    block.append(text);
-    block.finishReveal();
-    block.show(true);
-    const states: RScriptSurface[] = [],
-      plain: RScriptSurface[] = [];
+    const plain: RScriptSurface[] = [];
     for (const name of kind === 'q' ? ['body'] : ['body', 'body_f', 'body_c']) {
       const entry = lwg.find(name);
       const body = entry ? await this.env.images.lwgLayer(path, name) : null;
@@ -139,18 +185,22 @@ export class RScriptChoiceWindow extends RScriptContainer {
             surface.data[row * surface.width + column] = body.data[y * body.width + x]!;
         }
       }
-      plain.push({...surface, data: surface.data.slice()});
-      const clip = {left: 0, top: 0, right: surface.width, bottom: surface.height};
-      block.draw(surface, clip, textRect.x - block.x, textRect.y - block.y);
-      states.push(surface);
+      plain.push(surface);
     }
-    if (!states.length) return null;
-    const sprite = new PlateSprite(states, plain);
-    sprite.setSurface(states[0]!);
-    sprite.bakedText = block
-      .shownGlyphs()
-      .map((glyph) => ({...glyph, x: glyph.x + textRect.x, y: glyph.y + textRect.y}));
-    return {sprite, states, final: {x: 0, y: 0}, start: {x: 0, y: 0}, end: {x: 0, y: 0}};
+    if (!plain.length) return null;
+    return this.plate(plain, this.text(kind, text, PLATE_GLYPHS, textRect), textRect);
+  }
+
+  /**
+   * Without `sel_{kind}NN.lwg`, the plain `sel_q` or `sel_a` image takes the text in a fixed
+   * area. An answer is left out when that image is missing too; the question keeps its text.
+   */
+  private async fallback(kind: PlateKind, text: Uint8Array): Promise<Item | null> {
+    const image = await this.env.images.image(`${this.env.systemDirectory}\\sel_${kind}`);
+    if (kind === 'a' && !image?.width) return null;
+    const rect = FALLBACK_TEXT[kind];
+    const surface = image ?? createSurface(rect.x + rect.width, rect.y + rect.height, 0xff000000);
+    return this.plate([surface], this.text(kind, text, FALLBACK_GLYPHS, rect), rect);
   }
 
   /** sub_413BE0: builds the plates for `answers.length` answers and lays them out. */

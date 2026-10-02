@@ -24,6 +24,10 @@ export interface RScriptApiniLayout {
   readonly savePageCount: number;
   /** Ten 0xRRGGBB colours for `^C0`..`^C9`. */
   readonly palette: number;
+  /** Text colour and size of a choice's question plate (`sel_q`). */
+  readonly questionTextColor: number;
+  readonly questionTextSize: number;
+  /** Text colour and size of its answer plates (`sel_a`). */
   readonly choiceTextColor: number;
   readonly choiceTextSize: number;
   readonly saveDateSize: number;
@@ -95,7 +99,9 @@ export const RSCRIPT_1_11: RScriptRevision = Object.freeze({
     keepBackdropBrightness: 436,
     savePageCount: 438,
     palette: 440,
+    questionTextColor: 480,
     choiceTextColor: 484,
+    questionTextSize: 492,
     choiceTextSize: 494,
     saveDateSize: 496,
     textShadow: 500,
@@ -210,7 +216,9 @@ export const RSCRIPT_1_9: RScriptRevision = Object.freeze({
     keepBackdropBrightness: 416,
     savePageCount: 418,
     palette: 420,
+    questionTextColor: 460,
     choiceTextColor: 464,
+    questionTextSize: 472,
     choiceTextSize: 474,
     saveDateSize: 476,
     textShadow: null,

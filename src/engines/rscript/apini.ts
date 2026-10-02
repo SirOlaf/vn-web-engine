@@ -50,7 +50,10 @@ export interface RScriptApini {
   /** Colours of `^C0`..`^C9`, as 0xRRGGBB (also the text-rendering defaults block). */
   readonly palette: readonly number[];
   readonly textDefaults: Uint8Array;
-  /** Choice text colour (0xRRGGBB) and size. */
+  /** Choice question text colour (0xRRGGBB) and size. */
+  readonly questionTextColor: number;
+  readonly questionTextSize: number;
+  /** Choice answer text colour (0xRRGGBB) and size. */
   readonly choiceTextColor: number;
   readonly choiceTextSize: number;
   /** Size of the save screens' date text. */
@@ -119,6 +122,8 @@ export function parseApini(
     savePageCount: u16(layout.savePageCount),
     palette: Array.from({length: 10}, (_, i) => u32(layout.palette + 4 * i)),
     textDefaults: bytes.slice(layout.palette, layout.palette + 40),
+    questionTextColor: u32(layout.questionTextColor),
+    questionTextSize: u16(layout.questionTextSize),
     choiceTextColor: u32(layout.choiceTextColor),
     choiceTextSize: u16(layout.choiceTextSize),
     saveDateSize: u16(layout.saveDateSize),

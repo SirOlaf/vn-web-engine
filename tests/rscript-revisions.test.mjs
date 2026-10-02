@@ -11,6 +11,9 @@ import {
 } from '../dist/engines/rscript/runtime/message-window-19.js';
 import {encodeCp932} from '../dist/engines/rscript/text.js';
 import {decodeSlotHeader, decodeSlotSave, encodeSlotSave} from '../dist/engines/rscript/saves.js';
+import {parseApini} from '../dist/engines/rscript/apini.js';
+import {RScriptChoiceWindow} from '../dist/engines/rscript/runtime/choice.js';
+import {createSurface} from '../dist/engines/rscript/graphics/pixels.js';
 
 test('RScript 1.9 maps 1.11 configuration and scene offsets to its own blocks', () => {
   assert.equal(RSCRIPT_1_11.configOffset(Config.fontName), Config.fontName);
@@ -183,4 +186,85 @@ test('RScript 1.9 slots store the live title variables and page text after a 20-
   decodeSlotSave(loaded, bytes);
   assert.equal(loaded.scene[5], 42);
   assert.equal(loaded.variables[2], 1001);
+});
+
+test('RScript APINI blocks give choice questions their own text colour and size', () => {
+  for (const revision of [RSCRIPT_1_9, RSCRIPT_1_11]) {
+    const layout = revision.apini;
+    const block = new Uint8Array(layout.size);
+    const view = new DataView(block.buffer);
+    block.set(Buffer.from('APINI\0', 'latin1'));
+    view.setUint32(layout.width, 800, true);
+    view.setUint32(layout.height, 600, true);
+    view.setUint32(layout.questionTextColor, 0x112233, true);
+    view.setUint16(layout.questionTextSize, 28, true);
+    view.setUint32(layout.choiceTextColor, 0x445566, true);
+    view.setUint16(layout.choiceTextSize, 22, true);
+    const apini = parseApini(block, revision);
+    assert.deepEqual(
+      [
+        apini.questionTextColor,
+        apini.questionTextSize,
+        apini.choiceTextColor,
+        apini.choiceTextSize,
+      ],
+      [0x112233, 28, 0x445566, 22],
+      revision.version,
+    );
+  }
+});
+
+/** A choice window over the plain plates only: no `sel_xNN.lwg` exists. */
+function choiceWindow(plates) {
+  return new RScriptChoiceWindow({
+    images: {
+      lwg: async () => null,
+      lwgLayer: async () => null,
+      image: async (path) => plates[path] ?? null,
+    },
+    rasterizer: {
+      rasterize: (code, size) => {
+        const width = code > 0xff ? size : size >> 1;
+        return {width, height: size, levels: new Uint8Array(width * size)};
+      },
+      addFace: () => 3,
+      setFace() {},
+      removeFace() {},
+    },
+    systemDirectory: 'grps',
+    width: 800,
+    height: 600,
+    palette: [],
+    questionTextSize: 28,
+    questionTextColor: 0x112233,
+    textSize: 22,
+    textColor: 0x445566,
+    answered() {},
+  });
+}
+const plates = (window) =>
+  window.nodes().map((node) => ({
+    width: node.width,
+    glyphs: node.bakedText.map(({text, x, y, height, color}) => ({text, x, y, height, color})),
+  }));
+
+test('RScript choices fall back to the plain sel_q and sel_a plates', async () => {
+  const window = choiceWindow({
+    'grps\\sel_q': createSurface(560, 60, 0xff000000),
+    'grps\\sel_a': createSurface(540, 50, 0xff000000),
+  });
+  await window.open(encodeCp932('問'), [encodeCp932('<3>答')], 0);
+  // The question's text sits at (20,14) in its style, the answer's at (20,11) in its own.
+  assert.deepEqual(plates(window), [
+    {width: 560, glyphs: [{text: '問', x: 20, y: 14, height: 28, color: 0x112233}]},
+    {width: 540, glyphs: [{text: '答', x: 20, y: 11, height: 22, color: 0x445566}]},
+  ]);
+
+  // Without the plain images, answers are left out and the question keeps its text.
+  const bare = choiceWindow({});
+  await bare.open(encodeCp932('問'), [encodeCp932('答')], 0);
+  assert.deepEqual(
+    plates(bare).map((plate) => plate.glyphs.map((glyph) => glyph.text).join('')),
+    ['問'],
+  );
 });

@@ -278,6 +278,8 @@ export class RScriptGame {
       width: apini.width,
       height: apini.height,
       palette,
+      questionTextSize: apini.questionTextSize,
+      questionTextColor: apini.questionTextColor,
       textSize: apini.choiceTextSize,
       textColor: apini.choiceTextColor,
       answered: () => this.choiceAnswered(),
