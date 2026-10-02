@@ -12,6 +12,7 @@ import {
 import {encodeCp932} from '../dist/text/cp932.js';
 import {decodeSlotHeader, decodeSlotSave, encodeSlotSave} from '../dist/engines/rscript/saves.js';
 import {parseApini} from '../dist/engines/rscript/apini.js';
+import {readRScriptMessages} from '../dist/engines/rscript/messages.js';
 import {RScriptChoiceWindow} from '../dist/engines/rscript/runtime/choice.js';
 import {createSurface} from '../dist/engines/rscript/graphics/pixels.js';
 
@@ -267,4 +268,59 @@ test('RScript choices fall back to the plain sel_q and sel_a plates', async () =
     plates(bare).map((plate) => plate.glyphs.map((glyph) => glyph.text).join('')),
     ['問'],
   );
+});
+
+/** A PE32 image with one 0x200-byte section at RVA 0x1000 holding `data`. */
+function peImage(data) {
+  const bytes = new Uint8Array(0x400);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(0, 0x5a4d, true);
+  view.setUint32(60, 64, true);
+  view.setUint32(64, 0x4550, true);
+  view.setUint16(70, 1, true); // sections
+  view.setUint16(84, 224, true); // optional header size
+  view.setUint16(88, 0x10b, true);
+  view.setUint32(88 + 28, 0x400000, true); // image base
+  view.setUint32(88 + 60, 0x200, true); // header size
+  view.setUint32(88 + 92, 16, true); // data directories
+  view.setUint32(312 + 12, 0x1000, true);
+  view.setUint32(312 + 16, 0x200, true);
+  view.setUint32(312 + 20, 0x200, true);
+  bytes.set(data, 0x200);
+  return bytes;
+}
+
+test('RScript message box texts come from the revision addresses in the executable', () => {
+  const strings = [
+    '確認',
+    '戻ります。\nよろしいですか？',
+    '上書き',
+    'ロード',
+    '終了確認',
+    '終了？',
+  ];
+  const data = [],
+    addresses = [];
+  for (const text of strings) {
+    addresses.push(0x401000 + data.length);
+    data.push(...encodeCp932(text), 0);
+  }
+  const [confirm, returnToTitle, overwrite, load, quitCaption, quit] = addresses;
+  const revision = {
+    messages: {confirm, returnToTitle, overwrite, load, quickLoad: null, quitCaption, quit},
+  };
+  assert.deepEqual(readRScriptMessages(peImage(data), revision), {
+    confirm: '確認',
+    returnToTitle: '戻ります。\nよろしいですか？',
+    overwrite: '上書き',
+    load: 'ロード',
+    quickLoad: null,
+    quitCaption: '終了確認',
+    quit: '終了？',
+  });
+  // An unterminated string may not run past its section.
+  const unterminated = peImage(new Uint8Array(0x200).fill(0x41));
+  assert.throws(() => readRScriptMessages(unterminated, revision), RangeError);
+  for (const known of [RSCRIPT_1_9, RSCRIPT_1_11])
+    assert.ok(Object.values(known.messages).every((a) => a === null || a > 0x400000));
 });

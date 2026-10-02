@@ -1,5 +1,6 @@
 import type {GscOpcodeLayouts} from '../../formats/rscript/gsc.js';
 import {readPeVersionStrings} from '../../formats/pe/version-info.js';
+import type {RScriptMessageAddresses} from './messages.js';
 import {RSCRIPT_1_11_LAYOUTS, RSCRIPT_1_9_LAYOUTS} from './vm/layouts.js';
 
 /**
@@ -46,6 +47,8 @@ export interface RScriptRevision {
   /** The executable's FileVersion, dotted. */
   readonly version: '1.9.0.0' | '1.11.0.3';
   readonly apini: RScriptApiniLayout;
+  /** Where the executable stores its message box strings. */
+  readonly messages: RScriptMessageAddresses;
   readonly layouts: GscOpcodeLayouts;
   /** The configuration block written to the system save. */
   readonly configSize: number;
@@ -120,6 +123,15 @@ export const RSCRIPT_1_11: RScriptRevision = Object.freeze({
   slotTextOffset: 22,
   slotBackground: true,
   slotLiveVariables: false,
+  messages: Object.freeze({
+    confirm: 0x481550,
+    returnToTitle: 0x481558,
+    overwrite: 0x481584,
+    load: 0x4815b4,
+    quickLoad: 0x48161c,
+    quitCaption: 0x4821d0,
+    quit: 0x4821dc,
+  }),
 });
 
 /** 1.11 scene offsets where 1.9's message state begins and ends. */
@@ -253,6 +265,15 @@ export const RSCRIPT_1_9: RScriptRevision = Object.freeze({
   slotTextOffset: 20,
   slotBackground: false,
   slotLiveVariables: true,
+  messages: Object.freeze({
+    confirm: 0x47e454,
+    returnToTitle: 0x47e45c,
+    overwrite: 0x47e488,
+    load: 0x47e4b8,
+    quickLoad: null,
+    quitCaption: 0x47eff8,
+    quit: 0x47f004,
+  }),
 });
 
 /** Engine revisions by the executable's FileVersion. */

@@ -1,5 +1,6 @@
 import {parseGsc, type GscProgram} from '../../../formats/rscript/gsc.js';
 import type {RScriptApini} from '../apini.js';
+import type {RScriptMessages} from '../messages.js';
 import {initializeConfig, initializeScene} from '../defaults.js';
 import type {RScriptFiles} from '../files.js';
 import {ADD_TABLE, createSurface, scaleRgb, type RScriptSurface} from '../graphics/pixels.js';
@@ -42,6 +43,7 @@ export interface RScriptSaveStorage {
 export interface RScriptGameHost {
   readonly files: RScriptFiles;
   readonly apini: RScriptApini;
+  readonly messages: RScriptMessages;
   readonly presenter: RScriptPresenter;
   readonly timer: RScriptTimer;
   readonly rasterizer: GlyphRasterizer;
@@ -138,17 +140,6 @@ class ScriptEvent {
 }
 
 const pad = (value: number, digits: number): string => String(value).padStart(digits, '0');
-
-/** Confirmation messages of the RScript 1.11 executable (0x481550..0x4821DC). */
-export const RScriptMessages = {
-  confirm: '確認',
-  returnToTitle: 'タイトル画面に戻ります。\r\nよろしいですか？',
-  overwrite: 'セーブデータを上書きします。\r\nよろしいですか？',
-  load: 'セーブデータをロードします。\r\nよろしいですか？',
-  quickLoad: 'クイックロードしますか？',
-  quitCaption: '終了確認',
-  quit: '本当にゲームを終了しますか？',
-} as const;
 
 /**
  * The RScript game scene (0x41E760 tick, 0x422FD0 script thread, 0x4292C0 rebuild): layers,
@@ -807,7 +798,8 @@ export class RScriptGame {
   /** sub_41F200: loads slot 0 after a confirmation. */
   private async quickLoad(): Promise<void> {
     if (!(await this.readSlot(0))) return;
-    if (!(await this.host.confirm(RScriptMessages.confirm, RScriptMessages.quickLoad))) return;
+    const {confirm, quickLoad} = this.host.messages;
+    if (quickLoad === null || !(await this.host.confirm(confirm, quickLoad))) return;
     await this.loadSlot(0);
   }
 
@@ -1163,7 +1155,7 @@ export class RScriptGame {
     this.playSystemSound(1);
     if (command === 'save' || command === 'load') return this.openSaveScreen(command === 'save');
     if (command === 'close' || this.screens.standalone) return this.closeScreen();
-    if (await this.host.confirm(RScriptMessages.confirm, RScriptMessages.returnToTitle))
+    if (await this.host.confirm(this.host.messages.confirm, this.host.messages.returnToTitle))
       await this.returnToTitle();
   }
 
@@ -1211,7 +1203,8 @@ export class RScriptGame {
     const {confirm} = this.host;
     if (save) {
       this.playSystemSound(1);
-      if (exists && !(await confirm(RScriptMessages.confirm, RScriptMessages.overwrite))) return;
+      if (exists && !(await confirm(this.host.messages.confirm, this.host.messages.overwrite)))
+        return;
       const previous = this.memory.configWord(0x3a) & 0xffff;
       this.memory.setConfigWord(0x3a, slot);
       await this.saveSlot(slot);
@@ -1221,7 +1214,10 @@ export class RScriptGame {
       return;
     }
     if (!exists) return;
-    if (!this.screens.standalone && !(await confirm(RScriptMessages.confirm, RScriptMessages.load)))
+    if (
+      !this.screens.standalone &&
+      !(await confirm(this.host.messages.confirm, this.host.messages.load))
+    )
       return;
     this.playSystemSound(1);
     await this.loadSlot(slot);
@@ -1246,7 +1242,7 @@ export class RScriptGame {
 
   /** WM_CLOSE of the game window: quits after the native confirmation. */
   async quit(): Promise<void> {
-    if (!(await this.host.confirm(RScriptMessages.quitCaption, RScriptMessages.quit))) return;
+    if (!(await this.host.confirm(this.host.messages.quitCaption, this.host.messages.quit))) return;
     await this.saveSystem();
     this.dispose();
     this.host.exit();

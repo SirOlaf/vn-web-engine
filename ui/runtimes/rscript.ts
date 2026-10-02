@@ -8,6 +8,7 @@ import {
   parseApini,
   type RScriptApini,
 } from '../../src/engines/rscript/apini.js';
+import {readRScriptMessages, type RScriptMessages} from '../../src/engines/rscript/messages.js';
 import {RScriptFiles, rscriptPathSegments} from '../../src/engines/rscript/files.js';
 import {RScriptBrowserPlayer} from '../../src/engines/rscript/browser/player.js';
 import type {RScriptSaveStorage} from '../../src/engines/rscript/runtime/game.js';
@@ -44,8 +45,11 @@ const displayHost = new BrowserPageFullscreenHost(
 );
 fullscreenControls = mountFullscreenControls(displayHost);
 
-interface Installation {
+interface Identified {
   apini: RScriptApini;
+  messages: RScriptMessages;
+}
+interface Installation extends Identified {
   files: RScriptFiles;
   saves: IndexedDbStore;
 }
@@ -76,15 +80,18 @@ function closeInstallation(): void {
  * Identifies the codeX RScript executable by its APINI block, in the layout of the engine
  * revision its version resource names; RsInit.cfg replaces the block.
  */
-async function identify(files: ReadonlyMap<string, ByteSource>): Promise<RScriptApini> {
+async function identify(files: ReadonlyMap<string, ByteSource>): Promise<Identified> {
   const config = files.get('RSINIT.CFG');
   let unsupported: unknown = null;
   for (const [path, source] of files) {
     if (path.includes('\\') || !path.endsWith('.EXE')) continue;
     try {
       const executable = await source.read(0, source.size);
-      const apini = findExecutableApini(executable);
-      return config ? parseApini(await config.read(0, config.size), apini.revision) : apini;
+      const embedded = findExecutableApini(executable);
+      const apini = config
+        ? parseApini(await config.read(0, config.size), embedded.revision)
+        : embedded;
+      return {apini, messages: readRScriptMessages(executable, apini.revision)};
     } catch (error) {
       // Not the game executable (for example an uninstaller); keep looking.
       if (error instanceof Error && error.message.startsWith('Unsupported')) unsupported = error;
@@ -113,11 +120,11 @@ async function loadInstallation(cached: CachedInstallation): Promise<void> {
       // Paths outside the installation tree are not game resources.
     }
   }
-  const apini = await identify(byPath);
+  const {apini, messages} = await identify(byPath);
   const files = new RScriptFiles((segments) => byPath.get(segments.join('\\')));
   const namespace = rscriptSaveNamespace(apini);
   const saves = await IndexedDbStore.open(namespace);
-  installation = {apini, files, saves};
+  installation = {apini, messages, files, saves};
   activeRScriptGame.set({title: apini.title, savePrefix: apini.savePrefix, namespace});
   document.title = `${apini.title} · VN Web Engine`;
   element('game-title').textContent = apini.title;
@@ -180,11 +187,12 @@ function stopped(error?: unknown): void {
 
 play.onclick = () => {
   if (!installation || busy || saveBusy || started) return;
-  const {apini, files, saves} = installation;
+  const {apini, messages, files, saves} = installation;
   started = true;
   player = new RScriptBrowserPlayer({
     files,
     apini,
+    messages,
     saves: storage(saves),
     document,
     // The configuration's screen mode expands the page view in the chosen fullscreen mode.
