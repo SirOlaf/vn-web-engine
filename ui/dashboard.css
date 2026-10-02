@@ -263,6 +263,30 @@ h1 {
   font-size: 26px;
   line-height: 1;
 }
+.auto-detect {
+  margin: 0 0 14px;
+  padding: 13px;
+  border: 1px dashed #35474a;
+  border-radius: 16px;
+}
+.auto-detect .button {
+  width: 100%;
+}
+.auto-detect p {
+  color: #93a7a1;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 9px 2px 0;
+}
+.auto-detect .auto-detect-status {
+  color: #d0e2d7;
+}
+.auto-detect-matches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
 .shelf-note {
   color: #80918d;
   font-size: 12px;
@@ -517,6 +541,7 @@ footer {
     gap: 10px;
   }
   .section-heading,
+  .auto-detect,
   .shelf-note {
     grid-column: 1 / -1;
   }

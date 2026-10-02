@@ -1,4 +1,3 @@
-import {playerEntry} from '../players/registry.js';
 import {BlobSource, type ByteSource} from '../../src/core/source.js';
 import {IndexedDbStore} from '../../src/platform/store.js';
 import type {CachedInstallation, InstallationFile} from '../../src/platform/installation-cache.js';
@@ -153,7 +152,7 @@ async function selectInstallation(selection: InstallationSelection): Promise<voi
 }
 
 const installationControls = mountInstallationControls({
-  key: playerEntry('rscript').installationKey,
+  player: 'rscript',
   choose: element<HTMLButtonElement>('choose'),
   input: element<HTMLInputElement>('files'),
   current: () => selectedInstallation,

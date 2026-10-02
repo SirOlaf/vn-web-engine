@@ -1,4 +1,5 @@
 import {playerEntry, type PlayerId} from '../players/registry.js';
+import {playerSelectionMode, setPlayerSelectionMode} from '../players/detect.js';
 
 /** Behavior bridge for controls rendered by the shared Svelte player shell. */
 export function mountGameViewer(game: PlayerId): {collapseOptions(collapsed: boolean): void} {
@@ -13,10 +14,23 @@ export function mountGameViewer(game: PlayerId): {collapseOptions(collapsed: boo
     body.hidden = collapsed;
   }
 
-  gameSelect.value = game;
+  const help = document.querySelector<HTMLElement>('#viewer-game-help')!;
+  function showMode(): void {
+    const auto = playerSelectionMode() === 'auto';
+    gameSelect.value = auto ? 'auto' : game;
+    help.hidden = !auto;
+  }
+  showMode();
   gameSelect.addEventListener('change', () => {
-    const destination = playerEntry(gameSelect.value as PlayerId).route;
-    window.location.assign(new URL(destination, window.location.href));
+    if (gameSelect.value === 'auto') {
+      setPlayerSelectionMode('auto');
+      showMode();
+      return;
+    }
+    setPlayerSelectionMode('manual');
+    const selected = gameSelect.value as PlayerId;
+    if (selected === game) return showMode();
+    window.location.assign(new URL(playerEntry(selected).route, window.location.href));
   });
   toggle.addEventListener('click', () =>
     collapseOptions(toggle.getAttribute('aria-expanded') === 'true'),

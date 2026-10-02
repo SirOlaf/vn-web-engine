@@ -1,7 +1,14 @@
 <script lang="ts">
   import {onMount, tick} from 'svelte';
   import {installationStatus, type InstallationStatus} from './library.js';
-  import {PLAYERS, playerEntry, type PlayerId} from './players/registry.js';
+  import {PLAYERS, playerEntry, type PlayerEntry, type PlayerId} from './players/registry.js';
+  import {detectionMessage, detectPlayers, openInPlayer} from './players/detect.js';
+  import {
+    hasInstallationDirectoryPicker,
+    pickInstallationDirectory,
+    selectedInstallationFiles,
+    type InstallationSelection,
+  } from '../src/platform/installation-picker.js';
 
   let selected: PlayerId = 'buriko';
   let tab: 'overview' | 'files' = 'overview';
@@ -18,6 +25,51 @@
     const statuses = await Promise.all(PLAYERS.map((entry) => installationStatus(entry)));
     installations = Object.fromEntries(PLAYERS.map((entry, i) => [entry.id, statuses[i]]));
     checking = false;
+  }
+
+  let detecting = false;
+  let detection = '';
+  let matches: readonly PlayerEntry[] = [];
+  let folderInput: HTMLInputElement;
+
+  /** Picks a game folder and opens it in the player whose engine markers it carries. */
+  function chooseFolder(): void {
+    if (detecting) return;
+    // The picker call itself happens synchronously in this gesture.
+    if (hasInstallationDirectoryPicker(window)) void detect(pickInstallationDirectory(window));
+    else folderInput.click();
+  }
+  function folderChosen(): void {
+    const files = Array.from(folderInput.files ?? []);
+    folderInput.value = '';
+    if (files.length)
+      void detect(Promise.resolve().then(() => selectedInstallationFiles(files, true)));
+  }
+  async function detect(picked: Promise<InstallationSelection>): Promise<void> {
+    detecting = true;
+    detection = 'Reading the folder…';
+    matches = [];
+    try {
+      const selection = await picked;
+      detection = 'Looking for engine markers…';
+      const found = await detectPlayers(selection);
+      matches = found;
+      if (found.length === 1) {
+        selected = found[0]!.id;
+        tab = 'overview';
+      }
+      const handedOff = found.length === 1 && (await openInPlayer(found[0]!, selection));
+      detection = detectionMessage(found, handedOff);
+    } catch (error) {
+      detection =
+        error instanceof Error && error.name === 'AbortError'
+          ? ''
+          : error instanceof Error
+            ? error.message
+            : String(error);
+    } finally {
+      detecting = false;
+    }
   }
 
   async function moveTab(event: KeyboardEvent): Promise<void> {
@@ -62,6 +114,27 @@
             <span aria-hidden="true">↻</span>
             {checking ? 'Checking…' : 'Refresh browser files'}
           </button>
+        </div>
+        <div class="auto-detect">
+          <button class="button primary" type="button" onclick={chooseFolder} disabled={detecting}>
+            Choose game folder
+          </button>
+          <p>Opens the folder in the player of its engine.</p>
+          <input
+            bind:this={folderInput}
+            type="file"
+            webkitdirectory
+            hidden
+            onchange={folderChosen}
+          />
+          {#if detection}<p class="auto-detect-status" role="status">{detection}</p>{/if}
+          {#if matches.length > 1}
+            <div class="auto-detect-matches">
+              {#each matches as match (match.id)}
+                <a class="button secondary" href={match.route}>{match.title}</a>
+              {/each}
+            </div>
+          {/if}
         </div>
         {#each PLAYERS as entry (entry.id)}
           <button

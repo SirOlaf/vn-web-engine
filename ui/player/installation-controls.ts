@@ -15,10 +15,18 @@ import {
   readInstallationDirectory,
   type InstallationSelection,
 } from '../../src/platform/installation-picker.js';
+import {playerEntry, type PlayerId} from '../players/registry.js';
+import {
+  detectionMessage,
+  detectPlayers,
+  openInPlayer,
+  playerSelectionMode,
+} from '../players/detect.js';
 
 /** Shared installation UI; engines only interpret the selected tree and its game metadata. */
 export function mountInstallationControls(options: {
-  key: string;
+  /** The player on this page; its installation key names the remembered folder and copy. */
+  player: PlayerId;
   choose: HTMLButtonElement;
   input: HTMLInputElement;
   current(): CachedInstallation | null;
@@ -31,6 +39,7 @@ export function mountInstallationControls(options: {
   canonicalPath?(path: string): string;
   selectedPath?(path: string, directory: boolean): string;
 }): {refresh(): void; resetSelection(): void} {
+  const key = playerEntry(options.player).installationKey;
   const section = options.choose.closest<HTMLElement>('#installation-files')!;
   const element = <T extends HTMLElement>(id: string) => section.querySelector<T>(`#${id}`)!;
   const cache = new BrowserInstallationCache();
@@ -87,7 +96,19 @@ export function mountInstallationControls(options: {
     selectedDetails.hidden = true;
     selectedNames.textContent = '';
   }
+  /** In auto mode a folder of another engine opens in that engine's player. */
+  async function handOff(selection: InstallationSelection): Promise<boolean> {
+    if (!selection.directory || playerSelectionMode() !== 'auto') return false;
+    const found = await detectPlayers(selection);
+    if (!found.length || found.some((entry) => entry.id === options.player)) return false;
+    if (found.length === 1 && (await openInPlayer(found[0]!, selection))) {
+      message(detectionMessage(found, true));
+      return true;
+    }
+    throw new Error(detectionMessage(found));
+  }
   async function select(selection: InstallationSelection): Promise<void> {
+    if (await handOff(selection)) return;
     const combined = selectionFiles.add(selection);
     selectedDetails.hidden = false;
     selectedSummary.textContent = `${combined.files.length} selected files`;
@@ -98,11 +119,11 @@ export function mountInstallationControls(options: {
     if (directories.available()) {
       try {
         if (selection.directoryHandle) {
-          await directories.set(options.key, selection.directoryHandle);
+          await directories.set(key, selection.directoryHandle);
           rememberedDirectory = selection.directoryHandle;
           directoryStatus.textContent = `Remembered folder: ${rememberedDirectory.name}. It will reopen after refresh when the browser permits access.`;
         } else {
-          await directories.remove(options.key);
+          await directories.remove(key);
           rememberedDirectory = null;
           directoryStatus.textContent =
             'This file selection cannot be remembered. Keep game files in browser to reopen them later.';
@@ -133,7 +154,7 @@ export function mountInstallationControls(options: {
     'installation-forget',
     () =>
       void run(async () => {
-        await directories.remove(options.key);
+        await directories.remove(key);
         rememberedDirectory = null;
         directoryStatus.textContent =
           'Folder forgotten. Device files and browser saves are unchanged.';
@@ -190,7 +211,7 @@ export function mountInstallationControls(options: {
     () =>
       void run(async () => {
         message('Opening browser game files…');
-        const installation = await cache.open(options.key);
+        const installation = await cache.open(key);
         if (!installation)
           throw new Error('No game files saved here yet. Choose device files first.');
         await options.load(installation);
@@ -207,7 +228,7 @@ export function mountInstallationControls(options: {
         if (!installation) throw new Error('Open or choose a game first.');
         abort = new AbortController();
         cancel.hidden = false;
-        const result = await cache.save(options.key, installation, {
+        const result = await cache.save(key, installation, {
           signal: abort.signal,
           progress: ({path, completedBytes, totalBytes}) => {
             message(
@@ -216,7 +237,7 @@ export function mountInstallationControls(options: {
           },
         });
         // Swap the live mount too, so Play reads the durable browser copy.
-        const saved = await cache.open(options.key);
+        const saved = await cache.open(key);
         if (!saved) throw new Error('The browser removed the saved installation.');
         await options.load(saved);
         resetSelection();
@@ -232,7 +253,7 @@ export function mountInstallationControls(options: {
     'installation-remove',
     () =>
       void run(async () => {
-        await cache.remove(options.key);
+        await cache.remove(key);
         // A mounted OPFS File may no longer be readable after removal. Require a fresh selection.
         message(
           'Saved game files removed. Choose or open an installation to play. Browser saves are unchanged.',
@@ -263,7 +284,7 @@ export function mountInstallationControls(options: {
     }
     const revision = selectionRevision;
     try {
-      const handle = await directories.get(options.key);
+      const handle = await directories.get(key);
       if (selectionRevision !== revision || !handle) return;
       rememberedDirectory = handle;
       refresh();

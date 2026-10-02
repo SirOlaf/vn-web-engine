@@ -1,4 +1,3 @@
-import {playerEntry} from '../players/registry.js';
 import {BlobSource} from '../../src/core/source.js';
 import {BrowserAudioContextHost} from '../../src/audio/browser-audio-context-host.js';
 import {beginRuntimeActivity} from '../../src/platform/runtime-activity.js';
@@ -499,7 +498,7 @@ function installationSnapshot(installation: Installation): CachedInstallation {
 }
 
 const installationControls = mountInstallationControls({
-  key: playerEntry('buriko').installationKey,
+  player: 'buriko',
   choose: chooseButton,
   input: choose,
   current: () => selectedSnapshot,

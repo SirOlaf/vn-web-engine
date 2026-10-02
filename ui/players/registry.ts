@@ -1,4 +1,8 @@
 import type {Component} from 'svelte';
+import type {InstallationRecognizer} from '../../src/platform/installation-detection.js';
+import {isBurikoInstallation} from '../../src/engines/buriko/installation-markers.js';
+import {isMagesInstallation} from '../../src/engines/mages/installation-markers.js';
+import {isRScriptInstallation} from '../../src/engines/rscript/installation-markers.js';
 
 /** Players the library offers: an engine for all of its titles, or one title. */
 export type PlayerId = 'buriko' | 'chaos-head-noah' | 'rscript';
@@ -20,6 +24,8 @@ export interface PlayerEntry {
   readonly installationKey: string;
   /** What a browser copy of the installation holds, e.g. "game archives". */
   readonly installationFiles: string;
+  /** Recognizes a chosen folder this player runs, for automatic player selection. */
+  readonly recognize: InstallationRecognizer;
   /** The player's save file controls, loaded on demand. */
   saveFiles(): Promise<{default: Component<{runtime?: boolean; heading?: boolean}>}>;
 }
@@ -36,6 +42,7 @@ export const PLAYERS: readonly PlayerEntry[] = [
     explorerRoute: './buriko-assets.html',
     installationKey: 'buriko',
     installationFiles: 'game files',
+    recognize: isBurikoInstallation,
     saveFiles: () => import('./buriko/SaveFiles.svelte'),
   },
   {
@@ -49,6 +56,7 @@ export const PLAYERS: readonly PlayerEntry[] = [
     explorerRoute: './assets.html',
     installationKey: 'chaos-head-noah-gog',
     installationFiles: 'game archives',
+    recognize: isMagesInstallation,
     saveFiles: () => import('./chaos-head-noah/SaveFiles.svelte'),
   },
   {
@@ -62,6 +70,7 @@ export const PLAYERS: readonly PlayerEntry[] = [
     explorerRoute: null,
     installationKey: 'rscript',
     installationFiles: 'game files',
+    recognize: isRScriptInstallation,
     saveFiles: () => import('./rscript/SaveFiles.svelte'),
   },
 ];

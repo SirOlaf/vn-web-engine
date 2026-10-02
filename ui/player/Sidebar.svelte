@@ -33,10 +33,14 @@
       <h2>Game</h2>
       <a class="sidebar-library-link" href="./">← Library</a>
       <label for="viewer-game">Select player</label>
-      <select id="viewer-game" value={entry.id}>
+      <select id="viewer-game" value={entry.id} aria-describedby="viewer-game-help">
+        <option value="auto">Auto-detect</option>
         {#each PLAYERS as player (player.id)}<option value={player.id}>{player.title}</option
           >{/each}
       </select>
+      <p id="viewer-game-help" hidden>
+        Playing with {entry.title}. A folder of another engine opens in its player.
+      </p>
     </section>
     <section>
       <h2>Display</h2>

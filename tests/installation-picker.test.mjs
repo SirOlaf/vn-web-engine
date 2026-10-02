@@ -126,3 +126,45 @@ test('directory selection merges, canonicalizes, and replaces preserved director
   selected.clear();
   assert.deepEqual(selected.add({directory: false, files: []}).directories, []);
 });
+
+test('installation detection recognizes each engine by its archive markers', async () => {
+  const {detectInstallation} = await import('../dist/platform/installation-detection.js');
+  const {isBurikoInstallation} = await import('../dist/engines/buriko/installation-markers.js');
+  const {isMagesInstallation} = await import('../dist/engines/mages/installation-markers.js');
+  const {isRScriptInstallation} = await import('../dist/engines/rscript/installation-markers.js');
+  const candidates = [
+    {id: 'buriko', recognize: isBurikoInstallation},
+    {id: 'mages', recognize: isMagesInstallation},
+    {id: 'rscript', recognize: isRScriptInstallation},
+  ];
+  const file = (path, ...parts) => ({path, source: new BlobSource(new Blob(parts))});
+  const detect = (...files) => detectInstallation(files, candidates);
+
+  assert.deepEqual(await detect(file('/Game.exe', 'MZ'), file('/data01000.arc', 'PackFile    ')), [
+    'buriko',
+  ]);
+  assert.deepEqual(await detect(file('/sysgrp.arc', 'BURIKO ARC20')), ['buriko']);
+  assert.deepEqual(
+    await detect(file('/Data/script.cpk', 'CPK '), file('/Data/mes00.cpk', 'CPK ')),
+    ['mages'],
+  );
+  // The Data folder chosen itself.
+  assert.deepEqual(await detect(file('/SCRIPT.CPK', 'CPK '), file('/mes00.cpk')), ['mages']);
+  assert.deepEqual(await detect(file('/script.cpk', 'CPK ')), []);
+  assert.deepEqual(
+    await detect(
+      file('/RScript.exe', 'MZ'),
+      file('/grp/sys.xfl', new Uint8Array([0x4c, 0x42, 1, 0])),
+    ),
+    ['rscript'],
+  );
+  // Names alone, wrong versions and short files are not markers.
+  assert.deepEqual(
+    await detect(
+      file('/data.arc', 'NotAnArchive'),
+      file('/a.xfl', new Uint8Array([0x4c, 0x42, 2])),
+      file('/b.xfl', 'L'),
+    ),
+    [],
+  );
+});

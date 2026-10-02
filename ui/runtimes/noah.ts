@@ -1,4 +1,3 @@
-import {playerEntry} from '../players/registry.js';
 import {BlobSource} from '../../src/core/source.js';
 import {CpkArchive} from '../../src/formats/cri/cpk.js';
 import {SourceFileSystem} from '../../src/platform/filesystem.js';
@@ -156,7 +155,7 @@ async function selectInstallation(selection: InstallationSelection): Promise<voi
   });
 }
 const installationControls = mountInstallationControls({
-  key: playerEntry('chaos-head-noah').installationKey,
+  player: 'chaos-head-noah',
   choose: element<HTMLButtonElement>('choose'),
   input: files,
   current: () => selectedInstallation,
