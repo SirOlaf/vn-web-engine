@@ -8,7 +8,14 @@ import {encodeWcg} from '../../../formats/rscript/wcg.js';
 import {RScriptContainer, RScriptSprite, type RScriptNode} from '../graphics/sprite.js';
 import {RScriptImages} from '../images.js';
 import {Config, GAME_VARIABLE_COUNT, Scene, RScriptMemory} from '../memory.js';
-import {decodeSlotSave, decodeSystemSave, encodeSlotSave, encodeSystemSave} from '../saves.js';
+import {
+  applySlotSave,
+  decodeSystemSave,
+  encodeSlotSave,
+  encodeSystemSave,
+  parseSlotSave,
+  type RScriptSlotState,
+} from '../saves.js';
 import {
   RScriptInterpreter,
   RScriptScriptEnd,
@@ -1036,7 +1043,17 @@ export class RScriptGame {
   async loadSlot(slot: number): Promise<boolean> {
     const bytes = await this.readSlot(slot);
     if (!bytes) return false;
-    await this.restartScene(() => decodeSlotSave(this.memory, bytes));
+    let state: RScriptSlotState;
+    try {
+      state = parseSlotSave(this.memory.revision, bytes);
+    } catch (error) {
+      // A rejected slot leaves the running scene untouched.
+      this.diagnostic(
+        `Ignoring unreadable ${this.slotName(slot)}: ${error instanceof Error ? error.message : error}`,
+      );
+      return false;
+    }
+    await this.restartScene(() => applySlotSave(this.memory, state));
     return true;
   }
   /** sub_421740 + sub_4535F0: returns to the snapshot before the previous choice. */

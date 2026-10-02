@@ -1,4 +1,12 @@
-import {GAME_VARIABLE_COUNT, VARIABLE_COUNT, type RScriptMemory} from './memory.js';
+import {ByteView} from '../../core/binary.js';
+import {RScriptBitsetStore} from './bitset-store.js';
+import {
+  GAME_VARIABLE_COUNT,
+  MAX_CALL_DEPTH,
+  Scene,
+  VARIABLE_COUNT,
+  type RScriptMemory,
+} from './memory.js';
 import {RSCRIPT_1_11, type RScriptRevision} from './revision.js';
 
 const SYSTEM_VARIABLES = VARIABLE_COUNT - GAME_VARIABLE_COUNT;
@@ -26,17 +34,25 @@ export function encodeSystemSave(memory: RScriptMemory): Uint8Array {
   return bytes;
 }
 
+/**
+ * Loads a system save. The save is decoded completely before memory changes, so a
+ * rejected save leaves the configuration, variables and flags as they were.
+ */
 export function decodeSystemSave(memory: RScriptMemory, bytes: Uint8Array): void {
   const configSize = memory.revision.configSize;
   const fixed = configSize + 2 * SYSTEM_VARIABLES;
   if (bytes.length < fixed) throw new Error('Truncated system save');
-  memory.config.set(bytes.subarray(0, configSize));
-  const view = new DataView(bytes.buffer, bytes.byteOffset + configSize, 2 * SYSTEM_VARIABLES);
-  for (let i = 0; i < SYSTEM_VARIABLES; i++)
-    memory.variables[GAME_VARIABLE_COUNT + i] = view.getInt16(2 * i, true);
-  let offset = fixed + memory.readText.decode(bytes, fixed);
-  offset += memory.seenImages.decode(bytes, offset);
+  const readText = new RScriptBitsetStore(),
+    seenImages = new RScriptBitsetStore();
+  let offset = fixed + readText.decode(bytes, fixed);
+  offset += seenImages.decode(bytes, offset);
   if (offset !== bytes.length) throw new Error('Unexpected data after the system save flags');
+  const view = new ByteView(bytes, {littleEndian: true});
+  memory.config.set(bytes.subarray(0, configSize));
+  for (let i = 0; i < SYSTEM_VARIABLES; i++)
+    memory.variables[GAME_VARIABLE_COUNT + i] = view.i16(configSize + 2 * i);
+  memory.readText.assign(readText);
+  memory.seenImages.assign(seenImages);
 }
 
 /** Page text kept in the slot header (sub_4213D0) for save screens. */
@@ -134,22 +150,54 @@ export function decodeSlotHeader(
   };
 }
 
+/** The scene and play-through variables of a slot, both at its message and previous choice. */
+export interface RScriptSlotState {
+  readonly scene: Uint8Array;
+  readonly variables: Int16Array;
+  readonly previousScene: Uint8Array;
+  readonly previousVariables: Int16Array;
+}
+
+/**
+ * Decodes a slot of the revision's exact size (sub_421570 reads the blocks the slot writer
+ * stores, sub_4213D0). Scene blocks hold values only, no native pointers, but the interpreter
+ * resumes from their call stacks: a call depth beyond the stacks is rejected here.
+ */
+export function parseSlotSave(revision: RScriptRevision, bytes: Uint8Array): RScriptSlotState {
+  const sceneSize = revision.sceneSize;
+  const variableBytes = 2 * GAME_VARIABLE_COUNT;
+  const size = revision.slotHeaderSize + 2 * (sceneSize + variableBytes);
+  if (bytes.length < size) throw new Error('Truncated save slot');
+  if (bytes.length > size) throw new Error('The save slot belongs to another engine revision');
+  const view = new ByteView(bytes, {littleEndian: true});
+  let offset = revision.slotHeaderSize;
+  const block = (): [Uint8Array, Int16Array] => {
+    const scene = view.range(offset, sceneSize).slice();
+    offset += sceneSize;
+    const variables = Int16Array.from({length: GAME_VARIABLE_COUNT}, (_, i) =>
+      view.i16(offset + 2 * i),
+    );
+    offset += variableBytes;
+    const depth = new ByteView(scene, {littleEndian: true}).u16(
+      revision.sceneOffset(Scene.callDepth),
+    );
+    if (depth > MAX_CALL_DEPTH) throw new Error(`Save slot call depth ${depth} is invalid`);
+    return [scene, variables];
+  };
+  const [scene, variables] = block();
+  const [previousScene, previousVariables] = block();
+  return {scene, variables, previousScene, previousVariables};
+}
+
+/** Loads a parsed slot into the current scene and variables and the previous-choice snapshot. */
+export function applySlotSave(memory: RScriptMemory, state: RScriptSlotState): void {
+  memory.scene.set(state.scene);
+  memory.variables.set(state.variables);
+  memory.previousScene.set(state.previousScene);
+  memory.previousVariables.set(state.previousVariables);
+}
+
 /** Loads a slot into the current scene and variables and the previous-choice snapshot. */
 export function decodeSlotSave(memory: RScriptMemory, bytes: Uint8Array): void {
-  const headerSize = memory.revision.slotHeaderSize;
-  const sceneSize = memory.scene.length;
-  const variableBytes = 2 * GAME_VARIABLE_COUNT;
-  if (bytes.length < headerSize + 2 * (sceneSize + variableBytes))
-    throw new Error('Truncated save slot');
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let offset = headerSize;
-  const take = (scene: Uint8Array, variables: Int16Array): void => {
-    scene.set(bytes.subarray(offset, offset + sceneSize));
-    offset += sceneSize;
-    for (let i = 0; i < GAME_VARIABLE_COUNT; i++)
-      variables[i] = view.getInt16(offset + 2 * i, true);
-    offset += variableBytes;
-  };
-  take(memory.scene, memory.variables);
-  take(memory.previousScene, memory.previousVariables);
+  applySlotSave(memory, parseSlotSave(memory.revision, bytes));
 }

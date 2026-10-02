@@ -165,6 +165,12 @@ test('RScript flag stores and the system save keep the native layout', () => {
   );
   assert.ok(restored.readText.has(1001, 3) && restored.seenImages.has(0, 42));
   assert.throws(() => decodeSystemSave(restored, bytes.subarray(0, 100)), /Truncated/);
+  // A save whose flags fail to decode changes nothing.
+  const fresh = new RScriptMemory();
+  assert.throws(() => decodeSystemSave(fresh, bytes.subarray(0, bytes.length - 1)));
+  assert.equal(fresh.configWord(0x0a), 0);
+  assert.equal(fresh.variables[7000], 0);
+  assert.ok(!fresh.readText.has(1001, 3));
 });
 
 test('RScript slot saves keep the message snapshot, its header and the previous choice', () => {
@@ -199,4 +205,11 @@ test('RScript slot saves keep the message snapshot, its header and the previous 
   assert.equal(loaded.previousScene[0x2000], 9);
   assert.equal(loaded.previousVariables[42], 4);
   assert.throws(() => decodeSlotSave(loaded, bytes.subarray(0, 1000)), /Truncated/);
+  assert.throws(() => decodeSlotSave(loaded, new Uint8Array(bytes.length + 2)), /revision/);
+  // The call depth (scene +0x5C) must stay within the script and return stacks.
+  const deep = bytes.slice();
+  deep[0x68 + 0x5c] = 10;
+  const untouched = new RScriptMemory();
+  assert.throws(() => decodeSlotSave(untouched, deep), /call depth 10/);
+  assert.equal(untouched.scene[0x1000], 0);
 });

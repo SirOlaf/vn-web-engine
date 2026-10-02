@@ -31,6 +31,12 @@ export class RScriptBitsetStore {
     this.sets.clear();
   }
 
+  /** Replaces the contents with another store's, sharing its byte arrays. */
+  assign(other: RScriptBitsetStore): void {
+    this.sets.clear();
+    for (const [key, bytes] of other.sets) this.sets.set(key, bytes);
+  }
+
   encode(): Uint8Array {
     const keys = [...this.sets.keys()].sort((a, b) => a - b);
     const size = 4 + keys.reduce((n, key) => n + 6 + this.sets.get(key)!.length, 0);

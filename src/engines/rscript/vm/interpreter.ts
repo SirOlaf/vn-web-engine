@@ -4,11 +4,8 @@ import {
   type GscOpcodeLayouts,
   type GscProgram,
 } from '../../../formats/rscript/gsc.js';
-import {Scene, VARIABLE_COUNT, type RScriptMemory} from '../memory.js';
+import {MAX_CALL_DEPTH, Scene, VARIABLE_COUNT, type RScriptMemory} from '../memory.js';
 import {expandScriptText} from '../text.js';
-
-/** Maximum nested call depth accepted by 0x424E10/0x424EF0 before they report an error. */
-export const MAX_CALL_DEPTH = 9;
 
 export type RScriptNativeHandler = (
   vm: RScriptInterpreter,

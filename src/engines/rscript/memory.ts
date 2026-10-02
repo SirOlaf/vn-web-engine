@@ -6,6 +6,11 @@ import {RSCRIPT_1_11, type RScriptRevision} from './revision.js';
 export const VARIABLE_COUNT = 10000;
 /** Variables 0..6999 belong to a play-through and are stored with each save slot. */
 export const GAME_VARIABLE_COUNT = 7000;
+/**
+ * Deepest call level: the scene's script stack and return stack hold levels 0..9, and
+ * 0x424E10/0x424EF0 refuse a call from level 9.
+ */
+export const MAX_CALL_DEPTH = 9;
 /** Expression temporaries (word_4A2EA4); register 0 carries conditions. */
 export const REGISTER_COUNT = 102;
 /**
