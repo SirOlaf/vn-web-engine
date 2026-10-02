@@ -1,3 +1,4 @@
+import {decodeBmp} from '../formats/bmp.js';
 import {decodePng, pngCrc} from '../formats/png/decode.js';
 import {decodeBrowserImage} from './browser-image.js';
 import type {
@@ -40,55 +41,30 @@ function checkedRaster(width: number, height: number): void {
 }
 
 function bmp(bytes: Uint8Array): Raster {
-  if (bytes.length < 54 || bytes[0] !== 66 || bytes[1] !== 77)
-    throw new Error('Invalid BMP header');
-  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const header = v.getUint32(14, true);
-  if (header < 40 || 14 + header > bytes.length || v.getUint16(26, true) !== 1)
-    throw new Error('Unsupported BMP information header');
-  const width = v.getInt32(18, true),
-    signedHeight = v.getInt32(22, true);
-  const height = Math.abs(signedHeight),
-    depth = v.getUint16(28, true);
+  const bitmap = decodeBmp(bytes);
+  const {header, dataOffset, width, height, palette, indices, colors} = bitmap;
   checkedRaster(width, height);
-  if (![8, 24, 32].includes(depth) || v.getUint32(30, true) !== 0)
+  if (header.size === 12 || ![8, 24, 32].includes(header.bitDepth))
     throw new Error('Unsupported BMP pixel format or compression');
-  const offset = v.getUint32(10, true);
-  const stride = Math.floor((width * depth + 31) / 32) * 4;
-  if (offset + stride * height > bytes.length) throw new Error('Truncated BMP pixels');
-  const colors = depth === 8 ? v.getUint32(46, true) || 256 : 0;
-  if (colors > 256 || 14 + header + colors * 4 > offset) throw new Error('Invalid BMP palette');
+  if (palette && (palette.length > 256 || 14 + header.size + palette.length * 4 > dataOffset))
+    throw new Error('Invalid BMP palette');
   const rgba = new Uint8Array(width * height * 4);
-  const indices = depth === 8 ? new Uint8Array(width * height) : undefined;
-  for (let y = 0; y < height; y++) {
-    const row = offset + (signedHeight > 0 ? height - 1 - y : y) * stride;
-    for (let x = 0; x < width; x++) {
-      const out = (y * width + x) * 4;
-      if (depth === 8) {
-        const index = bytes[row + x]!;
-        if (index >= colors) throw new Error('BMP palette index outside color table');
-        indices![y * width + x] = index;
-        const color = 14 + header + index * 4;
-        rgba[out] = bytes[color + 2]!;
-        rgba[out + 1] = bytes[color + 1]!;
-        rgba[out + 2] = bytes[color]!;
-        rgba[out + 3] = 255;
-      } else {
-        const pixel = row + x * (depth >>> 3);
-        rgba[out] = bytes[pixel + 2]!;
-        rgba[out + 1] = bytes[pixel + 1]!;
-        rgba[out + 2] = bytes[pixel]!;
-        // BI_RGB's high byte is unused for the GDI+ 32RGB source format.
-        rgba[out + 3] = 255;
-      }
-    }
+  for (let i = 0; i < colors.length; i++) {
+    if (palette && indices![i]! >= palette.length)
+      throw new Error('BMP palette index outside color table');
+    const color = colors[i]!;
+    rgba[i * 4] = color >>> 16;
+    rgba[i * 4 + 1] = (color >>> 8) & 0xff;
+    rgba[i * 4 + 2] = color & 0xff;
+    // BI_RGB's high byte is unused for the GDI+ 32RGB source format.
+    rgba[i * 4 + 3] = 255;
   }
   return {
     width,
     height,
     rgba,
-    indices,
-    pixelFormat: depth === 8 ? indexed : depth === 24 ? rgb24 : rgb32,
+    indices: indices ?? undefined,
+    pixelFormat: header.bitDepth === 8 ? indexed : header.bitDepth === 24 ? rgb24 : rgb32,
   };
 }
 

@@ -1,5 +1,6 @@
 import {sha256} from '../../core/sha256.js';
-import {ascii, checkRange} from '../../core/binary.js';
+import {ascii, ByteView, checkRange} from '../../core/binary.js';
+import {dibStride, readDibHeader} from '../bmp.js';
 import {parsePeResources} from './resources.js';
 import type {PeResource, PeResourceId} from './resources.js';
 
@@ -200,34 +201,29 @@ function inspectImage(bytes: Uint8Array): Omit<PeCursorImage, 'resourceId' | 'la
     ({width, height, bitDepth} = inspectPng(dib));
     encoding = 'png';
   } else {
-    const header = v.getUint32(4, true);
-    if (![12, 40, 108, 124].includes(header))
-      throw new Error(`Unsupported cursor DIB header ${header}`);
-    checkRange(bytes.length, 4, header);
-    const core = header === 12;
-    width = core ? v.getUint16(8, true) : v.getInt32(8, true);
-    const storedHeight = core ? v.getUint16(10, true) : v.getInt32(12, true);
-    height = storedHeight / 2;
-    const planes = v.getUint16(core ? 12 : 16, true);
-    bitDepth = v.getUint16(core ? 14 : 18, true);
+    const header = readDibHeader(new ByteView(bytes, {littleEndian: true}), 4);
+    if (![12, 40, 108, 124].includes(header.size))
+      throw new Error(`Unsupported cursor DIB header ${header.size}`);
+    const core = header.size === 12;
+    width = header.width;
+    height = header.storedHeight / 2;
+    bitDepth = header.bitDepth;
     dimensions(width, height);
-    if (planes !== 1 || ![1, 4, 8, 16, 24, 32].includes(bitDepth))
+    if (header.planes !== 1 || ![1, 4, 8, 16, 24, 32].includes(bitDepth))
       throw new Error('Unsupported cursor DIB planes/bit depth');
-    if (!core && v.getUint32(20, true) !== 0)
-      throw new Error('Unsupported compressed/bitfields cursor DIB');
-    const used = core ? 0 : v.getUint32(36, true),
-      palette = used || (bitDepth <= 8 ? 1 << bitDepth : 0);
+    if (header.compression !== 0) throw new Error('Unsupported compressed/bitfields cursor DIB');
+    const palette = header.colorsUsed || (bitDepth <= 8 ? 1 << bitDepth : 0);
     if (palette > (bitDepth <= 8 ? 1 << bitDepth : 256))
       throw new Error('Invalid cursor DIB palette');
-    const xorSize = Math.ceil((width * bitDepth) / 32) * 4 * height;
-    const pixelSize = xorSize + Math.ceil(width / 32) * 4 * height;
-    const pixelOffset = header + palette * (core ? 3 : 4);
+    const xorSize = dibStride(width, bitDepth) * height;
+    const pixelSize = xorSize + dibStride(width, 1) * height;
+    const pixelOffset = header.size + palette * header.paletteEntrySize;
     checkRange(dib.length, pixelOffset, pixelSize);
     if (dib.length !== pixelOffset + pixelSize) throw new Error('Cursor DIB size mismatch');
     // Writers differ on whether biSizeImage includes the AND mask; both forms are valid.
-    if (!core && ![0, xorSize, pixelSize].includes(v.getUint32(24, true)))
+    if (!core && ![0, xorSize, pixelSize].includes(header.imageSize))
       throw new Error('Invalid cursor DIB image size');
-    if (header === 124 && (v.getUint32(116, true) || v.getUint32(120, true)))
+    if (header.profileOffset || header.profileSize)
       throw new Error('Unsupported cursor DIB color profile');
   }
   dimensions(width, height);

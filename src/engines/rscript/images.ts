@@ -1,4 +1,4 @@
-import {byteDataView, checkRange} from '../../core/binary.js';
+import {decodeBmp} from '../../formats/bmp.js';
 import {LwgImage} from '../../formats/rscript/lwg.js';
 import {decodePsd} from '../../formats/rscript/psd.js';
 import {decodeWcg, type RScriptImage} from '../../formats/rscript/wcg.js';
@@ -7,50 +7,18 @@ import {surfaceFromImage, type RScriptSurface} from './graphics/pixels.js';
 
 /**
  * Uncompressed Windows bitmap to native pixels (0x43AF50/0x43B0F0): 1, 8, 24 and 32-bit
- * BI_RGB images, bottom-up or top-down. Colour images are opaque; `mask` stores the
+ * BI_RGB images with a BITMAPINFOHEADER. Colour images are opaque; `mask` stores the
  * blue channel in the transparency byte like the `.msk` loader (0x43AD20).
  */
-export function decodeBmp(bytes: Uint8Array, mask = false): RScriptImage {
-  const view = byteDataView(bytes);
-  if (bytes.length < 54 || view.getUint16(0, true) !== 0x4d42) throw new Error('Not a BMP image');
-  const dataOffset = view.getUint32(10, true);
-  const headerSize = view.getUint32(14, true);
-  const width = view.getInt32(18, true);
-  const rawHeight = view.getInt32(22, true);
-  const bits = view.getUint16(28, true);
-  const compression = view.getUint32(30, true);
-  if (headerSize !== 40 || view.getUint16(26, true) !== 1 || compression !== 0)
-    throw new Error('Unsupported BMP header');
-  if (![1, 8, 24, 32].includes(bits)) throw new Error(`Unsupported BMP depth ${bits}`);
-  const height = Math.abs(rawHeight);
-  if (width < 1 || height < 1) throw new Error('Invalid BMP dimensions');
-  const stride = Math.ceil((width * bits) / 32) * 4;
-  checkRange(bytes.length, dataOffset, stride * height);
-  let palette: Uint32Array | null = null;
-  if (bits <= 8) {
-    const colors = view.getUint32(46, true) || 1 << bits;
-    checkRange(bytes.length, 14 + headerSize, colors * 4);
-    palette = new Uint32Array(colors);
-    for (let i = 0; i < colors; i++)
-      palette[i] = view.getUint32(14 + headerSize + i * 4, true) & 0xffffff;
-  }
+export function decodeRScriptBmp(bytes: Uint8Array, mask = false): RScriptImage {
+  const bitmap = decodeBmp(bytes);
+  if (bitmap.header.size !== 40) throw new Error('Unsupported BMP header');
+  if (bitmap.header.bitDepth === 4) throw new Error('Unsupported BMP depth 4');
+  const {width, height, colors} = bitmap;
   const pixels = new Uint8Array(width * height * 4);
   const out = new Uint32Array(pixels.buffer);
-  for (let y = 0; y < height; y++) {
-    const row = dataOffset + stride * (rawHeight > 0 ? height - 1 - y : y);
-    for (let x = 0; x < width; x++) {
-      let color: number;
-      if (bits === 24)
-        color =
-          bytes[row + x * 3]! | (bytes[row + x * 3 + 1]! << 8) | (bytes[row + x * 3 + 2]! << 16);
-      else if (bits === 32) color = view.getUint32(row + x * 4, true) & 0xffffff;
-      else {
-        const index = bits === 8 ? bytes[row + x]! : (bytes[row + (x >> 3)]! >> (7 - (x & 7))) & 1;
-        color = palette![index] ?? 0;
-      }
-      out[y * width + x] = mask ? ((color & 0xff) << 24) >>> 0 : color;
-    }
-  }
+  if (mask) for (let i = 0; i < colors.length; i++) out[i] = ((colors[i]! & 0xff) << 24) >>> 0;
+  else out.set(colors);
   return {width, height, pixels};
 }
 
@@ -82,7 +50,7 @@ export class RScriptImages {
         const bytes = await this.files.read(path + extension);
         if (!bytes) continue;
         if (extension === '.wcg') return surfaceFromImage(decodeWcg(bytes));
-        if (extension === '.bmp') return surfaceFromImage(decodeBmp(bytes));
+        if (extension === '.bmp') return surfaceFromImage(decodeRScriptBmp(bytes));
         if (extension === '.psd') return surfaceFromImage(decodePsd(bytes));
         throw new Error(`${path}${extension}: this image format is not supported yet`);
       }
@@ -94,7 +62,7 @@ export class RScriptImages {
   mask(path: string): Promise<RScriptSurface | null> {
     return this.cached(`mask:${path.toUpperCase()}`, async () => {
       const bytes = await this.files.read(`${path}.msk`);
-      return bytes ? surfaceFromImage(decodeBmp(bytes, true)) : null;
+      return bytes ? surfaceFromImage(decodeRScriptBmp(bytes, true)) : null;
     });
   }
 

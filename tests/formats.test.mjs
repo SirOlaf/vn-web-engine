@@ -8,6 +8,7 @@ import {
   startRuntimePerformanceRecording,
   stopRuntimePerformanceRecording,
 } from '../dist/platform/runtime-performance.js';
+import {decodeBmp} from '../dist/formats/bmp.js';
 import {parseUtf} from '../dist/formats/cri/utf.js';
 import {CpkArchive} from '../dist/formats/cri/cpk.js';
 import {decodeCrilayla} from '../dist/formats/cri/crilayla.js';
@@ -64,6 +65,50 @@ test('byte views check every read against their limit and record ends', () => {
   assert.equal(new ByteView(bytes).sub(4, 4).u16(0), 0x0405);
   class Custom extends Error {}
   assert.throws(() => new ByteView(bytes, {error: () => new Custom()}).range(8, 2), Custom);
+});
+
+function bmpFile(width, storedHeight, bitDepth, palette, rows) {
+  const stride = Math.ceil((width * bitDepth) / 32) * 4;
+  const dataOffset = 54 + palette.length * 4;
+  const bytes = new Uint8Array(dataOffset + stride * rows.length);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(0, 0x4d42, true);
+  view.setUint32(10, dataOffset, true);
+  view.setUint32(14, 40, true);
+  view.setInt32(18, width, true);
+  view.setInt32(22, storedHeight, true);
+  view.setUint16(26, 1, true);
+  view.setUint16(28, bitDepth, true);
+  view.setUint32(46, palette.length, true);
+  palette.forEach((color, i) => view.setUint32(54 + i * 4, color, true));
+  rows.forEach((row, y) => bytes.set(row, dataOffset + y * stride));
+  return bytes;
+}
+
+test('BMP rows decode top-down for every BI_RGB depth', () => {
+  const bottomUp = decodeBmp(
+    bmpFile(
+      3,
+      2,
+      4,
+      [0x112233, 0x445566],
+      [
+        [0x10, 0x00],
+        [0x01, 0x10],
+      ],
+    ),
+  );
+  assert.deepEqual([...bottomUp.indices], [0, 1, 1, 1, 0, 0]);
+  assert.deepEqual(
+    [...bottomUp.colors],
+    [0x112233, 0x445566, 0x445566, 0x445566, 0x112233, 0x112233],
+  );
+  const topDown = decodeBmp(bmpFile(2, -1, 24, [], [[0x01, 0x02, 0x03, 0x04, 0x05, 0x06]]));
+  assert.deepEqual([...topDown.colors], [0x030201, 0x060504]);
+  assert.equal(topDown.indices, null);
+  const outside = decodeBmp(bmpFile(1, 1, 1, [0xffffff], [[0x80]]));
+  assert.deepEqual([...outside.colors], [0]);
+  assert.throws(() => decodeBmp(bmpFile(4, 4, 8, [], [])), RangeError);
 });
 
 test('CRILAYLA literal order and untouched 256-byte prefix', () => {
