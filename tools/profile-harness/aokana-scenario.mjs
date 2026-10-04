@@ -3,12 +3,13 @@
 // 1x; only the measured window is throttled. See docs/buriko-rendering-handoff.md.
 //
 //   node tools/profile-harness/aokana-scenario.mjs <slot 2|3|4> --out <prefix>
-//     [--throttle 6] [--query bitmap-resident=0&bp-wasm=0] [--no-record] [--boot-record]
+//     [--throttle 6] [--query bitmap-resident=0&bp-wasm=0] [--text-mode dom] [--no-record] [--boot-record]
 //     [--check] [--frames] [--gap-ms 100] [--frames-from-load] [--record-from-advance] [--no-profile] [--controller http://127.0.0.1:9444] [--origin http://127.0.0.1:8001]
 //
 // Writes <prefix>.cpuprofile and, unless --no-record, <prefix>.timings.json. The recorder's
 // own spans cost about a tenth of a CPU-bound window, so take CPU attribution from a
 // --no-record run. --boot-record starts the recorder before Play (allocation metrics).
+// --text-mode dom selects DOM text before Play; the default keeps the page's selection.
 // --no-profile skips the sampling CPU profile, whose start and stop stall the page for
 // hundreds of milliseconds at 6x.
 // --frames writes <prefix>.frames.json: every requestAnimationFrame gap over 100 ms (or
@@ -36,6 +37,7 @@ const slot = args[0],
   out = option('--out'),
   throttle = Number(option('--throttle', 6)),
   query = option('--query', ''),
+  textMode = option('--text-mode', null),
   controller = option('--controller', 'http://127.0.0.1:9444'),
   origin = option('--origin', 'http://127.0.0.1:8001'),
   record = !args.includes('--no-record'),
@@ -114,6 +116,10 @@ const shown = await evaluate(
 );
 if (shown !== expected) throw new Error(`Page build ${shown} is not the current build ${expected}`);
 
+if (textMode !== null)
+  await evaluate(
+    `(() => { const s = document.querySelector('#text-mode'); s.value = ${JSON.stringify(textMode)}; s.dispatchEvent(new Event('change')); return s.value; })()`,
+  );
 if (bootRecord) await call('recstart');
 await call('click', {x: play[0], y: play[1]});
 let skipping = false;
