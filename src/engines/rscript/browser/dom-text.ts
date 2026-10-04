@@ -28,6 +28,16 @@ interface ShownSlot {
   readonly signature: string;
 }
 
+// RScript packs these ASCII pairs into one upright cell, even in a vertical column.
+// Unicode's double punctuation for vertical text preserves that cell without splitting
+// the paragraph's Text node. Request text presentation for the emoji-capable symbols.
+const verticalPairs: Readonly<Record<string, string>> = {
+  '!!': '\u203c\ufe0e',
+  '!?': '\u2049\ufe0e',
+  '?!': '\u2048',
+};
+const sourcePairs: Readonly<Record<string, string>> = {'‼': '!!', '⁉': '!?', '⁈': '?!'};
+
 /**
  * Selectable text for copying and dictionary extensions, from each visible text object
  * (message boxes, the backlog pages they show, choices and screen text), presented by the
@@ -47,10 +57,27 @@ export class RScriptDomText {
   private enabled = false;
   private frame = 0;
   private root: RScriptContainer | null = null;
+  private readonly copyPairs = (event: ClipboardEvent): void => {
+    const selection = this.options.document.getSelection();
+    if (
+      !event.clipboardData ||
+      !this.selected ||
+      !selection?.focusNode ||
+      !this.element.contains(selection.focusNode)
+    )
+      return;
+    // The shared copy handler has already omitted visual column separators, if any.
+    const displayed = event.clipboardData.getData('text/plain') || selection.toString(),
+      source = displayed.replace(/[‼⁉⁈]\ufe0e?/g, (pair) => sourcePairs[pair[0]!]!);
+    if (source === displayed) return;
+    event.clipboardData.setData('text/plain', source);
+    event.preventDefault();
+  };
 
   constructor(private readonly options: RScriptDomTextOptions) {
     const {parent, canvas, width, height} = options;
     this.slots = new DomGlyphSlots(parent, {overlay: true});
+    options.document.addEventListener('copy', this.copyPairs);
     this.slots.setSize(width, height);
     this.slots.element.hidden = true;
     const fit = (): void => {
@@ -199,6 +226,7 @@ export class RScriptDomText {
   }
 
   dispose(): void {
+    this.options.document.removeEventListener('copy', this.copyPairs);
     this.unsubscribeStyle();
     this.resize.disconnect();
     if (this.frame) cancelAnimationFrame(this.frame);
@@ -270,7 +298,7 @@ function blockSlots(
           y: at.y + g.y,
           width: g.width,
           height: g.height,
-          text: g.text,
+          text: g.vertical && g.width === g.height ? (verticalPairs[g.text] ?? g.text) : g.text,
           line: rows[start + j]!,
           color: g.color,
           alpha: alpha(g),

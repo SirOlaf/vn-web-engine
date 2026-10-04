@@ -109,7 +109,10 @@
     const event = new Event('copy', {bubbles: true, cancelable: true});
     const clipboard = new Map();
     Object.defineProperty(event, 'clipboardData', {
-      value: {setData: (type, value) => clipboard.set(type, value)},
+      value: {
+        setData: (type, value) => clipboard.set(type, value),
+        getData: (type) => clipboard.get(type) ?? '',
+      },
     });
     document.dispatchEvent(event);
     assert(
@@ -138,11 +141,57 @@
       rect(1).left > rect(0).left && Math.abs(rect(1).top - rect(0).top) < 1,
       'Horizontal row misplaced',
     );
+    const punctuation = [
+      glyph('日', 0, 0),
+      glyph('!!', 0, 1),
+      glyph('本', 0, 2),
+      glyph('!?', 1, 0),
+      glyph('?!', 1, 1),
+      glyph('語', 1, 2),
+    ];
+    page.bakedText = punctuation;
+    layer.update();
+    assert(
+      span().textContent === '日‼\ufe0e本\n⁉\ufe0e⁈語',
+      'Paired punctuation is not upright text',
+    );
+    assert(span().firstChild === node, 'Pairs split the continuous text node');
+    assert(
+      Math.abs(rect(3).top - rect(0).top - 48) < 1,
+      'Double exclamation does not occupy one cell',
+    );
+    inside();
+    range.selectNodeContents(span().firstChild);
+    selection.addRange(range);
+    const pairCopy = new Event('copy', {bubbles: true, cancelable: true});
+    const pairClipboard = new Map();
+    Object.defineProperty(pairCopy, 'clipboardData', {
+      value: {
+        setData: (type, value) => pairClipboard.set(type, value),
+        getData: (type) => pairClipboard.get(type) ?? '',
+      },
+    });
+    document.dispatchEvent(pairCopy);
+    assert(pairClipboard.get('text/plain') === '日!!本!??!語', 'Copy did not restore ASCII pairs');
+    selection.removeAllRanges();
+    const pairNode = span().firstChild;
+    layer.update();
+    assert(span().firstChild === pairNode, 'Idle pair update changed the text node');
+    assert(punctuation[1].text === '!!', 'Presentation changed the native text');
+    setDomTextStyle({enabled: false});
+    assert(span().textContent.includes('‼\ufe0e'), 'Transparent overlay lost upright pairs');
+    assert(getComputedStyle(span()).color === 'rgba(0, 0, 0, 0)', 'Pair overlay is visible');
+    page.bakedText = punctuation.map((g) => ({...g, vertical: false}));
+    layer.update();
+    assert(
+      span().textContent.includes('!!') && !span().textContent.includes('‼'),
+      'Horizontal pairs changed',
+    );
     layer.setEnabled(false, root);
     assert(!layer.element.querySelector('[data-game-text]'), 'Disabled layer retained text');
     layer.dispose();
     status.textContent =
-      'PASS: reveal anchor, 17 columns, clipping, blank columns, stable text node, copy, transparent overlay, larger natural text, horizontal text, cleanup.';
+      'PASS: reveal anchor, 17 columns, clipping, blank columns, stable text node, copy, transparent overlay, larger natural text, horizontal text, upright punctuation, ASCII pair copying, cleanup.';
   } catch (error) {
     status.textContent = `FAIL: ${error.message}`;
     console.error(error);
