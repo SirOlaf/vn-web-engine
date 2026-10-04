@@ -107,6 +107,9 @@ async function pageMain(_fixture, options) {
       ['copy rows', (d, s) => copy.copyBurikoBitmapRows(d, s), 1],
       ['clear', (d) => copy.clearBurikoBitmap(d), 1],
       ['dim rgb ' + t, (d, s) => effects.dimBurikoRgb(d, s, t), 1],
+      // In-place display filters read the image they draw into.
+      ['dim rgb in place ' + t, (d) => effects.dimBurikoRgb(d, d, t), 1],
+      ['mix all in place ' + t, (d) => alpha.mixBurikoAllChannels(d, d, t), 1],
       ['mix all ' + t, (d, s) => alpha.mixBurikoAllChannels(d, s, t), 1],
       ['alpha into rgb', (d, s) => alpha.blendBurikoAlphaIntoRgb(d, s), 2],
       [

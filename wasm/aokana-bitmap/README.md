@@ -120,6 +120,21 @@ end of the stream use a scalar tree walk. Literals and repeats store 16-byte
 chunks; repeats shorter than 16 bytes use shuffle tables. The host supplies
 eight zero padding bytes after the input and 16 bytes of output slack.
 
+`bf_decode_alpha` and `bf_decode_rows` (`src/bf.rs`) decode one BF movie frame
+(140105f30) for `src/engines/buriko/native/bf-frame-wasm.ts`, from a parameter
+block of 32-bit fields and trees the host builds with the TypeScript tree builder.
+They run native's work items in order, alpha first, then the rows; the host
+snapshots the staged surface between the two calls so each item publishes alone.
+Rows perform entropy decoding, in-place IDCT and YCbCr conversion through the
+host's binary32 color table.
+The IDCT transforms four columns, then four rows, per `f32x4` operation. Each lane
+performs the reference's own unfused binary32 operation, so the output is
+bit-identical. Coefficient definition, Huffman lookahead, zigzag, table and
+destination initialization checks mirror `bf-frame.ts`. Any check the reference
+would fail returns a nonzero status, and the host reruns the reference on its
+untouched surface. When three planes were transformed, their samples are already
+saturated and defined, so pixel conversion skips the per-group checks.
+
 The `cbg_*` exports (`src/cbg.rs`) implement the entropy, run, and predictor
 stages of legacy CompressedBG (0x1400bfa50) for
 `src/engines/buriko/native/compressed-bg-wasm.ts`. The TypeScript decoder
