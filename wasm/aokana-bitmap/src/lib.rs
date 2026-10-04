@@ -2,6 +2,7 @@
 
 use core::arch::wasm32::*;
 
+pub mod bf;
 pub mod cbg;
 pub mod dsc;
 mod transition;

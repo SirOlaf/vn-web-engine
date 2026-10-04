@@ -18,7 +18,8 @@ import {
   type CooperativeTask,
 } from '../../../core/cooperative-task.js';
 import {HostTaskBudget} from '../../../core/host-task-budget.js';
-import {beginRuntimeSpan} from '../../../platform/runtime-performance.js';
+import {beginRuntimeSpan, recordRuntimeMetric} from '../../../platform/runtime-performance.js';
+import {decodeBurikoBfFrameWasm} from './bf-frame-wasm.js';
 
 export interface BurikoBfSurface {
   /** Read afresh after every yield. */
@@ -137,6 +138,7 @@ export function decodeBurikoBfFrame(
   destination?: BurikoBfSurface,
   version = 0x10001,
   actor = processing.allocator.currentActor,
+  kernel = true,
 ): BurikoBfSurface {
   const prepared = prepareBurikoBfFrame(
     frame,
@@ -147,11 +149,37 @@ export function decodeBurikoBfFrame(
     processing,
     destination,
     version,
+    kernel,
   );
   processing.setCallback(() => finishTask(prepared.next()), null);
   processing.run(1, actor);
   processing.setCallback(null, null);
   return prepared.surface;
+}
+
+/** The TypeScript reference for the Wasm kernel, which `decodeBurikoBfFrame` tries first. */
+export function decodeBurikoBfFrameReference(
+  frame: Uint8Array | BurikoBorrowedBytes,
+  width: number,
+  height: number,
+  depth: number,
+  quantization: Uint8Array,
+  processing: BurikoDistributedProcessing,
+  destination?: BurikoBfSurface,
+  version = 0x10001,
+): BurikoBfSurface {
+  return decodeBurikoBfFrame(
+    frame,
+    width,
+    height,
+    depth,
+    quantization,
+    processing,
+    destination,
+    version,
+    processing.allocator.currentActor,
+    false,
+  );
 }
 
 /** The same native worker computation, retaining private state across host scheduling points. */
@@ -202,6 +230,7 @@ function prepareBurikoBfFrame(
   processing: BurikoDistributedProcessing,
   destination: BurikoBfSurface | undefined,
   version: number,
+  kernel = true,
 ): {surface: BurikoBfSurface; next(): CooperativeTask<number>} {
   checkRange(quantization.length, 0, 128);
   const source = borrowedBytes(input),
@@ -226,20 +255,6 @@ function prepareBurikoBfFrame(
   const offsets = Array.from({length: rows + 1}, (_, index) =>
     data.getUint32(cursor.position + index * 4, true),
   );
-  const coefficients = new Int16Array(alignedWidth * alignedHeight * 3);
-  const defined = new Uint8Array(coefficients.length);
-  const idct = new MovieIdctWorkspace();
-  const lumaQuantization = quantization.subarray(0, 64);
-  const chromaQuantization = quantization.subarray(64, 128);
-  const requireCoefficients = (start: number, length: number): void => {
-    checkRange(coefficients.length, start, length);
-    for (let index = start; index < start + length; index++) {
-      if (defined[index] === 0)
-        throw new BurikoUndefinedResourceRead(
-          'Buriko BF reconstruction reads unwritten coefficient storage',
-        );
-    }
-  };
   const descriptors = Array.from({length: rows}, (_, row) => {
     const start = offsets[row]!,
       rowCursor = {position: start + maskSize};
@@ -270,6 +285,67 @@ function prepareBurikoBfFrame(
         `Buriko native BF alpha codec exception: ${alphaMode}`,
       );
   }
+  let nextDescriptor = 0;
+  const alpha = kernel ? wasmAlphaTree(frame, alphaMode, alphaStart) : null;
+  const decoded =
+    alpha === null
+      ? null
+      : decodeBurikoBfFrameWasm(
+          {
+            frame,
+            width,
+            height,
+            depth,
+            alphaMode,
+            alphaStart,
+            ...alpha,
+            frameExtent,
+            columns,
+            rows,
+            alignedWidth,
+            alignedHeight,
+            descriptors,
+            dcTree,
+            acTree,
+            quantization,
+            colorTable,
+          },
+          surface,
+        );
+  if (decoded !== null) {
+    recordRuntimeMetric('buriko.bf.wasm-applied', 1);
+    // Each work item publishes its own decoded pixels, read afresh from the surface, then offers
+    // the host a scheduling point as the reference's items do. A row without coefficients
+    // touches nothing, as in 105cf0.
+    const next = function* (): CooperativeTask<number> {
+      const shared = processing.enterShared();
+      const descriptor = nextDescriptor <= rows ? nextDescriptor++ : -1;
+      processing.leaveShared(shared);
+      if (descriptor < 0) return 0;
+      if (descriptor === 0) decoded.publishAlpha(surface);
+      else if (descriptors[descriptor - 1]!.count !== 0)
+        decoded.publishRow(surface, descriptor - 1);
+      if (descriptor === rows) decoded.release();
+      yield;
+      return 1;
+    };
+    return {surface, next};
+  }
+  if (kernel) recordRuntimeMetric('buriko.bf.wasm-applied', 0);
+  const coefficients = new Int16Array(alignedWidth * alignedHeight * 3);
+  const defined = new Uint8Array(coefficients.length);
+  const idct = new MovieIdctWorkspace();
+  const lumaQuantization = quantization.subarray(0, 64);
+  const chromaQuantization = quantization.subarray(64, 128);
+  const requireCoefficients = (start: number, length: number): void => {
+    checkRange(coefficients.length, start, length);
+    for (let index = start; index < start + length; index++) {
+      if (defined[index] === 0)
+        throw new BurikoUndefinedResourceRead(
+          'Buriko BF reconstruction reads unwritten coefficient storage',
+        );
+    }
+  };
   const decodeRow = function* (row: number): CooperativeTask<void> {
     const {start, count, dataStart, limit} = descriptors[row]!;
     // 105cf0 skips the entire color worker when count==0, irrespective of mask bits.
@@ -344,7 +420,6 @@ function prepareBurikoBfFrame(
       }
     }
   };
-  let nextDescriptor = 0;
   const next = function* (): CooperativeTask<number> {
     const shared = processing.enterShared();
     const descriptor = nextDescriptor <= rows ? nextDescriptor++ : -1;
@@ -381,6 +456,27 @@ function prepareBurikoBfFrame(
     return 1;
   };
   return {surface, next};
+}
+
+/**
+ * Codec 2's weights are read inside its work item. Null where that read raises: the reference
+ * then decodes the frame and raises from the same work item.
+ */
+function wasmAlphaTree(
+  frame: Uint8Array,
+  alphaMode: number,
+  alphaStart: number,
+): {alphaTree: BurikoBfTree | null; alphaBitsStart: number} | null {
+  if (alphaMode !== 2) return {alphaTree: null, alphaBitsStart: 0};
+  try {
+    const bytes = frame.subarray(alphaStart),
+      cursor = {position: 4};
+    checkRange(bytes.length, 0, 4);
+    const tree = movieFrequencyTree(Array.from({length: 256}, () => unsignedVarint(bytes, cursor)));
+    return {alphaTree: tree, alphaBitsStart: cursor.position};
+  } catch {
+    return null;
+  }
 }
 
 export function decodeBurikoBfAlphaLz(

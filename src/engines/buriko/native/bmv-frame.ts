@@ -49,15 +49,8 @@ export function decodeBurikoBmvFrameData(
       version,
     );
   } finally {
-    for (let cursor = 0; cursor < extent;) {
-      if (surface.initialized[cursor] === 0) {
-        cursor++;
-        continue;
-      }
-      const start = cursor++;
-      while (cursor < extent && surface.initialized[cursor] !== 0) cursor++;
-      storage.written(destination.offset + start, cursor - start);
-    }
+    for (const [start, end] of initializedRuns(surface.initialized, extent))
+      storage.written(destination.offset + start, end - start);
   }
   return 0;
 }
@@ -99,33 +92,30 @@ export async function decodeBurikoBmvFrameDataAsync(
       beforeResume,
     );
   } finally {
-    for (let cursor = 0; cursor < extent;) {
-      if (surface.initialized[cursor] === 0) {
-        cursor++;
-        if ((cursor & 0x3fff) === 0) {
-          const pending = budget.checkpoint();
-          if (pending !== undefined) {
-            await pending;
-            beforeResume();
-          }
-        }
-        continue;
+    for (const [start, end] of initializedRuns(surface.initialized, extent)) {
+      storage.written(destination.offset + start, end - start);
+      const pending = budget.checkpoint();
+      if (pending !== undefined) {
+        await pending;
+        beforeResume();
       }
-      const start = cursor++;
-      while (cursor < extent && surface.initialized[cursor] !== 0) {
-        cursor++;
-        if ((cursor & 0x3fff) === 0) {
-          const pending = budget.checkpoint();
-          if (pending !== undefined) {
-            await pending;
-            beforeResume();
-          }
-        }
-      }
-      storage.written(destination.offset + start, cursor - start);
     }
   }
   return 0;
+}
+
+/** Maximal runs of initialized bytes; `indexOf` finds the end of each run natively. */
+function* initializedRuns(initialized: Uint8Array, extent: number): Generator<[number, number]> {
+  for (let cursor = 0; cursor < extent;) {
+    if (initialized[cursor] === 0) {
+      cursor++;
+      continue;
+    }
+    const zero = initialized.indexOf(0, cursor),
+      end = zero === -1 || zero > extent ? extent : zero;
+    yield [cursor, end];
+    cursor = end;
+  }
 }
 
 /** 1091B0 uses header-relative frame offsets and preserves the decoder's return. */

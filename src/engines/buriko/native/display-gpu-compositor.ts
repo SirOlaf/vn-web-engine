@@ -860,13 +860,58 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     width: number,
     height: number,
   ): readonly [number, number] | null {
-    const source = this.sourceTexture(bitmap, x, y, width, height);
+    const source =
+      bitmap.storage instanceof BurikoGpuTargetStorage && bitmap.storage.target === this
+        ? this.displaySource(bitmap, x, y, width, height)
+        : this.sourceTexture(bitmap, x, y, width, height);
     if (source === null) return null;
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, source.texture);
     this.boundSource = source.texture;
     return source.origin;
+  }
+
+  /**
+   * A kernel reading the display it draws into, such as an in-place display filter: the needed
+   * pixels of the attached image are copied to the source scratch, since a texture cannot be
+   * sampled while it is the draw target.
+   */
+  private displaySource(
+    bitmap: BurikoBitmap,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): {texture: WebGLTexture; origin: readonly [number, number]} | null {
+    const texture = this.frame!.texture;
+    if (
+      bitmap.bytesPerPixel !== 4 ||
+      bitmap.stride !== texture.pitch ||
+      (bitmap.offset & 3) !== 0 ||
+      bitmap.offset < 0
+    ) {
+      this.fail('display source descriptor');
+      return null;
+    }
+    const left = (bitmap.offset % texture.pitch) >>> 2,
+      top = Math.floor(bitmap.offset / texture.pitch);
+    const needed = {x: left + x, y: top + y, width, height};
+    if (
+      needed.x < 0 ||
+      needed.y < 0 ||
+      needed.x + width > texture.width ||
+      needed.y + height > texture.height
+    ) {
+      this.fail('display source bounds');
+      return null;
+    }
+    const gl = this.gl;
+    this.scratch(this.source, width, height, gl.TEXTURE1);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
+    gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, needed.x, needed.y, width, height);
+    recordRuntimeMetric('buriko.display.gpu-compose.display-source-pixels', width * height);
+    return {texture: this.source.texture!, origin: [-x, -y]};
   }
 
   /**
