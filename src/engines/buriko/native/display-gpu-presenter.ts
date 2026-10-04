@@ -1,4 +1,4 @@
-import type {BurikoBitmapRectangle} from './bitmap.js';
+import type {BurikoBitmapRectangle, BurikoBitmapStorage} from './bitmap.js';
 import type {BurikoDisplayTexture} from './display-texture.js';
 import type {BurikoPresentationSampler} from './presentation-sampling.js';
 import {beginRuntimeSpan, recordRuntimeMetric} from '../../../platform/runtime-performance.js';
@@ -65,6 +65,8 @@ interface Image {
   height: number;
   /** The display texture whose logical area this image currently holds. */
   holds: BurikoDisplayTexture | null;
+  /** The pixel plane of `holds` that was uploaded: its own storage or its textless plane. */
+  plane: BurikoBitmapStorage | null;
 }
 
 /**
@@ -82,8 +84,8 @@ export class BurikoGpuPresenter {
   private readonly vertexArray: WebGLVertexArrayObject;
   private readonly uniforms: Record<string, WebGLUniformLocation | null>;
   private readonly images: Record<BurikoGpuImageSlot, Image> = {
-    display: {texture: null, width: 0, height: 0, holds: null},
-    movie: {texture: null, width: 0, height: 0, holds: null},
+    display: {texture: null, width: 0, height: 0, holds: null, plane: null},
+    movie: {texture: null, width: 0, height: 0, holds: null, plane: null},
   };
   private readonly columns: WebGLTexture;
   private readonly rows: WebGLTexture;
@@ -173,6 +175,7 @@ export class BurikoGpuPresenter {
    */
   own(texture: BurikoDisplayTexture): void {
     this.images.display.holds = texture;
+    this.images.display.plane = texture.storage;
     this.owned = texture;
   }
   owns(texture: BurikoDisplayTexture): boolean {
@@ -182,13 +185,17 @@ export class BurikoGpuPresenter {
     if (this.owned === texture) this.owned = null;
   }
 
-  /** Upload changed texels. `changed` null means none; undefined means the whole logical area. */
+  /**
+   * Upload changed texels. `changed` null means none; undefined means the whole logical area.
+   * `plane` is the storage read, the texture's own or its textless plane of the same layout.
+   */
   upload(
     slot: BurikoGpuImageSlot,
     texture: BurikoDisplayTexture,
     logicalWidth: number,
     logicalHeight: number,
     changed: BurikoBitmapRectangle | null | undefined,
+    plane: BurikoBitmapStorage = texture.storage,
   ): boolean {
     if (!this.available) return false;
     const gl = this.gl,
@@ -197,7 +204,7 @@ export class BurikoGpuPresenter {
     gl.bindTexture(gl.TEXTURE_2D, this.image(slot, texture));
     if (this.owned === texture && image.holds === texture) return true;
     let region = changed;
-    if (image.holds !== texture || region === undefined)
+    if (image.holds !== texture || image.plane !== plane || region === undefined)
       region = {left: 0, top: 0, right: logicalWidth - 1, bottom: logicalHeight - 1};
     if (region === null) return true;
     const left = Math.max(0, region.left),
@@ -206,6 +213,7 @@ export class BurikoGpuPresenter {
       bottom = Math.min(texture.height - 1, region.bottom);
     if (left > right || top > bottom) {
       image.holds = texture;
+      image.plane = plane;
       return true;
     }
     const width = right - left + 1,
@@ -214,8 +222,8 @@ export class BurikoGpuPresenter {
       length = (height - 1) * texture.pitch + width * 4;
     const finishUpload = beginRuntimeSpan('buriko.display.gpu-upload');
     try {
-      texture.storage.range(offset, length, true);
-      const bytes = texture.storage.bytes;
+      plane.range(offset, length, true);
+      const bytes = plane.bytes;
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
       gl.pixelStorei(gl.UNPACK_ROW_LENGTH, texture.pitch >>> 2);
       gl.texSubImage2D(
@@ -236,6 +244,7 @@ export class BurikoGpuPresenter {
     }
     recordRuntimeMetric('buriko.display.gpu-upload.pixels', width * height);
     image.holds = texture;
+    image.plane = plane;
     return true;
   }
 

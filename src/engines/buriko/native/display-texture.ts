@@ -3,6 +3,7 @@ import {burikoStartupCpuLog} from './startup-budget.js';
 import {
   copyRasterTextPresentation,
   clearRasterTextPresentation,
+  hasRasterText,
   type RasterTextBitmap,
 } from '../../../text/raster-text.js';
 
@@ -25,6 +26,21 @@ export function burikoDisplayTextureSize(width: number, height: number): readonl
   return [dimension(width), dimension(height)];
 }
 
+/** The smallest rectangle covering both; null is empty. */
+export function burikoRectangleUnion(
+  first: BurikoBitmapRectangle | null,
+  second: BurikoBitmapRectangle | null,
+): BurikoBitmapRectangle | null {
+  if (first === null) return second === null ? null : {...second};
+  if (second === null) return {...first};
+  return {
+    left: Math.min(first.left, second.left),
+    top: Math.min(first.top, second.top),
+    right: Math.max(first.right, second.right),
+    bottom: Math.max(first.bottom, second.bottom),
+  };
+}
+
 /**
  * One concrete level-zero display texture in the browser's software device profile.
  * Its BGRA rows have a four-byte pixel size independently of the engine descriptor's
@@ -43,6 +59,8 @@ export class BurikoDisplayTexture {
   private deferred: BurikoBitmapRectangle | null = null;
   /** Conservative union of texels changed by the last successful update. */
   updateBounds: BurikoBitmapRectangle | null = null;
+  /** Union of rectangles whose textless plane the last update replaced; null without text. */
+  textUpdateBounds: BurikoBitmapRectangle | null = null;
 
   constructor(
     readonly width: number,
@@ -181,17 +199,21 @@ export class BurikoDisplayTexture {
         }
       }
     // Equal pixels may carry a different string, but untouched dirty regions stay unuploaded.
+    let textBounds: BurikoBitmapRectangle | null = null;
     for (const rectangle of rectangles) {
       const crop = {
         offset: rectangle.top * this.pitch + rectangle.left * 4,
         width: rectangle.right - rectangle.left + 1,
         height: rectangle.bottom - rectangle.top + 1,
       };
+      if (!hasRasterText(this.textBitmap) && !hasRasterText(source.textBitmap)) continue;
       copyRasterTextPresentation({...this.textBitmap, ...crop}, {...source.textBitmap, ...crop});
+      textBounds = burikoRectangleUnion(textBounds, rectangle);
     }
     if (!deferredOnly) source.dirty = [];
     source.deferred = null;
     this.updateBounds = bounds;
+    this.textUpdateBounds = textBounds;
     return bounds !== null;
   }
   dispose(): void {

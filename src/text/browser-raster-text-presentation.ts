@@ -5,10 +5,6 @@ import {beginRuntimeSpan, recordRuntimeMetric} from '../platform/runtime-perform
 import {subscribeDomTextStyle} from './dom-text-style.js';
 
 export type BrowserTextMode = 'native' | 'dom';
-export interface BrowserRasterTextFrame {
-  frame: ImageData;
-  glyphs: readonly RasterTextGlyph[];
-}
 interface Patch {
   paint(context: CanvasRenderingContext2D): void;
   glyphs: readonly RasterTextGlyph[];
@@ -20,7 +16,10 @@ interface RetainedPatch extends Patch {
 interface Presentation {
   width: number;
   height: number;
-  base(): BrowserRasterTextFrame;
+  /** Text of the canvas's own pixels, or of `backdrop` when one is retained. */
+  glyphs(): readonly RasterTextGlyph[];
+  /** Null while the canvas itself presents the textless pixels in DOM mode. */
+  backdrop: ImageData | null;
   patches: RetainedPatch[];
   overlay?: BrowserRasterText;
 }
@@ -72,11 +71,16 @@ export function rasterTextOutsideRegion(
   });
 }
 
-/** One presentation owner coordinates full frames and direct DC writes to the same canvas.
- * Native mode retains lazy recipes only; it never creates or rasterizes an alternate frame.
+/**
+ * One presentation owner coordinates DOM text for canvases. A producer that can redraw its whole
+ * canvas (the display device) presents the textless pixels itself in DOM mode and supplies only
+ * glyphs through `replace`; mode changes ask it to redraw. Direct writes that cannot be redrawn
+ * (GDI blits) keep native pixels on the canvas and retain lazy textless recipes instead, which
+ * DOM mode composes over a snapshot of the canvas. Native mode never rasterizes an alternate.
  */
 export class BrowserRasterTextPresentation {
   private readonly presentations = new Map<HTMLCanvasElement, Presentation>();
+  private readonly redraws = new Map<HTMLCanvasElement, Set<() => void>>();
   private mode: BrowserTextMode = 'native';
   private readonly unsubscribeStyle = subscribeDomTextStyle(() => {
     if (this.mode === 'dom')
@@ -87,15 +91,30 @@ export class BrowserRasterTextPresentation {
   }
   setTextMode(mode: BrowserTextMode): void {
     if (mode !== 'native' && mode !== 'dom') throw new TypeError('Unknown text rendering mode');
+    if (mode === this.mode) return;
     this.mode = mode;
     for (const [canvas, value] of this.presentations) this.render(canvas, value);
+    for (const redraws of this.redraws.values()) for (const redraw of redraws) redraw();
   }
-  replace(canvas: HTMLCanvasElement, base: () => BrowserRasterTextFrame): void {
+  /** `redraw` presents the canvas again in the current mode; returns the unsubscriber. */
+  onTextModeChange(canvas: HTMLCanvasElement, redraw: () => void): () => void {
+    const redraws = this.redraws.get(canvas) ?? new Set();
+    redraws.add(redraw);
+    this.redraws.set(canvas, redraws);
+    return () => {
+      redraws.delete(redraw);
+      if (redraws.size === 0) this.redraws.delete(canvas);
+    };
+  }
+  /** The canvas was redrawn whole, with textless pixels in DOM mode; `glyphs` is its text. */
+  replace(canvas: HTMLCanvasElement, glyphs: () => readonly RasterTextGlyph[]): void {
     const previous = this.presentations.get(canvas);
-    const value = {
+    let cached: readonly RasterTextGlyph[] | undefined;
+    const value: Presentation = {
       width: canvas.width,
       height: canvas.height,
-      base,
+      glyphs: () => (cached ??= glyphs()),
+      backdrop: null,
       patches: [],
       overlay: previous?.overlay,
     };
@@ -105,23 +124,27 @@ export class BrowserRasterTextPresentation {
   /** Called after a native opaque blit. Its destination rectangle replaces prior text too. */
   paint(canvas: HTMLCanvasElement, patch: Patch): void {
     let value = this.presentations.get(canvas);
+    const snapshot = () => canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
     if (!value || value.width !== canvas.width || value.height !== canvas.height) {
       value?.overlay?.dispose();
-      const frame = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
       value = {
         width: canvas.width,
         height: canvas.height,
-        base: () => ({frame, glyphs: []}),
+        glyphs: () => [],
+        backdrop: snapshot(),
         patches: [],
       };
       this.presentations.set(canvas, value);
     }
     const r = patch.region;
     if (r.x <= 0 && r.y <= 0 && r.x + r.width >= canvas.width && r.y + r.height >= canvas.height) {
-      const frame = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
-      value.base = () => ({frame, glyphs: []});
+      value.backdrop = snapshot();
+      value.glyphs = () => [];
       value.patches = [];
     } else {
+      // The canvas holds the producer's pixels and this blit's native ones, which its recipe
+      // covers. The producer's text stays retained with that snapshot.
+      value.backdrop ??= snapshot();
       // Retire a source after any combination of later opaque writes covers it.
       // This also bounds native-mode recipes without rendering an alternate frame.
       for (const old of value.patches)
@@ -143,15 +166,9 @@ export class BrowserRasterTextPresentation {
     if (!canvas.parentElement || !value.width || !value.height) return;
     const finishDom = beginRuntimeSpan('text.presentation.dom');
     try {
-      const finishBase = beginRuntimeSpan('text.presentation.base');
-      let base: BrowserRasterTextFrame;
-      try {
-        base = value.base();
-      } finally {
-        finishBase?.({width: value.width, height: value.height});
-      }
-      let {frame, glyphs} = base;
-      if (value.patches.length) {
+      let frame = value.backdrop,
+        glyphs = value.glyphs();
+      if (frame !== null && value.patches.length) {
         const scratch = canvas.ownerDocument.createElement('canvas');
         scratch.width = value.width;
         scratch.height = value.height;
@@ -165,15 +182,16 @@ export class BrowserRasterTextPresentation {
         }
         frame = context.getImageData(0, 0, value.width, value.height);
         if (value.patches.length >= 64) {
-          const rendered = {frame, glyphs};
-          value.base = () => rendered;
+          const rendered = glyphs;
+          value.backdrop = frame;
+          value.glyphs = () => rendered;
           value.patches = [];
         }
       }
       const finishOverlay = beginRuntimeSpan('text.presentation.overlay');
       try {
         value.overlay ??= new BrowserRasterText(canvas);
-        value.overlay.show(frame, glyphs);
+        value.overlay.show(frame, glyphs, value.width, value.height);
       } finally {
         finishOverlay?.({glyphs: glyphs.length});
       }
@@ -187,6 +205,7 @@ export class BrowserRasterTextPresentation {
   }
   dispose(): void {
     this.unsubscribeStyle();
+    this.redraws.clear();
     for (const canvas of this.presentations.keys()) this.clear(canvas);
   }
 }

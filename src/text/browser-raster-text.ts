@@ -169,8 +169,11 @@ export function rasterTextFollowers(slots: readonly GlyphSlot[]): [string, strin
 /** An alternate presentation only: the underlying game canvas and readbacks stay native. */
 export class BrowserRasterText {
   readonly text: DomGlyphSlots;
+  /** Composed textless pixels when the canvas itself does not present them. */
   private readonly background: HTMLCanvasElement;
   private readonly resize: ResizeObserver;
+  private width = 0;
+  private height = 0;
   constructor(readonly canvas: HTMLCanvasElement) {
     const parent = canvas.parentElement;
     if (!parent) throw new Error('DOM text requires an attached presentation canvas');
@@ -179,13 +182,14 @@ export class BrowserRasterText {
     this.background = canvas.ownerDocument.createElement('canvas');
     this.background.style.cssText =
       'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0';
+    this.background.hidden = true;
     this.text.element.append(this.background);
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(canvas);
   }
   private fit(): void {
     const parent = this.canvas.parentElement;
-    if (!parent) return;
+    if (!parent || !this.width || !this.height) return;
     const c = this.canvas.getBoundingClientRect(),
       p = parent.getBoundingClientRect();
     if (p.width <= 0 || p.height <= 0 || parent.offsetWidth <= 0 || parent.offsetHeight <= 0)
@@ -198,14 +202,28 @@ export class BrowserRasterText {
     Object.assign(this.text.element.style, {
       left: `${(c.left - p.left) / scaleX + parent.scrollLeft - parent.clientLeft}px`,
       top: `${(c.top - p.top) / scaleY + parent.scrollTop - parent.clientTop}px`,
-      transform: `scale(${c.width / scaleX / this.background.width},${c.height / scaleY / this.background.height})`,
+      transform: `scale(${c.width / scaleX / this.width},${c.height / scaleY / this.height})`,
     });
   }
-  show(frame: ImageData, glyphs: readonly RasterTextGlyph[]): void {
-    if (this.background.width !== frame.width) this.background.width = frame.width;
-    if (this.background.height !== frame.height) this.background.height = frame.height;
-    this.background.getContext('2d')!.putImageData(frame, 0, 0);
-    this.text.setSize(frame.width, frame.height);
+  /** `frame` covers the canvas when it holds native pixels; null shows the canvas through. */
+  show(
+    frame: ImageData | null,
+    glyphs: readonly RasterTextGlyph[],
+    width = frame?.width ?? this.canvas.width,
+    height = frame?.height ?? this.canvas.height,
+  ): void {
+    if (frame === null) {
+      this.background.hidden = true;
+      if (this.background.width !== 0) this.background.width = this.background.height = 0;
+    } else {
+      if (this.background.width !== frame.width) this.background.width = frame.width;
+      if (this.background.height !== frame.height) this.background.height = frame.height;
+      this.background.getContext('2d')!.putImageData(frame, 0, 0);
+      this.background.hidden = false;
+    }
+    this.width = width;
+    this.height = height;
+    this.text.setSize(width, height);
     const visible = new Set<string>();
     const slots = rasterTextSlots(glyphs),
       followers = rasterTextFollowers(slots.map(({slot}) => slot)),

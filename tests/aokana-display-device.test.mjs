@@ -336,65 +336,54 @@ test('fullscreen keeps the raw desktop backbuffer and the native adjusted viewpo
   assert.deepEqual(pixel(result, 8, 2, 16), [0, 0, 0, 255]);
 });
 
-test('DOM text frames equal the textless image presented natively, also after partial updates', async () => {
-  const previousImageData = globalThis.ImageData;
-  globalThis.ImageData ??= class {
-    constructor(width, height) {
-      Object.assign(this, {width, height, data: new Uint8ClampedArray(width * height * 4)});
-    }
+test('DOM text mode presents the textless plane in the single presentation pass', async () => {
+  const width = 32,
+    height = 24;
+  const glyphs = [],
+    redraws = [];
+  const textPresentation = {
+    textMode: 'native',
+    replace: (_canvas, read) => glyphs.push(read),
+    onTextModeChange: (_canvas, redraw) => (redraws.push(redraw), () => {}),
+    clear() {},
   };
-  try {
-    const width = 32,
-      height = 24;
-    const bases = [];
-    const textPresentation = {
-      textMode: 'dom',
-      replace: (_canvas, base) => bases.push(base),
-      clear() {},
-    };
-    const s = fixture({width, height, textPresentation}),
-      reference = fixture({width, height});
-    const clips = [];
-    const rasterize = s.device.rasterizeQuad.bind(s.device);
-    s.device.rasterizeQuad = (...args) => {
-      clips.push(args[2]);
-      return rasterize(...args);
-    };
-    const domFrame = () => {
-      clips.length = 0;
-      return bases.at(-1)().frame.data;
-    };
-    const text = (x, y) => x >= 4 && x < 10 && y >= 20 && y < 23;
-    /** Writes native pixels and, where text was recorded, the textless plane's pixels. */
-    const paint = (target, native, textless = null, record = false) => {
-      assert.equal(target.manager.lockDisplay(), 1);
-      const {bitmap} = target.environment.displayContext;
-      if (record)
-        recordRasterText({...bitmap, offset: 20 * bitmap.stride + 4 * 4, width: 6, height: 3}, 'A');
-      const blank = rasterTextBitmap(bitmap).storage.bytes;
-      const blankView = new DataView(blank.buffer, blank.byteOffset, blank.byteLength);
-      for (let y = 0; y < height; y++)
-        for (let x = 0; x < width; x++) {
-          bitmap.storage.view.setUint32(y * bitmap.stride + x * 4, native(x, y), true);
-          if (textless) blankView.setUint32(y * bitmap.stride + x * 4, textless(x, y), true);
-        }
-      target.manager.unlockDisplay();
-      target.device.setFilter(0);
-      target.device.prepare(1, null, 0, 0);
-      return target.present();
-    };
-    const color = (x, y) => ((x * 7) << 16) | ((y * 9) << 8) | ((x + y) * 3);
-    const ink = (x, y) => (text(x, y) ? 0xffffff : color(x, y));
-    const background = (x, y) => (text(x, y) ? 0x102030 : color(x, y));
-    await paint(s, ink, background, true);
-    assert.deepEqual(domFrame(), await paint(reference, background));
-    // Only the rows around the text are sampled again; the rest is the native output.
-    assert.ok(clips.length > 0 && clips.every((clip) => clip !== undefined && clip.top > 30));
-    const top = (fill) => (x, y) => (y < 4 ? 0x204080 : fill(x, y));
-    await paint(s, top(ink), top(background));
-    assert.deepEqual(domFrame(), await paint(reference, top(background)));
-    assert.ok(clips.every((clip) => clip !== undefined && clip.top > 30));
-  } finally {
-    globalThis.ImageData = previousImageData;
-  }
+  const s = fixture({width, height, textPresentation}),
+    reference = fixture({width, height});
+  const text = (x, y) => x >= 4 && x < 10 && y >= 20 && y < 23;
+  /** Writes native pixels and, once text was recorded, the textless plane's pixels. */
+  const paint = (target, native, textless = null, record = false) => {
+    assert.equal(target.manager.lockDisplay(), 1);
+    const {bitmap} = target.environment.displayContext;
+    if (record)
+      recordRasterText({...bitmap, offset: 20 * bitmap.stride + 4 * 4, width: 6, height: 3}, 'A');
+    const blank = rasterTextBitmap(bitmap).storage.bytes;
+    const blankView = new DataView(blank.buffer, blank.byteOffset, blank.byteLength);
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) {
+        bitmap.storage.view.setUint32(y * bitmap.stride + x * 4, native(x, y), true);
+        if (textless) blankView.setUint32(y * bitmap.stride + x * 4, textless(x, y), true);
+      }
+    target.manager.unlockDisplay();
+    target.device.setFilter(0);
+    target.device.prepare(1, null, 0, 0);
+    return target.present();
+  };
+  const color = (x, y) => ((x * 7) << 16) | ((y * 9) << 8) | ((x + y) * 3);
+  const ink = (x, y) => (text(x, y) ? 0xffffff : color(x, y));
+  const background = (x, y) => (text(x, y) ? 0x102030 : color(x, y));
+  // Native mode presents the native ink.
+  assert.deepEqual(await paint(s, ink, background, true), await paint(reference, ink));
+  textPresentation.textMode = 'dom';
+  redraws.forEach((redraw) => redraw());
+  assert.deepEqual(await paint(s, ink, background), await paint(reference, background));
+  assert.deepEqual(
+    glyphs
+      .at(-1)()
+      .map((glyph) => glyph.text),
+    ['A'],
+  );
+  // A partial update with an unchanged native pixel can still change the textless plane.
+  const top = (fill) => (x, y) => (y < 4 ? 0x204080 : fill(x, y));
+  const shaded = (x, y) => (text(x, y) ? 0x405060 : top(color)(x, y));
+  assert.deepEqual(await paint(s, top(ink), shaded), await paint(reference, shaded));
 });
