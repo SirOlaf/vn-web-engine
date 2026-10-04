@@ -10,12 +10,13 @@ import {BurikoBitmapCompositor} from '../dist/engines/buriko/native/bitmap-compo
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
 import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distributed-processing.js';
 import {burikoPresentationTextureSample} from '../dist/engines/buriko/native/presentation-sampling.js';
+import {rasterTextBitmap, recordRasterText} from '../dist/text/raster-text.js';
 import {invalidateCanvasFrame} from '../dist/graphics/canvas-frame-presenter.js';
 import {BurikoBrowserMfController} from '../dist/engines/buriko/native/movie-mf-browser-session.js';
 import {BurikoFullscreenMovieState} from '../dist/engines/buriko/native/movie-fullscreen-state.js';
 
 /** No browser/DOM/image display: the canvas boundary is a byte-array commit and a queued clock callback. */
-function fixture() {
+function fixture({width = 4, height = 2, textPresentation = null} = {}) {
   let tick = 100;
   const commits = [],
     uploads = [],
@@ -53,26 +54,30 @@ function fixture() {
     removeEventListener: (name) => events.delete(name),
     getContext: () => context,
   };
-  const display = new BurikoNativeDisplayState(8, 4);
-  display.setSizePreset(2, 4, 2);
-  display.requestedWidth = 8;
-  display.requestedHeight = 4;
+  const display = new BurikoNativeDisplayState(width * 2, height * 2);
+  display.setSizePreset(2, width, height);
+  display.requestedWidth = width * 2;
+  display.requestedHeight = height * 2;
   const compositor = new BurikoBitmapCompositor(),
     allocator = new BurikoDistributedAllocator(1);
   const environment = new BurikoDisplayObjectEnvironment(
     compositor,
-    new BurikoDisplayDamage(64, {left: 0, top: 0, right: 3, bottom: 1}),
+    new BurikoDisplayDamage(64, {left: 0, top: 0, right: width - 1, bottom: height - 1}),
   );
   const manager = new BurikoDisplayManager(
     environment,
     new BurikoSurfaces(null, compositor, allocator),
     display,
   );
-  manager.configureDescriptor(4, 2, 1, 8);
-  const device = new BurikoDisplayDevice(canvas, manager, new BurikoNativeClock(() => tick), {
-    pixelShaderVersion: 0xffff0300,
-    refreshRate: 60,
-  });
+  manager.configureDescriptor(width, height, 1, width * height);
+  const device = new BurikoDisplayDevice(
+    canvas,
+    manager,
+    new BurikoNativeClock(() => tick),
+    {pixelShaderVersion: 0xffff0300, refreshRate: 60},
+    'canvas',
+    textPresentation,
+  );
   assert.equal(device.create(0), 0);
   const write = (colors) => {
     assert.equal(manager.lockDisplay(), 1);
@@ -95,7 +100,7 @@ function fixture() {
     assert.equal(display.lastPresentMilliseconds, tick);
     return commits.at(-1);
   };
-  return {device, display, write, present, commits, canvas, events, uploads};
+  return {device, display, environment, manager, write, present, commits, canvas, events, uploads};
 }
 const pixel = (bytes, x, y, width = 8) => [
   ...bytes.subarray((y * width + x) * 4, (y * width + x) * 4 + 4),
@@ -329,4 +334,67 @@ test('fullscreen keeps the raw desktop backbuffer and the native adjusted viewpo
   const result = await s.present();
   assert.deepEqual(pixel(result, 7, 2, 16), [255, 255, 255, 255]);
   assert.deepEqual(pixel(result, 8, 2, 16), [0, 0, 0, 255]);
+});
+
+test('DOM text frames equal the textless image presented natively, also after partial updates', async () => {
+  const previousImageData = globalThis.ImageData;
+  globalThis.ImageData ??= class {
+    constructor(width, height) {
+      Object.assign(this, {width, height, data: new Uint8ClampedArray(width * height * 4)});
+    }
+  };
+  try {
+    const width = 32,
+      height = 24;
+    const bases = [];
+    const textPresentation = {
+      textMode: 'dom',
+      replace: (_canvas, base) => bases.push(base),
+      clear() {},
+    };
+    const s = fixture({width, height, textPresentation}),
+      reference = fixture({width, height});
+    const clips = [];
+    const rasterize = s.device.rasterizeQuad.bind(s.device);
+    s.device.rasterizeQuad = (...args) => {
+      clips.push(args[2]);
+      return rasterize(...args);
+    };
+    const domFrame = () => {
+      clips.length = 0;
+      return bases.at(-1)().frame.data;
+    };
+    const text = (x, y) => x >= 4 && x < 10 && y >= 20 && y < 23;
+    /** Writes native pixels and, where text was recorded, the textless plane's pixels. */
+    const paint = (target, native, textless = null, record = false) => {
+      assert.equal(target.manager.lockDisplay(), 1);
+      const {bitmap} = target.environment.displayContext;
+      if (record)
+        recordRasterText({...bitmap, offset: 20 * bitmap.stride + 4 * 4, width: 6, height: 3}, 'A');
+      const blank = rasterTextBitmap(bitmap).storage.bytes;
+      const blankView = new DataView(blank.buffer, blank.byteOffset, blank.byteLength);
+      for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+          bitmap.storage.view.setUint32(y * bitmap.stride + x * 4, native(x, y), true);
+          if (textless) blankView.setUint32(y * bitmap.stride + x * 4, textless(x, y), true);
+        }
+      target.manager.unlockDisplay();
+      target.device.setFilter(0);
+      target.device.prepare(1, null, 0, 0);
+      return target.present();
+    };
+    const color = (x, y) => ((x * 7) << 16) | ((y * 9) << 8) | ((x + y) * 3);
+    const ink = (x, y) => (text(x, y) ? 0xffffff : color(x, y));
+    const background = (x, y) => (text(x, y) ? 0x102030 : color(x, y));
+    await paint(s, ink, background, true);
+    assert.deepEqual(domFrame(), await paint(reference, background));
+    // Only the rows around the text are sampled again; the rest is the native output.
+    assert.ok(clips.length > 0 && clips.every((clip) => clip !== undefined && clip.top > 30));
+    const top = (fill) => (x, y) => (y < 4 ? 0x204080 : fill(x, y));
+    await paint(s, top(ink), top(background));
+    assert.deepEqual(domFrame(), await paint(reference, top(background)));
+    assert.ok(clips.every((clip) => clip !== undefined && clip.top > 30));
+  } finally {
+    globalThis.ImageData = previousImageData;
+  }
 });

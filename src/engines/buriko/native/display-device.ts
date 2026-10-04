@@ -2,6 +2,7 @@ import type {BurikoD3dxEffectLibrary} from './d3dx-effect-library.js';
 import type {BurikoBitmapRectangle} from './bitmap.js';
 import {
   rasterTextBitmap,
+  rasterTextDifferenceBands,
   visibleRasterText,
   type RasterTextGlyph,
 } from '../../../text/raster-text.js';
@@ -168,6 +169,7 @@ export class BurikoDisplayDevice {
   private frameDamage: Rect | null | undefined; // Undefined: full upload; null: no pending writes.
   private ordinaryTextDraw: TextDraw | null = null;
   private movieTextDraw: TextDraw | null = null;
+  private domFrameScratch: ImageData | null = null;
   dialogBoxMode = false;
   textureAlpha = 0; // 1e6a5c.
   filterMode = 0; // 1e6a58.
@@ -756,12 +758,10 @@ export class BurikoDisplayDevice {
   private changedOutputRectangle(
     sampled: BurikoDisplayTexture,
     damage: BurikoBitmapRectangle,
+    vertices: Uint8Array = this.vertices!,
+    sampler: BurikoPresentationSampler = this.sampler,
   ): BurikoBitmapRectangle | null | undefined {
-    const quad = new DataView(
-      this.vertices!.buffer,
-      this.vertices!.byteOffset,
-      this.vertices!.byteLength,
-    );
+    const quad = new DataView(vertices.buffer, vertices.byteOffset, vertices.byteLength);
     const axis = (
       start: number,
       end: number,
@@ -780,9 +780,9 @@ export class BurikoDisplayDevice {
       for (let coordinate = first; coordinate < last; coordinate++) {
         const uv = Math.fround(Math.fround(Math.fround(coordinate - start) / extent) * maximum),
           position = Math.fround(Math.fround(uv) * Math.fround(textureSize)),
-          sample = Math.floor(this.sampler === 'linear' ? Math.fround(position - 0.5) : position);
+          sample = Math.floor(sampler === 'linear' ? Math.fround(position - 0.5) : position);
         if (!Number.isFinite(sample)) return undefined;
-        if (sample <= dirtyEnd && sample + Number(this.sampler === 'linear') >= dirtyStart) {
+        if (sample <= dirtyEnd && sample + Number(sampler === 'linear') >= dirtyStart) {
           lower = Math.min(lower, coordinate);
           upper = coordinate;
         }
@@ -1026,22 +1026,86 @@ export class BurikoDisplayDevice {
       }
     }
   }
+  /** Output rectangles whose samples can read textless texels that differ from the original.
+   * Undefined when the quad cannot be mapped incrementally. */
+  private textOutputRectangles(draw: TextDraw): BurikoBitmapRectangle[] | undefined {
+    const texture = draw.texture;
+    const quad = new DataView(
+      draw.vertices.buffer,
+      draw.vertices.byteOffset,
+      draw.vertices.byteLength,
+    );
+    const columns = Math.ceil(quad.getFloat32(48, true) * texture.width) + 2,
+      rows = Math.ceil(quad.getFloat32(80, true) * texture.height) + 2;
+    if (!Number.isFinite(columns) || !Number.isFinite(rows)) return undefined;
+    // The cubic kernel reads two texels beyond the nearest pair; linear reads one.
+    const reach = draw.cubic ? 2 : 1;
+    const output: BurikoBitmapRectangle[] = [];
+    for (const band of rasterTextDifferenceBands(texture.textBitmap, {
+      x: 0,
+      y: 0,
+      width: columns,
+      height: rows,
+    })) {
+      const mapped = this.changedOutputRectangle(
+        texture,
+        {
+          left: band.x - reach,
+          top: band.y - reach,
+          right: band.x + band.width - 1 + reach,
+          bottom: band.y + band.height - 1 + reach,
+        },
+        draw.vertices,
+        draw.sampler,
+      );
+      if (mapped === undefined) return undefined;
+      if (mapped !== null) output.push(mapped);
+    }
+    return output;
+  }
   private domFrame(
     native: ImageData,
     ordinary: TextDraw | null,
     movie: TextDraw | null,
   ): BrowserRasterTextFrame {
-    const frame = new ImageData(native.data.slice(), native.width, native.height);
+    if (
+      this.domFrameScratch === null ||
+      this.domFrameScratch.width !== native.width ||
+      this.domFrameScratch.height !== native.height
+    )
+      this.domFrameScratch = new ImageData(native.width, native.height);
+    const frame = this.domFrameScratch;
+    frame.data.set(native.data);
     let glyphs: RasterTextGlyph[] = [];
     // GPU presentation defers the sampled copy; DOM text reads the sampled text plane.
-    if (ordinary !== null && this.source !== null && this.sampled !== null)
-      this.sampled.updateFrom(this.source, true);
+    const deferred =
+      ordinary !== null && this.source !== null && this.sampled !== null
+        ? this.sampled.updateFrom(this.source, true)
+        : false;
+    // The native frame already holds this draw's output wherever the textless plane matches.
+    const reuse =
+      !deferred &&
+      movie === null &&
+      ordinary !== null &&
+      native === this.frame &&
+      this.rasterValid &&
+      !this.gpuFrame &&
+      this.sampled !== null &&
+      ordinary.texture === this.sampled.forPresentation() &&
+      ordinary.cubic === this.rasterCubic &&
+      ordinary.sampler === this.rasterSampler &&
+      ordinary.vertices.every((value, index) => value === this.rasterVertices[index]);
     for (const draw of [ordinary, movie]) {
       if (draw === null) continue;
       const bitmap = draw.texture.textBitmap;
       const alternate = Object.create(draw.texture) as BurikoDisplayTexture;
       Object.defineProperty(alternate, 'storage', {value: rasterTextBitmap(bitmap).storage});
-      this.rasterizeQuad(alternate, draw.cubic, undefined, frame, draw.vertices, draw.sampler);
+      const clips = reuse ? this.textOutputRectangles(draw) : undefined;
+      if (clips === undefined)
+        this.rasterizeQuad(alternate, draw.cubic, undefined, frame, draw.vertices, draw.sampler);
+      else
+        for (const clip of clips)
+          this.rasterizeQuad(alternate, draw.cubic, clip, frame, draw.vertices, draw.sampler);
       const quad = new DataView(
         draw.vertices.buffer,
         draw.vertices.byteOffset,
@@ -1118,6 +1182,7 @@ export class BurikoDisplayDevice {
   release(): void {
     this.textPresentation?.clear(this.canvas);
     this.ordinaryTextDraw = this.movieTextDraw = null;
+    this.domFrameScratch = null;
     this.canvasPresenter = null;
     this.linearRasterizer = undefined;
     if (

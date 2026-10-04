@@ -217,6 +217,78 @@ export function rasterTextBitmap<T extends RasterTextBitmap>(bitmap: T): T {
   const plane = bitmap.storage && planes.get(bitmap.storage);
   return plane ? ({...bitmap, storage: plane.blank} as T) : bitmap;
 }
+/** Index of the first unequal word in [start, end), or end. */
+function firstDifference(a: Uint32Array, b: Uint32Array, start: number, end: number): number {
+  while (start < end && a[start] === b[start]) start++;
+  return start;
+}
+/** One past the last unequal word in [start, end), or start. */
+function lastDifference(a: Uint32Array, b: Uint32Array, start: number, end: number): number {
+  while (end > start && a[end - 1] === b[end - 1]) end--;
+  return end;
+}
+/**
+ * Row bands of `region` where the textless plane differs from the original pixels. Outside
+ * them both planes present identically, so a presentation can reuse the original output.
+ * Bands closer than `gap` rows merge; each spans the union of its rows' differing columns.
+ */
+export function rasterTextDifferenceBands(
+  bitmap: RasterTextBitmap,
+  region: Rect = bounds(bitmap),
+  gap = 8,
+): Rect[] {
+  const original = bitmap.storage,
+    alternate = rasterTextBitmap(bitmap).storage;
+  const area = intersectRect(region, bounds(bitmap));
+  if (!original || !alternate || original === alternate || !area) return [];
+  const pixel = bitmap.bytesPerPixel,
+    a = original.bytes,
+    b = alternate.bytes;
+  const aligned =
+    pixel === 4 && ((a.byteOffset | b.byteOffset | bitmap.offset | bitmap.stride) & 3) === 0;
+  const first = aligned ? new Uint32Array(a.buffer, a.byteOffset, a.byteLength >>> 2) : null,
+    second = aligned ? new Uint32Array(b.buffer, b.byteOffset, b.byteLength >>> 2) : null;
+  const differs = (row: number, x: number): boolean => {
+    for (let byte = row + x * pixel, end = byte + pixel; byte < end; byte++)
+      if (a[byte] !== b[byte]) return true;
+    return false;
+  };
+  const bands: Rect[] = [];
+  let top = -1,
+    bottom = -1,
+    minimum = 0,
+    maximum = 0;
+  const flush = () => {
+    if (top >= 0) bands.push({x: minimum, y: top, width: maximum - minimum, height: bottom - top});
+    top = -1;
+  };
+  for (let y = area.y, last = area.y + area.height; y < last; y++) {
+    const row = bitmap.offset + y * bitmap.stride;
+    let left = area.x,
+      right = area.x + area.width;
+    if (first !== null && second !== null) {
+      const base = row >>> 2;
+      left = firstDifference(first, second, base + left, base + right) - base;
+      right = lastDifference(first, second, base + left, base + right) - base;
+    } else {
+      while (left < right && !differs(row, left)) left++;
+      while (right > left && !differs(row, right - 1)) right--;
+    }
+    if (left === right) continue;
+    if (top >= 0 && y - bottom > gap) flush();
+    if (top < 0) {
+      top = y;
+      minimum = left;
+      maximum = right;
+    } else {
+      minimum = Math.min(minimum, left);
+      maximum = Math.max(maximum, right);
+    }
+    bottom = y + 1;
+  }
+  flush();
+  return bands;
+}
 export function hasRasterText(bitmap: RasterTextBitmap): boolean {
   return !!bitmap.storage && planes.has(bitmap.storage);
 }
