@@ -122,3 +122,68 @@ test('the production artifact serves complete pages beneath a project path witho
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('the service worker activates an update on request and keeps the previous build for open tabs', async () => {
+  const scope = 'https://example.test/preservation/vn/';
+  const source = await readFile(new URL('../site/sw.js', import.meta.url), 'utf8');
+  const stores = new Map([
+    [`vn-web-engine:${scope}:previous`, new Map([[`${scope}assets/old-chunk.js`, 'old chunk']])],
+    ['sibling-project', new Map()],
+  ]);
+  const events = new Map();
+  let windows = [];
+  let skippedWaiting = false;
+  runInNewContext(source, {
+    URL,
+    Request,
+    fetch: async () => 'network',
+    self: {
+      registration: {scope},
+      clients: {matchAll: async () => windows},
+      skipWaiting: () => {
+        skippedWaiting = true;
+      },
+      addEventListener: (name, handler) => events.set(name, handler),
+    },
+    caches: {
+      keys: async () => [...stores.keys()],
+      open: async (name) => {
+        if (!stores.has(name)) stores.set(name, new Map());
+        const store = stores.get(name);
+        return {addAll: async () => {}, match: async (url) => store.get(url)};
+      },
+      delete: async (name) => stores.delete(name),
+    },
+  });
+  const dispatch = async (name, event) => {
+    let pending;
+    events.get(name)({...event, waitUntil: (promise) => (pending = promise)});
+    await pending;
+  };
+  const respond = async (url, mode = 'no-cors') => {
+    let response;
+    events.get('fetch')({
+      request: {url, mode, method: 'GET', headers: new Headers()},
+      respondWith: (promise) => (response = promise),
+    });
+    return response && (await response);
+  };
+
+  events.get('message')({data: {type: 'something-else'}});
+  assert.equal(skippedWaiting, false);
+  events.get('message')({data: {type: 'activate-update'}});
+  assert.equal(skippedWaiting, true, 'the Reload choice activates the waiting build');
+
+  windows = [{}, {}];
+  await dispatch('activate', {});
+  assert.ok(stores.has(`vn-web-engine:${scope}:previous`), 'another tab still runs it');
+  assert.equal(await respond(`${scope}assets/old-chunk.js`), 'old chunk');
+  assert.equal(await respond(`${scope}assets/missing.js`), 'network');
+  assert.equal(await respond(`${scope}old-page.html`, 'navigate'), undefined);
+  assert.equal(await respond('https://elsewhere.test/assets/old-chunk.js'), undefined);
+
+  windows = [{}];
+  await dispatch('activate', {});
+  assert.ok(!stores.has(`vn-web-engine:${scope}:previous`), 'no other tab needs it');
+  assert.ok(stores.has('sibling-project'));
+});
