@@ -12,7 +12,12 @@ import {
   burikoTransitionActions,
   burikoTransitionOperands,
 } from './bitmap-transition.js';
-import {hasRasterText, type RasterTextBitmap} from '../../../text/raster-text.js';
+import {
+  hasRasterText,
+  rasterTextBitmap,
+  snapshotRasterText,
+  type RasterTextBitmap,
+} from '../../../text/raster-text.js';
 import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import {
   burikoAlignedAffineSource,
@@ -207,6 +212,22 @@ void main(){
   uint green=((((a>>8)&255u)*c+((b>>8)&255u)*retained)>>7)<<8;
   store(redBlue|green|(((fa*(256u-factor)+sa*factor)>>8)<<24));
 }`,
+  /**
+   * raster-text.ts visibleRasterText's ink test, one output texel per clip: whether the native
+   * (destination) and textless (source) images differ anywhere in it.
+   */
+  ink: `uniform highp isampler2D clips;
+void main(){
+  ivec4 c=texelFetch(clips,ivec2(int(gl_FragCoord.x),0),0);
+  bool ink=false;
+  for(int y=c.y;y<c.y+c.w&&!ink;y++)
+    for(int x=c.x;x<c.x+c.z;x++)
+      if(any(notEqual(texelFetch(destination,ivec2(x,y),0),texelFetch(source,ivec2(x,y),0)))){
+        ink=true;
+        break;
+      }
+  store(ink?255u:0u);
+}`,
 } as const;
 type Program = keyof typeof KERNELS;
 
@@ -339,9 +360,28 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
   private frames = 0;
   private readonly maximumTextureSize: number;
   private readonly backup: Scratch = {texture: null, width: 0, height: 0};
+  private readonly textlessBackup: Scratch = {texture: null, width: 0, height: 0};
+  /** Whether later frames maintain the display's textless plane, set by the device for DOM text. */
+  maintainTextless = false;
+  /** Every frame since the software pixels were current also maintained the textless plane. */
+  private textlessCurrent = true;
+  /** Asynchronous glyph ink queries: one in flight at a time, read through a pixel buffer. */
+  private readonly ink: {
+    framebuffer: WebGLFramebuffer;
+    output: Scratch;
+    clips: WebGLTexture | null;
+    buffer: WebGLBuffer | null;
+    bufferBytes: number;
+    pending: {sync: WebGLSync; keys: readonly string[]} | null;
+  };
   private readonly stand = new WeakMap<BurikoDisplayTexture, BurikoGpuTargetStorage>();
   private attachedImage: WebGLTexture | null = null;
-  private frame: {texture: BurikoDisplayTexture; bounds: BurikoBitmapRectangle} | null = null;
+  private frame: {
+    texture: BurikoDisplayTexture;
+    bounds: BurikoBitmapRectangle;
+    /** Restores the display's text metadata if the frame fails; null without a textless plane. */
+    restoreText: (() => void) | null;
+  } | null = null;
   private failure: string | null = null;
   private failureStack: string | null = null;
   private cooldown = 0;
@@ -354,6 +394,14 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     this.mixFramebuffer = gl.createFramebuffer()!;
     this.vertexArray = gl.createVertexArray()!;
     this.maximumTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+    this.ink = {
+      framebuffer: gl.createFramebuffer()!,
+      output: {texture: null, width: 0, height: 0},
+      clips: null,
+      buffer: null,
+      bufferBytes: 0,
+      pending: null,
+    };
   }
 
   /**
@@ -379,24 +427,31 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
       !presenter.upload('display', texture, logicalWidth, logicalHeight, undefined)
     )
       return false;
+    const textless = this.maintainTextless;
+    // Native-only GPU frames left the software textless plane stale: software redraws first.
+    if (textless && presenter.owns(texture) && !this.textlessCurrent) return false;
+    if (
+      textless &&
+      !presenter.holds(texture, 'textless') &&
+      !presenter.upload(
+        'textless',
+        texture,
+        logicalWidth,
+        logicalHeight,
+        undefined,
+        burikoTextlessStorage(texture),
+      )
+    )
+      return false;
     const gl = this.gl;
-    this.attach(presenter.image('display', texture));
     // Keep the jobs' area so a failed frame can restore it before software redraws.
     const area = this.clip(bounds, texture);
-    if (area !== null) {
-      this.scratch(this.backup, texture.width, texture.height, gl.TEXTURE0);
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
-      gl.copyTexSubImage2D(
-        gl.TEXTURE_2D,
-        0,
-        area.x,
-        area.y,
-        area.x,
-        area.y,
-        area.width,
-        area.height,
-      );
+    if (textless) {
+      this.attach(presenter.image('textless', texture));
+      if (area !== null) this.copyArea(this.textlessBackup, area, texture);
     }
+    this.attach(presenter.image('display', texture));
+    if (area !== null) this.copyArea(this.backup, area, texture);
     let stand = this.stand.get(texture);
     if (stand === undefined || stand.software !== texture.storage) {
       stand = new BurikoGpuTargetStorage(this, texture.storage);
@@ -405,9 +460,158 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     context.bitmap.storage = stand;
     this.frames++;
     this.trimSources();
-    this.frame = {texture, bounds: {...bounds}};
+    this.frame = {
+      texture,
+      bounds: {...bounds},
+      restoreText: textless ? snapshotRasterText(texture.storage) : null,
+    };
     this.failure = null;
     return true;
+  }
+
+  /** Whether the GPU holds `texture`'s current pixels, and its textless plane too. */
+  ownsText(texture: BurikoDisplayTexture): 'none' | 'native' | 'text' {
+    if (!this.presenter.owns(texture)) return 'none';
+    return this.textlessCurrent && this.presenter.available ? 'text' : 'native';
+  }
+
+  /**
+   * Start reading whether each display-texel clip has ink, the textless image differing from the
+   * native one there. `keys[i]` names `clips[i]` in the result. False while a query is in
+   * flight, the GPU does not own the texture with its textless plane, or there is nothing to ask.
+   */
+  queryInk(
+    texture: BurikoDisplayTexture,
+    keys: readonly string[],
+    clips: readonly BurikoBitmapRectangle[],
+  ): boolean {
+    const ink = this.ink,
+      count = Math.min(clips.length, this.maximumTextureSize);
+    if (ink.pending !== null || count === 0 || this.ownsText(texture) !== 'text') return false;
+    const gl = this.gl,
+      data = new Int32Array(count * 4);
+    for (let index = 0; index < count; index++) {
+      const area = this.clip(clips[index]!, texture);
+      if (area === null) continue;
+      data.set([area.x, area.y, area.width, area.height], index * 4);
+    }
+    gl.activeTexture(gl.TEXTURE2);
+    ink.clips ??= burikoGpuTexture(gl);
+    gl.bindTexture(gl.TEXTURE_2D, ink.clips);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32I, count, 1, 0, gl.RGBA_INTEGER, gl.INT, data);
+    this.scratch(ink.output, count, 1, gl.TEXTURE3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, ink.framebuffer);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      ink.output.texture,
+      0,
+    );
+    const {program, uniforms} = this.compiled('ink');
+    const location = (name: string) => {
+      if (!uniforms.has(name)) uniforms.set(name, gl.getUniformLocation(program, name));
+      return uniforms.get(name)!;
+    };
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.presenter.image('display', texture));
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.presenter.image('textless', texture));
+    gl.useProgram(program);
+    gl.bindVertexArray(this.vertexArray);
+    gl.uniform1i(location('destination'), 0);
+    gl.uniform1i(location('source'), 1);
+    gl.uniform1i(location('clips'), 2);
+    gl.viewport(0, 0, count, 1);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (ink.buffer === null || ink.bufferBytes < count * 4) {
+      if (ink.buffer !== null) gl.deleteBuffer(ink.buffer);
+      ink.buffer = gl.createBuffer();
+      ink.bufferBytes = Math.max(256, count * 4);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, ink.buffer);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, ink.bufferBytes, gl.STREAM_READ);
+    } else gl.bindBuffer(gl.PIXEL_PACK_BUFFER, ink.buffer);
+    gl.pixelStorei(gl.PACK_ALIGNMENT, 4);
+    gl.readPixels(0, 0, count, 1, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+    // Later display draws bind their own framebuffer through `attach`.
+    this.attachedImage = null;
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    if (sync === null) return false;
+    gl.flush();
+    ink.pending = {sync, keys: keys.slice(0, count)};
+    recordRuntimeMetric('buriko.display.gpu-compose.ink-queries', count);
+    return true;
+  }
+
+  /** The finished ink query, keys mapped to whether their clip has ink; null while in flight. */
+  takeInk(): Map<string, boolean> | null {
+    const ink = this.ink,
+      pending = ink.pending;
+    if (pending === null) return null;
+    const gl = this.gl;
+    if (!this.presenter.available) {
+      ink.pending = null;
+      return null;
+    }
+    if (gl.getSyncParameter(pending.sync, gl.SYNC_STATUS) !== gl.SIGNALED) return null;
+    gl.deleteSync(pending.sync);
+    ink.pending = null;
+    const bytes = new Uint8Array(pending.keys.length * 4);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, ink.buffer);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, bytes);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    const result = new Map<string, boolean>();
+    pending.keys.forEach((key, index) =>
+      result.set(key, (result.get(key) ?? false) || bytes[index * 4] !== 0),
+    );
+    return result;
+  }
+
+  /** BurikoGpuKernelTarget: the current frame maintains the textless plane. */
+  get textless(): boolean {
+    return this.frame?.restoreText != null;
+  }
+
+  /** Copy the attached image's area into a scratch texture of the display's size. */
+  private copyArea(scratch: Scratch, area: Area, texture: BurikoDisplayTexture): void {
+    const gl = this.gl;
+    this.scratch(scratch, texture.width, texture.height, gl.TEXTURE0);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
+    gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, area.x, area.y, area.x, area.y, area.width, area.height);
+  }
+
+  /** Restore the attached image's area from a scratch texture. */
+  private restoreArea(scratch: Scratch, area: Area): void {
+    if (scratch.texture === null) return;
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.backupFramebuffer);
+    gl.framebufferTexture2D(
+      gl.READ_FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      scratch.texture,
+      0,
+    );
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebuffer);
+    gl.disable(gl.SCISSOR_TEST);
+    const right = area.x + area.width,
+      bottom = area.y + area.height;
+    gl.blitFramebuffer(
+      area.x,
+      area.y,
+      right,
+      bottom,
+      area.x,
+      area.y,
+      right,
+      bottom,
+      gl.COLOR_BUFFER_BIT,
+      gl.NEAREST,
+    );
   }
 
   /** Finish a GPU frame. False means it failed and must be drawn again in software. */
@@ -417,8 +621,11 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     this.frame = null;
     context.bitmap.storage = frame.texture.storage;
     const presenter = this.presenter;
+    const textless = frame.restoreText !== null;
     if (this.failure === null && presenter.available) {
-      presenter.own(frame.texture);
+      if (!presenter.owns(frame.texture)) this.textlessCurrent = true;
+      this.textlessCurrent &&= textless;
+      presenter.own(frame.texture, textless ? burikoTextlessStorage(frame.texture) : null);
       this.penalty = FIRST_COOLDOWN;
       recordRuntimeMetric('buriko.display.gpu-compose.frames', 1);
       return true;
@@ -438,34 +645,15 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
       return false;
     }
     const area = this.clip(frame.bounds, frame.texture);
-    const gl = this.gl;
-    if (area !== null && this.backup.texture !== null) {
+    if (area !== null) {
+      if (textless) {
+        this.attach(presenter.image('textless', frame.texture));
+        this.restoreArea(this.textlessBackup, area);
+      }
       this.attach(presenter.image('display', frame.texture));
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.backupFramebuffer);
-      gl.framebufferTexture2D(
-        gl.READ_FRAMEBUFFER,
-        gl.COLOR_ATTACHMENT0,
-        gl.TEXTURE_2D,
-        this.backup.texture,
-        0,
-      );
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebuffer);
-      gl.disable(gl.SCISSOR_TEST);
-      const right = area.x + area.width,
-        bottom = area.y + area.height;
-      gl.blitFramebuffer(
-        area.x,
-        area.y,
-        right,
-        bottom,
-        area.x,
-        area.y,
-        right,
-        bottom,
-        gl.COLOR_BUFFER_BIT,
-        gl.NEAREST,
-      );
+      this.restoreArea(this.backup, area);
     }
+    frame.restoreText?.();
     // Failed kernels wrote into the software bytes; owned frames are stale everywhere else.
     const logical = {
       left: 0,
@@ -473,22 +661,28 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
       right: frame.texture.width - 1,
       bottom: frame.texture.height - 1,
     };
-    this.readBack(frame.texture, presenter.owns(frame.texture) ? logical : frame.bounds);
+    const owned = presenter.owns(frame.texture);
+    this.readBack(frame.texture, owned ? logical : frame.bounds);
+    // Failed kernels wrote native pixels only; the software redraw replays the textless plane.
+    if (owned && this.textlessCurrent) this.readBackTextless(frame.texture, logical);
     presenter.release(frame.texture);
     return false;
   }
 
-  /** Make the software texture current before a software reader or software presentation. */
-  syncSoftware(texture: BurikoDisplayTexture): void {
-    if (!this.presenter.owns(texture)) return;
-    if (this.presenter.available)
-      this.readBack(texture, {
-        left: 0,
-        top: 0,
-        right: texture.width - 1,
-        bottom: texture.height - 1,
-      });
+  /**
+   * Make the software texture current before a software reader or software presentation.
+   * False when its textless plane is stale because GPU frames did not maintain it.
+   */
+  syncSoftware(texture: BurikoDisplayTexture): boolean {
+    if (!this.presenter.owns(texture)) return true;
+    const logical = {left: 0, top: 0, right: texture.width - 1, bottom: texture.height - 1};
+    const current = this.textlessCurrent && this.presenter.available;
+    if (this.presenter.available) {
+      this.readBack(texture, logical);
+      if (current) this.readBackTextless(texture, logical);
+    }
     this.presenter.release(texture);
+    return current;
   }
 
   /**
@@ -536,6 +730,17 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
     if (!reason.startsWith('kernel ') && !reason.includes(' '))
       this.failureStack = new Error().stack?.split('\n').slice(3, 9).join(' < ') ?? null;
     else this.failureStack = null;
+  }
+
+  replay(run: () => void): void {
+    const frame = this.frame;
+    if (frame === null || frame.restoreText === null || this.failure !== null) return;
+    this.attach(this.presenter.image('textless', frame.texture));
+    try {
+      run();
+    } finally {
+      this.attach(this.presenter.image('display', frame.texture));
+    }
   }
 
   dispatch(kernel: BurikoGpuKernel | undefined, args: readonly unknown[], name = ''): unknown {
@@ -1289,12 +1494,17 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
   }
 
   /** Read display image texels back into the software texture's bytes. */
-  private readBack(texture: BurikoDisplayTexture, rectangle: BurikoBitmapRectangle): void {
+  private readBack(
+    texture: BurikoDisplayTexture,
+    rectangle: BurikoBitmapRectangle,
+    slot: 'display' | 'textless' = 'display',
+    bytes: Uint8Array = texture.storage.bytes,
+  ): void {
     const area = this.clip(rectangle, texture);
     if (area === null) return;
     const gl = this.gl,
       finish = beginRuntimeSpan('buriko.display.gpu-compose.read-back');
-    this.attach(this.presenter.image('display', texture));
+    this.attach(this.presenter.image(slot, texture));
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
     gl.pixelStorei(gl.PACK_ALIGNMENT, 4);
     gl.pixelStorei(gl.PACK_ROW_LENGTH, texture.pitch >>> 2);
@@ -1305,25 +1515,42 @@ export class BurikoGpuCompositor implements BurikoGpuKernelTarget, BurikoGpuDefe
       area.height,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      texture.storage.bytes,
+      bytes,
       area.y * texture.pitch + area.x * 4,
     );
     gl.pixelStorei(gl.PACK_ROW_LENGTH, 0);
     finish?.({width: area.width, height: area.height});
   }
 
+  /** Read the textless image into the textless plane; without a plane both planes agree. */
+  private readBackTextless(texture: BurikoDisplayTexture, rectangle: BurikoBitmapRectangle): void {
+    const plane = burikoTextlessStorage(texture);
+    if (plane !== texture.storage) this.readBack(texture, rectangle, 'textless', plane.bytes);
+  }
+
   dispose(): void {
     const gl = this.gl;
-    for (const scratch of [this.destination, this.source, this.backup])
+    for (const scratch of [this.destination, this.source, this.backup, this.textlessBackup])
       if (scratch.texture !== null) gl.deleteTexture(scratch.texture);
     for (const {program} of this.programs.values()) gl.deleteProgram(program);
     for (const [storage, entry] of this.sources) this.evict(storage, entry);
     gl.deleteFramebuffer(this.framebuffer);
     gl.deleteFramebuffer(this.backupFramebuffer);
     gl.deleteFramebuffer(this.mixFramebuffer);
+    gl.deleteFramebuffer(this.ink.framebuffer);
+    if (this.ink.output.texture !== null) gl.deleteTexture(this.ink.output.texture);
+    if (this.ink.clips !== null) gl.deleteTexture(this.ink.clips);
+    if (this.ink.buffer !== null) gl.deleteBuffer(this.ink.buffer);
+    if (this.ink.pending !== null) gl.deleteSync(this.ink.pending.sync);
+    this.ink.pending = null;
     for (const texture of this.coefficients.values()) gl.deleteTexture(texture);
     if (this.actions !== null) gl.deleteTexture(this.actions);
     this.coefficients.clear();
     this.programs.clear();
   }
+}
+
+/** The storage of a display texture's textless plane: its own storage while it has no text. */
+export function burikoTextlessStorage(texture: BurikoDisplayTexture): BurikoBitmapStorage {
+  return rasterTextBitmap(texture.textBitmap).storage as BurikoBitmapStorage;
 }

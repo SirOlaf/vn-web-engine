@@ -18,8 +18,12 @@ readbacks, exports, captures and engine decisions. Display uploads carry metadat
 even if native pixel comparison finds no changed bytes.
 
 The main device, direct client blits and auxiliary bitmap windows use the shared
-browser presentation owner. Native frames remain on their canvas; DOM mode puts
-the alternate frame and selectable text in a sibling layer. Closing a window,
+browser presentation owner. In DOM mode the display device presents the textless
+plane itself, in its one presentation pass, and the sibling layer holds only the
+selectable text; changing the mode redraws the display in the other plane. Direct
+blits and auxiliary windows cannot be redrawn, so their native pixels stay on the
+canvas and DOM mode composes their textless pixels over a snapshot of it in the
+sibling layer. Closing a window,
 clearing its client, hiding a presentation, or tearing down the runtime retires
 its DOM nodes. The no-canvas diagnostic mode never creates a DOM presentation.
 
@@ -59,12 +63,15 @@ radii. In Buriko, `decorateBurikoBitmapText` maps text effect modes 1 (shadow) a
 2 (outline, with `burikoGlyphOutlineWeights`); effect alpha is `opacity / 256`. Arbitrary blend,
 mask, mesh and displacement effects cannot be reproduced exactly by browser text.
 Fully occluded glyphs are excluded using native/textless pixel comparison, while
-partial occlusion and transformed glyph shapes remain best effort.
+partial occlusion and transformed glyph shapes remain best effort. While Buriko's
+GPU compositing holds the display, that comparison runs on the GPU and is read
+asynchronously: a glyph without a result counts as visible, and a covered glyph
+leaves the layer a frame or more after it is covered.
 Custom bitmap glyphs retain their private-use character codes; browser fonts may
 show a fallback glyph when they do not contain those characters.
 Tracking retained text requires additional
-memory for the affected bitmaps; alternate display rasterization runs only in
-DOM mode.
+memory for the affected bitmaps. Presenting the textless plane, and maintaining it
+on the GPU, happen only in DOM mode.
 
 ## Reader styles
 

@@ -22,6 +22,10 @@ export interface BurikoGpuKernelTarget {
   dispatch(kernel: BurikoGpuKernel | undefined, args: readonly unknown[], name: string): unknown;
   /** Any direct access to display pixels fails the frame; software then redraws it. */
   fail(reason: string): void;
+  /** The frame also maintains the display's textless plane for DOM text. */
+  readonly textless: boolean;
+  /** Run kernels against the textless display image instead of the native one. */
+  replay(run: () => void): void;
 }
 
 /**

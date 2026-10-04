@@ -121,6 +121,15 @@ export class BrowserRasterTextPresentation {
     this.presentations.set(canvas, value);
     this.render(canvas, value);
   }
+  /** The canvas is unchanged since `replace`, but its text is now `glyphs`. */
+  refreshGlyphs(canvas: HTMLCanvasElement, glyphs: () => readonly RasterTextGlyph[]): void {
+    const value = this.presentations.get(canvas);
+    // Later blits retained a snapshot holding the earlier text.
+    if (!value || value.backdrop !== null) return;
+    let cached: readonly RasterTextGlyph[] | undefined;
+    value.glyphs = () => (cached ??= glyphs());
+    this.render(canvas, value);
+  }
   /** Called after a native opaque blit. Its destination rectangle replaces prior text too. */
   paint(canvas: HTMLCanvasElement, patch: Patch): void {
     let value = this.presentations.get(canvas);

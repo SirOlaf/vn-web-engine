@@ -1,8 +1,16 @@
 import type {BurikoBitmapCompositor} from './bitmap-compositor.js';
 import {burikoGlyphOutlineWeights} from './font-outline.js';
-import {burikoGpuDeferrer, burikoGpuTarget, type BurikoGpuKernel} from './bitmap-gpu-target.js';
+import type {BurikoBitmap} from './bitmap.js';
+import {
+  burikoGpuDeferrer,
+  burikoGpuTarget,
+  type BurikoGpuKernel,
+  type BurikoGpuTargetStorage,
+} from './bitmap-gpu-target.js';
 import {
   decorateRasterText,
+  rasterTextArguments,
+  recordRasterTextOperation,
   withRasterText,
   type RasterTextBitmap,
   type RasterTextOperationOptions,
@@ -48,8 +56,9 @@ type Kernel = (...args: any[]) => any;
 
 /**
  * Raster-text transport for a native kernel. A destination on a browser-optimized GPU display
- * target is sent to that target instead, under the `gpu` id when the kernel has one. The
- * display's text plane is not maintained for GPU frames, which only run in Native text mode.
+ * target is sent to that target instead, under the `gpu` id when the kernel has one. When the
+ * target maintains the textless plane, the kernel is replayed there with textless arguments and
+ * its text bookkeeping is recorded on the software display storage, as a software frame would.
  * A tagged kernel may instead be deferred, returning zero, when the GPU will produce its result.
  */
 export function withBurikoBitmapText<T extends Kernel>(
@@ -61,7 +70,28 @@ export function withBurikoBitmapText<T extends Kernel>(
   const destination = textOptions.destination ?? 0;
   return function (this: unknown, ...args: Parameters<T>): ReturnType<T> {
     const target = burikoGpuTarget(args[destination]);
-    if (target !== null) return target.dispatch(gpu, args, kernel.name) as ReturnType<T>;
+    if (target !== null) {
+      // Nested kernels draw into whichever image the outer kernel targets.
+      if (gpuDepth !== 0 || !target.textless)
+        return target.dispatch(gpu, args, kernel.name) as ReturnType<T>;
+      gpuDepth++;
+      try {
+        const result = target.dispatch(gpu, args, kernel.name) as ReturnType<T>;
+        if (textOptions.applied && !textOptions.applied(result, args)) return result;
+        const alternate = rasterTextArguments(textOptions, args);
+        target.replay(() => void target.dispatch(gpu, alternate, kernel.name));
+        const software = [...args] as Parameters<T>;
+        const display = args[destination] as BurikoBitmap;
+        software[destination] = {
+          ...display,
+          storage: (display.storage as BurikoGpuTargetStorage).software,
+        };
+        recordRasterTextOperation(textOptions, software, result);
+        return result;
+      } finally {
+        gpuDepth--;
+      }
+    }
     if (
       gpu !== undefined &&
       burikoGpuDeferrer()?.defer(gpu, args, (copied) =>
@@ -72,6 +102,7 @@ export function withBurikoBitmapText<T extends Kernel>(
     return wrapped.apply(this, args);
   } as T;
 }
+let gpuDepth = 0;
 
 /** Presentation replays must not change the native worker pool or its callback state. */
 export function burikoBitmapTextCompositor(

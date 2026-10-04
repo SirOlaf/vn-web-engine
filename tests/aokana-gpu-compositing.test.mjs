@@ -19,6 +19,7 @@ import {BurikoDistributedAllocator} from '../dist/engines/buriko/native/distribu
 import {BurikoNativeFonts} from '../dist/engines/buriko/native/fonts.js';
 import {BurikoNativeText} from '../dist/engines/buriko/native/text.js';
 import {BurikoSurfaces} from '../dist/engines/buriko/native/surfaces.js';
+import {rasterTextBitmap, readRasterText, recordRasterText} from '../dist/text/raster-text.js';
 
 function fakeTarget() {
   const target = {
@@ -95,6 +96,43 @@ test('kernels on a GPU display target dispatch by their GPU id without touching 
   // An opaque pair copies both source pixels whole.
   assert.equal(plain.storage.view.getUint32(0, true), 0xffffffff);
   assert.equal(target.calls.length, 3);
+});
+
+test('textless GPU frames replay each kernel with textless sources and record its text', () => {
+  const software = new BurikoBitmapStorage(new Uint8Array(32), true);
+  const target = fakeTarget();
+  let plane = 'native';
+  Object.assign(target, {
+    textless: true,
+    replay(run) {
+      plane = 'textless';
+      run();
+      plane = 'native';
+    },
+  });
+  const dispatch = target.dispatch;
+  target.dispatch = (kernel, args) => dispatch(kernel, [...args, plane]);
+  const destination = bitmap(new BurikoGpuTargetStorage(target, software), 4, 2);
+  const glyph = bitmap(new BurikoBitmapStorage(new Uint8Array(8).fill(0xff), true), 2, 1, 2);
+  recordRasterText(glyph, 'A', {size: 1, width: 2});
+  blendBurikoAlphaIntoRgb(destination, glyph);
+  assert.deepEqual(
+    target.calls.map(([kernel, args]) => [kernel, args.at(-1)]),
+    [
+      ['alpha-into-rgb', 'native'],
+      ['alpha-into-rgb', 'textless'],
+    ],
+  );
+  assert.equal(target.calls[0][1][1], glyph);
+  assert.equal(target.calls[1][1][1].storage, rasterTextBitmap(glyph).storage);
+  assert.notEqual(rasterTextBitmap(glyph).storage, glyph.storage);
+  // The text is recorded on the software display storage, whose bytes stay untouched.
+  assert.deepEqual(
+    readRasterText({...destination, storage: software}).map((g) => g.text),
+    ['A'],
+  );
+  assert.deepEqual([...software.readOnlyBytes()], new Array(32).fill(0));
+  assert.deepEqual(target.failures, []);
 });
 
 test('direct access to the stand-in storage fails the frame and reaches software bytes', () => {

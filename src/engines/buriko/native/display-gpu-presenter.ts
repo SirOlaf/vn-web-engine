@@ -56,8 +56,8 @@ export interface BurikoGpuQuadCoordinates {
   rows: Float32Array;
 }
 
-/** The display texture, or a movie texture that is drawn over it. */
-export type BurikoGpuImageSlot = 'display' | 'movie';
+/** The display texture, its textless plane for DOM text, or a movie drawn over either. */
+export type BurikoGpuImageSlot = 'display' | 'textless' | 'movie';
 
 interface Image {
   texture: WebGLTexture | null;
@@ -85,6 +85,7 @@ export class BurikoGpuPresenter {
   private readonly uniforms: Record<string, WebGLUniformLocation | null>;
   private readonly images: Record<BurikoGpuImageSlot, Image> = {
     display: {texture: null, width: 0, height: 0, holds: null, plane: null},
+    textless: {texture: null, width: 0, height: 0, holds: null, plane: null},
     movie: {texture: null, width: 0, height: 0, holds: null, plane: null},
   };
   private readonly columns: WebGLTexture;
@@ -139,7 +140,7 @@ export class BurikoGpuPresenter {
 
   /** The next upload of each slot sends the whole logical image. Owned pixels are lost. */
   invalidate(): void {
-    this.images.display.holds = this.images.movie.holds = null;
+    this.images.display.holds = this.images.textless.holds = this.images.movie.holds = null;
     this.owned = null;
   }
 
@@ -164,18 +165,23 @@ export class BurikoGpuPresenter {
     return image.texture;
   }
 
-  /** Whether the display image already holds `texture`'s logical area. */
-  holds(texture: BurikoDisplayTexture): boolean {
-    return this.images.display.holds === texture;
+  /** Whether the image already holds `texture`'s logical area. */
+  holds(texture: BurikoDisplayTexture, slot: BurikoGpuImageSlot = 'display'): boolean {
+    return this.images[slot].holds === texture;
   }
 
   /**
-   * The GPU compositor wrote `texture`'s current pixels into the display image only. Uploads of
-   * that texture are skipped until `release` reports its software bytes current again.
+   * The GPU compositor wrote `texture`'s current pixels into the display image only, and with
+   * `textless` its textless plane into that image. Uploads of that texture are skipped until
+   * `release` reports its software bytes current again.
    */
-  own(texture: BurikoDisplayTexture): void {
+  own(texture: BurikoDisplayTexture, textless: BurikoBitmapStorage | null = null): void {
     this.images.display.holds = texture;
     this.images.display.plane = texture.storage;
+    if (textless !== null) {
+      this.images.textless.holds = texture;
+      this.images.textless.plane = textless;
+    } else if (this.images.textless.holds === texture) this.images.textless.holds = null;
     this.owned = texture;
   }
   owns(texture: BurikoDisplayTexture): boolean {

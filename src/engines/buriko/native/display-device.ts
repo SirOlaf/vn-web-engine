@@ -2,6 +2,8 @@ import type {BurikoD3dxEffectLibrary} from './d3dx-effect-library.js';
 import type {BurikoBitmapRectangle} from './bitmap.js';
 import {
   rasterTextBitmap,
+  rasterTextGlyphKey,
+  readRasterText,
   visibleRasterText,
   type RasterTextGlyph,
 } from '../../../text/raster-text.js';
@@ -171,6 +173,8 @@ export class BurikoDisplayDevice {
   private frameDamage: Rect | null | undefined; // Undefined: full upload; null: no pending writes.
   private ordinaryTextDraw: TextDraw | null = null;
   private movieTextDraw: TextDraw | null = null;
+  /** Presents the latest frame's text again, after its GPU ink results change. */
+  private presentText: (() => void) | null = null;
   dialogBoxMode = false;
   textureAlpha = 0; // 1e6a5c.
   filterMode = 0; // 1e6a58.
@@ -693,17 +697,21 @@ export class BurikoDisplayDevice {
     this.enterGpu(gpu);
     if (resumed && changed === null && this.gpuDrawn === coordinates) return true;
     const {logicalWidth, logicalHeight} = this.display;
+    // DOM text draws the textless image; GPU compositing still reads and writes the native one.
+    const slot = this.textless ? 'textless' : 'display';
     if (
-      !gpu.upload(
-        'display',
-        source,
-        logicalWidth,
-        logicalHeight,
-        changed,
-        this.presented(source).storage,
-      ) ||
+      !gpu.upload('display', source, logicalWidth, logicalHeight, changed) ||
+      (slot === 'textless' &&
+        !gpu.upload(
+          'textless',
+          source,
+          logicalWidth,
+          logicalHeight,
+          changed,
+          this.presented(source).storage,
+        )) ||
       !gpu.draw(
-        'display',
+        slot,
         source,
         coordinates,
         this.sampler,
@@ -724,8 +732,7 @@ export class BurikoDisplayDevice {
   /** Later display draws may composite on the GPU once it presents. */
   private enterGpuCompositing(gpu: BurikoGpuPresenter): void {
     const mode = burikoGpuCompositingMode();
-    // GPU frames draw native pixels only; DOM text presents the textless plane.
-    if (mode === 'off' || this.textless) {
+    if (mode === 'off') {
       this.leaveGpuCompositing();
       return;
     }
@@ -733,6 +740,7 @@ export class BurikoDisplayDevice {
       this.gpuCompositor?.dispose();
       this.gpuCompositor = new BurikoGpuCompositor(gpu);
     }
+    this.gpuCompositor.maintainTextless = this.textless;
     this.manager.gpuFrames = mode === 'verify' ? this.verifiedGpuFrames : this.gpuFrames;
     setBurikoGpuDeferrer(this.gpuCompositor);
   }
@@ -752,9 +760,8 @@ export class BurikoDisplayDevice {
     const source = this.source,
       compositor = this.gpuCompositor;
     if (source === null || compositor === null || !compositor.presenter.owns(source)) return;
-    compositor.syncSoftware(source);
-    // GPU frames skip the display's raster-text plane, which DOM text reads.
-    if ((this.textPresentation?.textMode ?? 'native') !== 'native') {
+    // Native-only GPU frames skip the textless plane, which DOM text presents.
+    if (!compositor.syncSoftware(source) && this.textless) {
       this.manager.damage.force();
       this.manager.redraw.request(0);
     }
@@ -1077,6 +1084,56 @@ export class BurikoDisplayDevice {
       }
     }
   }
+  /** Latest GPU ink results by glyph identity, and the pending poll for the next one. */
+  private gpuInk = new Map<string, boolean>();
+  private gpuInkPoll = 0;
+  /**
+   * visibleRasterText for a display the GPU owns. Its ink test runs on the GPU and arrives a
+   * frame or more later, so a glyph without a result counts as visible; a covered one leaves
+   * when its result arrives. Each call starts the next query when none is in flight.
+   */
+  private gpuVisibleText(
+    compositor: BurikoGpuCompositor,
+    source: BurikoDisplayTexture,
+  ): RasterTextGlyph[] {
+    const glyphs = readRasterText(source.textBitmap),
+      keys: string[] = [],
+      clips: BurikoBitmapRectangle[] = [];
+    for (const glyph of glyphs) {
+      if (!glyph.text.trim()) continue;
+      const {clip} = glyph;
+      keys.push(rasterTextGlyphKey(glyph));
+      clips.push({
+        left: Math.max(0, Math.floor(clip.x)),
+        top: Math.max(0, Math.floor(clip.y)),
+        right: Math.ceil(clip.x + clip.width) - 1,
+        bottom: Math.ceil(clip.y + clip.height) - 1,
+      });
+    }
+    if (compositor.queryInk(source, keys, clips)) this.pollGpuInk(compositor, source);
+    return glyphs.filter(
+      (glyph) => !glyph.text.trim() || (this.gpuInk.get(rasterTextGlyphKey(glyph)) ?? true),
+    );
+  }
+  /** Take the query result once the GPU finishes it, and present text whose visibility changed. */
+  private pollGpuInk(compositor: BurikoGpuCompositor, source: BurikoDisplayTexture): void {
+    const view = this.canvas.ownerDocument.defaultView;
+    if (view === null || this.gpuInkPoll !== 0) return;
+    const poll = () => {
+      this.gpuInkPoll = 0;
+      if (this.gpuCompositor !== compositor || this.source !== source) return;
+      const result = compositor.takeInk();
+      if (result === null) {
+        this.gpuInkPoll = view.requestAnimationFrame(poll);
+        return;
+      }
+      const changed = [...result].some(([key, ink]) => (this.gpuInk.get(key) ?? true) !== ink);
+      this.gpuInk = result;
+      // Unchanged visibility needs no new presentation, which would also query again.
+      if (changed) this.presentText?.();
+    };
+    this.gpuInkPoll = view.requestAnimationFrame(poll);
+  }
   /** Text of the presented frame, in output coordinates. */
   private domGlyphs(
     frame: ImageData,
@@ -1084,11 +1141,21 @@ export class BurikoDisplayDevice {
     movie: TextDraw | null,
   ): RasterTextGlyph[] {
     let glyphs: RasterTextGlyph[] = [];
+    const source = this.source,
+      compositor = this.gpuCompositor;
+    // GPU compositing keeps current pixels on the GPU; it reports glyph ink asynchronously.
+    const owned =
+      ordinary !== null && source !== null && compositor !== null
+        ? compositor.ownsText(source)
+        : 'none';
+    // Native-only GPU frames left no textless plane to compare; a forced redraw follows.
+    if (owned === 'native') return [];
     // GPU presentation defers the sampled copy; DOM text reads the sampled text plane.
-    if (ordinary !== null && this.source !== null && this.sampled !== null)
-      this.sampled.updateFrom(this.source, true);
+    if (owned === 'none' && ordinary !== null && source !== null && this.sampled !== null)
+      this.sampled.updateFrom(source, true);
     for (const draw of [ordinary, movie]) {
       if (draw === null) continue;
+      const gpuText = owned === 'text' && draw === ordinary;
       const bitmap = draw.texture.textBitmap;
       const quad = new DataView(
         draw.vertices.buffer,
@@ -1115,7 +1182,7 @@ export class BurikoDisplayDevice {
       if (draw === movie) glyphs = rasterTextOutsideRegion(glyphs, clip);
       glyphs.push(
         ...mapRasterTextGlyphs(
-          visibleRasterText(bitmap),
+          gpuText ? this.gpuVisibleText(compositor!, source!) : visibleRasterText(bitmap),
           left + 0.5,
           top + 0.5,
           width / u,
@@ -1155,7 +1222,9 @@ export class BurikoDisplayDevice {
       const frame = this.frame,
         ordinary = this.ordinaryTextDraw,
         movie = this.movieTextDraw;
-      this.textPresentation.replace(this.canvas, () => this.domGlyphs(frame, ordinary, movie));
+      const glyphs = () => this.domGlyphs(frame, ordinary, movie);
+      this.textPresentation.replace(this.canvas, glyphs);
+      this.presentText = () => this.textPresentation?.refreshGlyphs(this.canvas, glyphs);
     }
     this.frameDamage = null;
     this.display.lastPresentMilliseconds = Number(BigInt.asUintN(32, this.clock.read()));

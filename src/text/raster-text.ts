@@ -217,6 +217,22 @@ export function rasterTextBitmap<T extends RasterTextBitmap>(bitmap: T): T {
   const plane = bitmap.storage && planes.get(bitmap.storage);
   return plane ? ({...bitmap, storage: plane.blank} as T) : bitmap;
 }
+/** Restores a storage's text metadata, not its pixels, to the state at this call. */
+export function snapshotRasterText(storage: RasterTextStorage): () => void {
+  const plane = planes.get(storage);
+  const glyphs = plane?.glyphs.slice(),
+    receivedText = plane?.receivedText;
+  return () => {
+    if (plane === undefined) {
+      planes.delete(storage);
+      return;
+    }
+    plane.glyphs = glyphs!;
+    plane.receivedText = receivedText!;
+    plane.differenceByte = -1;
+    planes.set(storage, plane);
+  };
+}
 export function hasRasterText(bitmap: RasterTextBitmap): boolean {
   return !!bitmap.storage && planes.has(bitmap.storage);
 }
@@ -471,96 +487,137 @@ export function withRasterText<T extends Kernel>(
 ): T {
   return function (this: unknown, ...args: Parameters<T>): ReturnType<T> {
     if (depth) return kernel.apply(this, args);
-    const destination = args[options.destination ?? 0];
-    if (!isBitmap(destination) || !args.some((a) => isBitmap(a) && hasRasterText(a)))
-      return kernel.apply(this, args);
-    const sourceIndices = options.clear ? [] : [options.source ?? 1].flat();
-    const sources = sourceIndices.map((i) => args[i]).filter(isBitmap);
-    const captured = sourceIndices.flatMap((i) =>
-      isBitmap(args[i])
-        ? readRasterText(args[i]).map((g) => ({
-            ...g,
-            alpha: g.alpha * (options.sourceOpacity?.(i, args) ?? 1),
-          }))
-        : [],
-    );
-    const plane = ensure(destination);
-    if (!plane) return kernel.apply(this, args);
-    const alternate = args.map((a) => (isBitmap(a) ? rasterTextBitmap(a) : a));
+    const operation = beginOperation(options, args);
+    if (!operation) return kernel.apply(this, args);
     depth++;
     let result: ReturnType<T>;
     try {
       result = kernel.apply(this, args);
       if (options.applied && !options.applied(result, args)) return result;
       presentationReplay = true;
-      recordRuntimeMetric('text.raster.replay.destination-glyphs', plane.glyphs.length);
-      recordRuntimeMetric('text.raster.replay.source-glyphs', captured.length);
-      kernel.apply(
-        this,
-        options.alternateArgs ? options.alternateArgs(alternate as Parameters<T>) : alternate,
-      );
+      recordRuntimeMetric('text.raster.replay.destination-glyphs', operation.plane.glyphs.length);
+      recordRuntimeMetric('text.raster.replay.source-glyphs', operation.captured.length);
+      kernel.apply(this, rasterTextArguments(options, args));
     } finally {
       presentationReplay = false;
       depth--;
     }
-    const [ox, oy] = origin(destination, plane);
-    if (!options.clear)
-      plane.receivedText ||=
-        sources.some(hasRasterText) ||
-        args.some((a, i) => i !== (options.destination ?? 0) && isBitmap(a) && hasRasterText(a));
-    if (
-      (typeof options.replace === 'function' ? options.replace(args) : options.replace) ||
-      options.clear
-    ) {
-      const region = options.region?.(args) ?? bounds(destination);
-      if (!options.region && !options.clear && !options.map && sources.length) {
-        region.width = Math.min(region.width, ...sources.map((s) => s.width));
-        region.height = Math.min(region.height, ...sources.map((s) => s.height));
-      }
-      removeRegion(plane, shifted(region, ox, oy));
-    }
-    const alpha = options.opacity?.(args) ?? 1;
-    if (alpha > 0)
-      for (const glyph of captured) {
-        if (!(glyph.alpha * alpha > 0)) continue;
-        const map = options.map,
-          rect = transformBounds(glyph, map, args),
-          clip = intersectRect(transformBounds(glyph.clip, map, args), bounds(destination));
-        if (!clip || !Number.isFinite(rect.x + rect.y + rect.width + rect.height)) continue;
-        const item = {
-          ...glyph,
-          ...shifted(rect, ox, oy),
-          clip: shifted(clip, ox, oy),
-          size: glyph.size * (glyph.height ? rect.height / glyph.height : 1),
-          alpha: glyph.alpha * alpha,
-          color: options.color?.(glyph.color, args) ?? glyph.color,
-        };
-        // Damage strips and repeated overlay draws may carry the same glyph.
-        let count = 0;
-        for (const g of plane.glyphs)
-          if (
-            g.id !== item.id ||
-            g.flow !== item.flow ||
-            g.x !== item.x ||
-            g.y !== item.y ||
-            g.clip.x !== item.clip.x ||
-            g.clip.y !== item.clip.y ||
-            g.clip.width !== item.clip.width ||
-            g.clip.height !== item.clip.height
-          )
-            plane.glyphs[count++] = g;
-        plane.glyphs[count++] = item;
-        plane.glyphs.length = count;
-      }
-    if (
-      options.clear &&
-      destination.storage &&
-      destination.offset === 0 &&
-      destination.width * destination.bytesPerPixel === destination.stride &&
-      destination.height * destination.stride === destination.storage.bytes.length
-    )
-      planes.delete(destination.storage);
-    else if (options.clear) retireClearedPlane(destination, plane);
+    finishOperation(operation, options, args, true);
     return result;
   } as T;
+}
+
+/** The arguments of an operation's replay over the textless planes. */
+export function rasterTextArguments<T extends Kernel>(
+  options: RasterTextOperationOptions<T>,
+  args: Parameters<T>,
+): Parameters<T> {
+  const alternate = args.map((a) => (isBitmap(a) ? rasterTextBitmap(a) : a)) as Parameters<T>;
+  return options.alternateArgs ? options.alternateArgs(alternate) : alternate;
+}
+
+/**
+ * Text bookkeeping of an operation whose pixels another owner produced on both planes, such as
+ * a GPU display target. Partial clears keep their plane, since retiring one compares bytes that
+ * owner has not written back yet.
+ */
+export function recordRasterTextOperation<T extends Kernel>(
+  options: RasterTextOperationOptions<T>,
+  args: Parameters<T>,
+  result: ReturnType<T>,
+): void {
+  if (depth || (options.applied && !options.applied(result, args))) return;
+  const operation = beginOperation(options, args);
+  if (operation) finishOperation(operation, options, args, false);
+}
+
+interface Operation {
+  destination: RasterTextBitmap;
+  plane: Plane;
+  sources: RasterTextBitmap[];
+  captured: RasterTextGlyph[];
+}
+function beginOperation<T extends Kernel>(
+  options: RasterTextOperationOptions<T>,
+  args: Parameters<T>,
+): Operation | null {
+  const destination = args[options.destination ?? 0];
+  if (!isBitmap(destination) || !args.some((a) => isBitmap(a) && hasRasterText(a))) return null;
+  const sourceIndices = options.clear ? [] : [options.source ?? 1].flat();
+  const sources = sourceIndices.map((i) => args[i]).filter(isBitmap);
+  const captured = sourceIndices.flatMap((i) =>
+    isBitmap(args[i])
+      ? readRasterText(args[i]).map((g) => ({
+          ...g,
+          alpha: g.alpha * (options.sourceOpacity?.(i, args) ?? 1),
+        }))
+      : [],
+  );
+  const plane = ensure(destination);
+  return plane ? {destination, plane, sources, captured} : null;
+}
+function finishOperation<T extends Kernel>(
+  {destination, plane, sources, captured}: Operation,
+  options: RasterTextOperationOptions<T>,
+  args: Parameters<T>,
+  retire: boolean,
+): void {
+  const [ox, oy] = origin(destination, plane);
+  if (!options.clear)
+    plane.receivedText ||=
+      sources.some(hasRasterText) ||
+      args.some((a, i) => i !== (options.destination ?? 0) && isBitmap(a) && hasRasterText(a));
+  if (
+    (typeof options.replace === 'function' ? options.replace(args) : options.replace) ||
+    options.clear
+  ) {
+    const region = options.region?.(args) ?? bounds(destination);
+    if (!options.region && !options.clear && !options.map && sources.length) {
+      region.width = Math.min(region.width, ...sources.map((s) => s.width));
+      region.height = Math.min(region.height, ...sources.map((s) => s.height));
+    }
+    removeRegion(plane, shifted(region, ox, oy));
+  }
+  const alpha = options.opacity?.(args) ?? 1;
+  if (alpha > 0)
+    for (const glyph of captured) {
+      if (!(glyph.alpha * alpha > 0)) continue;
+      const map = options.map,
+        rect = transformBounds(glyph, map, args),
+        clip = intersectRect(transformBounds(glyph.clip, map, args), bounds(destination));
+      if (!clip || !Number.isFinite(rect.x + rect.y + rect.width + rect.height)) continue;
+      const item = {
+        ...glyph,
+        ...shifted(rect, ox, oy),
+        clip: shifted(clip, ox, oy),
+        size: glyph.size * (glyph.height ? rect.height / glyph.height : 1),
+        alpha: glyph.alpha * alpha,
+        color: options.color?.(glyph.color, args) ?? glyph.color,
+      };
+      // Damage strips and repeated overlay draws may carry the same glyph.
+      let count = 0;
+      for (const g of plane.glyphs)
+        if (
+          g.id !== item.id ||
+          g.flow !== item.flow ||
+          g.x !== item.x ||
+          g.y !== item.y ||
+          g.clip.x !== item.clip.x ||
+          g.clip.y !== item.clip.y ||
+          g.clip.width !== item.clip.width ||
+          g.clip.height !== item.clip.height
+        )
+          plane.glyphs[count++] = g;
+      plane.glyphs[count++] = item;
+      plane.glyphs.length = count;
+    }
+  if (
+    options.clear &&
+    destination.storage &&
+    destination.offset === 0 &&
+    destination.width * destination.bytesPerPixel === destination.stride &&
+    destination.height * destination.stride === destination.storage.bytes.length
+  )
+    planes.delete(destination.storage);
+  else if (options.clear && retire) retireClearedPlane(destination, plane);
 }
