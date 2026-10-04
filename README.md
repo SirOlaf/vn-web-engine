@@ -74,7 +74,7 @@ The [CHAOS;HEAD NOAH asset laboratory](assets.html) and [BGI asset laboratory](b
 
 The included [GitHub Pages workflow](.github/workflows/pages.yml) builds and deploys pushes to `main`, and can also be run manually. Select **GitHub Actions** under the repository's **Settings → Pages → Build and deployment → Source** before enabling it. See [static hosting](docs/static-hosting.md) for setup, subpath verification, and save-storage considerations.
 
-The website is an installable progressive web app. Use your browser's **Install app** command, or **Share → Add to Home Screen** on iPhone/iPad. After the first online visit finishes caching, the library, players, and tools can reopen offline. Game files still need to be selected locally or retained with **Keep game files in browser**. App updates take effect after all open app windows and tabs are closed and the app is reopened.
+The website is an installable progressive web app. Use your browser's **Install app** command, or **Share → Add to Home Screen** on iPhone/iPad. After the first online visit finishes caching, the library, players, and tools can reopen offline. Game files still need to be selected locally or retained with **Keep game files in browser**. When a new version is published, open pages show an update notice; choose **Reload** to switch, or keep playing and the update applies once all app windows and tabs are closed.
 
 ## Development
 

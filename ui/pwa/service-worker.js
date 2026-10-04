@@ -13,23 +13,42 @@ self.addEventListener('install', (event) => {
       ),
   );
   // Keep the browser's waiting phase: a game may have unsaved progress and lazy
-  // imports from the previous build. Never skipWaiting or reload a running game.
+  // imports from the previous build. Pages show an update notice instead, and
+  // only the user's Reload choice activates this build early.
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'activate-update') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((names) =>
-        Promise.all(
-          names
-            .filter((name) => name.startsWith(cachePrefix) && name !== cacheName)
-            .map((name) => caches.delete(name)),
-        ),
-      ),
+    (async () => {
+      // An early activation leaves other tabs running the previous build. Keep
+      // its cache for their lazy imports until an activation finds at most the
+      // reloading tab open.
+      const windows = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+      if (windows.length > 1) return;
+      const names = await caches.keys();
+      await Promise.all(
+        names
+          .filter((name) => name.startsWith(cachePrefix) && name !== cacheName)
+          .map((name) => caches.delete(name)),
+      );
+    })(),
   );
   // Do not claim pages loaded before this worker; their modules may be older.
 });
+
+/** Serves a file of a previous build to a tab that still runs that build. */
+async function matchPreviousBuild(url) {
+  for (const name of await caches.keys()) {
+    if (!name.startsWith(cachePrefix) || name === cacheName) continue;
+    const response = await (await caches.open(name)).match(url);
+    if (response) return response;
+  }
+  return undefined;
+}
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
@@ -41,10 +60,16 @@ self.addEventListener('fetch', (event) => {
     url.search = '';
   }
   url.hash = '';
-  // Only built website files are cached. Local installations, saves, arbitrary
-  // network requests and debug streaming endpoints keep their existing owners.
-  if (!appUrls.has(url.href)) return;
-  event.respondWith(
-    caches.open(cacheName).then(async (cache) => (await cache.match(url.href)) ?? fetch(request)),
-  );
+  if (appUrls.has(url.href)) {
+    event.respondWith(
+      caches.open(cacheName).then(async (cache) => (await cache.match(url.href)) ?? fetch(request)),
+    );
+    return;
+  }
+  // Emitted build files have content-hashed names under assets/.
+  if (request.mode !== 'navigate' && url.href.startsWith(`${self.registration.scope}assets/`)) {
+    event.respondWith(matchPreviousBuild(url.href).then((response) => response ?? fetch(request)));
+  }
+  // Everything else (local installations, saves, arbitrary network requests and
+  // debug streaming endpoints) keeps its existing owner.
 });
