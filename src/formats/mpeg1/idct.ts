@@ -4,7 +4,8 @@ const BASIS = Float64Array.from({length: 64}, (_, i) => {
     u = i & 7;
   return (u ? 0.5 : Math.SQRT1_2 * 0.5) * Math.cos(((2 * x + 1) * u * Math.PI) / 16);
 });
-const BASIS_BY_FREQUENCY = Float64Array.from(
+/** Entry `u * 8 + x`: the basis of frequency `u` at sample `x`. */
+export const BASIS_BY_FREQUENCY = Float64Array.from(
   {length: 64},
   (_, i) => BASIS[(i & 7) * 8 + (i >> 3)]!,
 );

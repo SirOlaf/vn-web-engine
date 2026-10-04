@@ -46,6 +46,16 @@ export function reportWasmGraphicsFallback(): void {
   });
 }
 
+/** Movie decoders report once when their WebAssembly video decoder is unavailable. */
+export function reportWasmVideoFallback(): void {
+  reportRuntimeAdvisory({
+    id: 'wasm-video-fallback',
+    title: 'WebAssembly video fallback',
+    message:
+      'Movies are decoding in JavaScript instead of WebAssembly. High-resolution movies may stutter. Check that your browser supports WebAssembly SIMD.',
+  });
+}
+
 /** The bytecode interpreter reports once when its WebAssembly core is unavailable. */
 export function reportWasmInterpreterFallback(): void {
   reportRuntimeAdvisory({

@@ -11,6 +11,12 @@ try {
   for (const [name, exported, destination, flags] of [
     ['linear-rgb', 'LINEAR_RGB_WASM_BINARY', 'src/graphics/linear-rgb-wasm-binary.ts', kernel],
     [
+      'mpeg1-video',
+      'MPEG1_VIDEO_WASM_BINARY',
+      'src/formats/mpeg1/wasm-binary.ts',
+      ['-C', 'target-feature=+simd128'],
+    ],
+    [
       'aokana-bitmap',
       'BURIKO_BITMAP_WASM_BINARY',
       'src/engines/buriko/native/bitmap-alpha-wasm-binary.ts',

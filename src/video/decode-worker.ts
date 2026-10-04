@@ -37,8 +37,8 @@ worker.onmessage = async (event) => {
             (f.timestamp ?? f.index / b.info.frameRate) + (f.duration ?? 1 / b.info.frameRate) >
             seek
           ) {
-            // Reference planes stay owned by the decoder; transfer separate display copies.
-            frames.push({...f, y: f.y.slice(), cb: f.cb.slice(), cr: f.cr.slice()});
+            // Decoders return pictures the caller owns, so their planes transfer directly.
+            frames.push(f);
           }
         for (const a of b.audio) {
           const at = a.timestamp ?? a.start / b.info.sampleRate;

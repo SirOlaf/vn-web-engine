@@ -341,6 +341,12 @@ Buriko text uses the native NONANTIALIASED DIB path: `BurikoBrowserFontFace.rast
 - **Measurements.** These are Aokana slot 3 captures at 6×, run under Browser optimized with `--frames --no-profile`. Before the change, main-thread gaps over 100 ms were 216, 208 and 124 ms, and `buriko.text.glyph.raster` totaled 816 ms. With the canvas reuse only (`?text-worker=0`), the gaps were 158 and 151 ms, and raster time was 566 ms. With workers, no gap exceeded 100 ms and raster time was 86 ms. All nine prefetches succeeded and served 78 of the 81 new glyphs. Worker round trips totaled 59 ms. Under Native, most slot 3 frames at 6× already take 100–135 ms. There the two glyph hitches fell from 217 and 208 ms to 150 and 149 ms, and raster time fell from 800 to 590 ms.
 - **Verification.** `node tools/probe-buriko-font-raster.mjs` compares both paths with a fresh-canvas reference, byte for byte. It uses a resource font loaded from bytes (`--font`, macOS Arial Unicode by default) and the generic fallback family, sizes 18–42, width percentages 50–140 and sample scales 1, 4 and 16. It also reports worker results that were not consumed.
 
+## Movie decoding
+
+CRI USM movies (CHAOS;HEAD NOAH) and MPEG-1 program streams (codeX RScript) decode in a movie worker (`src/video/decode-worker.ts`). Their MPEG-1 video runs through `Mpeg1Decoder` (`src/formats/mpeg1/decoder.ts`), which uses the `wasm/mpeg1-video` module and falls back to the JavaScript reference (`reference.ts`) when WebAssembly SIMD is unavailable. The fallback raises the `wasm-video-fallback` advisory. Both paths return pictures the caller owns, so the worker transfers their planes without copying them again. `new Mpeg1Decoder({wasm: false})` selects the reference for comparisons.
+
+Across the first 450 frames of all 144 CHAOS;HEAD NOAH movies (1920×1080, 29,618 frames), Node 26 decodes 2.0 ms per frame on average instead of 9.5 ms, including the copies out of instance memory. Per movie, averages range from 0.8 to 5.5 ms instead of 5.1 to 22.9 ms. In Chrome, a 371-frame movie took 2.0 ms per frame instead of 11.2 ms; the worker, including USM demultiplexing and HCA audio, took 2.4 ms per frame. Every one of those frames matched the reference byte for byte. HCA audio costs about 0.17 ms per 1,024-sample block, about 1% of one core, and stays in JavaScript.
+
 ## Local profiling build
 
 ```sh
