@@ -16,7 +16,8 @@ export interface PsbObject {
 /**
  * PSB ("packed struct binary", M2 / E-mote) tree reader. Covers the unencrypted header layout
  * of versions 2 to 4 and the value types those files use for scenarios (`.scn`) and E-mote
- * data; version-4 extra chunks and encrypted headers are rejected.
+ * data; version-4 extra chunks and encrypted headers are rejected. E-mote files carry a body
+ * filter that `decryptPsbBody` (psb-filter.ts) removes first.
  *
  * Layout: names are stored as a double-array trie (charset, tree, name indices); strings as an
  * offset table into NUL-terminated UTF-8; resources as offset and length tables into a data

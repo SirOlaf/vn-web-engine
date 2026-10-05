@@ -12,6 +12,11 @@ import {
   cxTinyKey,
 } from '../dist/formats/kirikiri/cx-archive.js';
 import {PsbFile, PsbResource} from '../dist/formats/kirikiri/psb.js';
+import {
+  EMOTE_PSB_KEYS,
+  applyPsbKeystream,
+  decryptPsbBody,
+} from '../dist/formats/kirikiri/psb-filter.js';
 
 class MemorySource {
   constructor(bytes) {
@@ -220,7 +225,8 @@ function nameTrie(names) {
 const intArray = (values) =>
   concat(Uint8Array.of(0x0e), u16(values.length), Uint8Array.of(0x10), ...values.map(u32));
 
-test('PSB decodes names, scalars, strings, lists, objects and resources', () => {
+/** A version-2 PSB with names, scalars, strings, a list, an object and one resource. */
+function samplePsb() {
   const names = ['alpha', 'beta', 'title'],
     trie = nameTrie(names),
     strings = ['hello', '日本語'],
@@ -298,7 +304,10 @@ test('PSB decodes names, scalars, strings, lists, objects and resources', () => 
     resource,
     root,
   );
-  const psb = new PsbFile(bytes);
+  return {bytes, names};
+}
+
+const assertSampleTree = (psb, names) => {
   assert.deepEqual(psb.names, names);
   const value = psb.root;
   assert.equal(value.alpha, -2);
@@ -308,4 +317,34 @@ test('PSB decodes names, scalars, strings, lists, objects and resources', () => 
   assert.equal(value.beta[2], '日本語');
   assert.ok(value.beta[3] instanceof PsbResource);
   assert.deepEqual([...value.beta[3].bytes], [9, 8, 7]);
+};
+
+test('PSB decodes names, scalars, strings, lists, objects and resources', () => {
+  const {bytes, names} = samplePsb();
+  assertSampleTree(new PsbFile(bytes), names);
+});
+
+test('E-mote keystream matches the runtime key', () => {
+  const key = EMOTE_PSB_KEYS.get(
+    'a3b693b605d67812e489b1fb62cd341012b5514fc9114a032fee4685e70b3a86',
+  );
+  assert.equal(key, 742877301);
+  // Keystream recovered from an emotewin.xp3 member: ciphertext XOR its decoded name table.
+  const stream = new Uint8Array(8);
+  applyPsbKeystream(key, stream);
+  assert.deepEqual([...stream], [0x8d, 0x3b, 0xad, 0xf5, 0xa0, 0x6d, 0x5f, 0x32]);
+});
+
+test('E-mote PSB body filter covers only the header-declared range', () => {
+  const {bytes, names} = samplePsb(),
+    key = 742877301,
+    view = new DataView(bytes.buffer),
+    start = view.getUint32(8, true),
+    end = view.getUint32(24, true),
+    filtered = decryptPsbBody(bytes, key);
+  assert.deepEqual(filtered.subarray(0, start), bytes.subarray(0, start));
+  assert.notDeepEqual(filtered.subarray(start, end), bytes.subarray(start, end));
+  assert.deepEqual(filtered.subarray(end), bytes.subarray(end));
+  assertSampleTree(new PsbFile(decryptPsbBody(filtered, key)), names);
+  assert.throws(() => decryptPsbBody(Uint8Array.of(1, 2, 3, 4), key), /Not a PSB/);
 });
