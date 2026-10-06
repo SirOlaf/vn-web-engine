@@ -7,8 +7,21 @@
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-  color: #edf3f0;
-  background: #0b1113;
+  /* Neutral greys; colour comes only from the engine accents. */
+  --bg: #0e0e10;
+  --surface: #161619;
+  --surface-2: #1c1c20;
+  --surface-3: #242429;
+  --surface-4: #2e2e34;
+  --line: #2a2a30;
+  --line-strong: #3a3a42;
+  --text: #f2f2f3;
+  --text-2: #cfcfd4;
+  --text-3: #a0a0a8;
+  --text-4: #8a8a93;
+  --ring: #f2f2f3;
+  color: var(--text);
+  background: var(--bg);
   font-synthesis: none;
 }
 * {
@@ -35,7 +48,7 @@ button:focus-visible,
 a:focus-visible,
 select:focus-visible,
 input:focus-visible {
-  outline: 2px solid #a8e4d1;
+  outline: 2px solid var(--ring);
   outline-offset: 3px;
 }
 .app-shell {
@@ -43,367 +56,562 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
 }
-.topbar {
-  height: 82px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #253237;
-  padding: 0 clamp(24px, 5vw, 76px);
-  background: #0e1618;
-}
 .brand {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 12px;
   text-decoration: none;
   color: inherit;
 }
+/* Drawn like the emblems: a ringed monogram without a fill. */
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 11px;
-  background: #a6e2ce;
-  color: #10231f;
-  font-weight: 900;
-  font-size: 17px;
-  letter-spacing: -0.09em;
-}
-.brand-copy {
+  width: 36px;
+  height: 36px;
+  border: 1.5px solid var(--text-3);
+  border-radius: 50%;
+  color: var(--text);
+  font-weight: 800;
   font-size: 13px;
-  font-weight: 780;
-  letter-spacing: 0.13em;
-  line-height: 1.35;
+  letter-spacing: -0.04em;
 }
-.brand-copy small {
-  display: block;
-  font-size: 10px;
-  color: #85a29c;
-  letter-spacing: 0.24em;
-}
-.topbar-note {
-  color: #8da49e;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-.github-link {
-  color: #c5e9da;
-  font-size: 12px;
+.brand-name {
+  font-size: 15px;
   font-weight: 650;
-  text-decoration: none;
-  white-space: nowrap;
 }
-.github-link:hover {
-  color: #fff;
+.bar-link {
+  color: var(--text-3);
+  font-size: 13px;
+  text-decoration: none;
+}
+.bar-link:hover {
+  color: var(--text);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-main {
-  width: min(1440px, 100%);
-  margin: 0 auto;
-  padding: 54px clamp(24px, 5vw, 76px) 72px;
-  flex: 1;
-}
-h1 {
-  font-size: clamp(34px, 4.6vw, 58px);
-  font-weight: 650;
-  letter-spacing: -0.055em;
-  line-height: 1.07;
-  max-width: 710px;
-  margin: 0;
-}
-.refresh {
-  border: 1px solid #35474a;
-  border-radius: 10px;
-  color: #c6d8d2;
-  background: #152023;
-  padding: 11px 16px;
+.engine-tag {
+  color: var(--text-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 4px 9px;
+  letter-spacing: 0.08em;
+  font-size: 10px;
   white-space: nowrap;
 }
-.refresh:hover:not(:disabled) {
-  background: #1c2a2c;
-  border-color: #76b5a5;
-}
-.refresh span {
-  font-size: 20px;
-  vertical-align: -2px;
-  margin-right: 6px;
-}
-.library-layout {
-  display: grid;
-  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
-}
-.section-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin: 0 0 14px;
-}
-.section-heading h2 {
-  font-size: 20px;
-  font-weight: 650;
-  letter-spacing: -0.025em;
-  margin: 0;
-}
-.section-heading span {
-  color: #829791;
-  font-size: 12px;
-}
-.shelf {
-  min-width: 0;
-}
-.game-card {
-  display: flex;
-  align-items: center;
-  text-align: left;
-  width: 100%;
-  min-height: 126px;
-  gap: 16px;
-  margin: 0 0 10px;
-  padding: 13px;
-  color: inherit;
-  background: #111b1e;
-  border: 1px solid #28373a;
-  border-radius: 16px;
-  transition:
-    background 0.15s,
-    border-color 0.15s,
-    transform 0.15s;
-}
-.game-card:hover {
-  background: #172326;
-  transform: translateY(-1px);
-}
-.game-card.selected {
-  background: #192825;
-  border-color: #79bda8;
-  box-shadow: inset 0 0 0 1px #79bda844;
-}
+/* Player artwork. */
 .card-art {
   position: relative;
-  flex: 0 0 86px;
-  height: 98px;
+  display: block;
   overflow: hidden;
-  border-radius: 9px;
-  background:
-    radial-gradient(circle at 75% 20%, #557d88, transparent 42%),
-    linear-gradient(145deg, #173f4b, #102126 70%);
-}
-.card-art.title-art {
-  background:
-    radial-gradient(circle at 70% 10%, #87586f, transparent 48%),
-    linear-gradient(145deg, #482837, #1b171c 75%);
-}
-.card-orbit {
-  position: absolute;
-  width: 145px;
-  height: 145px;
-  left: 12px;
-  top: 19px;
-  border: 1px solid #d1f5e977;
-  border-radius: 50%;
-  transform: rotate(-20deg) scaleY(0.35);
-}
-.title-art .card-orbit {
-  border-color: #f6c8d477;
-  transform: rotate(28deg) scaleY(0.5);
+  border-radius: 12px;
 }
 .card-initials {
   position: absolute;
-  bottom: 10px;
-  left: 11px;
-  font-size: 27px;
+  bottom: 8%;
+  left: 9%;
+  font-size: 34px;
   letter-spacing: -0.08em;
   font-weight: 700;
-  color: #e9f4ed;
+  color: var(--text);
 }
-.card-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 5px;
-  flex: 1;
-}
-.card-copy strong {
-  font-size: 15px;
-  line-height: 1.2;
-}
-.card-copy > span {
-  font-size: 12px;
-  color: #99aaa5;
-}
-.card-copy small {
+/* Home screen. */
+.systembar {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  color: #c6ac84;
-  margin-top: 7px;
-}
-.card-copy small.ready {
-  color: #a3d6bb;
-}
-.card-copy i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.card-arrow {
-  color: #899e96;
-  font-size: 26px;
-  line-height: 1;
-}
-.auto-detect {
-  margin: 0 0 14px;
-  padding: 13px;
-  border: 1px dashed #35474a;
-  border-radius: 16px;
-}
-.auto-detect .button {
-  width: 100%;
-}
-.auto-detect p {
-  color: #93a7a1;
-  font-size: 12px;
-  line-height: 1.5;
-  margin: 9px 2px 0;
-}
-.auto-detect .auto-detect-status {
-  color: #d0e2d7;
-}
-.auto-detect-matches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-.shelf-note {
-  color: #80918d;
-  font-size: 12px;
-  line-height: 1.6;
-  margin: 22px 3px;
-  max-width: 340px;
-}
-.detail {
-  min-height: 466px;
-  border: 1px solid #304144;
-  border-radius: 19px;
-  background: #142024;
-  overflow: hidden;
-  box-shadow: 0 20px 60px #0002;
-}
-.detail-topline {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 26px 32px 0;
-}
-.engine-tag {
-  color: #b7c8c1;
-  border: 1px solid #40504e;
-  border-radius: 999px;
-  padding: 5px 9px;
-  letter-spacing: 0.08em;
-  font-size: 10px;
-}
-.detail-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 30px 32px 34px;
-}
-.detail-heading h2 {
-  font-size: clamp(30px, 3.2vw, 43px);
-  line-height: 1.08;
-  letter-spacing: -0.05em;
-  margin: 0 0 12px;
-}
-.detail-heading p {
-  color: #aebfba;
-  line-height: 1.55;
-  font-size: 14px;
-  margin: 0;
-  max-width: 460px;
-}
-.detail-monogram {
-  color: #91c4b2;
-  opacity: 0.55;
-  font-size: clamp(56px, 7vw, 95px);
-  font-weight: 750;
-  letter-spacing: -0.1em;
-  line-height: 1;
-  white-space: nowrap;
-}
-.detail-tabs {
-  display: flex;
-  gap: 28px;
-  padding: 0 32px;
-  border-bottom: 1px solid #304144;
-}
-.detail-tabs button {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: #9dafaa;
-  padding: 0 0 13px;
-  font-size: 13px;
-}
-.detail-tabs button:hover,
-.detail-tabs button.active {
-  color: #e5f4ea;
-}
-.detail-tabs button.active {
-  border-color: #a5e2c8;
-}
-.panel {
-  padding: 28px 32px 35px;
-}
-.readiness {
-  display: flex;
-  align-items: center;
   gap: 16px;
-  margin-bottom: 26px;
+  height: 64px;
+  padding: 0 clamp(16px, 4vw, 56px);
 }
-.readiness-icon {
+/* Accent of the selected tile. */
+.app-shell {
+  --accent: var(--line-strong);
+}
+.app-shell[data-accent='buriko'] {
+  --accent: #5b7695;
+}
+.app-shell[data-accent='chaos-head-noah'] {
+  --accent: #87586f;
+}
+.app-shell[data-accent='rscript'] {
+  --accent: #6d6a9c;
+}
+.bar-summary {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 620px) {
+  .bar-summary {
+    display: none;
+  }
+}
+.home {
+  --tile: clamp(124px, 16vw, 176px);
+  --gutter: clamp(16px, 4vw, 56px);
+  position: relative;
+  flex: 1;
+  width: 100%;
+  padding: clamp(24px, 8vh, 96px) clamp(16px, 4vw, 56px) 40px;
+}
+.tile-row {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  padding: 14px 12px 8px;
+  margin: 0 -12px;
+  scroll-padding-inline: 12px;
+  scroll-snap-type: x proximity;
+}
+/* Centred while the tiles fit; scrolls from the start once they do not. */
+.tile-row > :first-child {
+  margin-left: auto;
+}
+.tile-row > :last-child {
+  margin-right: auto;
+}
+.tile {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: var(--tile);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  scroll-snap-align: center;
+}
+.tile .card-art,
+.tile .slot {
+  aspect-ratio: 1;
+  border-radius: 18px;
+  outline: 3px solid transparent;
+  outline-offset: 4px;
+  transition:
+    transform 0.15s,
+    outline-color 0.15s;
+}
+.tile .card-initials {
+  font-size: clamp(34px, 4vw, 46px);
+}
+.tile:hover .card-art,
+.tile:hover .slot {
+  transform: translateY(-2px);
+}
+.tile.selected .card-art,
+.tile.selected .slot {
+  outline-color: var(--ring);
+  transform: scale(1.04);
+}
+.tile:focus-visible {
+  outline: none;
+}
+.tile:focus-visible .card-art,
+.tile:focus-visible .slot {
+  outline-color: var(--ring);
+}
+.tile-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile.selected .tile-name {
+  color: var(--text);
+}
+
+/* The folder tile: an empty drive slot with a disc half inserted. */
+.slot {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface);
+}
+.slot::before {
+  content: '';
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  top: 22%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.disc {
+  position: absolute;
+  left: 20%;
+  width: 60%;
+  aspect-ratio: 1;
+  top: 30%;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: radial-gradient(
+    circle,
+    var(--surface) 0 9%,
+    var(--line-strong) 9% 11%,
+    var(--surface-2) 11% 30%,
+    var(--surface-3) 30% 100%
+  );
+  transition: top 0.2s;
+}
+.tile.folder-tile:hover .disc,
+.tile.folder-tile.selected .disc {
+  top: 38%;
+}
+
+/* Accent of each tile. */
+.tile {
+  --tile-accent: var(--line-strong);
+}
+.tile[data-accent='buriko'] {
+  --tile-accent: #5b7695;
+}
+.tile[data-accent='chaos-head-noah'] {
+  --tile-accent: #87586f;
+}
+.tile[data-accent='rscript'] {
+  --tile-accent: #6d6a9c;
+}
+
+/* Emblems: flat tinted squares with a ringed monogram; the selection is larger. */
+.card-art {
+  background: color-mix(in srgb, var(--tile-accent) 30%, var(--surface));
+}
+.tile .card-initials {
+  inset: 0;
   display: grid;
   place-items: center;
-  flex: 0 0 45px;
-  height: 45px;
-  border-radius: 12px;
-  background: #403526;
-  color: #e9c698;
-  font-size: 24px;
+  width: 56%;
+  height: 56%;
+  margin: auto;
+  border: 2px solid color-mix(in srgb, var(--tile-accent) 80%, #fff 20%);
+  border-radius: 50%;
+  font-size: clamp(26px, 3.2vw, 38px);
+  letter-spacing: -0.04em;
 }
-.readiness-icon.ready {
-  background: #244638;
-  color: #b5e4c5;
-  font-size: 20px;
+.tile .card-art,
+.tile .slot {
+  transform: scale(0.84);
 }
-.readiness strong {
+.tile:hover .card-art,
+.tile:hover .slot {
+  transform: scale(0.88);
+}
+.tile.selected .card-art,
+.tile.selected .slot {
+  transform: scale(1.06);
+}
+.tile-name {
+  text-align: center;
+}
+/* Labels keep clear of the scaled emblem and its ring. */
+.tile {
+  gap: 20px;
+}
+.tile:not(.selected) .tile-name {
+  transform: translateY(-12px);
+}
+.settled .tile-name {
+  transition: transform 0.15s;
+}
+.slot {
+  border-style: solid;
+  background: color-mix(in srgb, var(--tile-accent) 30%, var(--surface));
+}
+.slot::before {
+  display: none;
+}
+.disc,
+.tile.folder-tile:hover .disc,
+.tile.folder-tile.selected .disc {
+  top: 22%;
+  left: 22%;
+  width: 56%;
+}
+
+/* Menu options. */
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+}
+/* Focus shows as a highlight; the game whose files are shown keeps a bar. */
+.option:hover:not(:disabled) {
+  background: #ffffff0d;
+  color: var(--text);
+}
+.option.current {
+  background: #ffffff17;
+  color: var(--text);
+}
+.option.chosen {
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--ring);
+}
+.option:focus-visible {
+  outline: none;
+}
+/* Carousel: the selected tile stays centred and the looping row slides beneath it. */
+.carousel {
+  overflow: hidden;
+  margin-inline: calc(-1 * var(--gutter));
+  padding-inline: 0;
+}
+.carousel > .track {
+  display: flex;
+  gap: 18px;
+  width: 100%;
+  margin: 0;
+}
+.settled .carousel > .track {
+  transition: transform 0.25s ease;
+}
+.carousel > .track.snapping,
+.carousel > .track.snapping * {
+  transition: none !important;
+}
+.carousel .tile:not(.selected) {
+  opacity: 0.55;
+}
+.settled .carousel .tile {
+  transition: opacity 0.25s;
+}
+/* The selected tile and its neighbours show; a second pair, cut off hard, hints at more. */
+.carousel .tile.edge {
+  opacity: 0.4;
+  mask-image: linear-gradient(90deg, #000, transparent 45%);
+  pointer-events: none;
+}
+.carousel .tile.edge.before {
+  mask-image: linear-gradient(270deg, #000, transparent 45%);
+}
+.carousel .tile.far {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The page takes on the selected tile's accent. */
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+.app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-color: var(--accent);
+  opacity: 0.38;
+  mask-image: radial-gradient(ellipse 110% 80% at 50% 30%, #000, #0006 70%, #0003);
+}
+.app-shell.settled::before {
+  transition: background-color 0.4s;
+}
+/* Menu: no surface; the options hang centred under the tile. */
+.menu-column {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+.menu-column .options-col {
+  width: calc(var(--tile) + 84px);
+}
+.menu-column .options-col .option {
+  justify-content: center;
   font-size: 15px;
 }
-.readiness p {
-  color: #9fb1a9;
-  font-size: 12px;
-  line-height: 1.45;
-  margin: 5px 0 0;
+
+.menu-column.data {
+  gap: 0;
 }
-.primary-actions {
+.menu-column .data-games {
+  flex: 0 0 220px;
+  padding-right: 14px;
+}
+.menu-column .data-files {
+  flex: 0 1 460px;
+  min-width: 0;
+  padding-left: 14px;
+  border-left: 1px solid #ffffff1a;
+}
+@media (max-width: 760px) {
+  .menu-column.data {
+    flex-direction: column;
+  }
+  .menu-column .data-games,
+  .menu-column .data-files {
+    flex: none;
+    padding: 0;
+    border: 0;
+  }
+  .menu-column .data-files {
+    border-top: 1px solid #ffffff1a;
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+}
+.option.back {
+  color: var(--text-4);
+  font-size: 13px;
+}
+
+/* Game data: known games and their stored files. */
+
+.tree {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 30px;
+  flex-direction: column;
+  max-height: min(360px, 45vh);
+  overflow-y: auto;
+  margin-top: 4px;
 }
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px 0 calc(10px + var(--depth) * 16px);
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: default;
+}
+.tree-row:hover {
+  background: #ffffff0d;
+}
+/* The current row is faint until the tree has focus, like the games list. */
+.tree-row.current {
+  background: #ffffff0a;
+  color: var(--text);
+}
+.tree:focus-within .tree-row.current {
+  background: #ffffff17;
+}
+.tree-row:focus-visible {
+  outline: none;
+}
+.tree-icon {
+  flex: 0 0 12px;
+  color: var(--text-4);
+  text-align: center;
+}
+.tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-size {
+  color: var(--text-4);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.tree-note {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 8px 4px;
+}
+.tree-detail {
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-top: 10px;
+}
+.tree-actions {
+  display: flex;
+  gap: 8px;
+}
+.tree-actions button {
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 9px;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border: 1px solid var(--line-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+.tree-actions button:hover:not(:disabled) {
+  background: var(--surface-4);
+}
+.tree-actions button.danger {
+  color: #f1c7c0;
+  background: #3a2422;
+  border-color: #7a4a44;
+}
+.tree-actions button.danger:hover:not(:disabled) {
+  background: #4a2c29;
+}
+.tree-confirm p {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 4px 10px;
+}
+.tree-message {
+  color: var(--text-2);
+  font-size: 12px;
+  min-height: 1.4em;
+  margin: 8px 4px 0;
+}
+.hintbar {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding: 16px clamp(16px, 4vw, 56px);
+  color: var(--text-4);
+  font-size: 12px;
+}
+kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  margin-right: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-2);
+}
+@media (pointer: coarse) {
+  .hintbar {
+    display: none;
+  }
+}
+
+/* Shared buttons and save data controls. */
 .button,
 .save-actions button {
   display: inline-flex;
@@ -418,76 +626,32 @@ h1 {
   font-weight: 650;
 }
 .button.primary {
-  color: #0f2420;
-  background: #a5ddc5;
-  border: 1px solid #a5ddc5;
+  color: var(--bg);
+  background: var(--ring);
+  border: 1px solid var(--ring);
 }
 .button.primary:hover {
-  background: #c1f0d9;
+  background: #ffffff;
 }
 .button.secondary {
-  color: #d0e2d7;
-  background: #1b2b2d;
-  border: 1px solid #47605b;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border: 1px solid var(--line-strong);
 }
 .button.secondary:hover {
-  background: #263b3a;
-}
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  border-top: 1px solid #2a3b3e;
-  padding: 12px 0;
-  font-size: 12px;
-}
-.info-row span {
-  color: #899e98;
-}
-.info-row strong {
-  color: #cbdad1;
-  font-weight: 500;
-  text-align: right;
-}
-.save-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  align-items: start;
-  margin-bottom: 25px;
-}
-.save-heading h3 {
-  font-size: 17px;
-  margin: 0 0 7px;
-}
-.save-heading p,
-.help {
-  color: #9aada6;
-  line-height: 1.5;
-  font-size: 12px;
-  margin: 0;
-}
-.text-button {
-  border: 0;
-  background: none;
-  color: #aadcc9;
-  font-size: 12px;
-  padding: 2px 0;
-}
-.text-button:hover {
-  color: #d0f2df;
+  background: var(--surface-4);
 }
 .save-panel label {
   display: block;
-  color: #b3c6bc;
+  color: var(--text-2);
   font-size: 12px;
   margin-bottom: 8px;
 }
 .save-panel select {
   width: 100%;
-  background: #0e191c;
-  color: #e7f1ec;
-  border: 1px solid #445a59;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 11px 12px;
   min-height: 45px;
@@ -498,18 +662,18 @@ h1 {
   margin: 14px 0 20px;
 }
 .save-actions button {
-  color: #d8eee2;
-  background: #213735;
-  border: 1px solid #52786b;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border: 1px solid var(--line-strong);
 }
 .save-actions button:hover:not(:disabled) {
-  background: #2c4b41;
+  background: var(--surface-4);
 }
 .help {
   margin-top: 10px;
 }
 .action-message {
-  color: #b9e9cf;
+  color: var(--text-2);
   min-height: 1.4em;
   font-size: 12px;
   margin: 18px 0 0;
@@ -522,76 +686,30 @@ h1 {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-footer {
+.save-panel .file-actions {
   display: flex;
-  justify-content: space-between;
-  border-top: 1px solid #253237;
-  color: #718881;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  padding: 24px clamp(24px, 5vw, 76px);
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 0;
 }
-@media (max-width: 850px) {
-  .library-layout {
-    grid-template-columns: 1fr;
-  }
-  .shelf {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-  .section-heading,
-  .auto-detect,
-  .shelf-note {
-    grid-column: 1 / -1;
-  }
-  .game-card {
-    margin: 0;
-  }
+.save-panel .file-actions button {
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 9px;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border: 1px solid var(--line-strong);
+  font-size: 13px;
+  font-weight: 650;
 }
-@media (max-width: 620px) {
-  .topbar {
-    height: 68px;
-  }
-  .topbar-note {
-    display: none;
-  }
-  main {
-    padding-top: 36px;
-  }
-  .shelf {
-    grid-template-columns: 1fr;
-  }
-  .game-card {
-    min-height: 110px;
-  }
-  .card-art {
-    height: 82px;
-    width: 76px;
-    flex-basis: 76px;
-  }
-  .detail-topline,
-  .detail-heading,
-  .panel {
-    padding-left: 22px;
-    padding-right: 22px;
-  }
-  .detail-tabs {
-    padding: 0 22px;
-  }
-  .detail-monogram {
-    display: none;
-  }
-  .primary-actions {
-    flex-direction: column;
-  }
-  .save-actions {
-    flex-wrap: wrap;
-  }
-  footer {
-    gap: 12px;
-    flex-wrap: wrap;
-  }
+.save-panel .file-actions button:hover:not(:disabled) {
+  background: var(--surface-4);
+}
+.save-panel #save-status {
+  color: var(--text-2);
+  font-size: 12px;
+  min-height: 1.4em;
+  margin: 12px 0 0;
 }
 @media (prefers-reduced-motion: reduce) {
   *,

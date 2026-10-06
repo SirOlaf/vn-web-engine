@@ -13,6 +13,7 @@ import {mountGameViewer} from '../player/game-viewer.js';
 import {setRuntimeState, subscribeSaveBusy} from '../player/runtime-state.js';
 import {mountFullscreenControls} from '../player/fullscreen.js';
 import {BrowserPageFullscreenHost} from '../../src/platform/browser-page-fullscreen.js';
+import {rememberLastPlayed} from '../player/last-played.js';
 
 function element<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -105,6 +106,7 @@ async function ready() {
   player.setTextMode(textMode.value === 'dom' ? 'dom' : 'native');
   play.hidden = false;
   element('game-title').textContent = 'CHAOS;HEAD NOAH';
+  rememberLastPlayed('chaos-head-noah', 'CHAOS;HEAD NOAH');
   element('prompt').textContent = 'CHAOS;HEAD NOAH is ready.';
   status.textContent = `${archives.size} archives loaded. Ready to play.`;
   collapse(true);
