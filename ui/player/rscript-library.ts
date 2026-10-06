@@ -64,3 +64,42 @@ export function writeRScriptSave(
     store.update((records) => void records.set(name.toUpperCase(), bytes.slice())),
   );
 }
+
+const LIBRARY = ['library', 'rscript'];
+
+function validGame(value: unknown): value is RScriptActiveGame {
+  if (typeof value !== 'object' || value === null) return false;
+  const game = value as Partial<RScriptActiveGame>;
+  return (
+    typeof game.title === 'string' &&
+    typeof game.savePrefix === 'string' &&
+    Array.isArray(game.namespace) &&
+    game.namespace.length > 0 &&
+    game.namespace.every((part) => typeof part === 'string' && part.length > 0)
+  );
+}
+
+/** The RScript titles loaded in this browser. */
+export async function knownRScriptGames(): Promise<RScriptActiveGame[]> {
+  const store = await IndexedDbStore.open(LIBRARY);
+  try {
+    const games: RScriptActiveGame[] = [];
+    for (const bytes of (await store.snapshot()).values()) {
+      const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+      if (validGame(value)) games.push(value);
+    }
+    return games.sort((left, right) => left.title.localeCompare(right.title));
+  } finally {
+    store.close();
+  }
+}
+
+export async function rememberRScriptGame(game: RScriptActiveGame): Promise<void> {
+  const store = await IndexedDbStore.open(LIBRARY);
+  try {
+    const bytes = new TextEncoder().encode(JSON.stringify(game));
+    await store.update((records) => void records.set(game.namespace.join('\0'), bytes));
+  } finally {
+    store.close();
+  }
+}

@@ -19,8 +19,10 @@ import {mountFullscreenControls} from '../player/fullscreen.js';
 import {
   activeRScriptGame,
   rscriptPathKey,
+  rememberRScriptGame,
   rscriptSaveNamespace,
 } from '../player/rscript-library.js';
+import {rememberLastPlayed} from '../player/last-played.js';
 
 function element<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -127,7 +129,10 @@ async function loadInstallation(cached: CachedInstallation): Promise<void> {
   const namespace = rscriptSaveNamespace(apini);
   const saves = await IndexedDbStore.open(namespace);
   installation = {apini, messages, files, saves};
-  activeRScriptGame.set({title: apini.title, savePrefix: apini.savePrefix, namespace});
+  const game = {title: apini.title, savePrefix: apini.savePrefix, namespace};
+  activeRScriptGame.set(game);
+  void rememberRScriptGame(game).catch(() => undefined);
+  rememberLastPlayed('rscript', apini.title);
   document.title = `${apini.title} · VN Web Engine`;
   element('game-title').textContent = apini.title;
   element('prompt').textContent = `${apini.title} is ready.`;

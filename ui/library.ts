@@ -9,6 +9,8 @@ import type {PlayerEntry} from './players/registry.js';
 
 export interface InstallationStatus {
   ready: boolean;
+  /** A remembered folder or browser copy the player reopens on load. */
+  reopens: boolean;
   label: string;
   detail: string;
 }
@@ -23,6 +25,7 @@ export async function installationStatus(player: PlayerEntry): Promise<Installat
   ) {
     return {
       ready: true,
+      reopens: true,
       label: 'Remembered folder ready',
       detail: `${directory.name} — opens automatically in the player`,
     };
@@ -30,11 +33,13 @@ export async function installationStatus(player: PlayerEntry): Promise<Installat
   const unavailable = directory
     ? {
         ready: false,
+        reopens: true,
         label: 'Reconnect remembered folder',
         detail: `${directory.name} — open the player to allow folder access again`,
       }
     : {
         ready: false,
+        reopens: false,
         label: 'Choose a game folder',
         detail: 'Choose the game folder in the player.',
       };
@@ -43,6 +48,7 @@ export async function installationStatus(player: PlayerEntry): Promise<Installat
     if (!cached) return unavailable;
     return {
       ready: true,
+      reopens: true,
       label: 'Browser copy ready',
       detail: `${cached.files.length} ${player.installationFiles} saved in this browser`,
     };

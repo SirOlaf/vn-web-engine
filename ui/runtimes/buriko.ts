@@ -52,6 +52,7 @@ import {burikoRegistryFold} from '../../src/engines/buriko/native/registry-case.
 import {BurikoNativeText} from '../../src/engines/buriko/native/text.js';
 import {BurikoBrowserFonts} from '../../src/engines/buriko/native/font-browser.js';
 import {readGameDirectoryFonts} from '../../src/text/game-directory-fonts.js';
+import {rememberLastPlayed} from '../player/last-played.js';
 
 interface Installation extends BurikoExecutable {
   /** Keep the raw selection for handle/cache restoration, before runtime projection. */
@@ -164,6 +165,7 @@ async function selectedInstallation(installation: Installation): Promise<void> {
   selected = installation;
   activeBurikoGame.set(installation.savedGame);
   burikoTitle.set(installation.title);
+  rememberLastPlayed('buriko', installation.title);
   if (installation.metadataNotes.length !== 0)
     console.info('BGI installation metadata:', installation.metadataNotes);
 }
