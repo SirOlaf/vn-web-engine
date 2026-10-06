@@ -117,9 +117,9 @@ input:focus-visible {
 }
 /* Home screen. */
 .systembar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   height: 64px;
   padding: 0 clamp(16px, 4vw, 56px);
@@ -137,8 +137,10 @@ input:focus-visible {
 .app-shell[data-accent='rscript'] {
   --accent: #6d6a9c;
 }
+.systembar .bar-link {
+  justify-self: end;
+}
 .bar-summary {
-  flex: 1;
   min-width: 0;
   margin: 0;
   color: var(--text-3);
@@ -149,6 +151,9 @@ input:focus-visible {
   text-overflow: ellipsis;
 }
 @media (max-width: 620px) {
+  .systembar {
+    grid-template-columns: 1fr auto;
+  }
   .bar-summary {
     display: none;
   }
