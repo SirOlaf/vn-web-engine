@@ -23,6 +23,13 @@ try {
       'src/graphics/s3tc-wasm-binary.ts',
       ['-C', 'link-arg=--export=__heap_base'],
     ],
+    // Scalar: bit-identical to its TypeScript twin, also where SIMD is unavailable.
+    [
+      'emote-mesh',
+      'EMOTE_MESH_WASM_BINARY',
+      'src/native/emotedriver/runtime/mesh/wasm-binary.ts',
+      ['-C', 'link-arg=--export=__heap_base'],
+    ],
     [
       'aokana-bitmap',
       'BURIKO_BITMAP_WASM_BINARY',

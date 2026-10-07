@@ -124,7 +124,10 @@ export interface EmoteNodeView {
   /** Coordinate velocity (+0x6c..+0x74). */
   readonly velocityX: number;
   readonly velocityY: number;
-  /** Opacity 0..255 (+0x27c) and four corner colours ARGB (+0x4c..+0x58). */
+  /**
+   * Opacity 0..255 (+0x27c) and four corner colours (+0x4c..+0x58), RGBA (0x808080ff neutral),
+   * corners top-left, top-right, bottom-right, bottom-left.
+   */
   readonly opacity: number;
   readonly colors: Uint32Array;
   /** Blend mode byte of the current content (`bm`). */
@@ -168,6 +171,16 @@ export interface EmoteNodeView {
   readonly childPlayers?: readonly EmoteClipNodes[];
 }
 
+/** A clip event queued by `advance` (`+0x22c`, 12-byte entries). */
+export interface EmoteClipEvent {
+  /** 0: action (AMotionPlayer slot 1); 1: sync (slot 2). */
+  readonly type: number;
+  /** Layer label of a keyframe `act`, empty for motion `tag` actions. */
+  readonly layer: string;
+  /** Action label; empty for sync. */
+  readonly label: string;
+}
+
 /** Evaluated mesh: (columns + 1) × (rows + 1) screen positions (draw item +0x60). */
 export interface EmoteVertexGrid {
   readonly columns: number;
@@ -191,12 +204,32 @@ export interface EmoteMeshKernel {
     rows: number,
     out: Float32Array,
   ): void;
+  /**
+   * Maps `count` points (x, y pairs, in place) through a world-space patch (0x1003f680): each
+   * point is offset by (translateX, translateY), mapped to patch coordinates by the 2×2
+   * `inverse` (row-major) and evaluated on the patch.
+   */
+  deformPoints(
+    controlPoints: Float32Array,
+    inverse: Float32Array,
+    translateX: number,
+    translateY: number,
+    points: Float32Array,
+    count: number,
+  ): void;
+  /**
+   * Bilinear (columns + 1) × (rows + 1) grid over a quad (0x1002d960). `corners` holds the
+   * top-left, top-right, bottom-left and bottom-right x, y pairs.
+   */
+  subdivideQuad(corners: Float32Array, columns: number, rows: number, out: Float32Array): void;
 }
 
 /** Events a clip queues during `advance` (`+0x2ec`) and dispatches to its player (0x10033fe0). */
 export interface EmoteClipListener {
   /** Keyframe `act` label reached (AMotionPlayer slots 1 and 2 forward these). */
   action(clip: EmoteClipDriver, label: string): void;
+  /** Motion `tag` frame with `sync` reached (AMotionPlayer slot 2). */
+  sync?(clip: EmoteClipDriver): void;
 }
 
 /** What the player core drives on each clip (`MMotionPlayer`). Implemented by `clip.ts`. */
@@ -209,12 +242,14 @@ export interface EmoteClipDriver extends EmoteClipNodes {
   evaluate(): void;
   /** Dispatches events queued by `advance` (0x10033fe0). */
   dispatchEvents(listener: EmoteClipListener): void;
-  /** Player colour ARGB (`+0x150`), set by the `SetColor` tween. */
+  /** Player colour RGBA (`+0x150`, 0x808080ff neutral), set by the `SetColor` tween. */
   color: number;
   /** Root tween targets written by the player (root node +0x283, +0x288..+0x2a8). */
   setRootTransform(transform: EmoteRootTransform): void;
   /** Copies time and node state from another clip of the same motion (`AssignState`). */
   assignState(source: EmoteClipDriver): void;
+  /** Events queued by `advance` and not yet dispatched (`+0x22c`). */
+  readonly events: readonly EmoteClipEvent[];
 }
 
 export interface EmoteRootTransform {
