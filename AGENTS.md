@@ -31,6 +31,10 @@ intentional divergence from the native engines.
   media, rendering, font and input services.
 - `src/core/` – binary readers, scheduling, worker and wasm helpers.
 - `src/formats/` – format readers (archives, PE, Ogg, MPEG, PNG, BGI formats).
+- `src/native/` – browser reimplementations of native libraries (engine plugins and
+  the system DLLs they import). They compose only through each library's
+  `contract.ts`; the loader is `src/platform/native-libraries.ts`. See
+  `src/native/README.md`.
 - `src/engines/` – engine interpreters. They do not select games.
 - `ui/` – Svelte library/player/explorer pages, per-game compatibility profiles
   (`ui/game-profiles/`) and runtime wiring (`ui/runtimes/`).
