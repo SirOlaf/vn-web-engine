@@ -68,7 +68,10 @@ gl_Position.w = p.w
 For the default framebuffer use `(1, 1, 1/W, -1/H)`; when rendering into a texture
 that is sampled with D3D texture coordinates (row 0 at the top), flip with
 `(1, -1, 1/W, 1/H)`. Set `gl.frontFace(gl.CW)` without a flip and `gl.CCW` with it
-so culling and `vFace` keep D3D9's clockwise-front convention. Textures are
+so culling and `vFace` keep D3D9's clockwise-front convention. The WebGL2 device
+(`src/native/d3d9/webgl2/`) uses a shift of 63/128 pixel instead of 1/2, as Wine does:
+with exactly 1/2 the y-flip inverts the browser rasteriser's tie rule, and edges on
+pixel centres move by a row instead of following D3D's top-left fill rule. Textures are
 uploaded top row first and sampled with the D3D coordinates unchanged.
 
 Fragment shaders that read `vPos` or use `dsy` declare `uniform vec4 dx_screenFixup`:
