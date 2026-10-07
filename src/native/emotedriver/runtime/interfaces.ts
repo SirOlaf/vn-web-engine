@@ -165,3 +165,118 @@ export interface EmoteRootTransform {
   readonly scaleY: number;
   readonly mirror: boolean;
 }
+
+// ---------------------------------------------------------------------------------------
+// Player core boundaries (`MEmotePlayer`, `player-core.ts`).
+
+/**
+ * Clip members the player core needs beyond `EmoteClipDriver`. Kept separate so the clip
+ * implementation can adopt them additively; `EmoteClipDriver & EmoteClipPlayerAccess` is
+ * what the core drives.
+ */
+export interface EmoteClipPlayerAccess {
+  /** Parameter value of the clip for a variable label, 0 when unknown (0x100320b0). */
+  getVariable(label: string): number;
+  /** Root node visible flag (+0x282); `Show`/`Hide` (0x10010850/0x100108a0) write it. */
+  rootVisible: boolean;
+  /** `meshDivisionRatio` (clip +0x358, slots 9/10). */
+  meshDivisionRatio: number;
+  /** Any node dirty (+0x25), `IsModified` (0x10032950). */
+  isModified(): boolean;
+}
+
+/** Creates the clip for a motion (`MEmotePlayer` vtable[1] 0x1000f160). */
+export type EmoteClipFactory = (
+  motion: import('../../../formats/kirikiri/emote-model.js').EmoteMotion,
+) => EmoteClipDriver & EmoteClipPlayerAccess;
+
+/**
+ * `SetVariable` (0x10012510) dispatch types of the player's control binding map (`p+0x54`):
+ * 4 eye, 5 eyebrow, 6 mouth, 7 transition (player core), 8 selector.
+ */
+export type EmoteControlVariableType = 4 | 5 | 6 | 8;
+
+/**
+ * The controls the player core does not own (eye, eyebrow, mouth, selector, loop, wind, bust,
+ * hair, parts), shaped by the native call sites in `MEmotePlayer`. One instance per player,
+ * created by `EmoteControlSetFactory` from the metadata while the player loads (0x10010ee0).
+ */
+export interface EmoteControlSet {
+  /**
+   * Registers the variables of one control kind in the binding map, in the order the native
+   * loaders insert them: eye 0x10015890 (4), eyebrow 0x100171f0 (5), mouth 0x10018920 (6),
+   * selector 0x10019a50 (8). `index` is the entry index the loader stores with the binding
+   * (its position in the PSB list). The core calls 4, 5, 6, registers its own transitions (7),
+   * then calls 8; an existing label is not replaced.
+   */
+  bindVariables(type: EmoteControlVariableType, bind: (label: string, index: number) => void): void;
+  /**
+   * `SetVariable` on a bound variable (0x10012510): 4 → 0x10005460, 5 → 0x10007ce0,
+   * 6 → mouth entry `index` (`label` selects the `label` or `talkLabel` branch; 0x1000a710),
+   * 8 → 0x1000b7d0. `power` is the converted easing (`easingPower`); `queue` is `p+0x30`.
+   */
+  setVariable(
+    type: EmoteControlVariableType,
+    index: number,
+    label: string,
+    value: number,
+    frames: number,
+    power: number,
+    queue: boolean,
+  ): void;
+  /** Progress sub-step 1, eye controls `p+0xb4` (0x10017160). */
+  stepEyes(host: EmoteControlHost, frames: number): void;
+  /** Sub-step 2, eyebrow controls `p+0xc4` (0x10018890). */
+  stepEyebrows(host: EmoteControlHost, frames: number): void;
+  /** Sub-step 3, mouth controls `p+0xd4` (0x10019310). */
+  stepMouths(host: EmoteControlHost, frames: number): void;
+  /** Sub-step 4, selector controls `p+0xf4` (0x1001a770). */
+  stepSelectors(host: EmoteControlHost, frames: number): void;
+  /** Sub-step 6 (after the core's transitions), loop controls `p+0x104` (0x1001b320). */
+  stepLoops(host: EmoteControlHost, frames: number): void;
+  /** Sub-step 8 gate: wind control `p+0x138` exists and its enabled byte (+0xc) is set. */
+  windActive(): boolean;
+  /** Sub-step 8, wind (0x1000d780). */
+  stepWind(host: EmoteControlHost, frames: number): void;
+  /**
+   * Progress step 7, after the clips, only for frames ≠ 0: bust `p+0x84` (0x10013c30), hair
+   * `p+0x94` with `hairScale` then parts `p+0xa4` with `partsScale` (0x10015500).
+   */
+  stepPhysics(host: EmoteControlHost, frames: number): void;
+  /**
+   * `StartWind` (0x1001c340) when start/goal changed or no wind exists: replaces the wind
+   * control (0x1000d630). Arguments are already divided by the model scale (`p+0x1c`).
+   */
+  createWind(start: number, goal: number): void;
+  /** `StartWind` (0x1001c340) → 0x1000d690(powerMin, powerMax, speed / scale). */
+  configureWind(powerMin: number, powerMax: number, speed: number): void;
+  /** `StopWind` and invalid `StartWind` arguments: deletes the wind control (`p+0x138` = 0). */
+  destroyWind(): void;
+  /**
+   * `Skip` (0x10012190) for these controls, in native order: bust 0x10013b80, hair and parts
+   * 0x10015480, eye 0x10017020, eyebrow 0x10018760, mouth 0x10019220, selector 0x1001a680.
+   */
+  skip(): void;
+  /**
+   * `IsAnimating` (0x100108f0) for selectors, eyes, eyebrows and mouths: true when a control's
+   * tween is running or queued and its variable is not in `timelineVariables` (the track labels
+   * of all playing timelines).
+   */
+  isAnimating(timelineVariables: ReadonlySet<string>): boolean;
+  /**
+   * `AssignState` (0x1000f2a0): copies the eye, eyebrow, mouth and selector state from the
+   * entry of `source` with the same label. Bust, hair, parts and loop state are not copied.
+   */
+  assignState(source: EmoteControlSet): void;
+}
+
+/** Builds the control set of a player from its metadata (loaders in 0x10010ee0). */
+export type EmoteControlSetFactory = (
+  metadata: import('../../../formats/kirikiri/emote-metadata.js').EmoteMetadata,
+) => EmoteControlSet;
+
+/** Extra host members the player core provides (MSVC CRT `rand`). */
+export interface EmoteControlHostRandom {
+  /** MSVC CRT `rand()`: 0..0x7fff, process-wide sequence, seed 1. */
+  rand(): number;
+}
