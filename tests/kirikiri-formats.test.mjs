@@ -17,6 +17,7 @@ import {
   applyPsbKeystream,
   decryptPsbBody,
 } from '../dist/formats/kirikiri/psb-filter.js';
+import {intArray, nameTrie} from './kirikiri-psb-fixtures.mjs';
 
 class MemorySource {
   constructor(bytes) {
@@ -177,53 +178,6 @@ test('CxDec tiny key folds the masked Adler-32 and substitutes zero', () => {
   assert.equal(cxTinyKey(filter, filter.keyMask), filter.zeroKey);
   assert.equal(cxMemberName('AppConfig.tjs'), '70be707b6a772e9a371c8aa01cdfd7a9');
 });
-
-/** PSB name trie: node = charset[parent] + byte; each name ends in a terminator node (byte 0). */
-function nameTrie(names) {
-  const tree = [0],
-    charset = [1],
-    children = [new Map()],
-    used = new Set([0]);
-  // Build a plain trie first, then place children with a free base per node.
-  const terminal = [];
-  for (const name of names) {
-    let node = 0;
-    for (const byte of [...new TextEncoder().encode(name), 0]) {
-      if (!children[node].has(byte)) {
-        children.push(new Map());
-        children[node].set(byte, children.length - 1);
-      }
-      node = children[node].get(byte);
-    }
-    terminal.push(node);
-  }
-  const placed = new Map([[0, 0]]),
-    queue = [0];
-  while (queue.length) {
-    const logical = queue.shift(),
-      physical = placed.get(logical),
-      kids = [...children[logical]];
-    if (!kids.length) continue;
-    let base = 1;
-    while (kids.some(([byte]) => used.has(base + byte))) base++;
-    charset[physical] = base;
-    for (const [byte, child] of kids) {
-      const at = base + byte;
-      used.add(at);
-      tree[at] = physical;
-      placed.set(child, at);
-      queue.push(child);
-    }
-  }
-  const size = Math.max(...used) + 1;
-  for (let i = 0; i < size; i++) {
-    tree[i] ??= 0;
-    charset[i] ??= 0;
-  }
-  return {charset, tree, indices: terminal.map((t) => placed.get(t))};
-}
-const intArray = (values) =>
-  concat(Uint8Array.of(0x0e), u16(values.length), Uint8Array.of(0x10), ...values.map(u32));
 
 /** A version-2 PSB with names, scalars, strings, a list, an object and one resource. */
 function samplePsb() {
