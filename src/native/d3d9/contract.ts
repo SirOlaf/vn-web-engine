@@ -1,3 +1,5 @@
+import {defineNativeContract} from '../../platform/native-libraries.js';
+
 /**
  * `d3d9.dll` interfaces used by client libraries. Members keep their COM slot numbers; the
  * set grows as clients are lifted. A device is shared by every library that receives it
@@ -15,6 +17,7 @@ export const D3DERR_DEVICENOTRESET = 0x88760869 | 0;
 export const D3DERR_INVALIDCALL = 0x8876086c | 0;
 export const D3DERR_NOTAVAILABLE = 0x8876086a | 0;
 export const E_OUTOFMEMORY = 0x8007000e | 0;
+export const D3DERR_NOTFOUND = 0x88760866 | 0;
 
 /** `D3DFORMAT` values used by clients. */
 export const D3DFMT_A8R8G8B8 = 21;
@@ -33,8 +36,29 @@ export const D3DFMT_D24S8 = 75;
 export const D3DPOOL_DEFAULT = 0;
 export const D3DPOOL_MANAGED = 1;
 export const D3DUSAGE_RENDERTARGET = 1;
+export const D3DUSAGE_DYNAMIC = 0x200;
+
+/** `D3DLOCK_*` flags. */
+export const D3DLOCK_READONLY = 0x10;
+export const D3DLOCK_DISCARD = 0x2000;
+export const D3DLOCK_NO_DIRTY_UPDATE = 0x8000;
 
 export const D3DDEVTYPE_HAL = 1;
+export const D3DDEVTYPE_REF = 2;
+export const D3DADAPTER_DEFAULT = 0;
+/** `D3D_SDK_VERSION` of the Direct3D 9 headers (31 for the pre-9.0c SDK). */
+export const D3D_SDK_VERSION = 32;
+
+/** `D3DCREATE_*` behaviour flags. */
+export const D3DCREATE_FPU_PRESERVE = 0x2;
+export const D3DCREATE_MULTITHREADED = 0x4;
+export const D3DCREATE_SOFTWARE_VERTEXPROCESSING = 0x20;
+export const D3DCREATE_HARDWARE_VERTEXPROCESSING = 0x40;
+export const D3DCREATE_MIXED_VERTEXPROCESSING = 0x80;
+
+export const D3DSWAPEFFECT_DISCARD = 1;
+export const D3DSWAPEFFECT_FLIP = 2;
+export const D3DSWAPEFFECT_COPY = 3;
 export const D3DRTYPE_TEXTURE = 3;
 
 /** `D3DTRANSFORMSTATETYPE`. */
@@ -245,6 +269,47 @@ interface IUnknown {
   release(): number;
 }
 
+/**
+ * `D3DPRESENT_PARAMETERS` without the window handle, which `createDevice` receives as a
+ * `D3dDeviceWindow`. A zero width or height in windowed mode takes the window's size.
+ */
+export interface D3dPresentParameters {
+  readonly backBufferWidth: number;
+  readonly backBufferHeight: number;
+  readonly backBufferFormat: number;
+  readonly backBufferCount: number;
+  readonly multiSampleType: number;
+  readonly multiSampleQuality: number;
+  readonly swapEffect: number;
+  readonly windowed: boolean;
+  readonly enableAutoDepthStencil: boolean;
+  readonly autoDepthStencilFormat: number;
+  readonly flags: number;
+  readonly fullScreenRefreshRateInHz: number;
+  readonly presentationInterval: number;
+}
+
+/**
+ * The window a device presents to (`hFocusWindow` and the device window). On the web it is
+ * a WebGL2 context whose default framebuffer is the back buffer. The library that owns the
+ * canvas (the compositor) implements it and passes it to `IDirect3D9.createDevice`; the device
+ * then owns the context's GL state.
+ *
+ * This is the one host object that crosses the d3d9 contract. A Wasm-backed implementation
+ * keeps it on the JavaScript side of its boundary and refers to it by handle.
+ */
+export interface D3dDeviceWindow {
+  /**
+   * The context. It is created with `depth: true, stencil: true` when the presentation asks
+   * for an automatic depth-stencil surface.
+   */
+  readonly context: WebGL2RenderingContext;
+  /** Sizes the back buffer (the drawing buffer) to the presentation size. */
+  setBackBufferSize(width: number, height: number): void;
+  /** The adapter's display mode: the desktop mode for a windowed device. */
+  displayMode(): D3dDisplayMode;
+}
+
 /** `IDirect3D9`. */
 export interface IDirect3D9 extends IUnknown {
   /** Slot 10. */
@@ -256,6 +321,17 @@ export interface IDirect3D9 extends IUnknown {
     resourceType: number,
     checkFormat: number,
   ): number;
+  /**
+   * Slot 16. `window` stands for `hFocusWindow` and `presentation.hDeviceWindow`. The device
+   * holds a reference to this `IDirect3D9`.
+   */
+  createDevice(
+    adapter: number,
+    deviceType: number,
+    window: D3dDeviceWindow,
+    behaviorFlags: number,
+    presentation: D3dPresentParameters,
+  ): D3dResult<IDirect3DDevice9>;
 }
 
 /** `IDirect3DSurface9`. */
@@ -289,6 +365,11 @@ export interface IDirect3DDevice9 extends IUnknown {
   getDeviceCaps(): D3dResult<D3dCaps>;
   /** Slot 8. */
   getDisplayMode(swapChain: number): D3dResult<D3dDisplayMode>;
+  /**
+   * Slot 16. Restores a lost device, or changes the presentation. Every `D3DPOOL_DEFAULT`
+   * resource must be released first. All states return to their defaults.
+   */
+  reset(presentation: D3dPresentParameters): number;
   /** Slot 23. */
   createTexture(
     width: number,
@@ -371,3 +452,11 @@ export interface IDirect3DDevice9 extends IUnknown {
   /** Slot 109. */
   setPixelShaderConstantF(register: number, data: Float32Array, count: number): number;
 }
+
+/** `d3d9.dll` exports. */
+export interface D3d9Exports {
+  /** `Direct3DCreate9`. Null when `sdkVersion` is not one this runtime accepts. */
+  direct3DCreate9(sdkVersion: number): IDirect3D9 | null;
+}
+
+export const D3D9 = defineNativeContract<D3d9Exports>('d3d9.dll', '1');

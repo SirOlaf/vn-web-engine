@@ -65,7 +65,7 @@ that. Engine and library code do not.
 
 ## Libraries
 
-| Library           | Contract                         | Implementation | Notes                                              |
-| ----------------- | -------------------------------- | -------------- | -------------------------------------------------- |
-| `emotedriver.dll` | `emotedriver/contract.ts`        | none yet       | E-mote D3D runtime; `IEmoteDevice`, `IEmotePlayer` |
-| `d3d9.dll`        | `d3d9/contract.ts` (device only) | none yet       | `IDirect3DDevice9` members used by clients         |
+| Library           | Contract                  | Implementation | Notes                                              |
+| ----------------- | ------------------------- | -------------- | -------------------------------------------------- |
+| `emotedriver.dll` | `emotedriver/contract.ts` | none yet       | E-mote D3D runtime; `IEmoteDevice`, `IEmotePlayer` |
+| `d3d9.dll`        | `d3d9/contract.ts`        | `d3d9/webgl2/` | Direct3D 9 device on WebGL2; see `d3d9/README.md`  |
