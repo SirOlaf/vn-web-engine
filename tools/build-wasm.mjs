@@ -16,6 +16,13 @@ try {
       'src/formats/mpeg1/wasm-binary.ts',
       ['-C', 'target-feature=+simd128'],
     ],
+    // Scalar: the DXT5 fallback must run where SIMD is unavailable.
+    [
+      's3tc',
+      'S3TC_WASM_BINARY',
+      'src/graphics/s3tc-wasm-binary.ts',
+      ['-C', 'link-arg=--export=__heap_base'],
+    ],
     [
       'aokana-bitmap',
       'BURIKO_BITMAP_WASM_BINARY',
