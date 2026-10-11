@@ -104,7 +104,13 @@ export class EmoteClipUnsupportedError extends Error {
  * out-of-range read as the last frame.
  */
 export function loadHeader(slot: FrameSlot, frames: readonly EmoteFrame[], index: number): void {
-  const frame = frames[Math.min(Math.max(index, 0), frames.length - 1)]!;
+  // A layer without frames reads past the frame vector natively (the seek clamps with
+  // `min(index, count - 2)` unsigned); no shipped file has one. It loads as an empty frame.
+  const frame = frames[Math.min(Math.max(index, 0), frames.length - 1)] ?? {
+    time: 0,
+    type: 0,
+    content: null,
+  };
   slot.coordCurve = slot.colorCurve = slot.angleCurve = slot.zoomCurve = slot.slantCurve = null;
   slot.meshCurve = null;
   slot.index = index;

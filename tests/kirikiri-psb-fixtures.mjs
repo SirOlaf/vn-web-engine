@@ -160,3 +160,238 @@ export function buildPsb(root) {
     rootBytes,
   );
 }
+
+// E-mote fixtures. Layer types: 0 image, 2 group, 12 stencil composite.
+
+const vec = (x, y, z = 0) => ({x, y, z});
+const layer = (fields) => ({
+  label: 'layer',
+  parameterize: null,
+  frameList: [],
+  inheritMask: 2044,
+  transformOrder: [0, 3, 2, 1],
+  type: 2,
+  coordinate: 0,
+  joinTarget: 1,
+  groundCorrection: 0,
+  meshTransform: 0,
+  children: [],
+  exportSelf: 1,
+  metadata: null,
+  ...fields,
+});
+const bp = Array.from({length: 32}, (_, i) => i / 8);
+
+/** A small `win`-spec E-mote tree with every block the D3D runtime requires. */
+export function emoteWinTree() {
+  return {
+    id: 'motion',
+    label: 'template',
+    spec: 'win',
+    version: f32(3.03),
+    screenSize: {width: 800, height: 1080, originX: 0, originY: 0},
+    stereovisionProfile: {fov: f32(0.6)},
+    source: {
+      tex: {
+        type: 0,
+        metadata: null,
+        texture: {
+          type: 'DXT5',
+          width: 256,
+          height: 128,
+          truncated_width: 256,
+          truncated_height: 128,
+          pixel: resource(Uint8Array.of(1, 2, 3, 4)),
+          mipMapLevel: 2,
+          mipMap: [{width: 128, height: 64, pixel: resource(Uint8Array.of(5, 6))}],
+        },
+        icon: {
+          eye: {left: 4, top: 8, width: 32, height: 16, originX: 16, originY: f32(7.5), attr: 1},
+        },
+      },
+    },
+    object: {
+      all_parts: {
+        type: 0,
+        metadata: null,
+        motion: {
+          base: {
+            type: 0,
+            metadata: null,
+            variable: [],
+            priority: [{time: 0, type: 1, content: [3, 2, 1]}],
+            tag: [],
+            loopTime: -1,
+            lastTime: 61,
+            bounds: {left: 0, top: 0, right: 10, bottom: 20},
+            parameter: [
+              {
+                id: 'head_LR',
+                enabled: 1,
+                discretization: 0,
+                rangeBegin: -30,
+                rangeEnd: 30,
+                division: 60,
+              },
+            ],
+            parameterize: 0,
+            layerIndexMap: {head: 1},
+            layer: [
+              layer({
+                label: 'root',
+                parameterize: 0,
+                children: [
+                  layer({
+                    label: 'head',
+                    type: 0,
+                    objTriPriority: 2,
+                    stencilType: 5,
+                    meshTransform: 1,
+                    meshSyncChildMask: 8,
+                    meshDivision: 20,
+                    meshCombine: 1,
+                    frameList: [
+                      {time: 0, type: 0},
+                      {
+                        time: 30,
+                        type: 3,
+                        content: {
+                          mask: 0x2000000 | 0x200 | 0x2,
+                          src: 'tex',
+                          icon: 'eye',
+                          coord: [1, f32(2.5), 0],
+                          color: [1, 2, 3, 4],
+                          mesh: {bp, cc: null},
+                          // Outside the mask: present in data, not read.
+                          ox: 9,
+                        },
+                      },
+                      {
+                        time: 61,
+                        type: 2,
+                        content: {mask: 0x20000, src: 'tex', icon: 'eye', bm: 0, mesh: {bp: null}},
+                      },
+                    ],
+                  }),
+                  layer({
+                    label: 'mask',
+                    type: 12,
+                    stencilCompositeMaskLayerList: ['head'],
+                    frameList: [{time: 0, type: 2, content: {mask: 0, src: 'tex', icon: 'eye'}}],
+                  }),
+                ],
+              }),
+            ],
+          },
+        },
+      },
+    },
+    metadata: {
+      format: 'emote',
+      version: 1,
+      base: {chara: 'all_parts', motion: 'base'},
+      mirror: 0,
+      scale: 1,
+      editLock: 0,
+      bustControl: [
+        {
+          enabled: 1,
+          label: 'bust',
+          param: {op: vec(0, 0), p: vec(0, f32(9.6)), pv: vec(0, 0), ofs: f32(9.6)},
+          gravity: f32(0.3),
+          spring: f32(0.03125),
+          friction: f32(0.125),
+          scale_x: 1,
+          scale_y: 2,
+          baseLayer: 'center_bust',
+          var_lr: 'bust_LR',
+          var_ud: 'bust_UD',
+        },
+      ],
+      hairControl: [
+        {
+          enabled: 1,
+          param: {
+            op: vec(0, 0),
+            ofs: f32(-53.9),
+            bendR: f32(0.36),
+            bendS: 0,
+            bp: [vec(0, 64), vec(0, 112)],
+            p: [vec(0, 118), vec(0, 166)],
+            pv: [vec(0, 0), vec(0, 0)],
+          },
+          gravity: f32(0.2),
+          friction_x: f32(0.03125),
+          friction_y: f32(0.03125),
+          b_rate: f32(0.0037),
+          v_bound: f32(0.5),
+          ud_eft: 0,
+          bend_spd: f32(0.3927),
+          bend_vol: 3,
+          length: [64, 48],
+          scale_x: [f32(0.75), f32(0.25)],
+          scale_y: [2, 3],
+          baseLayer: 'center_fronthair',
+          var_lr: 'hair_LR',
+          var_lrm: 'hair_LR_M',
+          var_ud: 'hair_UD',
+        },
+      ],
+      // Disabled entries are skipped without reading their other keys.
+      partsControl: [{enabled: 0, label: 'spare'}],
+      eyeControl: [
+        {
+          enabled: 1,
+          label: 'face_eye_open',
+          beginFrame: 0,
+          endFrame: 10,
+          blinkIntervalMin: 30,
+          blinkIntervalMax: 180,
+          blinkFrameCount: 16,
+          blinkEnabled: 1,
+          edge: [
+            [-10, 20],
+            [30, 30],
+          ],
+          node: [[5, 30]],
+        },
+      ],
+      eyebrowControl: [],
+      mouthControl: [{enabled: 1, label: 'face_mouth', talkLabel: 'face_talk', beginFrame: 0}],
+      transitionControl: [{enabled: 1, label: 'head_LR'}],
+      clampControl: [
+        {
+          enabled: 1,
+          label: 'head',
+          type: 0,
+          var_lr: 'head_LR',
+          var_ud: 'head_UD',
+          min: -30,
+          max: 30,
+        },
+      ],
+      loopControl: [],
+      mirrorControl: {variableMatchList: ['_LR']},
+      timelineControl: [
+        {
+          label: 'idle',
+          diff: 1,
+          loopBegin: 0,
+          loopEnd: 61,
+          lastTime: -1,
+          variableList: [
+            {
+              label: 'head_LR',
+              frameList: [
+                {time: 0, type: 2, content: {value: -5, easing: 0}},
+                {time: 31, type: 0},
+                {time: 45, type: 2, content: {value: 12, easing: -1}},
+              ],
+            },
+          ],
+        },
+      ],
+      variableList: [{label: 'head_LR', frameList: [{label: 'left', frame: -30}]}],
+    },
+  };
+}
