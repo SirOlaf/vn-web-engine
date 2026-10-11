@@ -39,6 +39,18 @@ export interface EmoteControlHost {
   random(): number;
   /** Wind state (`p+0x138`); null when stopped. */
   readonly wind: EmoteWindState | null;
+  /**
+   * Physics base position of a layer (inside 0x10012210): the node found by label in the
+   * main clip (`p+0x8`, 0x10033e10/0x10033f40) when its `type` (+0x18) is 1 and its shape
+   * record (+0x2dc) has kind 0; returns the record's point (+0x4, +0x8). Null otherwise, in
+   * which case the physics keeps the previous base position. Absent: always null.
+   */
+  shapePoint?(label: string): {readonly x: number; readonly y: number} | null;
+  /** Root node coordinate (+0x288, +0x28c) of the main clip, read with `shapePoint` (0). */
+  readonly rootX?: number;
+  readonly rootY?: number;
+  /** `p+0x20`: 1 / (`SetScale` scale · metadata `scale`) (default 1). */
+  readonly inverseScale?: number;
 }
 
 /** `StartWind` parameters and the wind control's running state (0x1001c340, 0x1000d780). */
