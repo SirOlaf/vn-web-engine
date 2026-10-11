@@ -189,6 +189,16 @@ export class EmotePlayerCore {
       get bustScale() {
         return self.bustScale;
       },
+      shapePoint: (label) => self.mainClip.shapePoint?.(label) ?? null,
+      get rootX() {
+        return self.root.x;
+      },
+      get rootY() {
+        return self.root.y;
+      },
+      get inverseScale() {
+        return self.inverseScale;
+      },
       random: () => crtRand() / 0x8000,
       rand: crtRand,
       get wind() {
@@ -266,19 +276,25 @@ export class EmotePlayerCore {
     const s = this.scaleTween.step(0)[0]!;
     this.inverseScale = f32(1 / (this.modelScale * s));
 
-    this.controls = this.createControls(md);
+    // 0x100193d0 runs before the selector loader 0x10019a50, which resolves its options'
+    // transitions by label, so the transition tweens exist before the controls are built.
+    const transitionIndex: number[] = [];
+    md.transitionControl.forEach((entry, index) => {
+      if (!entry.enabled) return;
+      transitionIndex.push(index);
+      this.transitions.push({label: entry.label, tween: new EmoteTween(1)});
+    });
+    this.controls = this.createControls(md, {
+      transition: (label) => this.transitions.find((t) => t.label === label)?.tween ?? null,
+    });
     const bind = (type: EmoteControlVariableType | 7) => (label: string, index: number) => {
       if (!this.bindings.has(label)) this.bindings.set(label, {type, index});
     };
     this.controls.bindVariables(4, bind(4));
     this.controls.bindVariables(5, bind(5));
     this.controls.bindVariables(6, bind(6));
-    // 0x100193d0: the binding index is the position in the PSB list.
-    md.transitionControl.forEach((entry, index) => {
-      if (!entry.enabled) return;
-      bind(7)(entry.label, index);
-      this.transitions.push({label: entry.label, tween: new EmoteTween(1)});
-    });
+    // The binding index is the position in the PSB list.
+    this.transitions.forEach((t, i) => bind(7)(t.label, transitionIndex[i]!));
     this.controls.bindVariables(8, bind(8));
     // 0x1001b8c0.
     for (const c of md.clampControl) {

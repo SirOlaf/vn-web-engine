@@ -69,6 +69,12 @@ export interface EmoteClipNodes {
   /** Node index by layer label (`layerIndexMap`), or -1. */
   nodeIndex(label: string): number;
   readonly nodes: readonly EmoteNodeView[];
+  /**
+   * Physics base position (inside 0x10012210): the point (+0x4, +0x8) of the shape record
+   * (+0x2dc) of the node with this label when its `type` is 1 and the record kind is 0;
+   * otherwise null. Read by `EmoteControlHost.shapePoint`.
+   */
+  shapePoint?(label: string): {readonly x: number; readonly y: number} | null;
 
   // Draw-list fields read by the renderer (0x10044d70). Optional members default as noted.
   /**
@@ -328,7 +334,17 @@ export interface EmoteControlSet {
 /** Builds the control set of a player from its metadata (loaders in 0x10010ee0). */
 export type EmoteControlSetFactory = (
   metadata: import('../../../formats/kirikiri/emote-metadata.js').EmoteMetadata,
+  links: EmoteControlLinks,
 ) => EmoteControlSet;
+
+/** Player-owned objects controls refer to while loading. */
+export interface EmoteControlLinks {
+  /** Transition control (`p+0xe4`) by label, for selector options (0x10019a50). */
+  transition(label: string): EmoteSelectorTransition | null;
+}
+
+/** What a selector option drives: a transition tween (`EmoteTween`). */
+export type EmoteSelectorTransition = import('./controls/selector.js').EmoteSelectorTransition;
 
 /** Extra host members the player core provides (MSVC CRT `rand`). */
 export interface EmoteControlHostRandom {
