@@ -152,16 +152,11 @@ export class PEmoteDevice implements IEmoteDevice {
 
   /**
    * Slot 18, 0x10001440 → PEmotePlayer ctor 0x10001880. Natively `CreatePlayer(count,
-   * const uint8_t** data, const unsigned long* sizes, IEmotePlayer**)`: the first argument
-   * is the number of motion files. Each file is decrypted (`StructCryptFilter`, key
-   * "742877301") and its sources loaded into the new player's renderer (0x1002bb30); the
-   * player core is built on the last file. `data` may be a list of `count` files.
+   * const uint8_t** data, const unsigned long* sizes, IEmotePlayer**)`. Each file is decrypted
+   * (`StructCryptFilter`, key "742877301") and its sources loaded into the new player's
+   * renderer (0x1002bb30); the player core is built on the last file.
    */
-  createPlayerWithFlag(
-    flag: number,
-    data: Uint8Array | readonly Uint8Array[],
-  ): IEmotePlayer | null {
-    const files = data instanceof Uint8Array ? [data] : data.slice(0, flag);
+  createPlayers(files: readonly Uint8Array[]): IEmotePlayer | null {
     if (files.length === 0) return null;
     const key = EMOTE_PSB_KEYS.get(EMOTEDRIVER_SHA256)!;
     const renderer = new EmoteMotionRenderer(this.core);
@@ -171,12 +166,15 @@ export class PEmoteDevice implements IEmoteDevice {
       renderer.loadModelSources(model);
       models.push(model);
     }
-    return this.createPlayerCore(this, models[models.length - 1]!, flag, {renderer, models});
+    return this.createPlayerCore(this, models[models.length - 1]!, files.length, {
+      renderer,
+      models,
+    });
   }
 
   /** Slot 19, 0x10001420: `CreatePlayer(1, &data, &size)`. */
   createPlayer(data: Uint8Array): IEmotePlayer | null {
-    return this.createPlayerWithFlag(1, data);
+    return this.createPlayers([data]);
   }
 
   /** Slot 20, 0x10001400 → 0x100559e0. */
@@ -185,11 +183,10 @@ export class PEmoteDevice implements IEmoteDevice {
   }
 
   /**
-   * Slot 21, 0x10001410: core +0x3b4, the pixelate source texture (an `IDirect3DTexture9*`
-   * the compositor sets before Render; cleared after each Render). Numbers carry no texture
-   * across this boundary; any number clears it.
+   * Slot 21, 0x10001410: core +0x3b4, the pixelate source texture the compositor sets before
+   * Render; cleared after each Render.
    */
-  setCore3b4(value: number | IDirect3DTexture9 | null): void {
-    this.core.pixelateSource = typeof value === 'number' || value === null ? null : value;
+  setPixelateSource(texture: IDirect3DTexture9 | null): void {
+    this.core.pixelateSource = texture;
   }
 }

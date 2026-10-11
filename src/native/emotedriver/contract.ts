@@ -1,5 +1,5 @@
 import {defineNativeContract} from '../../platform/native-libraries.js';
-import type {IDirect3DDevice9} from '../d3d9/contract.js';
+import type {IDirect3DDevice9, IDirect3DTexture9} from '../d3d9/contract.js';
 
 /**
  * `emotedriver.dll`: the Direct3D E-mote runtime. It has no script bindings; a compositor
@@ -64,16 +64,21 @@ export interface IEmoteDevice {
   /** Slot 17. Lowers the texture size limit; never raises it. */
   setMaxTextureSize(width: number, height: number): void;
   /**
-   * Slot 18. Creates a player for a PSB file image. The caller keeps `data` unchanged while
-   * any player created from it, or cloned from such a player, exists.
+   * Slot 18, natively `CreatePlayer(count, const uint8_t** data, const unsigned long* sizes,
+   * IEmotePlayer**)`. Creates one player from `files.length` PSB file images: the sources of
+   * every file are loaded and the motion comes from the last one. The caller keeps the
+   * images unchanged while any player created from them, or cloned from such a player, exists.
    */
-  createPlayerWithFlag(flag: number, data: Uint8Array): IEmotePlayer | null;
-  /** Slot 19. `createPlayerWithFlag(1, data)`. */
+  createPlayers(files: readonly Uint8Array[]): IEmotePlayer | null;
+  /** Slot 19. `createPlayers([data])`. */
   createPlayer(data: Uint8Array): IEmotePlayer | null;
   /** Slot 20. Releases device-dependent resources; players skip drawing until the device is back. */
   onDeviceLost(): void;
-  /** Slot 21. Sets core +0x3b4; its reader is not yet identified. */
-  setCore3b4(value: number): void;
+  /**
+   * Slot 21. Pixelate source (core +0x3b4): the texture blend-mode-6 items sample, set by the
+   * compositor before `render` and cleared after each `render`.
+   */
+  setPixelateSource(texture: IDirect3DTexture9 | null): void;
 }
 
 /** `IEmotePlayer`, concrete vtable 0x1007174c. */

@@ -11,6 +11,7 @@ import {
   D3DUSAGE_DYNAMIC,
   D3DUSAGE_RENDERTARGET,
   type D3dDeviceWindow,
+  type D3dDisplayMode,
   type D3dPresentParameters,
   type D3dResult,
   type IDirect3DDevice9,
@@ -25,6 +26,7 @@ const displayFormats = new Set([D3DFMT_X8R8G8B8, D3DFMT_R5G6B5, D3DFMT_X1R5G5B5]
 /** `IDirect3D9` for one WebGL2 adapter. */
 export class WebGl2Direct3D implements DeviceParent {
   private references = 1;
+  private lastWindow: D3dDeviceWindow | null = null;
 
   constructor(readonly adapter: WebGl2Adapter) {}
 
@@ -35,6 +37,12 @@ export class WebGl2Direct3D implements DeviceParent {
   release(): number {
     if (this.references === 0) return 0;
     return --this.references;
+  }
+
+  getAdapterDisplayMode(adapter: number): D3dResult<D3dDisplayMode> {
+    if (adapter !== D3DADAPTER_DEFAULT) return {hr: D3DERR_INVALIDCALL, value: null};
+    const mode = this.adapter.displayMode?.() ?? this.lastWindow?.displayMode() ?? null;
+    return mode === null ? {hr: D3DERR_NOTAVAILABLE, value: null} : {hr: D3D_OK, value: mode};
   }
 
   checkDeviceFormat(
@@ -73,6 +81,7 @@ export class WebGl2Direct3D implements DeviceParent {
     if (deviceType !== D3DDEVTYPE_HAL) return {hr: D3DERR_NOTAVAILABLE, value: null};
     if (window.context.isContextLost()) return {hr: D3DERR_NOTAVAILABLE, value: null};
     if (!WebGl2Device.supports(window, presentation)) return {hr: D3DERR_NOTAVAILABLE, value: null};
+    this.lastWindow = window;
     return {hr: D3D_OK, value: new WebGl2Device(this, window, presentation, behaviorFlags)};
   }
 }

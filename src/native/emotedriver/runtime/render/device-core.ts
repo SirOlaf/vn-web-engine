@@ -172,11 +172,6 @@ export interface EmoteFormatSupport {
   dxt5: boolean;
 }
 
-/** `IDirect3D9` slot 8, pending in the d3d9 contract. */
-type IDirect3D9WithAdapterMode = IDirect3D9 & {
-  getAdapterDisplayMode?(adapter: number): D3dResult<D3dDisplayMode>;
-};
-
 /** Uniform rounding of 0x10027fa0: half away from zero. */
 function roundHalfAway(x: number): number {
   return x >= 0 ? Math.floor(x + 0.5) : Math.ceil(x - 0.5);
@@ -348,13 +343,8 @@ export class EmoteDeviceCore {
     }
     const d3d = device.getDirect3D();
     if (d3d.hr === D3D_OK && d3d.value !== null) {
-      // Natively `IDirect3D9::GetAdapterDisplayMode(0, &mode)` (slot 8), which the d3d9
-      // contract does not carry yet; the device's own display mode is the same adapter mode.
-      const adapter = d3d.value as IDirect3D9WithAdapterMode;
-      const display =
-        adapter.getAdapterDisplayMode !== undefined
-          ? adapter.getAdapterDisplayMode(0)
-          : device.getDisplayMode(0);
+      // `IDirect3D9::GetAdapterDisplayMode(0, &mode)` (slot 8).
+      const display = d3d.value.getAdapterDisplayMode(0);
       if (display.hr === D3D_OK && display.value !== null) {
         const check = (format: number): boolean =>
           d3d.value!.checkDeviceFormat(

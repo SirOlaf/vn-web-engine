@@ -140,6 +140,10 @@ function recordingDevice({
         value: {
           addRef: () => 1,
           release: () => (rec('d3d.release'), 0),
+          getAdapterDisplayMode: (adapter) => (
+            rec('getAdapterDisplayMode', adapter),
+            {hr: 0, value: {width: 800, height: 600, refreshRate: 60, format: 22}}
+          ),
           checkDeviceFormat: (...args) => (
             rec('checkDeviceFormat', ...args),
             formats.includes(args[5]) ? 0 : -1
@@ -327,7 +331,7 @@ test('device init: caps, format checks, shader level and render-target probe', (
   assert.deepEqual(device.log, [
     ['getDeviceCaps'],
     ['getDirect3D'],
-    ['getDisplayMode', 0],
+    ['getAdapterDisplayMode', 0],
     ...[28, 50, 51, 25, 26, 23, 0x31545844, 0x33545844, DXT5].map((format) => [
       'checkDeviceFormat',
       0,
@@ -375,9 +379,9 @@ test('IEmoteDevice options follow the core fields', () => {
   assert.equal(emote.getPixelateDivision(), 100);
   assert.equal(emote.getMipMapEnabled(), true);
   const source = {id: 'src', addRef: () => 1, release: () => 0};
-  emote.setCore3b4(source);
+  emote.setPixelateSource(source);
   assert.equal(emote.core.pixelateSource, source);
-  emote.setCore3b4(0);
+  emote.setPixelateSource(null);
   assert.equal(emote.core.pixelateSource, null);
 
   emote.core.pixelateSource = source;

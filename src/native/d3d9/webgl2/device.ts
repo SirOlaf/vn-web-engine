@@ -91,11 +91,20 @@ export interface WebGl2Adapter {
   readonly s3tc: boolean;
   /** Maximum anisotropy (1 without `EXT_texture_filter_anisotropic`). */
   readonly maxAnisotropy: number;
+  /**
+   * Desktop mode reported by `GetAdapterDisplayMode`. Without it the adapter reports the mode
+   * of the window of its most recently created device.
+   */
+  readonly displayMode?: () => D3dDisplayMode;
 }
 
-export function describeWebGl2Adapter(gl: WebGL2RenderingContext): WebGl2Adapter {
+export function describeWebGl2Adapter(
+  gl: WebGL2RenderingContext,
+  displayMode?: () => D3dDisplayMode,
+): WebGl2Adapter {
   const anisotropic = gl.getExtension('EXT_texture_filter_anisotropic');
   return {
+    ...(displayMode === undefined ? {} : {displayMode}),
     maxTextureSize: Number(gl.getParameter(GL.MAX_TEXTURE_SIZE)) || 4096,
     s3tc: s3tcExtension(gl) !== null,
     maxAnisotropy: anisotropic

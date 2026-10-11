@@ -312,6 +312,8 @@ export interface D3dDeviceWindow {
 
 /** `IDirect3D9`. */
 export interface IDirect3D9 extends IUnknown {
+  /** Slot 8. The adapter's current desktop mode. */
+  getAdapterDisplayMode(adapter: number): D3dResult<D3dDisplayMode>;
   /** Slot 10. */
   checkDeviceFormat(
     adapter: number,
