@@ -57,6 +57,21 @@ export interface EmoteClipNodes {
   /** Node index by layer label (`layerIndexMap`), or -1. */
   nodeIndex(label: string): number;
   readonly nodes: readonly EmoteNodeView[];
+
+  // Draw-list fields read by the renderer (0x10044d70). Optional members default as noted.
+  /**
+   * +0x194: draw order, node indices of nodes 1..n−1 (the root excluded); the renderer walks
+   * it in reverse. Default: 1..n−1 in index order.
+   */
+  readonly drawOrder?: readonly number[];
+  /** +0x150: clip colour, RGBA (0x808080ff neutral). Default neutral. */
+  readonly color?: number;
+  /** +0x1b4: secondary sort key of the clip's draw items (float; default 0). */
+  readonly drawPriority?: number;
+  /** +0x2ac: indices of nodes with `stencilType & 4` (composite masks). */
+  readonly stencilCompositeNodes?: readonly number[];
+  /** +0x111: the clip adds nothing to the draw list (default false). */
+  readonly drawSuppressed?: boolean;
 }
 
 /**
@@ -105,6 +120,34 @@ export interface EmoteNodeView {
   readonly grid: EmoteVertexGrid | null;
   /** Nested clip for motion-reference and child-player nodes (types 3 and 4), or null. */
   readonly child: EmoteClipNodes | null;
+
+  // Draw-list fields read by the renderer (0x10044d70). Optional members default as noted.
+  /** +0x255: shown this frame; the draw-list walk skips nodes without it (default `visible`). */
+  readonly shown?: boolean;
+  /** +0x85: hidden; becomes the draw item's skip byte (default false). */
+  readonly hidden?: boolean;
+  /** +0x90: renderer texture index (`EmoteMotionRenderer.textureIndexOf(source)`). */
+  readonly textureIndex?: number;
+  /** +0x94: draw flags (bit 0 translucent, bit 1 opaque colour, bit 2 protect). */
+  readonly drawFlags?: number;
+  /** +0x98..+0xa4: source rect in the atlas, texels (u, v, w, h; ints). */
+  readonly sourceRect?: readonly [number, number, number, number];
+  /** +0x28: single colour (corner 0 used for all corners); +0x29: protect flag. */
+  readonly singleColor?: boolean;
+  readonly protectColor?: boolean;
+  /**
+   * +0x2ac: clip rect (x0, y0, x1, y1) in model space, or null. Projected through
+   * WORLD·VIEW·PROJECTION to a scissor; compared by identity between items.
+   */
+  readonly clipRect?: Float32Array | null;
+  /** +0x2cc: mask source node, or null. */
+  readonly maskNode?: EmoteNodeView | null;
+  /** +0x2c4 / +0x2c5: a motion-reference node (type 3) acts as a composite mask. */
+  readonly stencilChild?: boolean;
+  /** +0x2dc list for `stencilType & 4`: nodes whose draw items form the composite mask. */
+  readonly compositeMaskNodes?: readonly EmoteNodeView[];
+  /** +0x2dc → +0x4c: clips of the child players of a type-4 node. */
+  readonly childPlayers?: readonly EmoteClipNodes[];
 }
 
 /** Evaluated mesh: (columns + 1) × (rows + 1) screen positions (draw item +0x60). */
