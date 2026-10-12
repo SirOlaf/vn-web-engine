@@ -1,4 +1,4 @@
-import {parsePeResources} from '../../../formats/pe/resources.js';
+import {pickLanguage, readStringTables} from '../messages.js';
 
 /**
  * TJS2 compiler messages, by their native names. The core loads them from its RT_STRING
@@ -77,20 +77,6 @@ export const TJS2_DEFAULT_MESSAGES: ReadonlyMap<number, Tjs2Messages> = new Map(
   ],
 ]);
 
-/**
- * Picks the string-table language the way resource loading does for a UI language: the
- * exact LANGID, then the same primary language, then English, then the first available.
- */
-function pickLanguage(available: Iterable<number>, uiLanguage: number): number | undefined {
-  const langs = [...available];
-  return (
-    langs.find((l) => l === uiLanguage) ??
-    langs.find((l) => (l & 0x3ff) === (uiLanguage & 0x3ff)) ??
-    langs.find((l) => (l & 0x3ff) === LANG_ENGLISH) ??
-    langs[0]
-  );
-}
-
 /** Built-in messages for a UI language (LANGID). */
 export function defaultTjs2Messages(uiLanguage: number): Tjs2Messages {
   return TJS2_DEFAULT_MESSAGES.get(pickLanguage(TJS2_DEFAULT_MESSAGES.keys(), uiLanguage)!)!;
@@ -101,20 +87,7 @@ export function defaultTjs2Messages(uiLanguage: number): Tjs2Messages {
  * executable does not contain keep the built-in text.
  */
 export function readTjs2Messages(executable: Uint8Array, uiLanguage: number): Tjs2Messages {
-  const byLanguage = new Map<number, Map<number, string>>();
-  for (const block of parsePeResources(executable, [6])) {
-    if (typeof block.id !== 'number') continue;
-    let table = byLanguage.get(block.language);
-    if (!table) byLanguage.set(block.language, (table = new Map()));
-    const b = block.bytes;
-    let o = 0;
-    for (let i = 0; i < 16 && o + 2 <= b.length; i++) {
-      const n = b[o]! | (b[o + 1]! << 8);
-      o += 2;
-      if (n) table.set((block.id - 1) * 16 + i, utf16(b.subarray(o, o + n * 2)));
-      o += n * 2;
-    }
-  }
+  const byLanguage = readStringTables(executable);
   const out: Record<string, string> = {...defaultTjs2Messages(uiLanguage)};
   const language = pickLanguage(byLanguage.keys(), uiLanguage);
   const table = language === undefined ? undefined : byLanguage.get(language);
@@ -124,11 +97,4 @@ export function readTjs2Messages(executable: Uint8Array, uiLanguage: number): Tj
       if (text !== undefined) out[name] = text;
     }
   return out as Tjs2Messages;
-}
-
-function utf16(bytes: Uint8Array): string {
-  let s = '';
-  for (let i = 0; i + 1 < bytes.length; i += 2)
-    s += String.fromCharCode(bytes[i]! | (bytes[i + 1]! << 8));
-  return s;
 }

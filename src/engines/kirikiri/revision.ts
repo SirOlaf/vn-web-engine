@@ -13,6 +13,16 @@ export interface KirikiriCoreRevision {
   readonly dicFuncQuickHack: boolean;
   /** Preprocessor values the core defines before the first script, besides `version`. */
   readonly preprocessorValues: readonly (readonly [string, number])[];
+  /**
+   * The function exporter's name table (`TVPInitExportFuncs`): a zlib blob at `address` (VA)
+   * inflating to NUL-terminated C++ signatures, one per exported function.
+   */
+  readonly exporterNames: {
+    readonly address: number;
+    readonly compressedSize: number;
+    readonly size: number;
+    readonly count: number;
+  };
 }
 
 /**
@@ -26,6 +36,8 @@ const NEKOPARA_VOL1: KirikiriCoreRevision = {
   tjsVersion: [2, 4, 28],
   dicFuncQuickHack: false,
   preprocessorValues: [['kirikiriz', 1]],
+  // TVPInitExportFuncs (0x420550) inflates 0x768538 and pairs the names with 0x767b10.
+  exporterNames: {address: 0x768538, compressedSize: 0x13df, size: 0xa405, count: 649},
 };
 
 export const KIRIKIRI_CORE_REVISIONS: ReadonlyMap<string, KirikiriCoreRevision> = new Map([

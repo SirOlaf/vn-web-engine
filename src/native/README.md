@@ -65,7 +65,24 @@ that. Engine and library code do not.
 
 ## Libraries
 
-| Library           | Contract                  | Implementation | Notes                                              |
-| ----------------- | ------------------------- | -------------- | -------------------------------------------------- |
-| `emotedriver.dll` | `emotedriver/contract.ts` | `emotedriver/` | E-mote D3D runtime; `IEmoteDevice`, `IEmotePlayer` |
-| `d3d9.dll`        | `d3d9/contract.ts`        | `d3d9/webgl2/` | Direct3D 9 device on WebGL2; see `d3d9/README.md`  |
+| Library             | Contract                  | Implementation       | Notes                                              |
+| ------------------- | ------------------------- | -------------------- | -------------------------------------------------- |
+| `emotedriver.dll`   | `emotedriver/contract.ts` | `emotedriver/`       | E-mote D3D runtime; `IEmoteDevice`, `IEmotePlayer` |
+| `d3d9.dll`          | `d3d9/contract.ts`        | `d3d9/webgl2/`       | Direct3D 9 device on WebGL2; see `d3d9/README.md`  |
+| TVP plugins         | `tvp-plugin/contract.ts`  | per plugin           | `V2Link` surface shared by every Kirikiri plugin   |
+| `nekopara_vol1.tpm` | `tvp-plugin/contract.ts`  | `nekopara_vol1.tpm/` | CxDec `archive://` storage medium                  |
+
+## TVP plugins
+
+Kirikiri plugins all export `V2Link`/`V2Unlink`, so they share one contract,
+`tvp-plugin/contract.ts` (`TVP_PLUGIN`). It is the counterpart of `tp_stub.h`: the TJS2 object
+interface (`Dispatch` = `iTJSDispatch2`, variants, result codes and flags), the function
+exporter the core passes to `V2Link`, and the core interfaces plugins implement
+(`TvpStorageMedia`) or use (`TjsBinaryStream`). The Kirikiri engine defines its object model
+with these types, so plugin objects and core objects are interchangeable.
+
+Plugin implementations may use the TJS2 value helpers in `src/engines/kirikiri/tjs2/runtime/`
+(`variant.ts`, `slot.ts`, `native.ts`), as native plugins link `tp_stub`; they reach the core
+only through the exporter. Two contract calls may complete asynchronously because the native
+core blocks on file I/O there: opening a storage and `V2Link`. A plugin's native method that
+has to wait uses `TvpFunctionExporter.suspend`.

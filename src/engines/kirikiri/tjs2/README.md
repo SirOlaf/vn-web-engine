@@ -4,7 +4,7 @@ TypeScript compiler front end for TJS2, the script language of the Kirikiri core
 the TJS 2.4 sources (krkrz `tjs2/`: `tjsLex.cpp`, `tjs.y`, `tjspp.y`, `tjsInterCodeGen.cpp`).
 It turns a script block into two NIF trees (see `src/compiler/README.md`): the parsed stage
 and the analysed stage. There is no code generator or VM yet; the analysed stage is their
-input.
+input. The object model they target is in `runtime/` (`runtime/README.md`).
 
 | File              | Contents                                                                         |
 | ----------------- | -------------------------------------------------------------------------------- |
