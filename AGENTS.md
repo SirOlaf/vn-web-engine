@@ -30,6 +30,9 @@ intentional divergence from the native engines.
 - `src/audio`, `src/video`, `src/graphics`, `src/text`, `src/input` – shared
   media, rendering, font and input services.
 - `src/core/` – binary readers, scheduling, worker and wasm helpers.
+- `src/compiler/` – language-independent compiler infrastructure: the NIF tree format
+  that compiler stages exchange, source positions and diagnostics. See
+  `src/compiler/README.md`.
 - `src/formats/` – format readers (archives, PE, Ogg, MPEG, PNG, BGI formats).
 - `src/native/` – browser reimplementations of native libraries (engine plugins and
   the system DLLs they import). They compose only through each library's
