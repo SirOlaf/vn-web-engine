@@ -177,7 +177,7 @@ async function bootGame(extraFiles = {}) {
   });
   const blocks = [];
   core.engine.executor = {
-    runByteCode: () => false,
+    runByteCode: () => null,
     run(block, result) {
       blocks.push(block);
       return 0;

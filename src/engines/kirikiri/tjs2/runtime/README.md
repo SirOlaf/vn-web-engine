@@ -3,7 +3,7 @@
 The TJS2 object model and built-in classes that the VM, the core's native classes and plugins
 share. It follows krkrz `tjs2/` (`tjsVariant`, `tjsObject`, `tjsNative`, `tjsArray`,
 `tjsDictionary`, `tjsMath`, …) and the reference build `nekopara_vol1.exe` where they differ.
-There is no VM yet: `TjsEngine.executor` is where it plugs in.
+The VM (`../vm/`) plugs in as `TjsEngine.executor`.
 
 | File               | Contents                                                                          |
 | ------------------ | --------------------------------------------------------------------------------- |
@@ -17,6 +17,7 @@ There is no VM yet: `TjsEngine.executor` is where it plugs in.
 | `suspension.ts`    | `Suspender`: suspending and resuming synchronous calls                            |
 | `engine.ts`        | `TjsEngine` (`tTJS`): global object, built-in classes, host services, executor    |
 | `msvc-sort.ts`     | `std::sort`/`std::stable_sort` of Visual C++ 2012/2013                            |
+| `format-string.ts` | `TJSFormatString` (`String.sprintf`) with the old MSVC CRT's number formats       |
 | `builtins/`        | `Array`, `Dictionary`, `Exception`, `Math`, `Math.RandomGenerator`                |
 
 ## Values
@@ -95,6 +96,11 @@ core keeps running. Calls here are synchronous, and a call that has to wait retu
 `TJS_E_SUSPENDED` is a failure code, so code that knows nothing of suspension either passes it
 on (`if (failed(hr)) return hr`) or throws on it. A suspension that is not passed up to `run`
 is reported.
+
+Code without an engine at hand uses the suspender of the top-level call in progress:
+`deferSuspended` and `withoutSuspension`. The default member handlers do: calling a member
+through its default property and read-modify-write operations on property objects continue
+after a suspending handler; `finalize`, `missing` and enumeration callbacks cannot suspend.
 
 ## Built-in classes
 

@@ -257,6 +257,12 @@ test('TJS2 analysis: with, super and calls keep the forms the code generator dis
   assert.deepEqual(analyze('function f() {\n super.f(); }').diagnostics, [
     'error TJSCannotGetSuper 2',
   ]);
+  // `...` passes a function's own arguments on; elsewhere it is rejected.
+  assert.deepEqual(analyze('function f() { g(...); }').diagnostics, []);
+  assert.deepEqual(analyze('g(\n...);\nproperty p { getter { g(...); } }').diagnostics, [
+    'error TJSCannotOmit 2',
+    'error TJSCannotOmit 3',
+  ]);
 });
 
 test('TJS2 analysis reports what the native generator rejects, at the line it compiles', () => {

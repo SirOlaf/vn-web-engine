@@ -504,7 +504,24 @@ export class ArrayClass extends NativeClass {
     super('Array', () => new ArrayNI());
     const self = this;
     const ni = (objthis: Dispatch) => instanceOf<ArrayNI>(objthis, ARRAY_CLASS_ID);
-    const arr = (objthis: Dispatch) => objthis as ArrayObject;
+    // Natively `objthis` is cast to tTJSArrayObject whatever it is; the element methods only
+    // use what every custom object has, so instances of script classes extending Array work.
+    const arr = (objthis: Dispatch): ArrayObject => {
+      if (objthis instanceof ArrayObject) return objthis;
+      if (!(objthis instanceof CustomObject)) return throwTjsError('TJSNativeClassCrash');
+      const p = ArrayObject.prototype;
+      return {
+        clearItems: (n: ArrayNI) => p.clearItems.call(objthis as ArrayObject, n),
+        addItem: (n: ArrayNI, v: Variant) => p.addItem.call(objthis as ArrayObject, n, v),
+        removeItems: (n: ArrayNI, ref: Variant, all: boolean) =>
+          p.removeItems.call(objthis as ArrayObject, n, ref, all),
+        eraseItem: (n: ArrayNI, num: number) => p.eraseItem.call(objthis as ArrayObject, n, num),
+        insertItems: (n: ArrayNI, values: readonly Variant[], num: number) =>
+          p.insertItems.call(objthis as ArrayObject, n, values, num),
+        resizeItems: (n: ArrayNI, count: number) =>
+          p.resizeItems.call(objthis as ArrayObject, n, count),
+      } as unknown as ArrayObject;
+    };
 
     this.constructorMethod((_result, args, objthis) => {
       const r = constructNativeInstance(self, args, objthis);

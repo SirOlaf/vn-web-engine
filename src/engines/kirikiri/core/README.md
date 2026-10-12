@@ -24,9 +24,12 @@ const core = await KirikiriCore.create({
   libraries: [NEKOPARA_VOL1_TPM, …], // plugin implementations (runtime wiring)
   clock,
 });
-core.engine.executor = vm; // runs script blocks
 await core.start();
 ```
+
+The core installs the TJS2 VM (`../tjs2/vm/`) as `engine.executor`, with the compiler options of
+its revision, the UI language's messages and the `-unaryaster=compat` and
+`-evalcontext=global` options (`TVPInitScriptEngine`).
 
 `create` reads what the native core reads synchronously at run time: the executable's message
 tables (in the UI language) and exporter names, and the SHA-256 of every `.dll`/`.tpm` beside
@@ -98,6 +101,6 @@ every line, to `krkr.console.log` in the log location.
 - `tests/kirikiri-core.test.mjs`: name normalization, auto paths, text decoding, start-up on a
   synthetic installation with a CxDec archive and the tpm, `Storages`/`Scripts`/`Plugins`
   through TJS objects, `saveStruct` round trip.
-- `tools/probe-kirikiri-core.mjs <game folder>` boots the core on an installation in Node with a
-  stand-in executor that compiles each script block and stops; it prints the core log, the
-  linked plugins and the blocks it received. Non-visual.
+- `tools/probe-kirikiri-core.mjs <game folder>` boots the core on an installation in Node and
+  runs `startup.tjs` on the VM until it ends or stops at an error; it prints the core log, the
+  linked plugins and the script blocks that ran. Non-visual.

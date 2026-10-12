@@ -51,6 +51,7 @@ import {
   type Out,
 } from './interface.js';
 import {VariantSlot} from './slot.js';
+import {withoutSuspension} from './suspension.js';
 import {
   asBoolean,
   asString,
@@ -211,7 +212,9 @@ export class CustomObject extends DispatchBase {
 
   /** Calls the `finalize` method, invalidates native instances, deletes every member. */
   protected finalize(): void {
-    if (this.callFinalize) this.funcCall(0, this.finalizeName, null, [], this);
+    // A finalizer runs wherever the last reference goes away; it cannot be resumed later.
+    if (this.callFinalize)
+      withoutSuspension(() => this.funcCall(0, this.finalizeName, null, [], this));
     for (let i = TJS_MAX_NATIVE_CLASS - 1; i >= 0; i--)
       if (this.#classIds[i] !== -1) this.#classInstances[i]?.invalidate();
     this.#deleteAllMembers();
@@ -237,12 +240,8 @@ export class CustomObject extends DispatchBase {
     const prop = new SimpleGetSetProperty(value);
     const funcResult = new VariantSlot();
     try {
-      const er = this.funcCall(
-        0,
-        this.missingName,
-        funcResult,
-        [bool(false), str(name), obj(prop)],
-        this,
+      const er = withoutSuspension(() =>
+        this.funcCall(0, this.missingName, funcResult, [bool(false), str(name), obj(prop)], this),
       );
       if (failed(er)) return false;
       const found = asBoolean(funcResult.value);
@@ -263,12 +262,8 @@ export class CustomObject extends DispatchBase {
     const prop = new SimpleGetSetProperty(value);
     const funcResult = new VariantSlot();
     try {
-      const er = this.funcCall(
-        0,
-        this.missingName,
-        funcResult,
-        [bool(true), str(name), obj(prop)],
-        this,
+      const er = withoutSuspension(() =>
+        this.funcCall(0, this.missingName, funcResult, [bool(true), str(name), obj(prop)], this),
       );
       if (failed(er)) return false;
       return asBoolean(funcResult.value);
@@ -447,7 +442,8 @@ export class CustomObject extends DispatchBase {
     }
     const res = new VariantSlot();
     try {
-      if (failed(closureFuncCall(callback, 0, null, res, args, null))) return false;
+      const hr = withoutSuspension(() => closureFuncCall(callback, 0, null, res, args, null));
+      if (failed(hr)) return false;
       return asBoolean(res.value);
     } finally {
       res.clear();

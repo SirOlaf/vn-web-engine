@@ -21,6 +21,7 @@ export const TJS2_MESSAGE_IDS = {
   TJSSyntaxError: 10030,
   TJSPPError: 10031,
   TJSCannotGetSuper: 10032,
+  TJSCannotOmit: 10038,
 } as const;
 
 export type Tjs2MessageName = keyof typeof TJS2_MESSAGE_IDS;
@@ -50,6 +51,7 @@ export const TJS2_DEFAULT_MESSAGES: ReadonlyMap<number, Tjs2Messages> = new Map(
       TJSSyntaxError: 'Syntax error (%1)',
       TJSPPError: 'Error in conditional compiling expression',
       TJSCannotGetSuper: 'Super class does not exist or cannot specify the super class',
+      TJSCannotOmit: '"..." is used out of functions',
     },
   ],
   [
@@ -73,6 +75,7 @@ export const TJS2_DEFAULT_MESSAGES: ReadonlyMap<number, Tjs2Messages> = new Map(
       TJSSyntaxError: '文法エラーです(%1)',
       TJSPPError: '条件コンパイル式にエラーがあります',
       TJSCannotGetSuper: 'スーパークラスが存在しないかスーパークラスを特定できません',
+      TJSCannotOmit: '"..." は関数外では使えません',
     },
   ],
 ]);

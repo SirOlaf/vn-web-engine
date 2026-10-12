@@ -8,6 +8,9 @@ import {defaultTjs2Messages, type Tjs2MessageName, type Tjs2Messages} from './me
 import {Parser, Tjs2SyntaxError, type CodegenPoints} from './parser.js';
 import {PreprocessorValues, tjsVersionHex} from './preprocessor.js';
 import {analyze} from './sema.js';
+import type {CodeBlock} from './code-block.js';
+import {generateCode} from './codegen.js';
+import {lowerScriptBlock} from './lower.js';
 
 /** One unit of compilation (`tTJSScriptBlock`): a script text with its name. */
 export interface ScriptBlockSource {
@@ -204,4 +207,33 @@ export function tjs2ConsoleLine(
   return d.severity === 'warning'
     ? `${messages.TJSWarning}${d.message} at ${d.file} line ${d.line}`
     : `${d.message} at line ${d.line}`;
+}
+
+export interface GeneratedScriptBlock extends CompiledScriptBlock {
+  /** The lowered stage (`lower.ts`), `(module …)` at `loweredRoot`; absent when there are errors. */
+  readonly lowered: NifBuffer | null;
+  readonly loweredRoot: number;
+  /** The VM code of every context; absent when there are errors. */
+  readonly code: CodeBlock | null;
+}
+
+/**
+ * Compiles a script block to VM code: parse, analysis, lowering (`lower.ts`) and code
+ * generation (`codegen.ts`). Diagnostics are those of `compileScriptBlock`; code is produced
+ * only when there are no errors.
+ */
+export function generateScriptBlock(
+  input: ScriptBlockSource,
+  options: Tjs2CompilerOptions,
+): GeneratedScriptBlock {
+  const compiled = compileScriptBlock(input, options);
+  if (!compiled.analyzed) return {...compiled, lowered: null, loweredRoot: -1, code: null};
+  const lowered = lowerScriptBlock(compiled.analyzed, compiled.analyzedRoot, {
+    unaryAsteriskIgnoresPropAccess: options.unaryAsteriskIgnoresPropAccess,
+  });
+  const code = generateCode(lowered.tree, lowered.root, {
+    name: input.name,
+    lineOffset: input.lineOffset ?? 0,
+  });
+  return {...compiled, lowered: lowered.tree, loweredRoot: lowered.root, code};
 }

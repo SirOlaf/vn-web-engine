@@ -62,13 +62,16 @@ export interface TjsScriptBlock {
  */
 export interface TjsScriptExecutor {
   run(block: TjsScriptBlock, result: VariantResult | null, context: Dispatch | null): number;
-  /** Runs TJS2 bytecode (`TJS2100`); returns false when `bytes` is not bytecode. */
+  /**
+   * Runs TJS2 bytecode (`TJS2100`). Returns the result code (which may be
+   * `TJS_E_SUSPENDED`), or null when `bytes` is not bytecode.
+   */
   runByteCode(
     bytes: Uint8Array,
     name: string,
     result: VariantResult | null,
     context: Dispatch | null,
-  ): boolean;
+  ): number | null;
 }
 
 export class TjsEngine {

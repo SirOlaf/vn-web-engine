@@ -4,6 +4,7 @@
  * function, property and class behaviour (krkrz `tjsObject.cpp`).
  */
 import {throwTjsError} from './errors.js';
+import {deferSuspended} from './suspension.js';
 import {
   failed,
   succeeded,
@@ -12,6 +13,7 @@ import {
   TJS_E_INVALIDTYPE,
   TJS_E_MEMBERNOTFOUND,
   TJS_E_NOTIMPL,
+  TJS_E_SUSPENDED,
   TJS_IGNOREPROP,
   TJS_OP_DEC,
   TJS_OP_INC,
@@ -187,18 +189,13 @@ export abstract class DispatchBase implements Dispatch {
     const op = flag & TJS_OP_MASK;
     if (op !== TJS_OP_INC && op !== TJS_OP_DEC && param === null) return TJS_E_INVALIDPARAM;
     if (op < TJS_OP_MIN || op > TJS_OP_MAX) return TJS_E_INVALIDPARAM;
-    const tmp = new VariantSlot();
-    try {
-      let hr = this.propGet(0, member, tmp, objthis);
-      if (failed(hr)) return hr;
-      tmp.set(variantOperation(op, tmp.value, param));
-      hr = this.propSet(0, member, tmp.value, objthis);
-      if (failed(hr)) return hr;
-      result?.set(tmp.value);
-      return TJS_S_OK;
-    } finally {
-      tmp.clear();
-    }
+    return readModifyWrite(
+      (into) => this.propGet(0, member, into, objthis),
+      (value) => this.propSet(0, member, value, objthis),
+      op,
+      param,
+      result,
+    );
   }
   operationByNum(
     flag: number,
@@ -285,6 +282,21 @@ function fallsBack(hr: number): boolean {
   return hr === TJS_E_NOTIMPL || hr === TJS_E_INVALIDTYPE || hr === TJS_E_INVALIDOBJECT;
 }
 
+/**
+ * Continues with `next(code)` once the call that returned `hr` has completed: at once, or
+ * behind it when it suspended. `cleanup` runs when the suspended call throws instead.
+ */
+function afterCall(hr: number, next: (code: number) => number, cleanup: () => void): number {
+  if (hr !== TJS_E_SUSPENDED) return next(hr);
+  return deferSuspended((o) => {
+    if ('error' in o) {
+      cleanup();
+      throw o.error;
+    }
+    return next(o.code);
+  });
+}
+
 /** `TJSTryFuncCallViaPropGet`: calls what the object's default property yields. */
 function funcCallViaPropGet(
   closure: ObjectVariant,
@@ -294,15 +306,61 @@ function funcCallViaPropGet(
   objthis: Dispatch | null,
 ): number {
   const tmp = new VariantSlot();
+  const clear = () => tmp.clear();
   try {
-    let er = closure.object!.propGet(0, null, tmp, selectObjthis(closure, objthis));
-    if (succeeded(er)) {
-      const inner = asObjectClosure(tmp.value);
-      er = inner.object!.funcCall(flag, null, result, args, selectObjthis(inner, objthis));
+    const er = closure.object!.propGet(0, null, tmp, selectObjthis(closure, objthis));
+    // A getter may suspend (a lazily loaded class or function); the call follows it.
+    return afterCall(
+      er,
+      (code) => {
+        try {
+          if (!succeeded(code)) return code;
+          const inner = asObjectClosure(tmp.value);
+          return inner.object!.funcCall(flag, null, result, args, selectObjthis(inner, objthis));
+        } finally {
+          clear();
+        }
+      },
+      clear,
+    );
+  } catch (e) {
+    clear();
+    throw e;
+  }
+}
+
+/**
+ * Reads a value with `get`, applies `op` and writes it with `set`; the new value goes to
+ * `result`. Either handler may suspend. `notFound` decides what a failed read returns.
+ */
+export function readModifyWrite(
+  get: (into: VariantSlot) => number,
+  set: (value: Variant) => number,
+  op: number,
+  param: Variant | null,
+  result: VariantSlot | null,
+  notFound: (code: number) => number = (code) => code,
+): number {
+  const tmp = new VariantSlot();
+  const clear = () => tmp.clear();
+  const written = (hr: number): number => {
+    if (succeeded(hr)) result?.set(tmp.value);
+    clear();
+    return failed(hr) ? hr : TJS_S_OK;
+  };
+  const read = (hr: number): number => {
+    if (!succeeded(hr)) {
+      clear();
+      return notFound(hr);
     }
-    return er;
-  } finally {
-    tmp.clear();
+    tmp.set(variantOperation(op, tmp.value, param));
+    return afterCall(set(tmp.value), written, clear);
+  };
+  try {
+    return afterCall(get(tmp), read, clear);
+  } catch (e) {
+    clear();
+    throw e;
   }
 }
 
@@ -445,19 +503,18 @@ export function propertyOperation(
   objthis: Dispatch | null,
 ): number | null {
   const ot = selectObjthis(closure, objthis);
-  const tmp = new VariantSlot();
-  try {
-    let hr = closure.object!.propGet(0, null, tmp, ot);
-    if (succeeded(hr)) {
-      tmp.set(variantOperation(op, tmp.value, param));
-      hr = closure.object!.propSet(0, null, tmp.value, ot);
-      if (failed(hr)) return hr;
-      result?.set(tmp.value);
-      return TJS_S_OK;
-    }
-    if (!fallsBack(hr)) return hr;
-    return null;
-  } finally {
-    tmp.clear();
-  }
+  const o = closure.object!;
+  let noProperty = false;
+  const hr = readModifyWrite(
+    (into) => o.propGet(0, null, into, ot),
+    (value) => o.propSet(0, null, value, ot),
+    op,
+    param,
+    result,
+    (code) => {
+      noProperty = fallsBack(code);
+      return code;
+    },
+  );
+  return noProperty ? null : hr;
 }

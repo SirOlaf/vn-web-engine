@@ -26,6 +26,23 @@ export type Outcome = {readonly code: number} | {readonly error: unknown};
 /** Finishes one caller's work after its callee completed. Returns a code or throws. */
 export type Continuation = (inner: Outcome) => number;
 
+/** The suspender driving the top-level call in progress. */
+let running: Suspender | null = null;
+
+/**
+ * For runtime code that has no engine at hand (the default member handlers, `CustomObject`):
+ * registers `resume` behind a callee that returned `TJS_E_SUSPENDED`.
+ */
+export function deferSuspended(resume: Continuation): number {
+  if (!running) throw new TjsSuspensionError('TJS_E_SUSPENDED outside a top-level call');
+  return running.defer(resume);
+}
+
+/** Runs `fn` where nothing may suspend, when a top-level call is in progress. */
+export function withoutSuspension<T>(fn: () => T): T {
+  return running ? running.nonSuspending(fn) : fn();
+}
+
 export class Suspender {
   /** Continuations of the current chain, innermost first. */
   #chain: Continuation[] = [];
@@ -91,6 +108,8 @@ export class Suspender {
   async run(start: () => number): Promise<number> {
     if (this.#running) throw new TjsSuspensionError('Re-entrant top-level run');
     this.#running = true;
+    const outer = running;
+    running = this;
     try {
       let outcome = this.#call(start);
       while ('code' in outcome && outcome.code === TJS_E_SUSPENDED) {
@@ -121,6 +140,7 @@ export class Suspender {
       this.#chain = [];
       this.#pending = null;
       this.#running = false;
+      running = outer;
     }
   }
 

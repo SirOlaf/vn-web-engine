@@ -1,10 +1,18 @@
 # TJS2 compiler
 
-TypeScript compiler front end for TJS2, the script language of the Kirikiri core, following
-the TJS 2.4 sources (krkrz `tjs2/`: `tjsLex.cpp`, `tjs.y`, `tjspp.y`, `tjsInterCodeGen.cpp`).
-It turns a script block into two NIF trees (see `src/compiler/README.md`): the parsed stage
-and the analysed stage. There is no code generator or VM yet; the analysed stage is their
-input. The object model they target is in `runtime/` (`runtime/README.md`).
+TypeScript compiler for TJS2, the script language of the Kirikiri core, following the TJS 2.4
+sources (krkrz `tjs2/`: `tjsLex.cpp`, `tjs.y`, `tjspp.y`, `tjsInterCodeGen.cpp`). It turns a
+script block into three NIF trees (see `src/compiler/README.md`) — the parsed, analysed and
+lowered stages — and then into VM code, the native instruction set in a `CodeBlock`. The VM
+that runs it is in `vm/` (`vm/README.md`); the object model both target is in `runtime/`
+(`runtime/README.md`).
+
+```
+source → parsed → analysed → lowered → CodeBlock → VM
+         (NIF)     (NIF)      (NIF)     (code)
+                                          ↑
+                         TJS2 bytecode (TJS2100)
+```
 
 | File              | Contents                                                                         |
 | ----------------- | -------------------------------------------------------------------------------- |
@@ -17,6 +25,14 @@ input. The object model they target is in `runtime/` (`runtime/README.md`).
 | `sema.ts`         | Name resolution and checks; writes the analysed stage                            |
 | `messages.ts`     | Native message names and texts; reading the core's string tables                 |
 | `dialect.ts`      | Tag table of the `tjs2` NIF dialect                                              |
+| `lower.ts`        | Lowering of the analysed stage to VM instructions (`GenNodeCode`)                |
+| `lowered.ts`      | Tag table of the `tjs2vm` NIF dialect (the lowered stage)                        |
+| `opcodes.ts`      | The VM instruction set: opcodes, operand layouts                                 |
+| `codegen.ts`      | Code generation: lowered stage → `CodeBlock`                                     |
+| `code-block.ts`   | `CodeBlock`, `ContextCode`, `DataItem`: compiled code as plain data              |
+| `bytecode.ts`     | TJS2 bytecode (`TJS2100`) reader and writer                                      |
+| `disassembler.ts` | The native disassembler's listing of VM code                                     |
+| `vm/`             | The VM; see `vm/README.md`                                                       |
 
 Build options of a core (TJS version, preprocessor values, the dicfunc quick-hack flag) are
 in `../revision.ts`, keyed by the executable's SHA-256. `tjs2CompilerOptions(revision,
@@ -28,12 +44,16 @@ options, which change how unary `&`/`*` compile and enable the post-`!` warning.
 
 ```ts
 const options = tjs2CompilerOptions(revision, {uiLanguage, executable}); // per engine
-const result = compileScriptBlock(
+const result = generateScriptBlock(
   {text, name: 'system/Initialize.tjs', mode: 'statements'},
   options,
 );
-if (result.diagnostics.errorCount === 0) use(result.analyzed!, result.analyzedRoot);
+if (result.diagnostics.errorCount === 0) run(result.code!);
 ```
+
+`compileScriptBlock` stops after the analysed stage; `generateScriptBlock` also lowers and
+generates code. Script blocks are normally compiled by the VM's executor (`vm/executor.ts`),
+which prints the diagnostics and throws the first error.
 
 - A script block is one source text: a storage file (`Scripts.execStorage`), or a string
   (`Scripts.eval`, `eval`, the `!` operator, KAG `exp=`). `mode: 'expression'` compiles as
@@ -144,8 +164,56 @@ scoping rules:
 Checks, as natively: assignment or modification of a non-lvalue (`TJSCannotModifyLHS`), the
 value of `<->` or a postfix `if` (`TJSCannotGetResult`), `super` without a single base
 (`TJSCannotGetSuper`), `break`/`continue` outside a loop (`TJSMisplacedBreakContinue`), `case`
-not directly in a switch (`TJSMisplacedCase`), and the warning for `=` in a condition
-(`TJSSubstitutionInBooleanContext`).
+not directly in a switch (`TJSMisplacedCase`), `...` outside a function (`TJSCannotOmit`), and
+the warning for `=` in a condition (`TJSSubstitutionInBooleanContext`).
+
+## Lowered stage
+
+Root: `(module (context …)…)`, one context per function, expression function, property,
+accessor, class, super-class getter and the top level, in the order the native compiler
+creates them. The lowering ports `GenNodeCode` and the statement generators that `tjs.y`
+calls, so the register numbers, the evaluation order, the order of property handler calls and
+conversion errors, and the code size are those of the native compiler:
+
+- Register 0 is void, -1 is `this`, -2 the this-proxy (`this`, then `global`), -3, -4, … the
+  arguments and locals as the native local namespace numbers them (removed names leave holes
+  that later declarations reuse). Temporaries count up from the frame base (1, plus one per
+  enclosing `switch` and `with`, which hold their value there) and are reused per statement.
+- Constant subexpressions are folded as `MakeNP1`/`MakeNP2` fold them while parsing.
+- A name that is not a local is a member of the this-proxy: read with `GPD`, assigned with
+  `SPD` (no member is created), called with `CALLD`. Members of other objects are assigned with
+  `SPDE`, which creates them.
+- Top-level functions, properties and classes are registered on `this` by code inserted at the
+  start of the top level (`CONST`, `CHGTHIS`, `SPDS`); a class's `REGMEMBER` is inserted after
+  its base-class calls.
+
+```
+(context :c.N "name"|. kind parent|.
+  (layout maxVariables reserve maxFrame argCount unnamedBase collapseBase)
+  (handlers getter|. setter|. superGetter|.)
+  (members (m "name" c.K)…)     # registered on this context when instantiated
+  (supers L…)                    # super-class getter: one entry label per base class
+  (code instruction…))
+```
+
+`kind` is `toplevel`, `function`, `exprfunction`, `property`, `getter`, `setter`, `class` or
+`supergetter`. An instruction is `(OPCODE operand…)` with the operands `opcodes.ts` lists for
+it: registers as integers, a data operand as a constant, a jump target as a label symbol, and
+call arguments as `(args r…)`, `(omit)` (`...`) or `(xargs (n r) (x r) (u)…)` (normal,
+`array*`, `*`). `(label :L.N)` marks a position. Constants are integer, float and string atoms,
+`(void)`, `(null)`, `(nan)`, `(inf)`, `(neginf)`, `(octet "hex")`, `(ctx c.N)` (a context),
+`(array c…)` and `(dict (kv "name" c)…)` (`(const)` literals).
+
+## Code
+
+`codegen.ts` encodes each context as `Int32Array` words: an opcode and its operands, register
+and data operands as indices, jumps as word offsets from the jump instruction. This is the
+layout of TJS2 bytecode, which stores the same words in 16 bits, so `bytecode.ts` reads
+`TJS2100` files into the same `CodeBlock` and the VM runs both alike (bytecode keeps no source
+lines and no constant arrays). Code generation reuses a data entry equal to one of the last 20
+(`PutData`), threads jumps to jumps (`FixCode`) and records the source line of each
+instruction. `disassembleBlock` prints code as the native disassembler does
+(`00000003 gpd %1, %-2.*0	// *0 = (string)"x"`).
 
 ## Diagnostics
 
@@ -177,8 +245,11 @@ the first error as the script exception. The compiler reproduces what it reports
 
 ## Verification
 
-- `tests/kirikiri-tjs2-compiler.test.mjs` and `tests/nif.test.mjs`.
+- `tests/kirikiri-tjs2-compiler.test.mjs`, `tests/kirikiri-tjs2-vm.test.mjs` (code
+  generation, bytecode) and `tests/nif.test.mjs`.
 - `tools/probe-kirikiri-tjs2.mjs <core.exe> <plugin.tpm> <archive.xp3>…` compiles every
-  `.tjs` member of the given archives, retries data files as expressions, checks that each
-  analysed tree survives the NIF text form, and prints counts and timings. `--out <dir>`
-  writes the trees as `.p.nif`/`.s.nif` (game-derived; keep them out of the repository).
+  `.tjs` member of the given archives to code, retries data files as expressions, checks that
+  each analysed and lowered tree survives the NIF text form and that the code survives TJS2
+  bytecode, and prints counts and timings. `--out <dir> --stage parsed|analyzed|lowered|code`
+  writes the trees as `.p.nif`/`.s.nif`/`.l.nif` or the disassembly as `.dis` (game-derived;
+  keep them out of the repository).

@@ -955,7 +955,12 @@ class Analyzer {
 
   #argument(pos: number): void {
     const src = this.src;
-    if (src.isDot(pos) || src.isNode(pos, T.omit)) {
+    if (src.isNode(pos, T.omit)) {
+      // `AddOmitArg`: only a function passes its arguments on.
+      if (this.#ctx.kind !== 'function' && this.#ctx.kind !== 'exprfunction')
+        this.#error('TJSCannotOmit');
+      this.#copy(pos);
+    } else if (src.isDot(pos)) {
       this.#copy(pos);
     } else if (src.isNode(pos, T.expand)) {
       const node = this.#open(T.expand, pos);

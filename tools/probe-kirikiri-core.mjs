@@ -4,15 +4,12 @@ import {join} from 'node:path';
 import {performance} from 'node:perf_hooks';
 import {KirikiriCore} from '../dist/engines/kirikiri/core/kirikiri-core.js';
 import {NEKOPARA_VOL1_TPM} from '../dist/native/nekopara_vol1.tpm/library.js';
-import {compileScriptBlock} from '../dist/engines/kirikiri/tjs2/compiler.js';
-import {tjs2CompilerOptions} from '../dist/engines/kirikiri/revision.js';
-import {TjsCompileError} from '../dist/engines/kirikiri/tjs2/runtime/errors.js';
 
 /**
  * Boots the Kirikiri core on an installation in Node: selects the project directory, links the
- * `.tpm` plugins, reads `startup.tjs` through the storage system and hands it to a stand-in
- * script executor that compiles each block and stops (there is no VM yet). Prints the core log
- * and what the executor received. Non-visual.
+ * `.tpm` plugins, and runs `startup.tjs` on the TJS2 VM until it finishes or stops at an
+ * error (typically a native class that does not exist yet). Prints the core log and the script
+ * blocks that ran. Non-visual.
  *
  *   npm run build:runtime
  *   node tools/probe-kirikiri-core.mjs <game folder> [<executable name>]
@@ -102,38 +99,27 @@ const core = await KirikiriCore.create({
   output: (line, important) => console.log(important ? `! ${line}` : `  ${line}`),
 });
 
-const revision = core.revision;
-const options = tjs2CompilerOptions(revision, {uiLanguage: 0x0411, executable});
 const blocks = [];
-core.engine.executor = {
-  runByteCode: () => false,
-  run(block) {
-    const compiled = compileScriptBlock(
-      {text: block.text, name: block.name, mode: block.mode},
-      options,
-    );
-    blocks.push({
-      name: block.name,
-      mode: block.mode,
-      chars: block.text.length,
-      errors: compiled.diagnostics.errorCount,
-    });
-    if (compiled.diagnostics.errorCount)
-      throw new TjsCompileError(`compile error in ${block.name}`, null);
-    throw new Error(`no TJS2 VM: stopped before running ${block.name}`);
-  },
+const vm = core.engine.executor;
+const run = vm.run.bind(vm);
+vm.run = (block, result, context) => {
+  blocks.push({name: block.name, mode: block.mode, chars: block.text.length});
+  return run(block, result, context);
 };
 
 try {
   await core.start();
 } catch (e) {
-  console.log(`stopped: ${e.message}`);
+  console.log(`stopped: ${e.name}: ${e.message}`);
+  if (e.source) console.log(`at: ${e.source.name} line ${e.source.line}`);
+  if (e.trace) console.log(`trace: ${e.trace}`);
+  if (!(e instanceof Error) || !e.name.startsWith('Tjs')) console.log(e.stack);
 }
 console.log('');
 console.log(`project directory: ${core.projectDir}`);
 console.log(`plugins: ${core.plugins.names.join(', ') || '(none)'}`);
 for (const b of blocks)
-  console.log(`script block: ${b.name} (${b.mode}, ${b.chars} chars, ${b.errors} compile errors)`);
+  console.log(`script block: ${b.name || '(anonymous)'} (${b.mode}, ${b.chars} chars)`);
 console.log(`time: ${(performance.now() - start).toFixed(0)} ms`);
 core.shutdown();
 for (const h of handles.values()) await h.close();

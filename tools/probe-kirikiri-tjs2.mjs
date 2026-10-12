@@ -7,21 +7,25 @@ import {CX_TINY_FILTERS, CxArchive} from '../dist/formats/kirikiri/cx-archive.js
 import {NifPool} from '../dist/compiler/nif/pool.js';
 import {readNif, writeNif} from '../dist/compiler/nif/text.js';
 import {formatDiagnostic} from '../dist/compiler/diagnostics.js';
-import {compileScriptBlock} from '../dist/engines/kirikiri/tjs2/compiler.js';
+import {generateScriptBlock} from '../dist/engines/kirikiri/tjs2/compiler.js';
+import {readTjs2ByteCode, writeTjs2ByteCode} from '../dist/engines/kirikiri/tjs2/bytecode.js';
+import {disassembleBlock} from '../dist/engines/kirikiri/tjs2/disassembler.js';
 import {KIRIKIRI_CORE_REVISIONS, tjs2CompilerOptions} from '../dist/engines/kirikiri/revision.js';
 
 /**
- * Compiles every `.tjs` member of the given archives with the TJS2 compiler (parse and
- * analysis, no code generation) and prints counts. A file that fails as statements is retried
- * as an expression (`Scripts.evalStorage` data files). Each analysed tree is also written as
- * NIF text and read back, which must give the same tree and positions. Non-visual.
+ * Compiles every `.tjs` member of the given archives with the TJS2 compiler (parse, analysis,
+ * lowering and code generation) and prints counts. A file that fails as statements is retried
+ * as an expression (`Scripts.evalStorage` data files). Each analysed and lowered tree is also
+ * written as NIF text and read back, which must give the same tree and positions, and the code
+ * must survive TJS2 bytecode (`TJS2100`) unchanged where its words fit 16 bits. Non-visual.
  *
  *   npm run build:runtime
- *   node tools/probe-kirikiri-tjs2.mjs [--out <dir>] [--stage parsed|analyzed] <core.exe> <plugin.tpm> <archive.xp3>...
+ *   node tools/probe-kirikiri-tjs2.mjs [--out <dir>] [--stage parsed|analyzed|lowered|code] <core.exe> <plugin.tpm> <archive.xp3>...
  *
  * Compiler options (TJS version, preprocessor values, build flags) come from the core revision.
  *
- * `--out` writes the NIF of each file below <dir> (game-derived: keep it out of the repository).
+ * `--out` writes the NIF of each file (`code`: its disassembly) below <dir> (game-derived: keep
+ * it out of the repository).
  */
 class FileSource {
   constructor(handle, size) {
@@ -88,9 +92,50 @@ const totals = {
   chars: 0,
   tokens: 0,
   analyzedTokens: 0,
+  contexts: 0,
+  codeWords: 0,
+  loweredRoundTrips: 0,
+  bytecodeRoundTrips: 0,
+  bytecodeTooLarge: 0,
   ms: 0,
 };
 const failures = [];
+
+/** Equal code, data, layout and members (bytecode keeps no source lines or constant arrays). */
+function sameCode(a, b) {
+  if (a.topLevel !== b.topLevel || a.contexts.length !== b.contexts.length) return false;
+  return a.contexts.every((x, i) => {
+    const y = b.contexts[i];
+    const same = (k) => JSON.stringify(x[k]) === JSON.stringify(y[k]);
+    // Constant arrays and dictionaries read back as null objects.
+    const data = (d) =>
+      JSON.stringify(d.kind === 'array' || d.kind === 'dictionary' ? {kind: 'null'} : d, (_, v) =>
+        typeof v === 'bigint' ? `${v}n` : v,
+      );
+    return (
+      [
+        'name',
+        'type',
+        'parent',
+        'maxVariableCount',
+        'variableReserveCount',
+        'maxFrameCount',
+        'funcDeclArgCount',
+        'funcDeclUnnamedArgArrayBase',
+        'funcDeclCollapseBase',
+        'propSetter',
+        'propGetter',
+        'superClassGetter',
+        'superClassGetterPointers',
+        'members',
+      ].every(same) &&
+      x.code.length === y.code.length &&
+      x.code.every((w, j) => w === y.code[j]) &&
+      x.data.length === y.data.length &&
+      x.data.every((d, j) => data(d) === data(y.data[j]))
+    );
+  });
+}
 
 function samePositions(a, pa, b, pb) {
   const n = a.end(pa) - pa,
@@ -115,9 +160,9 @@ for (const path of archives) {
       const text = decodeText(await cx.readEntry(entry));
       const t0 = performance.now();
       // Data files are loaded with Scripts.evalStorage, i.e. compiled as expressions.
-      let result = compileScriptBlock({text, name: record.name, mode: 'statements'}, options);
+      let result = generateScriptBlock({text, name: record.name, mode: 'statements'}, options);
       if (result.diagnostics.errorCount) {
-        const expression = compileScriptBlock(
+        const expression = generateScriptBlock(
           {text, name: record.name, mode: 'expression', resultNeeded: true},
           options,
         );
@@ -148,15 +193,56 @@ for (const path of archives) {
           totals.textRoundTrips++;
         else failures.push(`${record.name}: NIF text round trip differs`);
       }
+      if (result.lowered) {
+        const back = readNif(
+          writeNif(result.lowered, [result.loweredRoot]),
+          pool,
+          result.lowered.tags,
+        );
+        const root = back.roots[0];
+        if (
+          back.buffer.sameTree(root, result.lowered, result.loweredRoot) &&
+          samePositions(back.buffer, root, result.lowered, result.loweredRoot)
+        )
+          totals.loweredRoundTrips++;
+        else failures.push(`${record.name}: lowered NIF text round trip differs`);
+      }
+      if (result.code) {
+        totals.contexts += result.code.contexts.length;
+        for (const c of result.code.contexts) totals.codeWords += c.code.length;
+        let bytes = null;
+        try {
+          bytes = writeTjs2ByteCode(result.code);
+        } catch (e) {
+          if (!(e instanceof RangeError)) throw e;
+          totals.bytecodeTooLarge++;
+        }
+        if (bytes) {
+          const read = readTjs2ByteCode(bytes, record.name);
+          if (read && sameCode(read, result.code)) totals.bytecodeRoundTrips++;
+          else failures.push(`${record.name}: bytecode round trip differs`);
+        }
+      }
       if (result.diagnostics.errorCount) {
         totals.failed++;
         failures.push(...result.diagnostics.errors.map(formatDiagnostic));
       } else totals.ok++;
-      if (outDir && result.root >= 0) {
-        const tree = stage === 'parsed' ? result.tree : result.analyzed;
-        const root = stage === 'parsed' ? result.root : result.analyzedRoot;
+      if (outDir && stage === 'code' && result.code) {
+        const file = join(outDir, record.name + '.dis');
+        await mkdir(dirname(file), {recursive: true});
+        await writeFile(file, disassembleBlock(result.code).join('\n'));
+      } else if (outDir && result.root >= 0) {
+        const tree =
+          stage === 'parsed' ? result.tree : stage === 'lowered' ? result.lowered : result.analyzed;
+        const root =
+          stage === 'parsed'
+            ? result.root
+            : stage === 'lowered'
+              ? result.loweredRoot
+              : result.analyzedRoot;
         if (tree && root >= 0) {
-          const file = join(outDir, record.name + `.${stage === 'parsed' ? 'p' : 's'}.nif`);
+          const suffix = stage === 'parsed' ? 'p' : stage === 'lowered' ? 'l' : 's';
+          const file = join(outDir, record.name + `.${suffix}.nif`);
           await mkdir(dirname(file), {recursive: true});
           await writeFile(file, writeNif(tree, [root]));
         }

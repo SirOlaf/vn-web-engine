@@ -48,7 +48,8 @@ export function executeStorage(
   const place = storage.searchPlacedPath(name);
   const shortName = extractStorageName(place);
   const run = (bytes: Uint8Array): number => {
-    if (engine.executor?.runByteCode(bytes, shortName, result, context)) return TJS_S_OK;
+    const hr = engine.executor?.runByteCode(bytes, shortName, result, context) ?? null;
+    if (hr !== null) return hr;
     const text = decodeTextStorage(place, bytes, mode, services.scriptTextOptions());
     const exec = (t: string) =>
       engine.runScript(

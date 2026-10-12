@@ -17,7 +17,11 @@ import {
 } from '../../../platform/native-libraries.js';
 import {decodeCp932} from '../../../text/cp932.js';
 import {ENGLISH_MESSAGES, readKirikiriMessages} from '../messages.js';
-import {KIRIKIRI_CORE_REVISIONS, type KirikiriCoreRevision} from '../revision.js';
+import {
+  KIRIKIRI_CORE_REVISIONS,
+  tjs2CompilerOptions,
+  type KirikiriCoreRevision,
+} from '../revision.js';
 import {TjsEngine, type TjsHost, type TjsTextWriter} from '../tjs2/runtime/engine.js';
 import {setTjsMessages, TjsError, tjsMessage} from '../tjs2/runtime/errors.js';
 import {
@@ -31,6 +35,7 @@ import {
 } from '../tjs2/runtime/interface.js';
 import type {NativeClass} from '../tjs2/runtime/native.js';
 import {obj} from '../tjs2/runtime/variant.js';
+import {TjsVm} from '../tjs2/vm/executor.js';
 import {createDebugClass, createPluginsClass} from './classes/debug-plugins.js';
 import {createScriptsClass, executeStorage, type ScriptsServices} from './classes/scripts.js';
 import {createStoragesClass, type StoragesPlatform} from './classes/storages.js';
@@ -320,6 +325,15 @@ export class KirikiriCore {
   #initScriptEngine(): void {
     const readEncoding = this.getCommandLine('-readencoding');
     if (readEncoding !== null) this.#defaultReadEncoding = readEncoding;
+    // `-unaryaster=compat` and `-evalcontext=global` change how scripts compile and run.
+    this.engine.executor = new TjsVm(this.engine, {
+      compiler: tjs2CompilerOptions(this.revision, {
+        uiLanguage: this.config.uiLanguage,
+        executable: this.config.executable,
+        unaryAsteriskIgnoresPropAccess: this.getCommandLine('-unaryaster') === 'compat',
+        evalOperatorIsOnGlobal: this.getCommandLine('-evalcontext') === 'global',
+      }),
+    });
     const platform: StoragesPlatform = {
       searchCD: this.config.storagesPlatform?.searchCD ?? (() => ''),
       selectFile: this.config.storagesPlatform?.selectFile ?? (() => false),
