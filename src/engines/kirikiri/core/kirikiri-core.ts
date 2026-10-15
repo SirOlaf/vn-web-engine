@@ -23,7 +23,7 @@ import {
   type KirikiriCoreRevision,
 } from '../revision.js';
 import {TjsEngine, type TjsHost, type TjsTextWriter} from '../tjs2/runtime/engine.js';
-import {setTjsMessages, TjsError, tjsMessage} from '../tjs2/runtime/errors.js';
+import {assignTjsMessage, setTjsMessages, TjsError, tjsMessage} from '../tjs2/runtime/errors.js';
 import {
   TJS_IGNOREPROP,
   TJS_MEMBERENSURE,
@@ -34,12 +34,39 @@ import {
   type TvpStorageMedia,
 } from '../tjs2/runtime/interface.js';
 import type {NativeClass} from '../tjs2/runtime/native.js';
+import {tjsDoRehash} from '../tjs2/runtime/custom-object.js';
 import {obj} from '../tjs2/runtime/variant.js';
 import {TjsVm} from '../tjs2/vm/executor.js';
+import {defaultWindowsSysColor} from '../../../platform/windows-system-colors.js';
+import {PageWindowsNamedMutexes} from '../../../platform/windows-named-mutex.js';
+import {createAsyncTriggerClass} from './classes/async-trigger.js';
 import {createDebugClass, createPluginsClass} from './classes/debug-plugins.js';
 import {createScriptsClass, executeStorage, type ScriptsServices} from './classes/scripts.js';
 import {createStoragesClass, type StoragesPlatform} from './classes/storages.js';
+import {
+  createSystemClass,
+  UNMANIFESTED_WINDOWS_VERSION,
+  type GraphicCacheControl,
+  type KirikiriSystemPlatform,
+  type SystemServices,
+} from './classes/system.js';
+import {createTimerClass} from './classes/timer.js';
+import {
+  TVP_COMPACT_LEVEL_IDLE,
+  timerMessageLoop,
+  TvpEventSystem,
+  TvpProcessExit,
+  type KirikiriMessageLoop,
+} from './events.js';
 import {TvpLog, type LogClock} from './log.js';
+import {
+  changeFileExt,
+  dataPathDirectory,
+  ProgramArguments,
+  readConfigLines,
+  readEmbeddedOptions,
+  type SpecialFolders,
+} from './options.js';
 import {PluginManager} from './plugins.js';
 import {
   ARCHIVE_DELIMITER,
@@ -72,10 +99,23 @@ export interface KirikiriCoreConfig {
   /** Plugin and system library implementations the runtime registers. */
   readonly libraries: readonly NativeLibraryImplementation<object>[];
   /**
-   * Program arguments in priority order (`-name=value`; a bare `-name` means `yes`): the
-   * command line, then configuration files, then the executable's embedded options.
+   * The command line after the executable (`-name=value`, a bare `-name` meaning `yes`).
+   * Configuration files and the executable's embedded options follow it in priority.
    */
-  readonly options?: readonly string[];
+  readonly commandLine?: readonly string[];
+  /** Shell folders as local Windows paths; empty when absent. */
+  readonly specialFolders?: Partial<SpecialFolders>;
+  /** Platform services of `System`; absent ones answer as a system without the feature. */
+  readonly system?: Partial<KirikiriSystemPlatform>;
+  /** The host's message loop; host timers by default. */
+  readonly loop?: KirikiriMessageLoop;
+  /**
+   * `Application->MessageDlg` for an uncaught script error. Resolves when closed; by default
+   * the error is only logged.
+   */
+  readonly showError?: (text: string, caption: string) => Promise<void>;
+  /** Called once when the core has ended (`System.exit`, `System.terminate`, a fatal error). */
+  readonly onExit?: (code: number) => void;
   readonly clock: KirikiriClock;
   /** Every log line as the console shows it. */
   readonly output?: (line: string, important: boolean) => void;
@@ -84,6 +124,17 @@ export interface KirikiriCoreConfig {
   readonly decodeAnsi?: (bytes: Uint8Array) => string;
   /** `TVPGetRandomBits128`. */
   readonly randomBits128?: () => Uint8Array;
+}
+
+/** What `create` reads for `TVPInitProgramArgumentsAndDataPath`. */
+interface PreparedOptions {
+  readonly embedded: string[] | null;
+  readonly config: {readonly name: string; readonly lines: string[] | null};
+  readonly userConfig: {readonly name: string; readonly lines: string[] | null};
+  /** Native data path, with a trailing backslash. */
+  readonly nativeDataPath: string;
+  /** `TVPInitTJSScript` of the executable; null without it. */
+  readonly initScript: string | null;
 }
 
 function hex(bytes: Uint8Array): string {
@@ -99,11 +150,6 @@ function localDirectory(path: string): string {
   return path.slice(0, path.lastIndexOf('\\') + 1);
 }
 
-/** Parses `-name=value` / `-name` like `TVPParseCommandLineOne`. */
-function parseOption(option: string): string {
-  return option.includes('=') ? option : option + '=yes';
-}
-
 export class KirikiriCore {
   readonly engine: TjsEngine;
   readonly storage: StorageSystem;
@@ -111,7 +157,23 @@ export class KirikiriCore {
   readonly plugins: PluginManager;
   readonly exporter: TvpFunctionExporter;
   readonly loader: NativeLibraryLoader;
-  readonly #arguments: string[];
+  readonly events: TvpEventSystem;
+  readonly #arguments: ProgramArguments;
+  readonly #nativeDataPath: string;
+  readonly #specialFolders: SpecialFolders;
+  readonly #platform: KirikiriSystemPlatform;
+  readonly #loop: KirikiriMessageLoop;
+  #title: string;
+  readonly #systemFlags = {
+    exitOnWindowClose: true,
+    exitOnNoWindowStartup: true,
+    drawThreadNum: 1,
+  };
+  #graphicCacheLimit = 0n;
+  /** `TVPGraphicCacheSystemLimit`: 0 until the graphics loader keeps a cache. */
+  readonly #graphicCacheSystemLimit = 0n;
+  #exitCode: number | null = null;
+  #uninitialized = false;
   #defaultReadEncoding = 'UTF-8';
   #scriptTextEncoding = 'UTF-8';
   #logLocation = '';
@@ -123,14 +185,22 @@ export class KirikiriCore {
     readonly revision: KirikiriCoreRevision,
     readonly exporterNames: ReadonlySet<string>,
     private readonly libraryIdentities: Map<string, NativeLibraryIdentity>,
+    options: PreparedOptions,
   ) {
     setTjsMessages(
       config.executable
         ? readKirikiriMessages(config.executable, config.uiLanguage)
         : ENGLISH_MESSAGES,
     );
-    this.#arguments = (config.options ?? []).map(parseOption);
     this.#decodeAnsi = config.decodeAnsi ?? decodeCp932;
+    this.#specialFolders = {
+      personal: config.specialFolders?.personal ?? '',
+      appData: config.specialFolders?.appData ?? '',
+      savedGames: config.specialFolders?.savedGames ?? '',
+    };
+    this.#platform = systemPlatform(config.system);
+    this.#loop = config.loop ?? timerMessageLoop();
+    this.#title = tjsMessage('TVPKirikiri');
 
     const host: TjsHost = {
       readText: (name, mode) => this.readText(name, mode),
@@ -141,6 +211,18 @@ export class KirikiriCore {
     };
     this.engine = new TjsEngine(host);
     this.log = new TvpLog(config.clock, this.engine.suspender, config.output ?? (() => {}));
+    // TVPInitProgramArgumentsAndDataPath
+    if (options.embedded)
+      this.log.add(tjsMessage('TVPInfoLoadingExecutableEmbeddedOptionsSucceeded'), true);
+    this.#logConfigFile(options.config);
+    this.#logConfigFile(options.userConfig);
+    this.#arguments = ProgramArguments.build(
+      config.commandLine ?? [],
+      options.userConfig.lines,
+      options.config.lines,
+      options.embedded,
+    );
+    this.#nativeDataPath = options.nativeDataPath;
     this.storage = new StorageSystem(
       new FileMedia(config.files),
       (line) => this.log.add(line),
@@ -149,17 +231,35 @@ export class KirikiriCore {
     this.loader = new NativeLibraryLoader(config.libraries, {
       locate: (fileName) => this.#locateLibrary(fileName),
     });
+    this.#logLocation = this.storage.normalize(this.#nativeDataPath);
+    this.log.add(tjsMessage('TVPInfoDataPath', this.dataPath), true);
+    this.events = new TvpEventSystem(
+      {
+        engine: this.engine,
+        log: this.log,
+        loop: this.#loop,
+        tickCount: () => config.clock.tickCount(),
+        continuousFrequency: () => Number(this.getCommandLine('-contfreq') ?? 0) | 0,
+        showError: (text, caption) => this.#showError(text, caption),
+        title: () => this.#title,
+        terminate: (code) => this.terminate(code),
+        exit: (code) => this.exit(code),
+        uninitialized: () => this.#uninitialized,
+      },
+      () => tjsDoRehash(),
+    );
     this.exporter = this.#createExporter();
     this.plugins = new PluginManager({
       loader: this.loader,
       exporter: this.exporter,
       locate: (name) => this.#locatePlugin(name),
     });
-    this.#initScriptEngine();
+    this.#initScriptEngine(options.initScript);
   }
 
   /** Reads what the core needs synchronously, then builds the core. */
   static async create(config: KirikiriCoreConfig): Promise<KirikiriCore> {
+    const decodeAnsi = config.decodeAnsi ?? decodeCp932;
     let revision = config.revision;
     let exporterNames = new Set<string>();
     if (config.executable) {
@@ -180,29 +280,51 @@ export class KirikiriCore {
         identities.set(lower(local), {kind: 'image', sha256: hex(await sha256(bytes))});
       }
     }
-    return new KirikiriCore(config, revision, exporterNames, identities);
+    const options = await prepareOptions(config, decodeAnsi, revision);
+    return new KirikiriCore(config, revision, exporterNames, identities, options);
+  }
+
+  #logConfigFile(file: {name: string; lines: string[] | null}): void {
+    if (file.lines)
+      this.log.add(tjsMessage('TVPInfoLoadingConfigurationFileSucceeded', file.name), true);
+    else
+      this.log.add(
+        tjsMessage(
+          'TVPInfoLoadingConfigurationFileFailed',
+          file.name,
+          tjsMessage('TVPFileNotFound'),
+        ),
+        true,
+      );
   }
 
   // --- services ---------------------------------------------------------------------------
 
   /** `TVPGetCommandLine`. */
   getCommandLine(name: string): string | null {
-    for (const arg of this.#arguments) {
-      if (!arg.startsWith(name)) continue;
-      const c = arg[name.length];
-      if (c === '=') return arg.slice(name.length + 1);
-      if (c === undefined) return 'yes';
-    }
-    return null;
+    return this.#arguments.get(name);
   }
 
   /** `TVPSetCommandLine`: replaces an option, or inserts it with the highest priority. */
   setCommandLine(name: string, value: string): void {
-    const i = this.#arguments.findIndex(
-      (arg) => arg.startsWith(name) && (arg[name.length] === '=' || arg[name.length] === undefined),
-    );
-    if (i >= 0) this.#arguments[i] = name + '=' + value;
-    else this.#arguments.unshift(name + '=' + value);
+    this.#arguments.set(name, value);
+  }
+
+  /** `TVPDataPath`: the data folder as a storage name. */
+  get dataPath(): string {
+    return this.storage.normalize(this.#nativeDataPath);
+  }
+
+  /** The exit code once the core has ended, else null. */
+  get exitCode(): number | null {
+    return this.#exitCode;
+  }
+
+  /** `TVPGetPersonalPath`/`TVPGetAppDataPath`: a shell folder as a storage name. */
+  #folderPath(path: string, fallback: string | null): string {
+    if (!path) return fallback ?? '';
+    const name = this.storage.normalize(path);
+    return name.endsWith('/') ? name : name + '/';
   }
 
   /** `TVPGetAppPath`: the executable's folder as a storage name. */
@@ -322,7 +444,7 @@ export class KirikiriCore {
    * reference build registers them (0x407010). Classes this core does not provide yet are
    * skipped; their position in the order is kept by the list.
    */
-  #initScriptEngine(): void {
+  #initScriptEngine(initScript: string | null): void {
     const readEncoding = this.getCommandLine('-readencoding');
     if (readEncoding !== null) this.#defaultReadEncoding = readEncoding;
     // `-unaryaster=compat` and `-evalcontext=global` change how scripts compile and run.
@@ -334,6 +456,12 @@ export class KirikiriCore {
         evalOperatorIsOnGlobal: this.getCommandLine('-evalcontext') === 'global',
       }),
     });
+    if (initScript !== null)
+      this.engine.runScript(
+        {text: initScript, name: '', lineOffset: 0, mode: 'statements'},
+        null,
+        null,
+      );
     const platform: StoragesPlatform = {
       searchCD: this.config.storagesPlatform?.searchCD ?? (() => ''),
       selectFile: this.config.storagesPlatform?.selectFile ?? (() => false),
@@ -352,9 +480,19 @@ export class KirikiriCore {
       ],
       ['Font', () => null],
       ['Layer', () => null],
-      ['Timer', () => null],
-      ['AsyncTrigger', () => null],
-      ['System', () => null],
+      [
+        'Timer',
+        () =>
+          createTimerClass(
+            this.engine,
+            this.events,
+            this.#loop,
+            () => this.config.clock.tickCount(),
+            (name) => this.getCommandLine(name),
+          ),
+      ],
+      ['AsyncTrigger', () => createAsyncTriggerClass(this.engine, this.events)],
+      ['System', () => createSystemClass(this.#systemServices())],
       ['Storages', () => createStoragesClass(this.storage, platform, this.engine.suspender)],
       ['Plugins', () => createPluginsClass(this.engine, this.plugins)],
       ['VideoOverlay', () => null],
@@ -367,6 +505,12 @@ export class KirikiriCore {
       ['WaveSoundBuffer', () => null],
       ['Window', () => null],
     ];
+    // TVPTJSGCCallback: the VM's stack is compacted at idle.
+    this.events.addCompactEventHook({
+      onCompact: (level) => {
+        if (level >= TVP_COMPACT_LEVEL_IDLE) this.engine.executor?.doGarbageCollection();
+      },
+    });
     const global = this.engine.global;
     for (const [name, create] of classes) {
       const cls = create();
@@ -374,6 +518,103 @@ export class KirikiriCore {
       global.propSet(TJS_MEMBERENSURE | TJS_IGNOREPROP, name, obj(cls), global);
       cls.release();
     }
+  }
+
+  #systemServices(): SystemServices {
+    const exeName = this.storage.normalize(this.config.executablePath);
+    const graphicCache: GraphicCacheControl = {
+      limit: () => this.#graphicCacheLimit,
+      // TVPSetGraphicCacheLimit: 0 disables, -1 selects the system limit, larger values are
+      // clamped to it.
+      setLimit: (limit) => {
+        const system = this.#graphicCacheSystemLimit;
+        this.#graphicCacheLimit =
+          limit === 0n ? 0n : limit === 0xffffffffffffffffn || limit > system ? system : limit;
+      },
+      clear: () => {},
+      touch: () => {},
+    };
+    return {
+      events: this.events,
+      suspender: this.engine.suspender,
+      platform: this.#platform,
+      graphicCache,
+      getArgument: (name) => this.getCommandLine(name),
+      setArgument: (name, value) => this.setCommandLine(name, value),
+      appPath: () => this.appPath,
+      personalPath: () =>
+        this.#folderPath(
+          this.#specialFolders.personal || this.#specialFolders.appData,
+          this.appPath,
+        ),
+      appDataPath: () => this.#folderPath(this.#specialFolders.appData, this.appPath),
+      savedGamesPath: () => this.#specialFolders.savedGames,
+      dataPath: () => this.dataPath,
+      exeName: () => exeName,
+      versionString: () => this.revision.fileVersion,
+      versionInformation: () =>
+        tjsMessage(
+          'TVPVersionInformation',
+          this.revision.fileVersion,
+          this.revision.tjsVersion.join('.'),
+        )
+          .split('%DATE%')
+          .join(this.revision.compileDate)
+          .split('%TIME%')
+          .join(this.revision.compileTime),
+      title: () => this.#title,
+      setTitle: (title) => {
+        this.#title = title;
+        this.#platform.setApplicationTitle(title);
+      },
+      tickCount: () => this.config.clock.tickCount(),
+      randomBits128: () => this.#randomBits128(),
+      assignMessage: (id, message) => assignTjsMessage(id, message),
+      terminate: (code) => this.terminate(code),
+      exit: (code) => this.exit(code),
+      dumpHeap: () => this.log.add('The process has 0 heaps.'),
+      flags: this.#systemFlags,
+    };
+  }
+
+  #randomBits128(): Uint8Array {
+    if (this.config.randomBits128) return this.config.randomBits128();
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return bytes;
+  }
+
+  async #showError(text: string, caption: string): Promise<void> {
+    await this.config.showError?.(text, caption);
+  }
+
+  /** `TVPTerminateAsync`: ends after the current top-level call. */
+  terminate(code: number): void {
+    if (this.#exitCode !== null) return;
+    this.#exitCode = code;
+    this.events.stop();
+    void this.events
+      .runTopLevel(() => 0)
+      .then(
+        () => this.#finish(code),
+        () => this.#finish(code),
+      );
+  }
+
+  /** `TVPTerminateSync`: uninitializes the core and ends the process; never returns. */
+  exit(code: number): never {
+    if (this.#exitCode === null) {
+      this.#exitCode = code;
+      this.#finish(code);
+    }
+    throw new TvpProcessExit(code);
+  }
+
+  #finish(code: number): void {
+    if (this.#uninitialized) return;
+    this.#uninitialized = true;
+    this.events.stop();
+    this.config.onExit?.(code);
   }
 
   /** Registers a core class under its name (later subsystems add theirs here). */
@@ -422,27 +663,124 @@ export class KirikiriCore {
   }
 
   /**
-   * Start-up: project directory, `.tpm` plugins, then `startup.tjs` as a suspendable call.
-   * Resolves when the startup script has returned.
+   * Start-up: project directory, `.tpm` plugins, then `startup.tjs` as a suspendable call
+   * (`TVPInitializeStartupScript`). Errors in it go to `System.exceptionHandler` or are shown.
+   * Resolves when the startup script has returned and events are being delivered, or when the
+   * core has ended (`exitCode`).
    */
   async start(): Promise<void> {
     this.#selectProjectDir();
+    // Natively the archive index is read synchronously on first use; it is fetched up front.
+    await this.storage.openArchive(this.#projectDir.slice(0, -ARCHIVE_DELIMITER.length));
     for (const load of this.#loadTpmPlugins()) await load();
     const services = this.#scriptsServices();
-    this.log.add(tjsMessage('TVPInfoLoadingStartupScript') + 'startup.tjs', true);
-    await this.engine.suspender.run(() =>
-      executeStorage(services, 'startup.tjs', null, null, false),
-    );
-    this.log.add(tjsMessage('TVPInfoStartupScriptEnded'), true);
+    try {
+      await this.events.runTopLevel(() =>
+        this.events.guardedCall(
+          'startup',
+          () => {
+            this.log.add(tjsMessage('TVPInfoLoadingStartupScript') + 'startup.tjs', true);
+            return executeStorage(services, 'startup.tjs', null, null, false);
+          },
+          () => this.log.add(tjsMessage('TVPInfoStartupScriptEnded'), true),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof TvpProcessExit) return;
+      throw error;
+    }
+    if (this.#exitCode !== null) return;
+    // Without a window the application ends (`TVPTerminateOnNoWindowStartup`).
+    if (this.#systemFlags.exitOnNoWindowStartup && this.windowCount() === 0) {
+      this.terminate(0);
+      return;
+    }
+    this.events.start();
+  }
+
+  /** `TVPGetWindowCount`. */
+  windowCount(): number {
+    return 0;
   }
 
   /** Releases plugins and objects (`TVPUninitScriptEngine`, plugin vector at exit). */
   shutdown(): void {
+    this.events.dispose();
     this.plugins.unloadAll();
     this.engine.shutdown();
     this.log.dispose();
     this.loader.dispose();
   }
+}
+
+/**
+ * The sources of `TVPInitProgramArgumentsAndDataPath`: embedded options, `<exe>.cf`, the data
+ * path they and the command line give, and `<datapath>\<exe>.cfu`.
+ */
+async function prepareOptions(
+  config: KirikiriCoreConfig,
+  decodeAnsi: (bytes: Uint8Array) => string,
+  revision: KirikiriCoreRevision,
+): Promise<PreparedOptions> {
+  const readLines = async (name: string) => {
+    if (!config.files.exists(name)) return {name, lines: null};
+    const source = await config.files.open(name);
+    return {name, lines: readConfigLines(await source.read(0, source.size), decodeAnsi)};
+  };
+  const embedded = config.executable ? readEmbeddedOptions(config.executable, decodeAnsi) : null;
+  const exe = config.executablePath;
+  const cf = await readLines(changeFileExt(exe, '.cf'));
+  const datapath =
+    ProgramArguments.build(config.commandLine ?? [], cf.lines, embedded).get('-datapath') ?? '';
+  const folders: SpecialFolders = {
+    personal: config.specialFolders?.personal ?? '',
+    appData: config.specialFolders?.appData ?? '',
+    savedGames: config.specialFolders?.savedGames ?? '',
+  };
+  // NT 6 and later, as GetVersionEx reports it.
+  const version = config.system?.version ?? UNMANIFESTED_WINDOWS_VERSION;
+  const vista = version.platformId === 2 && version.major >= 6;
+  const nativeDataPath = dataPathDirectory(datapath, exe, folders, vista);
+  const exeFile = exe.slice(exe.lastIndexOf('\\') + 1);
+  const cfu = await readLines(nativeDataPath + changeFileExt(exeFile, '.cfu'));
+  const initScript = config.executable ? readInitScript(config.executable, revision) : null;
+  return {embedded, config: cf, userConfig: cfu, nativeDataPath, initScript};
+}
+
+/** `TVPInitTJSScript`: a narrow string, converted as ASCII. */
+function readInitScript(executable: Uint8Array, revision: KirikiriCoreRevision): string {
+  const image = PeImage.parse(executable);
+  const offset = image.fileOffset(revision.initScriptAddress - Number(image.imageBase), 1);
+  const end = executable.indexOf(0, offset);
+  return new TextDecoder('latin1').decode(executable.subarray(offset, end));
+}
+
+/** `System`'s platform with defaults for services the host does not provide. */
+function systemPlatform(given: Partial<KirikiriSystemPlatform> = {}): KirikiriSystemPlatform {
+  const mutexes = new PageWindowsNamedMutexes();
+  return {
+    informationBox: async () => {},
+    shellExecute: () => false,
+    system: () => -1,
+    asyncKeyState: () => false,
+    readRegValue: async () => null,
+    createMutex: (name) => mutexes.create(name).lastError,
+    sysColor: defaultWindowsSysColor,
+    touchDevice: () => 0x100 | 0x200,
+    screen: () => ({
+      width: 1920,
+      height: 1080,
+      desktopLeft: 0,
+      desktopTop: 0,
+      desktopWidth: 1920,
+      desktopHeight: 1040,
+    }),
+    setApplicationTitle: () => {},
+    showVersion: async () => {},
+    processorCount: 1,
+    version: UNMANIFESTED_WINDOWS_VERSION,
+    ...given,
+  };
 }
 
 /** The exporter's function names from the executable. */

@@ -3,15 +3,17 @@
 The services and native classes of the Kirikiri Z core around the TJS2 runtime, following
 krkrz `base/`, `utils/` and the reference build `nekopara_vol1.exe` (`../revision.ts`).
 
-| File               | Contents                                                                   |
-| ------------------ | -------------------------------------------------------------------------- |
-| `kirikiri-core.ts` | `KirikiriCore`: configuration, preparation, class registration, start-up   |
-| `storage.ts`       | Storage names, media, the `file` medium, XP3 archives, auto paths, streams |
-| `streams.ts`       | `tTJSBinaryStream` over memory and over a file's fetched ranges            |
-| `text-stream.ts`   | Text storages: encodings, cipher modes, compression                        |
-| `log.ts`           | The core log, logging handlers, the log file                               |
-| `plugins.ts`       | Plugin location, linking (`V2Link`) and unlinking                          |
-| `classes/`         | `Storages`, `Scripts`, `Debug`, `Plugins`                                  |
+| File               | Contents                                                                     |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `kirikiri-core.ts` | `KirikiriCore`: configuration, preparation, class registration, start-up     |
+| `storage.ts`       | Storage names, media, the `file` medium, XP3 archives, auto paths, streams   |
+| `streams.ts`       | `tTJSBinaryStream` over memory and over a file's fetched ranges              |
+| `text-stream.ts`   | Text storages: encodings, cipher modes, compression                          |
+| `log.ts`           | The core log, logging handlers, the log file                                 |
+| `plugins.ts`       | Plugin location, linking (`V2Link`) and unlinking                            |
+| `options.ts`       | Program arguments (embedded options, `.cf`/`.cfu` files) and the data path   |
+| `events.ts`        | Event queue, delivery, continuous and compact events, uncaught errors        |
+| `classes/`         | `Storages`, `Scripts`, `Debug`, `Plugins`, `System`, `Timer`, `AsyncTrigger` |
 
 ## Using the core
 
@@ -23,25 +25,80 @@ const core = await KirikiriCore.create({
   files, // KirikiriLocalFiles over the installation
   libraries: [NEKOPARA_VOL1_TPM, …], // plugin implementations (runtime wiring)
   clock,
+  commandLine: [], // arguments after the executable
+  loop, // KirikiriMessageLoop: posted tasks, idle passes, timers
+  system: {informationBox, readRegValue, …}, // KirikiriSystemPlatform services
+  showError, // the error box of an uncaught script error
+  onExit: (code) => core.shutdown(),
 });
 await core.start();
 ```
+
+`start` resolves once the startup script has returned and events are being delivered, or
+once the core has ended (`exitCode`). The host calls `shutdown` after `onExit`.
 
 The core installs the TJS2 VM (`../tjs2/vm/`) as `engine.executor`, with the compiler options of
 its revision, the UI language's messages and the `-unaryaster=compat` and
 `-evalcontext=global` options (`TVPInitScriptEngine`).
 
 `create` reads what the native core reads synchronously at run time: the executable's message
-tables (in the UI language) and exporter names, and the SHA-256 of every `.dll`/`.tpm` beside
-the executable, in `system\` and in `plugin\` (plugin identities for the native library
-loader). `start` follows the executable's start-up: project directory (`forcedataxp3(1)`:
+tables (in the UI language), exporter names and `TVPInitTJSScript` (the script of constants
+such as `VK_*`, `gcsAuto`, `imageTagLayerType`), the configuration files, and the SHA-256 of
+every `.dll`/`.tpm` beside the executable, in `system\` and in `plugin\` (plugin identities for
+the native library loader). `start` follows the executable's start-up: project directory (`forcedataxp3(1)`:
 `data.xp3` beside the executable, else abort), `.tpm` plugins in name order, then
 `startup.tjs` as a suspendable top-level call.
 
 Core classes are registered in the order of `TVPInitScriptEngine` (0x407010): Debug, Font,
 Layer, Timer, AsyncTrigger, System, Storages, Plugins, VideoOverlay, Clipboard, Scripts, Rect,
 Bitmap, ImageFunction, BitmapLayerTreeOwner, WaveSoundBuffer (with `PhaseVocoder`), Window
-(with `BasicDrawDevice`). Implemented: Debug, Storages, Plugins, Scripts.
+(with `BasicDrawDevice`). Implemented: Debug, Timer, AsyncTrigger, System, Storages, Plugins,
+Scripts. `TVPInitTJSScript` runs before them.
+
+## Program arguments and data path
+
+`TVPInitProgramArgumentsAndDataPath`: arguments are looked up first-match in the order command
+line, `<datapath>\<exe>.cfu`, `<exe>.cf`, the executable's embedded options (`TEXT` resource
+139). Option lines are `name=value`; a quoted value is a TJS string literal
+(`debugwin="\x6E\x6F"` is `no`). After a `--` argument every command-line argument becomes
+`-argN`. `-datapath` (default `$(exepath)\savedata`) expands `$(exepath)`, `$(personalpath)`,
+`$(appdatapath)`, `$(vistapath)` and `$(savedgamespath)`; the result is `System.dataPath` and the
+log location. `System.setArgument` replaces the first match or inserts in front.
+
+## Events
+
+`TvpEventSystem` ports `EventIntf.cpp` and the win32 system control. Script events
+(`postEvent`) wait in one queue with exclusive, normal and idle priorities and are delivered by
+`deliverAllEvents`: exclusive events, then input events, then normal events posted before the
+delivery started, then idle events, continuous handlers and window updates. Timers mark events
+discardable, so none queue while events are disabled.
+
+Deliveries are top-level calls (`runTopLevel`): one at a time, each to completion, including
+suspensions in it. The host's `KirikiriMessageLoop` runs them: `post` for an
+`invokeEvents` request, `every(50)` for the system watch timer (deliveries, a compact event
+after 4 s without continuous handlers, a rehash every 1.5 s), and `idle` for one pass after
+another while continuous handlers exist (the native busy idle loop; a browser paces it to
+animation frames). With `-contfreq=N` a limiter requests continuous calls N times per second
+instead. Natively a modal dialog runs a message loop in which events are delivered; here no
+event is delivered while a call is suspended.
+
+An error that escapes a delivery or the startup script is passed to `System.exceptionHandler`
+(`TVP_CATCH_AND_SHOW_SCRIPT_EXCEPTION`, with the origin such as `event` or `startup` added to
+the trace). Without a handler, or when it returns false, events are disabled, the log file is
+started, the error is shown (`showError`) and the core exits with code 1. `System.exit` ends at
+once (`TvpProcessExit` unwinds the call); `System.terminate` ends after the current call.
+
+## System
+
+`System` has the members of `SystemIntf.cpp` and the win32 `SystemImpl.cpp` except `exeBits`
+and `osBits`, which the reference build lacks. Platform effects go through
+`KirikiriSystemPlatform` (message box, registry, `ShellExecute`, key state, system colours,
+screen metrics, named mutexes); absent services answer as a system without the feature. As in
+the reference build, `osName` comes from `GetVersionEx` without a compatibility manifest
+(`Windows 8 6.2.1008 `: the build number is masked with `0xfff`) and `platformName` is
+always `Win32`. `inform`, `readRegValue` and `showVersion` suspend. `createAppLock` sees the
+mutexes of the page (`PageWindowsNamedMutexes`). The graphic cache limit is clamped to a
+system limit of 0 until the graphics loader keeps a cache.
 
 ## Storage
 
@@ -101,6 +158,10 @@ every line, to `krkr.console.log` in the log location.
 - `tests/kirikiri-core.test.mjs`: name normalization, auto paths, text decoding, start-up on a
   synthetic installation with a CxDec archive and the tpm, `Storages`/`Scripts`/`Plugins`
   through TJS objects, `saveStruct` round trip.
-- `tools/probe-kirikiri-core.mjs <game folder>` boots the core on an installation in Node and
-  runs `startup.tjs` on the VM until it ends or stops at an error; it prints the core log, the
-  linked plugins and the script blocks that ran. Non-visual.
+- `tests/kirikiri-core-system.test.mjs`: option parsing and data path, `System` through
+  scripts, uncaught errors and `System.exceptionHandler`, `AsyncTrigger`, `Timer`, continuous
+  handlers, with a message loop and clock driven by the test.
+- `tools/probe-kirikiri-core.mjs [--run <ms>] <game folder>` boots the core on an
+  installation in Node, runs `startup.tjs` on the VM and delivers events for a while; it prints
+  the core log, message boxes, the linked plugins, the script blocks that ran and the exit code.
+  Non-visual.

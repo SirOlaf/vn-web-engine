@@ -29,6 +29,13 @@ export function setTjsMessages(table: KirikiriMessages): void {
   messages = table;
 }
 
+/** `TJSAssignMessage`: replaces a message of the table in use; false for unknown names. */
+export function assignTjsMessage(name: string, text: string): boolean {
+  if (!Object.hasOwn(messages, name)) return false;
+  messages = Object.freeze({...messages, [name]: text});
+  return true;
+}
+
 /** A core message, with `%1`, `%2`, … replaced. */
 export function tjsMessage(name: KirikiriMessageName, ...args: readonly string[]): string {
   return formatMessage(messages[name], ...args);

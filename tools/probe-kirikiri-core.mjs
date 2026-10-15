@@ -7,18 +7,26 @@ import {NEKOPARA_VOL1_TPM} from '../dist/native/nekopara_vol1.tpm/library.js';
 
 /**
  * Boots the Kirikiri core on an installation in Node: selects the project directory, links the
- * `.tpm` plugins, and runs `startup.tjs` on the TJS2 VM until it finishes or stops at an
- * error (typically a native class that does not exist yet). Prints the core log and the script
- * blocks that ran. Non-visual.
+ * `.tpm` plugins, runs `startup.tjs` on the TJS2 VM and then delivers events for a while, until
+ * the core ends (an uncaught error is shown and ends it, as natively) or the time is up. Prints
+ * the core log, message boxes, the script blocks that ran and the exit code. Non-visual.
  *
  *   npm run build:runtime
- *   node tools/probe-kirikiri-core.mjs <game folder> [<executable name>]
+ *   node tools/probe-kirikiri-core.mjs [--run <ms>] <game folder> [<executable name>]
  *
  * The installation is mounted as `c:\game\`.
  */
-const [folder, exeName = 'nekopara_vol1.exe'] = process.argv.slice(2);
+const args = process.argv.slice(2);
+let runMs = 2000;
+if (args[0] === '--run') {
+  args.shift();
+  runMs = Number(args.shift());
+}
+const [folder, exeName = 'nekopara_vol1.exe'] = args;
 if (!folder) {
-  console.error('usage: node tools/probe-kirikiri-core.mjs <game folder> [<executable name>]');
+  console.error(
+    'usage: node tools/probe-kirikiri-core.mjs [--run <ms>] <game folder> [<executable name>]',
+  );
   process.exit(2);
 }
 
@@ -89,6 +97,8 @@ const clock = {
   },
 };
 
+let exited;
+const ended = new Promise((resolve) => (exited = resolve));
 const core = await KirikiriCore.create({
   executable,
   executablePath: ROOT + exeName,
@@ -97,6 +107,11 @@ const core = await KirikiriCore.create({
   libraries: [NEKOPARA_VOL1_TPM],
   clock,
   output: (line, important) => console.log(important ? `! ${line}` : `  ${line}`),
+  system: {
+    informationBox: async (text, caption) => console.log(`[message box: ${caption}] ${text}`),
+  },
+  showError: async (text, caption) => console.log(`[error box: ${caption}] ${text}`),
+  onExit: (code) => exited(code),
 });
 
 const blocks = [];
@@ -109,12 +124,14 @@ vm.run = (block, result, context) => {
 
 try {
   await core.start();
+  await Promise.race([ended, new Promise((resolve) => setTimeout(resolve, runMs))]);
 } catch (e) {
   console.log(`stopped: ${e.name}: ${e.message}`);
   if (e.source) console.log(`at: ${e.source.name} line ${e.source.line}`);
   if (e.trace) console.log(`trace: ${e.trace}`);
   if (!(e instanceof Error) || !e.name.startsWith('Tjs')) console.log(e.stack);
 }
+console.log(`exit code: ${core.exitCode ?? '(running)'}`);
 console.log('');
 console.log(`project directory: ${core.projectDir}`);
 console.log(`plugins: ${core.plugins.names.join(', ') || '(none)'}`);

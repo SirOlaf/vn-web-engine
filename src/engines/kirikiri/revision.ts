@@ -7,12 +7,20 @@ export interface KirikiriCoreRevision {
   readonly sha256: string;
   /** The executable's FileVersion, dotted. */
   readonly fileVersion: string;
+  /** `TVPCompileDate` and `TVPCompileTime` (`__DATE__`, `__TIME__` of the build). */
+  readonly compileDate: string;
+  readonly compileTime: string;
   /** TJS version, as the TJS dump routine prints it (`TJS version %d.%d.%d`). */
   readonly tjsVersion: readonly [major: number, minor: number, release: number];
   /** `tjsEnableDicFuncQuickHack`: the digit in the core's dicfunc marker string. */
   readonly dicFuncQuickHack: boolean;
   /** Preprocessor values the core defines before the first script, besides `version`. */
   readonly preprocessorValues: readonly (readonly [string, number])[];
+  /**
+   * `TVPInitTJSScript`: the narrow, NUL-terminated script of constants (`bsNone`, `VK_*`,
+   * `gcsAuto`, `imageTagLayerType`, …) the core runs before registering its classes.
+   */
+  readonly initScriptAddress: number;
   /**
    * The function exporter's name table (`TVPInitExportFuncs`): a zlib blob at `address` (VA)
    * inflating to NUL-terminated C++ signatures, one per exported function.
@@ -33,9 +41,14 @@ export interface KirikiriCoreRevision {
 const NEKOPARA_VOL1: KirikiriCoreRevision = {
   sha256: '0b81a3c90a46d3447766af1d7f408b3a4aa1b8eda5cd7edbf33429b1f8c36815',
   fileVersion: '1.2.0.3',
+  // UTF-16 strings at 0x6e329c and 0x6e3318, used by TVPGetVersionInformation (0x44f7a0).
+  compileDate: 'Nov 18 2014',
+  compileTime: '17:23:21',
   tjsVersion: [2, 4, 28],
   dicFuncQuickHack: false,
   preprocessorValues: [['kirikiriz', 1]],
+  // TVPInitScriptEngine (0x407010) runs it first.
+  initScriptAddress: 0x6d9388,
   // TVPInitExportFuncs (0x420550) inflates 0x768538 and pairs the names with 0x767b10.
   exporterNames: {address: 0x768538, compressedSize: 0x13df, size: 0xa405, count: 649},
 };

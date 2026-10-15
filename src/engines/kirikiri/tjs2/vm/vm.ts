@@ -907,7 +907,11 @@ export class Vm {
       f.pc = pc + size;
       return TJS_S_OK;
     }
-    if (v.type === 3) processOctetFunction(name);
+    if (v.type === 3) {
+      processOctetFunction(this.engine, name, v.value, args, target as VariantSlot | null);
+      f.pc = pc + size;
+      return TJS_S_OK;
+    }
     const clo = this.#object(v);
     const hr = clo.object.funcCall(
       0,

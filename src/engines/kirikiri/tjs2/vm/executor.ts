@@ -105,6 +105,10 @@ export class TjsVm implements TjsScriptExecutor {
     return hr;
   }
 
+  doGarbageCollection(): void {
+    this.vm.stack.compact();
+  }
+
   runByteCode(
     bytes: Uint8Array,
     name: string,

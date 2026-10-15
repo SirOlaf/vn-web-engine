@@ -11,9 +11,12 @@ import {formatString} from '../runtime/format-string.js';
 import {
   TJS_E_ACCESSDENYED,
   TJS_E_BADPARAMCOUNT,
+  TJS_E_INVALIDPARAM,
   TJS_E_MEMBERNOTFOUND,
+  TJS_MEMBERENSURE,
   type VariantResult,
 } from '../runtime/interface.js';
+import {unpack} from '../runtime/octpack.js';
 import type {VariantSlot} from '../runtime/slot.js';
 import {
   asInt32,
@@ -207,9 +210,26 @@ export function processStringFunction(
   throwFromCode(TJS_E_MEMBERNOTFOUND, member);
 }
 
-/** `ProcessOctetFunction`: `unpack` (`TJSOctetUnpack`, not available yet). */
-export function processOctetFunction(member: string): never {
-  // TODO(octpack): Octet.unpack needs the OctPack port that Array.pack also needs.
-  throwFromCode(TJS_E_MEMBERNOTFOUND, member);
-  throw new Error('unreachable');
+/** `ProcessOctetFunction`: `unpack` (`TJSOctetUnpack`); other members do not exist. */
+export function processOctetFunction(
+  engine: TjsEngine,
+  member: string,
+  octet: Uint8Array,
+  args: readonly Variant[],
+  result: VariantSlot | null,
+): void {
+  if (member !== 'unpack') throwFromCode(TJS_E_MEMBERNOTFOUND, member);
+  if (args.length < 1) throwFromCode(TJS_E_BADPARAMCOUNT);
+  // The empty octet is the null octet: there is nothing to unpack.
+  const template = args[0]!;
+  if (template.type !== 2 || octet.length === 0) return throwFromCode(TJS_E_INVALIDPARAM);
+  if (!result) return;
+  const array = engine.createArray();
+  try {
+    let n = 0;
+    unpack(template.value, octet, (v) => array.propSetByNum(TJS_MEMBERENSURE, n++, v, array));
+    result.set(obj(array, array));
+  } finally {
+    array.release();
+  }
 }

@@ -23,6 +23,7 @@ import {
   TJS_E_INVALIDOBJECT,
   TJS_E_MEMBERNOTFOUND,
   TJS_E_NATIVECLASSCRASH,
+  TJS_E_INVALIDPARAM,
   TJS_E_NOTIMPL,
   TJS_E_SUSPENDED,
   TJS_HIDDENMEMBER,
@@ -58,6 +59,7 @@ import {
   littlerThan,
   obj,
   NULL_OBJECT,
+  octet,
   str,
   toNumber,
   VOID,
@@ -65,6 +67,7 @@ import {
   type Variant,
 } from '../variant.js';
 import {escapeC} from '../../literals.js';
+import {pack} from '../octpack.js';
 import {msvcSort, msvcStableSort} from '../msvc-sort.js';
 import type {TjsEngine, TjsTextWriter} from '../engine.js';
 import {DICTIONARY_CLASS_ID, DictionaryNI} from './dictionary.js';
@@ -802,7 +805,17 @@ export class ArrayClass extends NativeClass {
       return TJS_S_OK;
     });
 
-    this.method('pack', () => TJS_E_NOTIMPL); // TJSOctetPack: not ported yet
+    this.method('pack', (result, args, objthis) => {
+      const a = ni(objthis);
+      if (!a) return TJS_E_NATIVECLASSCRASH;
+      if (args.length < 1) return TJS_E_BADPARAMCOUNT;
+      if (!result) return TJS_S_OK;
+      // TJSOctetPack: the template must be a string; no bytes give a null object.
+      if (args[0]!.type !== 2) return TJS_E_INVALIDPARAM;
+      const bytes = pack(args[0]!.value, a.items);
+      result.set(bytes ? octet(bytes) : NULL_OBJECT);
+      return TJS_S_OK;
+    });
 
     const count = {
       get: (result: VariantSlot, objthis: Dispatch) => {

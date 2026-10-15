@@ -5,8 +5,10 @@
  */
 import {ARRAY_CLASS_ID, ArrayClass, ArrayObject, instanceOf} from './builtins/array.js';
 import {DICTIONARY_CLASS_ID, DictionaryClass, DictionaryObject} from './builtins/dictionary.js';
+import {DateClass} from './builtins/date.js';
 import {ExceptionClass} from './builtins/exception.js';
 import {MathClass, MsvcRand, RandomGeneratorClass} from './builtins/math.js';
+import {RegExpClass} from './builtins/regexp.js';
 import {CustomObject} from './custom-object.js';
 import {throwTjsError, TjsError} from './errors.js';
 import {
@@ -72,6 +74,8 @@ export interface TjsScriptExecutor {
     result: VariantResult | null,
     context: Dispatch | null,
   ): number | null;
+  /** `tTJS::DoGarbageCollection`: compacts the VM's register stack. */
+  doGarbageCollection(): void;
 }
 
 export class TjsEngine {
@@ -83,6 +87,7 @@ export class TjsEngine {
   readonly crtRand = new MsvcRand();
   readonly arrayClass: ArrayClass;
   readonly dictionaryClass: DictionaryClass;
+  readonly regExpClass: RegExpClass;
 
   constructor(readonly host: TjsHost) {
     this.global = new CustomObject(TJS_GLOBAL_HASH_BITS);
@@ -92,13 +97,16 @@ export class TjsEngine {
     this.arrayClass.addRef();
     this.#register('Dictionary', this.dictionaryClass);
     this.dictionaryClass.addRef();
-    // Date follows Dictionary natively; it is registered by the date module when present.
+    this.#register('Date', new DateClass(() => host.time()));
     const math = new MathClass(this);
     this.#register('Math', math);
     const random = new RandomGeneratorClass(this);
     math.propSet(TJS_MEMBERENSURE, 'RandomGenerator', obj(random), math);
     random.release();
     this.#register('Exception', new ExceptionClass());
+    this.regExpClass = new RegExpClass(this);
+    this.#register('RegExp', this.regExpClass);
+    this.regExpClass.addRef();
   }
 
   /** Sets a global member and hands over the caller's reference on `dsp`. */
@@ -194,6 +202,7 @@ export class TjsEngine {
 
   /** `tTJS::Shutdown`: clears the global object. */
   shutdown(): void {
+    this.regExpClass.clearLast();
     this.global.clear();
   }
 }

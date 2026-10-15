@@ -18,7 +18,9 @@ The VM (`../vm/`) plugs in as `TjsEngine.executor`.
 | `engine.ts`        | `TjsEngine` (`tTJS`): global object, built-in classes, host services, executor    |
 | `msvc-sort.ts`     | `std::sort`/`std::stable_sort` of Visual C++ 2012/2013                            |
 | `format-string.ts` | `TJSFormatString` (`String.sprintf`) with the old MSVC CRT's number formats       |
-| `builtins/`        | `Array`, `Dictionary`, `Exception`, `Math`, `Math.RandomGenerator`                |
+| `octpack.ts`       | `Array.pack` and `Octet.unpack` templates (`TJSOctetPack`/`Unpack`)               |
+| `oniguruma.ts`     | Oniguruma (Perl syntax) patterns translated to JavaScript regular expressions     |
+| `builtins/`        | `Array`, `Dictionary`, `Date`, `Exception`, `Math`, `RandomGenerator`, `RegExp`   |
 
 ## Values
 
@@ -97,6 +99,10 @@ core keeps running. Calls here are synchronous, and a call that has to wait retu
 on (`if (failed(hr)) return hr`) or throws on it. A suspension that is not passed up to `run`
 is reported.
 
+Natives with loops or `try`/`catch` around script calls (the event dispatcher) are written as
+generators that yield each call and run with `runRoutine`: a suspended call defers the rest of
+the generator, which resumes at that `yield` with the call's outcome.
+
 Code without an engine at hand uses the suspender of the top-level call in progress:
 `deferSuspended` and `withoutSuspension`. The default member handlers do: calling a member
 through its default property and read-modify-write operations on property objects continue
@@ -106,12 +112,22 @@ after a suspending handler; `finalize`, `missing` and enumeration callbacks cann
 
 | Class                  | State                                                                                 |
 | ---------------------- | ------------------------------------------------------------------------------------- |
-| `Array`                | complete except `pack` (OctPack) and binary `loadStruct`/`saveStruct`                 |
+| `Array`                | complete except binary `loadStruct`/`saveStruct`; `pack` in `octpack.ts`              |
 | `Dictionary`           | complete except `loadStruct` and binary `saveStruct`                                  |
 | `Exception`            | complete                                                                              |
 | `Math`                 | complete; `random` is `rand() / 32767.0` with `srand(time())`, as the reference build |
 | `Math.RandomGenerator` | complete (MT19937, `serialize`/restore)                                               |
-| `Date`, `RegExp`       | not yet                                                                               |
+| `RegExp`               | complete; Oniguruma patterns, the reference build's offsets (see below)               |
+| `Date`                 | complete; CRT `localtime`/`mktime` on the host zone, the `tjsdate.y` string grammar   |
+
+`RegExp` compiles patterns as the reference build's Oniguruma does (`ONIG_SYNTAX_PERL`, UTF-16,
+capture groups, no empty matches) by translating them to JavaScript regular expressions
+(`oniguruma.ts` lists the differences it bridges and the constructs it rejects). A search runs
+on the target from `start` on; `exec`/`test`/`match` then apply the relative offsets as the
+reference build does, so with a non-zero `start` (`g` after a first match) `matches`,
+`lastIndex` and the contexts are offset, and `index` counts `start` plus bytes. `replace` and
+`split` search the rest of the text after each match, so `^` matches again there.
+`String.replace`/`split` and `Array.split` go through `RegExp`.
 
 `Array.sort` uses the Visual C++ introsort, so equal elements and the comparator call
 sequence match the native build. `Array.load` and other text readers go through

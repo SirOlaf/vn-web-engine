@@ -155,3 +155,36 @@ export class Suspender {
     }
   }
 }
+
+/**
+ * A native routine that calls script, written as a generator: it yields each call as a
+ * function returning a result code, and receives the code back (or the thrown error, at the
+ * `yield`). Loops and `try`/`catch` around calls stay in the routine's own code.
+ */
+export type SuspendableRoutine = Generator<() => number, number, number>;
+
+/**
+ * Runs a routine to completion or to its first suspended call. A call that returns
+ * `TJS_E_SUSPENDED` defers the rest of the routine behind it, so the routine resumes at that
+ * `yield` with the call's final outcome.
+ */
+export function runRoutine(suspender: Suspender, routine: SuspendableRoutine): number {
+  const drive = (step: IteratorResult<() => number, number>): number => {
+    for (;;) {
+      if (step.done) return step.value;
+      let code: number;
+      try {
+        code = step.value();
+      } catch (error) {
+        step = routine.throw(error);
+        continue;
+      }
+      if (code === TJS_E_SUSPENDED)
+        return suspender.defer((inner) =>
+          drive('error' in inner ? routine.throw(inner.error) : routine.next(inner.code)),
+        );
+      step = routine.next(code);
+    }
+  };
+  return drive(routine.next());
+}
