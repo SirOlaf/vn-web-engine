@@ -232,7 +232,71 @@ export interface NativeInstance {
   destruct(): void;
 }
 
+// --- Native classes ---------------------------------------------------------------------------
+
+/** `tTJSNativeInstanceType`: what `TJSNativeClassRegisterNCM` registers. */
+export const NIT_CLASS = 0;
+export const NIT_METHOD = 1;
+export const NIT_PROPERTY = 2;
+
+/**
+ * `tTJSNativeClassMethodCallback`: a native method or constructor body. `result` is cleared
+ * before the call; `objthis` is null only for a constructor called without a context.
+ */
+export type NativeClassMethodCallback = (
+  result: VariantResult | null,
+  args: readonly Variant[],
+  objthis: Dispatch | null,
+) => number;
+/** `tTJSNativeClassPropertyGetCallback`. */
+export type NativeClassPropertyGetCallback = (result: VariantResult, objthis: Dispatch) => number;
+/** `tTJSNativeClassPropertySetCallback`. */
+export type NativeClassPropertySetCallback = (value: Variant, objthis: Dispatch) => number;
+/** `tTJSCreateNativeInstance`: the native part of a new object of a plugin class, or null. */
+export type CreateNativeInstanceCallback = () => NativeInstance | null;
+
+/**
+ * `tTJSNativeClass` as plugins see it: a class object the core created with
+ * `TJSCreateNativeClassForPlugin`. The core rejects class objects it did not create.
+ */
+export interface NativeClassObject extends Dispatch {
+  readonly className: string;
+  readonly classId: number;
+}
+
+/** `tTVPCompactEventCallbackIntf`: called with a `TVP_COMPACT_LEVEL_*` level. */
+export interface TvpCompactEventCallback {
+  onCompact(level: number): void;
+}
+
 // --- Core interfaces --------------------------------------------------------------------------
+
+/**
+ * The input methods of `iTVPDrawDevice` (vtable slots 10–14), which plugins call through a draw
+ * device's `interface` pointer (`NativeLinkContext.process.objects`). They return 0.
+ */
+export interface TvpDrawDeviceInput {
+  onClick(x: number, y: number): number;
+  onDoubleClick(x: number, y: number): number;
+  onMouseDown(x: number, y: number, mb: number, flags: number): number;
+  onMouseUp(x: number, y: number, mb: number, flags: number): number;
+  onMouseMove(x: number, y: number, flags: number): number;
+}
+
+/** `tTVPWindowMessage` at an address, as a message receiver gets it. */
+export const TVP_WINDOW_MESSAGE_SIZE = 16;
+/** Messages the core sends to message receivers when the window handle changes. */
+export const TVP_WM_DETACH = 0x046a;
+export const TVP_WM_ATTACH = 0x046b;
+/** `registerMessageReceiver` modes. */
+export const WRM_REGISTER = 0;
+export const WRM_UNREGISTER = 1;
+/**
+ * A message receiver (`tTVPWindowMessageReceiver`): `bool (*)(void *userdata,
+ * tTVPWindowMessage *message)`, registered by code address. Returns true when it handled the
+ * message (the core then skips its own handling and uses the `Result` field).
+ */
+export type TvpWindowMessageReceiver = (userdata: number, message: number) => boolean;
 
 /** `tTJSBinaryStream` seek origins. */
 export const TJS_BS_SEEK_SET = 0;
@@ -325,6 +389,122 @@ export interface TvpFunctionExporter {
   TVPIsExistentStorage(name: string): boolean;
   /** `TVPCreateStream` (also behind `TVPCreateIStream` and the stream adapters). */
   TVPCreateStream(name: string, flags: number): TjsBinaryStream | Promise<TjsBinaryStream>;
+  /** `TVPGetPlacedPath`: the full name found through the auto paths, or the empty string. */
+  TVPGetPlacedPath(name: string): string;
+  /** `TVPGetLocalName`: the local file name of a storage (throws when it has none). */
+  TVPGetLocalName(name: string): string;
+  /** `TVPGetTemporaryName`: a new local temporary file name (`<temp>krkr_…`). */
+  TVPGetTemporaryName(): string;
+  /** `TVPIsExistentStorageNoSearchNoNormalize`. */
+  TVPIsExistentStorageNoSearchNoNormalize(name: string): boolean;
+  /**
+   * `TVPCreateTextStreamForRead(name, modestr)`, read to the end: the decoded text; a promise
+   * when bytes have to be fetched.
+   */
+  TVPCreateTextStreamForRead(name: string, mode: string): string | Promise<string>;
+
+  // Native classes (`tjsNative.cpp`).
+  /** `TJSRegisterNativeClass`: the class ID of a name, assigned on first registration. */
+  TJSRegisterNativeClass(name: string): number;
+  /** `TJSFindNativeClassID`: -1 when the name has no ID. */
+  TJSFindNativeClassID(name: string): number;
+  /** `TJSFindNativeClassName`: null when the ID is unknown. */
+  TJSFindNativeClassName(id: number): string | null;
+  /** `TJSCreateNativeClassMethod`, owned by the caller. */
+  TJSCreateNativeClassMethod(callback: NativeClassMethodCallback): Dispatch;
+  /** `TJSCreateNativeClassConstructor`: a method callable without a context. */
+  TJSCreateNativeClassConstructor(callback: NativeClassMethodCallback): Dispatch;
+  /** `TJSCreateNativeClassProperty`; a null accessor denies access. */
+  TJSCreateNativeClassProperty(
+    get: NativeClassPropertyGetCallback | null,
+    set: NativeClassPropertySetCallback | null,
+  ): Dispatch;
+  /**
+   * `TJSCreateNativeClassForPlugin`: a class object whose `new` asks `create` for the native
+   * instance. Owned by the caller; its class ID is set with `TJSNativeClassSetClassID`.
+   */
+  TJSCreateNativeClassForPlugin(
+    name: string,
+    create: CreateNativeInstanceCallback,
+  ): NativeClassObject;
+  /** `TJSNativeClassSetClassID`. */
+  TJSNativeClassSetClassID(cls: NativeClassObject, id: number): void;
+  /**
+   * `TJSNativeClassRegisterNCM`: adds a member (`nit*` type, `TJS_STATICMEMBER` in flags).
+   * The class takes over the caller's reference on `dsp`.
+   */
+  TJSNativeClassRegisterNCM(
+    cls: NativeClassObject,
+    name: string,
+    dsp: Dispatch,
+    className: string,
+    type: number,
+    flags: number,
+  ): void;
+
+  /**
+   * `tTJSString::ToNarrowStr`: the text in the system's ANSI code page (the bytes a plugin
+   * writes as "local encoding").
+   */
+  TJSNarrowString(text: string): Uint8Array;
+
+  // Script engine.
+  /**
+   * `TVPThrowExceptionMessage`: throws a script exception with `%1`, `%2`… replaced by the
+   * parameters.
+   */
+  TVPThrowExceptionMessage(message: string, ...params: readonly string[]): never;
+  /** `TVPExecuteExpression(content, context, result)`: evaluates an expression. */
+  TVPExecuteExpression(
+    content: string,
+    context: Dispatch | null,
+    result: VariantResult | null,
+  ): void;
+  /** `TJSGetMessageMapMessage`: a message of the core's message table, or the empty string. */
+  TJSGetMessageMapMessage(name: string): string;
+  /** `TVPGetAboutString`: the about text with the versions and the important log. */
+  TVPGetAboutString(): string;
+  /** `TJSDoRehash`. */
+  TJSDoRehash(): void;
+
+  // Events.
+  /**
+   * `TVPPostEvent(source, target, eventname, tag, flag, args)`: queues `target.eventname(args)`
+   * with `TVP_EPT_*` flags.
+   */
+  TVPPostEvent(
+    source: Dispatch,
+    target: Dispatch,
+    eventName: string,
+    tag: number,
+    flag: number,
+    args: readonly Variant[],
+  ): void;
+  /** `TVPAddCompactEventHook`. */
+  TVPAddCompactEventHook(callback: TvpCompactEventCallback): void;
+  /** `TVPRemoveCompactEventHook`. */
+  TVPRemoveCompactEventHook(callback: TvpCompactEventCallback): void;
+  /** `TVPBreathe`: delivers pending window messages inside a long operation. */
+  TVPBreathe(): void;
+  /** `TVPGetBreathing`: whether a `TVPBreathe` is running. */
+  TVPGetBreathing(): boolean;
+
+  // System.
+  /** `TVPGetAsyncKeyState(keycode, getcurrent)`. */
+  TVPGetAsyncKeyState(keyCode: number, getCurrent: boolean): boolean;
+  /** `TVPGetApplicationWindowHandle`: the `HWND` that owns the core's windows. */
+  TVPGetApplicationWindowHandle(): number;
+  /** `TVPClearGraphicCache`. */
+  TVPClearGraphicCache(): void;
+
+  // Memory. Blocks live in the process memory (`NativeLinkContext.process`), with bitmap
+  // bits (`Layer.mainImageBuffer`, `Bitmap.buffer`).
+  /** `TVP_malloc`: zeroed bytes; the address is never 0. */
+  TVP_malloc(size: number): number;
+  /** `TVP_realloc`: a new block with the old contents. */
+  TVP_realloc(address: number, size: number): number;
+  /** `TVP_free`. */
+  TVP_free(address: number): void;
 }
 
 /** What a TVP plugin exports: `V2Link` and `V2Unlink`. */

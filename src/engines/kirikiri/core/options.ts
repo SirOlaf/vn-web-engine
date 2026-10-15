@@ -30,6 +30,37 @@ export function readEmbeddedOptions(
   return splitNarrowLines(resource.bytes).map(decodeAnsi);
 }
 
+/** `IDR_LICENSE_TEXT`: the about text (type `TEXT`, UTF-8). */
+export const ABOUT_TEXT_RESOURCE = 142;
+
+/**
+ * `TVPReadAboutStringFromResource`: the about text with `%DATE%` and `%TIME%` replaced by the
+ * build date and time and LF turned into CR LF; null without the resource.
+ */
+export function readAboutText(
+  executable: Uint8Array,
+  compileDate: string,
+  compileTime: string,
+): string | null {
+  const resource = parsePeResources(executable, ['TEXT']).find((r) => r.id === ABOUT_TEXT_RESOURCE);
+  if (!resource) return null;
+  let text = new TextDecoder('utf-8').decode(resource.bytes);
+  const nul = text.indexOf('\0');
+  if (nul >= 0) text = text.slice(0, nul);
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text.startsWith('%DATE%', i)) {
+      out += compileDate;
+      i += 5;
+    } else if (text.startsWith('%TIME%', i)) {
+      out += compileTime;
+      i += 5;
+    } else if (text[i] === '\n') out += '\r\n';
+    else out += text[i];
+  }
+  return out;
+}
+
 function splitNarrowLines(buf: Uint8Array): Uint8Array[] {
   const lines: Uint8Array[] = [];
   let start = 0,

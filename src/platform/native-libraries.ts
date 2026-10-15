@@ -6,6 +6,8 @@
  * contract, never on an implementation, so implementations are interchangeable.
  */
 
+import type {NativeProcess} from './native-process.js';
+
 declare const contractExports: unique symbol;
 
 /** Typed export surface of one native library. Shared by every implementation of it. */
@@ -49,6 +51,8 @@ export interface NativeImportDeclaration {
 }
 
 export interface NativeLinkContext {
+  /** The process the library is mapped into: its memory and code addresses. */
+  readonly process: NativeProcess;
   /** Exports of a declared static import. */
   staticImport<E extends object>(contract: NativeContract<E>): E;
   /**
@@ -152,6 +156,8 @@ export class NativeLibraryLoader {
   constructor(
     implementations: readonly NativeLibraryImplementation<object>[],
     private readonly locator: NativeLibraryLocator,
+    /** The process libraries are mapped into; required by libraries that use it. */
+    private readonly process: NativeProcess | null = null,
   ) {
     for (const implementation of implementations) {
       for (const identity of implementation.identities) {
@@ -277,7 +283,12 @@ export class NativeLibraryLoader {
         );
       return declaration;
     };
+    const process = this.process;
     return {
+      get process(): NativeProcess {
+        if (!process) throw new Error('The native library loader has no process');
+        return process;
+      },
       staticImport: <E extends object>(contract: NativeContract<E>): E => {
         declared(contract, 'static');
         const dependency = module.staticDependencies.find((item) => provides(item, contract));

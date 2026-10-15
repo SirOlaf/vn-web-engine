@@ -242,15 +242,17 @@ class MemberCopier extends DispatchBase {
 
 /** `tTJSNativeClass`. Subclass it or pass a native instance factory. */
 export class NativeClass extends CustomObject {
-  readonly classId: number;
+  /** The ID `new` registers the native instance under (`TJSNativeClassSetClassID`). */
+  classId: number;
 
   constructor(
     readonly className: string,
     private readonly nativeInstanceFactory: (() => NativeInstance | null) | null = null,
+    classId: number = registerNativeClass(className),
   ) {
     super();
     this.callFinalize = false;
-    this.classId = registerNativeClass(className);
+    this.classId = classId;
   }
 
   /** `CreateNativeInstance`: null for classes without native state. */
@@ -372,6 +374,16 @@ export class NativeClass extends CustomObject {
       if (className === this.className) return TJS_S_TRUE;
     }
     return super.isInstanceOf(flag, member, className, objthis);
+  }
+}
+
+/**
+ * `tTJSNativeClassForPlugin`: a class a plugin builds through the exporter. `new` asks the
+ * plugin's callback for the native instance; the plugin sets the class ID.
+ */
+export class PluginNativeClass extends NativeClass {
+  constructor(className: string, create: () => NativeInstance | null) {
+    super(className, create, -1);
   }
 }
 

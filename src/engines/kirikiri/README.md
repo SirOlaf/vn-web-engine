@@ -10,6 +10,7 @@ NEKOPARA Vol. 1 (`nekopara_vol1.exe`, SHA-256 `0b81a3c9…`).
 | `tjs2/vm/`      | TJS2 VM: contexts, frames, suspension, the script executor; see `tjs2/vm/README.md`           |
 | `tjs2/runtime/` | TJS2 object model, suspension, built-in classes; see `tjs2/runtime/README.md`                 |
 | `core/`         | TVP core: storage, text streams, log, plugins, native classes, start-up; see `core/README.md` |
+| `tp-stub/`      | Plugin-side `tp_stub` and ncbind: registration, conversions, property access for plugins      |
 | `messages.ts`   | The core's message table (TJS and TVP), read from the executable by UI language               |
 
 Formats (XP3, CxDec archives, PSB, E-mote models) are in `src/formats/kirikiri/`; plugins

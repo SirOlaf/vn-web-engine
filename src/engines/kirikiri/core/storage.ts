@@ -377,6 +377,11 @@ export class StorageSystem {
     return rec.media.checkExistentStorage(domainAndPath(name));
   }
 
+  /** `TVPIsExistentStorageNoSearchNoNormalize`. */
+  isExistentStorageNoSearchNoNormalize(name: string): boolean {
+    return this.#isExistentNoSearchNoNormalize(name);
+  }
+
   /** `TVPIsExistentStorageNoSearch`. */
   isExistentStorageNoSearch(name: string): boolean {
     return this.#isExistentNoSearchNoNormalize(this.normalize(name));

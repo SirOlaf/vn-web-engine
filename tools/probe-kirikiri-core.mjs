@@ -4,10 +4,21 @@ import {join} from 'node:path';
 import {performance} from 'node:perf_hooks';
 import {KirikiriCore} from '../dist/engines/kirikiri/core/kirikiri-core.js';
 import {NEKOPARA_VOL1_TPM} from '../dist/native/nekopara_vol1.tpm/library.js';
+import {comctl32Library} from '../dist/native/comctl32/library.js';
+import {comdlg32Library} from '../dist/native/comdlg32/library.js';
+import {gdi32Library} from '../dist/native/gdi32/library.js';
+import {kernel32Library} from '../dist/native/kernel32/library.js';
+import {user32Library} from '../dist/native/user32/library.js';
+import {WIN32DIALOG} from '../dist/native/win32dialog/library.js';
+import {K2COMPAT} from '../dist/native/k2compat/library.js';
+import {PACKINONE} from '../dist/native/PackinOne/library.js';
+import {advapi32Library} from '../dist/native/advapi32/library.js';
+import {headlessUserInterfaceHost} from '../dist/platform/windows-user-interface.js';
 
 /**
  * Boots the Kirikiri core on an installation in Node: selects the project directory, links the
- * `.tpm` plugins, runs `startup.tjs` on the TJS2 VM and then delivers events for a while, until
+ * `.tpm` plugins, runs `startup.tjs` on the TJS2 VM (scripts link the reimplemented plugins and
+ * their system libraries) and then delivers events for a while, until
  * the core ends (an uncaught error is shown and ends it, as natively) or the time is up. Prints
  * the core log, message boxes, the script blocks that ran and the exit code. Non-visual.
  *
@@ -104,7 +115,18 @@ const core = await KirikiriCore.create({
   executablePath: ROOT + exeName,
   uiLanguage: 0x0411,
   files,
-  libraries: [NEKOPARA_VOL1_TPM],
+  libraries: [
+    NEKOPARA_VOL1_TPM,
+    WIN32DIALOG,
+    K2COMPAT,
+    PACKINONE,
+    kernel32Library({userLanguage: 0x0411}),
+    gdi32Library(),
+    user32Library(headlessUserInterfaceHost()),
+    comctl32Library(),
+    comdlg32Library(),
+    advapi32Library(null),
+  ],
   clock,
   output: (line, important) => console.log(important ? `! ${line}` : `  ${line}`),
   system: {

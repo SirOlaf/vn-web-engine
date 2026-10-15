@@ -24,6 +24,11 @@ export class PageWindowsNamedMutexes {
     return {handle: {name}, lastError: count ? ERROR_ALREADY_EXISTS : 0};
   }
 
+  /** Whether a mutex of this name is open in the page (`OpenMutexW` finds it). */
+  isOpen(name: string): boolean {
+    return this.#open.has(name);
+  }
+
   close(handle: {name: string}): void {
     const count = this.#open.get(handle.name) ?? 0;
     if (count <= 1) this.#open.delete(handle.name);

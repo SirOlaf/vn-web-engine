@@ -71,6 +71,15 @@ that. Engine and library code do not.
 | `d3d9.dll`          | `d3d9/contract.ts`        | `d3d9/webgl2/`       | Direct3D 9 device on WebGL2; see `d3d9/README.md`  |
 | TVP plugins         | `tvp-plugin/contract.ts`  | per plugin           | `V2Link` surface shared by every Kirikiri plugin   |
 | `nekopara_vol1.tpm` | `tvp-plugin/contract.ts`  | `nekopara_vol1.tpm/` | CxDec `archive://` storage medium                  |
+| `win32dialog.dll`   | `tvp-plugin/contract.ts`  | `win32dialog/`       | `WIN32Dialog`: dialogs from templates, controls    |
+| `k2compat.dll`      | `tvp-plugin/contract.ts`  | `k2compat/`          | `System.ModelessOwnerWindow`, `Window.TouchMouse`  |
+| `PackinOne.dll`     | `tvp-plugin/contract.ts`  | `PackinOne/`         | Ten bundled ncbind plugins; see its `library.ts`   |
+| `kernel32.dll`      | `kernel32/contract.ts`    | `kernel32/`          | Last error, messages, code pages, files, mutexes   |
+| `user32.dll`        | `user32/contract.ts`      | `user32/`            | Windows, messages, dialogs, standard controls      |
+| `gdi32.dll`         | `gdi32/contract.ts`       | `gdi32/`             | DIB sections, DCs, `BitBlt`, font resources        |
+| `comctl32.dll`      | `comctl32/contract.ts`    | `comctl32/`          | Progress, trackbar, up-down, tab, ComboBoxEx       |
+| `comdlg32.dll`      | `comdlg32/contract.ts`    | `comdlg32/`          | `ChooseColorW`                                     |
+| `advapi32.dll`      | `advapi32/contract.ts`    | `advapi32/`          | Registry writes over the platform registry         |
 
 ## TVP plugins
 
@@ -86,3 +95,26 @@ Plugin implementations may use the TJS2 value helpers in `src/engines/kirikiri/t
 only through the exporter. Two contract calls may complete asynchronously because the native
 core blocks on file I/O there: opening a storage and `V2Link`. A plugin's native method that
 has to wait uses `TvpFunctionExporter.suspend`.
+
+Plugins built with ncbind or `tp_stub` native classes are written against
+`src/engines/kirikiri/tp-stub/` (`ncbind.ts`, `tp-stub.ts`), which reproduces the registration
+order and object lifetimes of those libraries. Natively a plugin reads and writes pixels and
+structures through pointers; here those pointers are addresses in the process memory every
+library reaches as `context.process` (`src/platform/native-process.ts`): layer images,
+`TVP_malloc` blocks, dialog templates. Function pointers (window procedures, message receivers)
+are addresses from `process.code`.
+
+## System libraries
+
+The Win32 libraries implement the subset the plugins import, keyed by file name. Each takes
+its platform services when the runtime registers it: `kernel32Library({userLanguage, files,
+environment, mutexes})` over `WindowsLocalFiles` and the page's named mutexes,
+`user32Library(host)` over a `WindowsUserInterfaceHost` (`headlessUserInterfaceHost()` without
+a page), `advapi32Library(registry)`. A service a host does not provide answers as Windows does
+when the call fails (`ERROR_CALL_NOT_IMPLEMENTED`, a cancelled dialog).
+
+`user32` keeps the window tree, classes and message dispatch (`SendMessage`, posted messages
+through the host's task queue, `GWL_WNDPROC` subclassing through code pointers), parses
+`DLGTEMPLATE(EX)` and runs `DefDlgProc`. Modal dialogs (`DialogBoxIndirectParamW`) and message
+boxes return promises; a plugin method waits on them with `TvpFunctionExporter.suspend`.
+Dialog base units come from the Japanese system font (8 × 16) and the template font.

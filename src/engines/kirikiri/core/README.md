@@ -11,6 +11,7 @@ krkrz `base/`, `utils/` and the reference build `nekopara_vol1.exe` (`../revisio
 | `text-stream.ts`   | Text storages: encodings, cipher modes, compression                        |
 | `log.ts`           | The core log, logging handlers, the log file                               |
 | `plugins.ts`       | Plugin location, linking (`V2Link`) and unlinking                          |
+| `exporter.ts`      | The function exporter plugins receive (`TVPGetFunctionExporter`)           |
 | `options.ts`       | Program arguments (embedded options, `.cf`/`.cfu` files) and the data path |
 | `events.ts`        | Event queue, delivery, continuous and compact events, uncaught errors      |
 | `visual/`          | Bitmaps, pixel kernels, layers, layer managers, windows, draw devices      |
@@ -197,9 +198,37 @@ calls `V2Link` with the function exporter. Plugins provide `TVP_PLUGIN`
 archive is identified by the SHA-256 of its bytes, where the native core extracts it to a
 temporary file.
 
-The exporter implements the functions plugins of this title call. `has(signature)` answers
-from the executable's exporter table (649 signatures). `suspend` lets a plugin's native
-method wait for asynchronous work.
+The exporter (`exporter.ts`) implements the functions the plugins of this title call.
+`has(signature)` answers from the executable's exporter table (649 signatures). `suspend` lets
+a plugin's native method wait for asynchronous work: it returns `TJS_E_SUSPENDED`, and the
+call chain resumes with the continuation's result.
+
+**Native classes.** `TJSCreateNativeClassForPlugin` creates a class object owned by the core
+(`PluginNativeClass`); `TJSRegisterNativeClass`/`TJSNativeClassSetClassID` give it a class ID,
+`TJSNativeClassRegisterNCM` adds members (method, property and class objects made with
+`TJSCreateNativeClassMethod`/`Constructor`/`Property`). Instances get the plugin's native
+instance through `nativeInstanceSupport`, as with core classes. Exporter calls that take a
+class reject class objects the core did not create.
+
+**Process.** The core and the plugins share one emulated process (`NativeProcess`,
+`src/platform/native-process.ts`), handed to every library through the loader:
+
+- `memory`: `TvpMemory`, so `Layer.mainImageBuffer` and pointers plugins allocate
+  (`TVP_malloc`, dialog templates, strings) address the same bytes;
+- `objects`: interface pointers (`HWND`, `drawDevice.interface`) mapped back to objects;
+- `code`: function pointers (window procedures, message receivers).
+
+**Plugin sources.** `../tp-stub/` is the plugin-side library the implementations link, as native
+plugins link `tp_stub` and ncbind: value conversions, `PropAccessor`, `DictionaryBuilder`, and
+ncbind registration (`registerClass`, `attachClass`, `attachFunction`, `NcbPlugin` with
+pre/post registration, the plugin object count `V2Unlink` checks). Implementations are in
+`src/native/` (`win32dialog/`, `k2compat/`, `PackinOne/`); see `src/native/README.md`.
+
+Not available to plugins: message receivers registered on a core `Window` are stored but not
+called (core windows are not user32 windows, so a dialog cannot use a core window as its
+owner); resource DLLs (`WIN32Dialog.loadResource`); the folder browser
+(`Storages.selectDirectory` reports a cancel); a suspension inside a callback a native library
+calls (a window procedure) throws.
 
 ## Log
 
@@ -219,6 +248,10 @@ every line, to `krkr.console.log` in the log location.
 - `tests/kirikiri-core-visual.test.mjs`: complex rectangles against a brute-force raster,
   kernel fixed points, Win32 frame metrics, and Window/Layer/Bitmap/Rect/Font through scripts
   with an in-memory presentation surface (composited pixels checked).
+- `tests/kirikiri-plugins.test.mjs`: win32dialog (a modal dialog from a template with its
+  script handlers), k2compat, and PackinOne (the `Plugins.link` hook and its unlinking,
+  scripts, system, savestruct and CSVParser functions, layer functions on pixels in process
+  memory) on a synthetic installation with stand-in plugin files.
 - `tools/probe-kirikiri-core.mjs [--run <ms>] <game folder>` boots the core on an
   installation in Node, runs `startup.tjs` on the VM and delivers events for a while; it prints
   the core log, message boxes, the linked plugins, the script blocks that ran and the exit code.

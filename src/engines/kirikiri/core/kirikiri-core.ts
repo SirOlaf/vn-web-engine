@@ -15,7 +15,8 @@ import {
   type NativeLibraryIdentity,
   type NativeLibraryImplementation,
 } from '../../../platform/native-libraries.js';
-import {decodeCp932} from '../../../text/cp932.js';
+import {NativeCodePointers} from '../../../platform/native-process.js';
+import {decodeCp932, encodeCp932} from '../../../text/cp932.js';
 import {ENGLISH_MESSAGES, readKirikiriMessages} from '../messages.js';
 import {
   KIRIKIRI_CORE_REVISIONS,
@@ -81,9 +82,11 @@ import {
   dataPathDirectory,
   ProgramArguments,
   readConfigLines,
+  readAboutText,
   readEmbeddedOptions,
   type SpecialFolders,
 } from './options.js';
+import {createFunctionExporter} from './exporter.js';
 import {PluginManager} from './plugins.js';
 import {
   ARCHIVE_DELIMITER,
@@ -139,8 +142,14 @@ export interface KirikiriCoreConfig {
   readonly storagesPlatform?: Partial<StoragesPlatform>;
   /** `MultiByteToWideChar(CP_ACP)`; CP932 by default. */
   readonly decodeAnsi?: (bytes: Uint8Array) => string;
+  /** `WideCharToMultiByte(CP_ACP)`; CP932 by default. */
+  readonly encodeAnsi?: (text: string) => Uint8Array;
   /** `TVPGetRandomBits128`. */
   readonly randomBits128?: () => Uint8Array;
+  /** `GetTempPathW` (with the trailing backslash); `c:\windows\temp\` by default. */
+  readonly temporaryPath?: string;
+  /** `GetCurrentProcessId`; 4096 by default. */
+  readonly processId?: number;
   /** The page side of windows; headless (state only) by default. */
   readonly windowHost?: KirikiriWindowHost;
   /** The GDI font rasterizer; text measuring and drawing fail without it. */
@@ -183,8 +192,10 @@ export class KirikiriCore {
   readonly exporter: TvpFunctionExporter;
   readonly loader: NativeLibraryLoader;
   readonly events: TvpEventSystem;
-  /** Bitmap bits and interface pointers. */
+  /** The process memory: bitmap bits, plugin blocks and interface pointers. */
   readonly memory: TvpMemory;
+  /** Function pointers of the process. */
+  readonly code = new NativeCodePointers();
   readonly fonts: TvpFontSystem;
   readonly transitions = new TvpTransitionRegistry();
   readonly windows = new TvpWindowList();
@@ -258,9 +269,12 @@ export class KirikiriCore {
       (line) => this.log.add(line),
       () => config.clock.tickCount(),
     );
-    this.loader = new NativeLibraryLoader(config.libraries, {
-      locate: (fileName) => this.#locateLibrary(fileName),
-    });
+    this.memory = TvpMemory.create(config.bitmapMemory);
+    this.loader = new NativeLibraryLoader(
+      config.libraries,
+      {locate: (fileName) => this.#locateLibrary(fileName)},
+      {memory: this.memory, code: this.code, objects: this.memory},
+    );
     this.#logLocation = this.storage.normalize(this.#nativeDataPath);
     this.log.add(tjsMessage('TVPInfoDataPath', this.dataPath), true);
     this.events = new TvpEventSystem(
@@ -278,7 +292,6 @@ export class KirikiriCore {
       },
       () => tjsDoRehash(),
     );
-    this.memory = TvpMemory.create(config.bitmapMemory);
     this.fonts = new TvpFontSystem(
       {height: -12, flags: 0, angle: 0, face: tjsMessage('TVPDefaultFontName')},
       [null, config.fontRasterizer ?? null],
@@ -428,33 +441,24 @@ export class KirikiriCore {
   }
 
   #createExporter(): TvpFunctionExporter {
-    const storage = this.storage;
-    return {
-      has: (signature) => this.exporterNames.has(signature),
-      suspend: (promise, then) => this.engine.suspender.suspend(promise, then),
-      TVPGetScriptDispatch: () => {
-        this.engine.global.addRef();
-        return this.engine.global;
-      },
-      TJSCreateArrayObject: () => this.engine.createArray(),
-      TJSCreateDictionaryObject: () => this.engine.createDictionary(),
-      TVPAddLog: (message) => this.log.add(message),
-      TVPAddImportantLog: (message) => this.log.add(message, true),
-      TVPGetCommandLine: (name) => this.getCommandLine(name),
-      TVPSetCommandLine: (name, value) => this.setCommandLine(name, value),
-      TVPGetAppPath: () => this.appPath,
-      TVPRegisterStorageMedia: (media: TvpStorageMedia) => storage.registerMedia(media),
-      TVPUnregisterStorageMedia: (media: TvpStorageMedia) => storage.unregisterMedia(media),
-      TVPSetCurrentDirectory: (name) => storage.setCurrentDirectory(name),
-      TVPNormalizeStorageName: (name) => storage.normalize(name),
-      TVPExtractStorageName: extractStorageName,
-      TVPExtractStoragePath: extractStoragePath,
-      TVPAddAutoPath: (name) => storage.addAutoPath(name),
-      TVPRemoveAutoPath: (name) => storage.removeAutoPath(name),
-      TVPClearStorageCaches: () => storage.clearStorageCaches(),
-      TVPIsExistentStorage: (name) => storage.isExistentStorage(name),
-      TVPCreateStream: (name, flags) => storage.createStream(name, flags),
-    };
+    return createFunctionExporter({
+      names: this.exporterNames,
+      engine: this.engine,
+      storage: this.storage,
+      log: this.log,
+      events: this.events,
+      memory: this.memory,
+      getCommandLine: (name) => this.getCommandLine(name),
+      setCommandLine: (name, value) => this.setCommandLine(name, value),
+      appPath: () => this.appPath,
+      readText: (name, mode) => this.readText(name, mode),
+      asyncKeyState: (keyCode, getCurrent) => this.#platform.asyncKeyState(keyCode, getCurrent),
+      firstWindowHandle: () => this.windows.windows[0]?.hwndHandle ?? null,
+      temporaryName: () => this.#temporaryName(),
+      encodeAnsi: (text) => (this.config.encodeAnsi ?? encodeCp932)(text),
+      aboutString: () => this.aboutString,
+      clearGraphicCache: () => {},
+    });
   }
 
   // --- script engine --------------------------------------------------------------------------
@@ -642,6 +646,37 @@ export class KirikiriCore {
       dumpHeap: () => this.log.add('The process has 0 heaps.'),
       flags: this.#systemFlags,
     };
+  }
+
+  /**
+   * `TVPGetAboutString`: the about text with the core and TJS versions, then the important log
+   * lines.
+   */
+  get aboutString(): string {
+    const exe = this.config.executable;
+    const text = exe
+      ? (readAboutText(exe, this.revision.compileDate, this.revision.compileTime) ?? '')
+      : '';
+    const versions = [this.revision.fileVersion, this.revision.tjsVersion.join('.')];
+    const formatted = text.replace(/%([1-9%])/g, (m, d: string) =>
+      d === '%' ? '%' : (versions[Number(d) - 1] ?? m),
+    );
+    return formatted + this.log.importantLog;
+  }
+
+  /** Tick count of the first temporary name, then incremented (`TVPGetTemporaryName`). */
+  #temporaryCounter: number | null = null;
+
+  /** `TVPGetTemporaryName`: `<temp>krkr_<6 random bytes>_<counter>_<process id>`. */
+  #temporaryName(): string {
+    let path = this.config.temporaryPath ?? 'c:\\windows\\temp\\';
+    if (!path.endsWith('\\')) path += '\\';
+    const counter = (this.#temporaryCounter ??= this.config.clock.tickCount() >>> 0);
+    this.#temporaryCounter = (counter + 1) >>> 0;
+    const random = Array.from(this.#randomBits128().subarray(0, 6), (b) =>
+      b.toString(16).padStart(2, '0'),
+    ).join('');
+    return `${path}krkr_${random}_${counter}_${this.config.processId ?? 4096}`;
   }
 
   #randomBits128(): Uint8Array {
