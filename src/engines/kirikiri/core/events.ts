@@ -491,6 +491,11 @@ export class TvpEventSystem {
     this.#windowUpdates = this.#windowUpdates.map((w) => (w === window ? null : w));
   }
 
+  /** `TVPDeliverWindowUpdateEvents`. Returns a result code; may suspend. */
+  deliverWindowUpdateEvents(): number {
+    return runRoutine(this.#suspender, this.#deliverWindowUpdateEvents());
+  }
+
   *#deliverWindowUpdateEvents(): SuspendableRoutine {
     if (this.#windowUpdatesDelivering) return TJS_S_OK;
     this.#windowUpdatesDelivering = true;

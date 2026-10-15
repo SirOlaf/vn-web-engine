@@ -3,17 +3,18 @@
 The services and native classes of the Kirikiri Z core around the TJS2 runtime, following
 krkrz `base/`, `utils/` and the reference build `nekopara_vol1.exe` (`../revision.ts`).
 
-| File               | Contents                                                                     |
-| ------------------ | ---------------------------------------------------------------------------- |
-| `kirikiri-core.ts` | `KirikiriCore`: configuration, preparation, class registration, start-up     |
-| `storage.ts`       | Storage names, media, the `file` medium, XP3 archives, auto paths, streams   |
-| `streams.ts`       | `tTJSBinaryStream` over memory and over a file's fetched ranges              |
-| `text-stream.ts`   | Text storages: encodings, cipher modes, compression                          |
-| `log.ts`           | The core log, logging handlers, the log file                                 |
-| `plugins.ts`       | Plugin location, linking (`V2Link`) and unlinking                            |
-| `options.ts`       | Program arguments (embedded options, `.cf`/`.cfu` files) and the data path   |
-| `events.ts`        | Event queue, delivery, continuous and compact events, uncaught errors        |
-| `classes/`         | `Storages`, `Scripts`, `Debug`, `Plugins`, `System`, `Timer`, `AsyncTrigger` |
+| File               | Contents                                                                   |
+| ------------------ | -------------------------------------------------------------------------- |
+| `kirikiri-core.ts` | `KirikiriCore`: configuration, preparation, class registration, start-up   |
+| `storage.ts`       | Storage names, media, the `file` medium, XP3 archives, auto paths, streams |
+| `streams.ts`       | `tTJSBinaryStream` over memory and over a file's fetched ranges            |
+| `text-stream.ts`   | Text storages: encodings, cipher modes, compression                        |
+| `log.ts`           | The core log, logging handlers, the log file                               |
+| `plugins.ts`       | Plugin location, linking (`V2Link`) and unlinking                          |
+| `options.ts`       | Program arguments (embedded options, `.cf`/`.cfu` files) and the data path |
+| `events.ts`        | Event queue, delivery, continuous and compact events, uncaught errors      |
+| `visual/`          | Bitmaps, pixel kernels, layers, layer managers, windows, draw devices      |
+| `classes/`         | The TJS classes of the core (`Storages` … `Window`), `binding.ts` helpers  |
 
 ## Using the core
 
@@ -52,8 +53,62 @@ the native library loader). `start` follows the executable's start-up: project d
 Core classes are registered in the order of `TVPInitScriptEngine` (0x407010): Debug, Font,
 Layer, Timer, AsyncTrigger, System, Storages, Plugins, VideoOverlay, Clipboard, Scripts, Rect,
 Bitmap, ImageFunction, BitmapLayerTreeOwner, WaveSoundBuffer (with `PhaseVocoder`), Window
-(with `BasicDrawDevice`). Implemented: Debug, Timer, AsyncTrigger, System, Storages, Plugins,
-Scripts. `TVPInitTJSScript` runs before them.
+(with `BasicDrawDevice`). Implemented: Debug, Font, Layer, Timer, AsyncTrigger, System, Storages,
+Plugins, Scripts, Rect, Bitmap, Window and `Window.BasicDrawDevice`; VideoOverlay, Clipboard,
+ImageFunction, BitmapLayerTreeOwner and WaveSoundBuffer are not registered yet.
+`TVPInitTJSScript` runs before them.
+
+## Visual system
+
+`visual/` ports `visual/` of krkrz with the reference build's member sets (2014: `Layer` has no
+`copy9Patch`/`releaseTouchCapture`; `Window` has no obsolete members such as `innerSunken`).
+
+| File               | Contents                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------ |
+| `memory.ts`        | `TvpMemory`: one `WebAssembly.Memory` for bitmap bits; addresses, interface pointers                   |
+| `complex-rect.ts`  | `tTVPRect`, `tTVPComplexRect` (update, exposed and cache regions)                                      |
+| `tvpgl.ts`         | Pixel kernels as the reference build runs them (see below)                                             |
+| `base-bitmap.ts`   | `tTVPBitmap`, `tTVPBaseBitmap`: bottom-up DIBs, fills, copies, `Blt`, flips                            |
+| `font.ts`          | `tTVPFont`, the font rasterizer interface, `FontSystem`                                                |
+| `object-list.ts`   | `tObjectList`: holes and safe-locked iteration of layer children                                       |
+| `layer-types.ts`   | Layer types, draw faces, `tTVPDrawable`, `iTVPLayerTreeOwner`, `iTVPLayerManager`                      |
+| `layer.ts`         | `tTJSNI_BaseLayer`: tree, geometry, images, drawing, input, focus, cache, update pipeline, transitions |
+| `layer-manager.ts` | `tTVPLayerManager`: primary layer, update region, capture, focus, modal layers                         |
+| `transition.ts`    | Transition handler interfaces and the provider registry                                                |
+| `draw-device.ts`   | `tTVPDrawDevice`, `tTVPBasicDrawDevice` (texture presented on the window surface)                      |
+| `window.ts`        | `tTJSNI_Window` with the window form; the window list and main window                                  |
+
+**Memory.** Bitmap bits live in `TvpMemory`; `Layer.mainImageBuffer`, `Bitmap.buffer` and
+`Rect.nativeArray` are byte offsets into it, as pointers are natively, so plugins and Wasm
+kernels share them. Interface pointers (`layerTreeOwnerInterface`, a draw device's `interface`,
+`HWND`) are unique addresses in the same memory that map back to their objects.
+
+**Kernels.** The reference build selects its pixel kernels by CPU (`TVPGL_IA32_Init`): with
+MMX, EMMX and SSE2 the alpha, additive-alpha, constant-alpha and colour-fill kernels are the
+kirikiri 2 MMX assembly, the others the generated C of kirikiri 2. Both differ from the later
+krkrz functors (an opaque single pixel is copied, alpha is blended as a fourth channel, pixel
+pairs are skipped or copied when both are transparent or opaque, single and paired pixels round
+differently), so `tvpgl.ts` follows each kernel of the executable, including whether pixels are
+taken singly or in pairs; `TVPGL_KERNELS` and `TVPGL_FILL_KERNELS` list the reference addresses.
+Stretch, affine, box blur, gamma, Photoshop-compatible blends and the transition kernels are not
+ported yet; `Blt` methods without a kernel and the drawing methods that need them throw.
+
+**Layers.** Layers form trees under a primary layer; each tree has a layer manager registered
+with its window (the layer tree owner). Changes add update regions that travel up the tree; the
+window posts a window update, and `updateContent` completes the region onto the draw device
+(`CompleteForWindow`: opaque-area exclusion, stripe splitting, caches, children composited with
+`BltImage`). Layer events are immediate script events; the manager's input dispatch runs as
+suspendable routines, so a handler may wait on storage.
+
+**Windows.** A `Window` owns a `WindowsTopLevelWindow` (`src/platform/`): window and client
+rectangles from the border style, the minimum tracking size, visibility, caption. The host
+(`KirikiriWindowHost`, headless by default) mirrors windows into the page and provides each
+client area's presentation surface. Showing a window paints it from the message loop, which
+hands the surface to the draw device. `showModal` is not available.
+
+Not yet available: the graphics loader (`TVPLoadGraphic`, image formats, graphic cache), the
+GDI font rasterizer and glyph rendering (`drawText`), image encoders, transition providers, and
+event delivery while a call is suspended (modal windows).
 
 ## Program arguments and data path
 
@@ -161,6 +216,9 @@ every line, to `krkr.console.log` in the log location.
 - `tests/kirikiri-core-system.test.mjs`: option parsing and data path, `System` through
   scripts, uncaught errors and `System.exceptionHandler`, `AsyncTrigger`, `Timer`, continuous
   handlers, with a message loop and clock driven by the test.
+- `tests/kirikiri-core-visual.test.mjs`: complex rectangles against a brute-force raster,
+  kernel fixed points, Win32 frame metrics, and Window/Layer/Bitmap/Rect/Font through scripts
+  with an in-memory presentation surface (composited pixels checked).
 - `tools/probe-kirikiri-core.mjs [--run <ms>] <game folder>` boots the core on an
   installation in Node, runs `startup.tjs` on the VM and delivers events for a while; it prints
   the core log, message boxes, the linked plugins, the script blocks that ran and the exit code.

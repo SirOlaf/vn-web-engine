@@ -49,8 +49,25 @@ import {
   type GraphicCacheControl,
   type KirikiriSystemPlatform,
   type SystemServices,
+  toActualColor,
 } from './classes/system.js';
 import {createTimerClass} from './classes/timer.js';
+import {createBitmapClass} from './classes/bitmap.js';
+import {createFontClass} from './classes/font.js';
+import {createLayerClass} from './classes/layer.js';
+import {createRectClass} from './classes/rect.js';
+import {createBasicDrawDeviceClass, createWindowClass} from './classes/window.js';
+import {TvpFontSystem, type TvpFontRasterizer} from './visual/font.js';
+import {TvpTempBitmapHolder} from './visual/layer-types.js';
+import type {TvpGraphicsLoader, TvpVisualContext} from './visual/layer.js';
+import {TvpMemory} from './visual/memory.js';
+import {TvpTransitionRegistry} from './visual/transition.js';
+import {
+  HEADLESS_WINDOW_HOST,
+  TvpWindowList,
+  type KirikiriWindowHost,
+  type TvpWindowContext,
+} from './visual/window.js';
 import {
   TVP_COMPACT_LEVEL_IDLE,
   timerMessageLoop,
@@ -124,6 +141,14 @@ export interface KirikiriCoreConfig {
   readonly decodeAnsi?: (bytes: Uint8Array) => string;
   /** `TVPGetRandomBits128`. */
   readonly randomBits128?: () => Uint8Array;
+  /** The page side of windows; headless (state only) by default. */
+  readonly windowHost?: KirikiriWindowHost;
+  /** The GDI font rasterizer; text measuring and drawing fail without it. */
+  readonly fontRasterizer?: TvpFontRasterizer;
+  /** `TVPLoadGraphic`; image loading fails without it. */
+  readonly graphics?: TvpGraphicsLoader;
+  /** Bytes reserved for bitmap bits (1 GiB by default). */
+  readonly bitmapMemory?: number;
 }
 
 /** What `create` reads for `TVPInitProgramArgumentsAndDataPath`. */
@@ -158,6 +183,11 @@ export class KirikiriCore {
   readonly exporter: TvpFunctionExporter;
   readonly loader: NativeLibraryLoader;
   readonly events: TvpEventSystem;
+  /** Bitmap bits and interface pointers. */
+  readonly memory: TvpMemory;
+  readonly fonts: TvpFontSystem;
+  readonly transitions = new TvpTransitionRegistry();
+  readonly windows = new TvpWindowList();
   readonly #arguments: ProgramArguments;
   readonly #nativeDataPath: string;
   readonly #specialFolders: SpecialFolders;
@@ -247,6 +277,11 @@ export class KirikiriCore {
         uninitialized: () => this.#uninitialized,
       },
       () => tjsDoRehash(),
+    );
+    this.memory = TvpMemory.create(config.bitmapMemory);
+    this.fonts = new TvpFontSystem(
+      {height: -12, flags: 0, angle: 0, face: tjsMessage('TVPDefaultFontName')},
+      [null, config.fontRasterizer ?? null],
     );
     this.exporter = this.#createExporter();
     this.plugins = new PluginManager({
@@ -478,8 +513,16 @@ export class KirikiriCore {
             },
           }),
       ],
-      ['Font', () => null],
-      ['Layer', () => null],
+      [
+        'Font',
+        () =>
+          createFontClass(
+            this.fonts,
+            () => this.engine.createArray(),
+            () => rectClass!,
+          ),
+      ],
+      ['Layer', () => createLayerClass(visual)],
       [
         'Timer',
         () =>
@@ -498,13 +541,28 @@ export class KirikiriCore {
       ['VideoOverlay', () => null],
       ['Clipboard', () => null],
       ['Scripts', () => createScriptsClass(this.#scriptsServices())],
-      ['Rect', () => null],
-      ['Bitmap', () => null],
+      ['Rect', () => (rectClass = createRectClass(this.memory))],
+      ['Bitmap', () => createBitmapClass(visual)],
       ['ImageFunction', () => null],
       ['BitmapLayerTreeOwner', () => null],
       ['WaveSoundBuffer', () => null],
-      ['Window', () => null],
+      [
+        'Window',
+        () =>
+          createWindowClass(
+            this.engine,
+            this.#windowContext(() => drawDeviceClass),
+            this.windows,
+            this.memory,
+          ),
+      ],
     ];
+    let rectClass: NativeClass | null = null;
+    let fontClass: NativeClass | null = null;
+    const drawDeviceClass = createBasicDrawDeviceClass(this.memory, this.log, (name) =>
+      this.getCommandLine(name),
+    );
+    const visual = this.#visualContext(() => fontClass!);
     // TVPTJSGCCallback: the VM's stack is compacted at idle.
     this.events.addCompactEventHook({
       onCompact: (level) => {
@@ -515,9 +573,18 @@ export class KirikiriCore {
     for (const [name, create] of classes) {
       const cls = create();
       if (!cls) continue;
+      if (name === 'Font') fontClass = cls;
       global.propSet(TJS_MEMBERENSURE | TJS_IGNOREPROP, name, obj(cls), global);
+      if (name === 'Window')
+        cls.propSet(
+          TJS_MEMBERENSURE | TJS_IGNOREPROP | TJS_STATICMEMBER,
+          'BasicDrawDevice',
+          obj(drawDeviceClass),
+          cls,
+        );
       cls.release();
     }
+    drawDeviceClass.release();
   }
 
   #systemServices(): SystemServices {
@@ -700,7 +767,61 @@ export class KirikiriCore {
 
   /** `TVPGetWindowCount`. */
   windowCount(): number {
-    return 0;
+    return this.windows.count;
+  }
+
+  /** What layers, bitmaps and fonts use from the core. */
+  #visualContext(fontClass: () => NativeClass): TvpVisualContext {
+    const clock = this.config.clock;
+    const platform = this.#platform;
+    return {
+      engine: this.engine,
+      events: this.events,
+      log: this.log,
+      memory: this.memory,
+      fonts: this.fonts,
+      temp: new TvpTempBitmapHolder(this.fonts, this.memory),
+      transitions: this.transitions,
+      colors: {
+        toActual: (color) => toActualColor(color, (i) => platform.sysColor(i)),
+        fromActual: (color) => color & 0xffffff,
+      },
+      tickCount: () => BigInt(clock.tickCount()),
+      getCursor: () => 0,
+      createFontObject: (owner) => {
+        const out = {value: null as Dispatch | null};
+        const cls = fontClass();
+        if (cls.createNew(0, null, out, [obj(owner, owner)], cls) < 0 || !out.value)
+          throw new TjsError(tjsMessage('TVPInternalError'));
+        return out.value;
+      },
+      createArray: () => this.engine.createArray(),
+      graphics: this.config.graphics ?? null,
+      splitOperationType: 1,
+      defaultHoldAlpha: false,
+      freeUnusedLayerCache: false,
+    };
+  }
+
+  #windowContext(drawDeviceClass: () => NativeClass): TvpWindowContext {
+    return {
+      events: this.events,
+      memory: this.memory,
+      host: this.config.windowHost ?? HEADLESS_WINDOW_HOST,
+      title: () => this.#title,
+      createDefaultDrawDevice: () => {
+        const out = {value: null as Dispatch | null};
+        const cls = drawDeviceClass();
+        if (cls.createNew(0, null, out, [], cls) < 0 || !out.value)
+          throw new TjsError(tjsMessage('TVPInternalError', 'tTJSNI_Window::Construct'));
+        return out.value;
+      },
+      mainWindowClosed: () => {
+        if (this.#systemFlags.exitOnWindowClose) this.terminate(0);
+      },
+      postPaint: (task) => this.#loop.post(task),
+      suspender: this.engine.suspender,
+    };
   }
 
   /** Releases plugins and objects (`TVPUninitScriptEngine`, plugin vector at exit). */
