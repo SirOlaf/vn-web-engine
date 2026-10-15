@@ -23,6 +23,7 @@ import {
   type VariantResult,
 } from '../tjs2/runtime/interface.js';
 import {VariantSlot} from '../tjs2/runtime/slot.js';
+import {deferSuspended} from '../tjs2/runtime/suspension.js';
 import {asInteger, int, integer, obj, str, VOID} from '../tjs2/runtime/variant.js';
 
 /** `TJSThrowFrom_tjs_error`: throws the script exception of a failed result code. */
@@ -169,4 +170,37 @@ export function getLocallyAccessibleName(ex: TvpFunctionExporter, name: string):
 /** A 64-bit integer variant of a pointer or handle (`(tjs_int64)ptr`). */
 export function pointer(value: number): Variant {
   return integer(BigInt(value >>> 0));
+}
+
+/**
+ * A native routine that calls script or waits for storage, written as a generator: it yields
+ * each such call as a function returning a result code and receives the code back (or the
+ * thrown error, at the `yield`). Natively the call blocks; here it may suspend.
+ */
+export type PluginRoutine<T> = Generator<() => number, T, number>;
+
+/**
+ * Runs a routine to completion or to its first suspended call, then `done(value)`. A call that
+ * returns `TJS_E_SUSPENDED` defers the rest of the routine behind it, so a plugin method can
+ * return this function's code directly.
+ */
+export function runPluginRoutine<T>(routine: PluginRoutine<T>, done: (value: T) => number): number {
+  const step = (s: IteratorResult<() => number, T>): number => {
+    for (;;) {
+      if (s.done) return done(s.value);
+      let code: number;
+      try {
+        code = s.value();
+      } catch (error) {
+        s = routine.throw(error);
+        continue;
+      }
+      if (code === TJS_E_SUSPENDED)
+        return deferSuspended((inner) =>
+          step('error' in inner ? routine.throw(inner.error) : routine.next(inner.code)),
+        );
+      s = routine.next(code);
+    }
+  };
+  return step(routine.next());
 }

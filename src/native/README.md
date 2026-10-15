@@ -74,6 +74,7 @@ that. Engine and library code do not.
 | `win32dialog.dll`   | `tvp-plugin/contract.ts`  | `win32dialog/`       | `WIN32Dialog`: dialogs from templates, controls    |
 | `k2compat.dll`      | `tvp-plugin/contract.ts`  | `k2compat/`          | `System.ModelessOwnerWindow`, `Window.TouchMouse`  |
 | `PackinOne.dll`     | `tvp-plugin/contract.ts`  | `PackinOne/`         | Ten bundled ncbind plugins; see its `library.ts`   |
+| `KAGParserEx.dll`   | `tvp-plugin/contract.ts`  | `KAGParserEx/`       | Replaces `KAGParser`; see its `library.ts`         |
 | `kernel32.dll`      | `kernel32/contract.ts`    | `kernel32/`          | Last error, messages, code pages, files, mutexes   |
 | `user32.dll`        | `user32/contract.ts`      | `user32/`            | Windows, messages, dialogs, standard controls      |
 | `gdi32.dll`         | `gdi32/contract.ts`       | `gdi32/`             | DIB sections, DCs, `BitBlt`, font resources        |
@@ -94,7 +95,9 @@ Plugin implementations may use the TJS2 value helpers in `src/engines/kirikiri/t
 (`variant.ts`, `slot.ts`, `native.ts`), as native plugins link `tp_stub`; they reach the core
 only through the exporter. Two contract calls may complete asynchronously because the native
 core blocks on file I/O there: opening a storage and `V2Link`. A plugin's native method that
-has to wait uses `TvpFunctionExporter.suspend`.
+has to wait uses `TvpFunctionExporter.suspend`; one that calls script or reads storage in the
+middle of its work runs as a routine (`runPluginRoutine` in `tp-stub.ts`), so the callee may
+wait too.
 
 Plugins built with ncbind or `tp_stub` native classes are written against
 `src/engines/kirikiri/tp-stub/` (`ncbind.ts`, `tp-stub.ts`), which reproduces the registration

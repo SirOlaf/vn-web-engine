@@ -4,7 +4,7 @@
  * members implement the functions plugins of the supported titles call.
  */
 import type {TjsEngine} from '../tjs2/runtime/engine.js';
-import {check, TjsError, tjsMessage} from '../tjs2/runtime/errors.js';
+import {check, TjsError, tjsMessageMapMessage} from '../tjs2/runtime/errors.js';
 import {
   type CreateNativeInstanceCallback,
   type Dispatch,
@@ -24,7 +24,6 @@ import {
   type NativeMethodCallback,
 } from '../tjs2/runtime/native.js';
 import {tjsDoRehash} from '../tjs2/runtime/custom-object.js';
-import type {KirikiriMessageName} from '../messages.js';
 import type {TvpEventSystem} from './events.js';
 import type {TvpLog} from './log.js';
 import {extractStorageName, extractStoragePath, type StorageSystem} from './storage.js';
@@ -162,13 +161,7 @@ export function createFunctionExporter(s: TvpExporterServices): TvpFunctionExpor
         ),
       );
     },
-    TJSGetMessageMapMessage: (name) => {
-      try {
-        return tjsMessage(name as KirikiriMessageName);
-      } catch {
-        return '';
-      }
-    },
+    TJSGetMessageMapMessage: (name) => tjsMessageMapMessage(name),
     TJSDoRehash: () => tjsDoRehash(),
 
     TVPPostEvent: (source: Dispatch, target: Dispatch, eventName, tag, flag, args) => {

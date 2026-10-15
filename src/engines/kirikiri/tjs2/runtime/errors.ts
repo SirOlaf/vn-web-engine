@@ -36,6 +36,11 @@ export function assignTjsMessage(name: string, text: string): boolean {
   return true;
 }
 
+/** `TJSGetMessageMapMessage`: the message of a name, or the empty string for other names. */
+export function tjsMessageMapMessage(name: string): string {
+  return Object.hasOwn(messages, name) ? messages[name as KirikiriMessageName] : '';
+}
+
 /** A core message, with `%1`, `%2`, … replaced. */
 export function tjsMessage(name: KirikiriMessageName, ...args: readonly string[]): string {
   return formatMessage(messages[name], ...args);

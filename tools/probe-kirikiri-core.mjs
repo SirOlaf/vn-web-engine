@@ -12,6 +12,7 @@ import {user32Library} from '../dist/native/user32/library.js';
 import {WIN32DIALOG} from '../dist/native/win32dialog/library.js';
 import {K2COMPAT} from '../dist/native/k2compat/library.js';
 import {PACKINONE} from '../dist/native/PackinOne/library.js';
+import {KAGPARSEREX} from '../dist/native/KAGParserEx/library.js';
 import {advapi32Library} from '../dist/native/advapi32/library.js';
 import {headlessUserInterfaceHost} from '../dist/platform/windows-user-interface.js';
 
@@ -120,6 +121,7 @@ const core = await KirikiriCore.create({
     WIN32DIALOG,
     K2COMPAT,
     PACKINONE,
+    KAGPARSEREX,
     kernel32Library({userLanguage: 0x0411}),
     gdi32Library(),
     user32Library(headlessUserInterfaceHost()),
