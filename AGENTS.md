@@ -64,6 +64,22 @@ archive, media, VM and performance checks that the unit suite does not.
 
 ## Rules
 
+### Workflow
+
+When asked to work on a system that you have no memory of, begin by surveying
+the project and the target. Once you have a solid understanding, you should
+think about how to integrate it into the web engine. A direct translation is
+only rarely appropriate, web platforms cannot directly match synchronization
+primitives or platform behavior (later section).
+
+If you believe your work is done, begin a thorough review. Nothing should be
+stubbed or left as WIP, if you touched a path, it must be 100% complete. This
+means a seemingly simple task may turn into a deep-dive into related subsystems.
+To avoid discovering a missing path late, try to avoid skipping branches.
+Once you confirm your implementations are complete, correct and performant, write up
+your final report for the user. If more work remains to be done to get a game
+to run completely, produce a handoff document and point the user towards it.
+
 ### Platform abstractions
 
 Before implementing a platform abstraction inside an engine, check whether it
