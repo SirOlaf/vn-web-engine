@@ -4,6 +4,7 @@ import {
   type D3d11Result,
   type IUnknown,
   type ID3D11Device,
+  type ID3D11Texture2D,
 } from '../../src/native/d3d11/contract.js';
 import {
   d3d11WebGl2Library,
@@ -80,6 +81,29 @@ export function prepareArtemisNativeGraphics(
       interop = sharing.get(device)!;
     const surfaces = new Set<D3d11Surface>();
     let closed = false;
+    // The last disposed surface keeps its storage for the next surface of the same size:
+    // a new large render target costs a synchronous GPU allocation in attachSharedImage.
+    let idle: {
+      readonly width: number;
+      readonly height: number;
+      readonly texture: ID3D11Texture2D;
+      readonly view: D3d11Surface['view'];
+      readonly lease: D3d11WebGl2TextureLease;
+    } | null = null;
+    const retireIdle = () => {
+      const storage = idle;
+      idle = null;
+      if (storage)
+        retire([
+          () => storage.lease.dispose(),
+          () => {
+            storage.view.release();
+          },
+          () => {
+            storage.texture.release();
+          },
+        ]);
+    };
     return {
       libraries,
       graphics: {
@@ -87,7 +111,10 @@ export function prepareArtemisNativeGraphics(
         context,
         createSurface(width, height) {
           if (closed) throw new Error('Using released native graphics');
-          const texture = owned(
+          if (idle && (idle.width !== width || idle.height !== height)) retireIdle();
+          const reused = idle;
+          idle = null;
+          const texture = reused?.texture ?? owned(
             device.createTexture2D(
               {
                 width,
@@ -104,12 +131,13 @@ export function prepareArtemisNativeGraphics(
               null,
             ),
           );
-          let view: D3d11Surface['view'] | null = null,
-            lease: D3d11WebGl2TextureLease | null = null;
+          let view: D3d11Surface['view'] | null = reused?.view ?? null,
+            lease: D3d11WebGl2TextureLease | null = reused?.lease ?? null;
           let image: GpuTextureImage | null = null;
           try {
-            view = owned(device.createRenderTargetView(texture, null));
-            lease = interop.acquireColorTexture(texture);
+            if (reused) context.clearRenderTargetView(reused.view, [0, 0, 0, 0]);
+            view ??= owned(device.createRenderTargetView(texture, null));
+            lease ??= interop.acquireColorTexture(texture);
             image = new GpuTextureImage(width, height, lease.rowOrigin);
             target.attachSharedImage(image, lease.context, lease.texture);
           } catch (error) {
@@ -142,6 +170,27 @@ export function prepareArtemisNativeGraphics(
             },
             dispose() {
               if (!surfaces.delete(value)) return;
+              if (!closed)
+                try {
+                  retire([() => target.invalidate(boundImage), retireIdle]);
+                  idle = {width, height, texture, view: boundView, lease: boundLease};
+                  return;
+                } catch (error) {
+                  try {
+                    retire([
+                      () => boundLease.dispose(),
+                      () => {
+                        boundView.release();
+                      },
+                      () => {
+                        texture.release();
+                      },
+                    ]);
+                  } catch (cleanup) {
+                    throw new AggregateError([error, cleanup], 'Native surface retirement failed');
+                  }
+                  throw error;
+                }
               retire([
                 () => target.invalidate(boundImage),
                 () => boundLease.dispose(),
@@ -165,6 +214,7 @@ export function prepareArtemisNativeGraphics(
           [...surfaces]
             .map((surface) => () => surface.dispose())
             .concat([
+              retireIdle,
               () => context.clearState(),
               () => {
                 context.release();
