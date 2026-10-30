@@ -110,6 +110,7 @@ export class D3d11GpuOutput {
   private attachedDrawBuffers = '';
   /** Attachments of the framebuffer bound for the current draw. */
   private readonly colors: (Attachment | null)[];
+  private readonly nextColors: (Attachment | null)[];
   private depth: Attachment | null = null;
   private width = 0;
   private height = 0;
@@ -156,6 +157,7 @@ export class D3d11GpuOutput {
       Math.min(8, gl.getParameter(gl.MAX_DRAW_BUFFERS), gl.getParameter(gl.MAX_COLOR_ATTACHMENTS)),
     ).fill(null);
     this.attachedColors = this.colors.slice();
+    this.nextColors = this.colors.slice();
     this.indexed = gl.getExtension('OES_draw_buffers_indexed');
     this.clamp = gl.getExtension('EXT_depth_clamp');
     this.polygon = gl.getExtension('WEBGL_polygon_mode');
@@ -224,27 +226,32 @@ export class D3d11GpuOutput {
     if (!raster.depthClipEnable && !this.clamp) this.unsupported('depth clipping disabled');
     if (raster.fillMode === 2 && !this.polygon) this.unsupported('wireframe fill');
     if (state.blend?.alphaToCoverageEnable) this.unsupported('alpha to coverage');
-    if (state.targets.some((v, i) => v !== null && i >= this.colors.length))
-      this.unsupported('render target count');
+    let bound = 0;
+    for (let i = 0; i < state.targets.length; i++) {
+      if (state.targets[i] === null) continue;
+      if (i >= this.colors.length) this.unsupported('render target count');
+      bound++;
+    }
     for (let i = 0; i < state.targets.length; i++) {
       if (!state.targets[i]) continue;
       const blend = this.blend(state, i);
       if (
         blend.blendEnable &&
-        ([blend.srcBlend, blend.destBlend, blend.srcBlendAlpha, blend.destBlendAlpha].some(
-          (v) => v >= 16,
-        ) ||
+        (blend.srcBlend >= 16 ||
+          blend.destBlend >= 16 ||
+          blend.srcBlendAlpha >= 16 ||
+          blend.destBlendAlpha >= 16 ||
           blend.destBlend === 11)
       )
         this.unsupported('dual source or destination alpha-saturate blending');
     }
-    if (!this.indexed && state.targets.filter((v) => v !== null).length > 1)
-      this.unsupported('independent render target state');
+    if (!this.indexed && bound > 1) this.unsupported('independent render target state');
     if (
       viewport &&
-      (![viewport.topLeftX, viewport.topLeftY, viewport.width, viewport.height].every(
-        Number.isInteger,
-      ) ||
+      (!Number.isInteger(viewport.topLeftX) ||
+        !Number.isInteger(viewport.topLeftY) ||
+        !Number.isInteger(viewport.width) ||
+        !Number.isInteger(viewport.height) ||
         viewport.width > this.maxViewport[0]! ||
         viewport.height > this.maxViewport[1]!)
     )
@@ -321,16 +328,17 @@ export class D3d11GpuOutput {
         blend = this.blend(state, i),
         mask = blend.renderTargetWriteMask;
       const alphaOnly = this.colors[i]?.format === 65;
-      const write: [boolean, boolean, boolean, boolean] = alphaOnly
-        ? [!!(mask & 8), false, false, false]
-        : [!!(mask & 1), !!(mask & 2), !!(mask & 4), !!(mask & 8)];
+      const red = alphaOnly ? !!(mask & 8) : !!(mask & 1),
+        green = !alphaOnly && !!(mask & 2),
+        blue = !alphaOnly && !!(mask & 4),
+        alpha = !alphaOnly && !!(mask & 8);
       const colorOp = alphaOnly ? blend.blendOpAlpha : blend.blendOp,
         colorFactors = alphaOnly ? this.alphaOnlyFactors : this.colorFactors,
         alphaFactors = alphaOnly ? this.alphaOnlyFactors : this.alphaFactors,
         srcColor = alphaOnly ? blend.srcBlendAlpha : blend.srcBlend,
         destColor = alphaOnly ? blend.destBlendAlpha : blend.destBlend;
       if (this.indexed) {
-        this.indexed.colorMaskiOES(i, ...write);
+        this.indexed.colorMaskiOES(i, red, green, blue, alpha);
         if (!target || !blend.blendEnable) this.indexed.disableiOES(gl.BLEND, i);
         else {
           this.indexed.enableiOES(gl.BLEND, i);
@@ -348,7 +356,7 @@ export class D3d11GpuOutput {
           );
         }
       } else if (target) {
-        gl.colorMask(...write);
+        gl.colorMask(red, green, blue, alpha);
         if (blend.blendEnable) {
           gl.enable(gl.BLEND);
           gl.blendEquationSeparate(this.equation(colorOp), this.equation(blend.blendOpAlpha));
@@ -394,7 +402,8 @@ export class D3d11GpuOutput {
     changed |= store(r, 11, rect?.right ?? 0);
     changed |= store(r, 12, rect?.bottom ?? 0);
     if (changed) stale |= RASTER;
-    changed = this.appliedDepth !== state.depth || this.appliedDepthTarget !== state.depthTarget ? 1 : 0;
+    changed =
+      this.appliedDepth !== state.depth || this.appliedDepthTarget !== state.depthTarget ? 1 : 0;
     this.appliedDepth = state.depth;
     this.appliedDepthTarget = state.depthTarget;
     changed |= store(this.depthValues, 0, state.stencilRef & 255);
@@ -495,11 +504,15 @@ export class D3d11GpuOutput {
   }
 
   private attach(state: D3d11DrawOutputState): boolean {
-    const active = [...state.targets, state.depthTarget].filter((v): v is Rtv | Dsv => !!v);
-    if (!active.length) return false;
-    const first = active[0]!,
-      size = first.resource.levels[first.firstMip]!;
-    for (const v of active) {
+    const targets = state.targets,
+      d = state.depthTarget;
+    let first: Rtv | Dsv | null = d;
+    for (let i = targets.length - 1; i >= 0; i--) if (targets[i]) first = targets[i]!;
+    if (!first) return false;
+    const size = first.resource.levels[first.firstMip]!;
+    for (let i = 0; i <= targets.length; i++) {
+      const v = i < targets.length ? targets[i] : d;
+      if (!v) continue;
       const level = v.resource.levels[v.firstMip];
       if (
         !v.live ||
@@ -511,26 +524,15 @@ export class D3d11GpuOutput {
         throw new D3d11TextureError('Invalid D3D11 draw output views');
     }
     // Image preparation can bind its own framebuffers. Finish it before binding ours.
-    const colors = Array.from({length: this.colors.length}, (_, i): Attachment | null => {
-      const v = state.targets[i];
-      return v
-        ? {
-            resource: v.resource,
-            texture: this.textures.image(v.resource),
-            mip: v.firstMip,
-            format: v.resource.getDesc().format,
-          }
-        : null;
-    });
-    const d = state.depthTarget,
-      depth = d
-        ? {
-            resource: d.resource,
-            texture: this.textures.image(d.resource),
-            mip: d.firstMip,
-            format: d.resource.getDesc().format,
-          }
-        : null;
+    // Unchanged attachments keep their immutable records; descriptions never change.
+    const colors = this.nextColors;
+    let lone = !d;
+    for (let i = 0; i < colors.length; i++) {
+      const v = targets[i];
+      colors[i] = v ? this.attachment(v, this.colors[i]!) : null;
+      if (i && v) lone = false;
+    }
+    const depth = d ? this.attachment(d, this.depth) : null;
     const gl = this.gl;
     for (let i = 0; i < colors.length; i++) this.colors[i] = colors[i]!;
     this.depth = depth;
@@ -538,7 +540,7 @@ export class D3d11GpuOutput {
     this.height = size.height;
     // A lone first target draws through the resource's own complete framebuffer,
     // which its clears and copies also use, so attachments never change per draw.
-    if (!depth && colors[0] && colors.every((v, i) => !i || !v)) {
+    if (lone && colors[0]) {
       gl.bindFramebuffer(
         gl.FRAMEBUFFER,
         this.textures.framebuffer(colors[0].resource, colors[0].mip),
@@ -607,13 +609,27 @@ export class D3d11GpuOutput {
       } else {
         if (gl.checkFramebufferStatus(gl.DRAW_FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
           throw new D3d11TextureError('Incomplete D3D11 draw output framebuffer');
-        this.completeConfigurations.push({colors, depth});
+        this.completeConfigurations.push({colors: colors.slice(), depth});
         if (this.completeConfigurations.length > MAX_COMPLETE_CONFIGURATIONS)
           this.completeConfigurations.shift();
       }
       this.framebufferComplete = true;
     }
     return true;
+  }
+
+  private attachment(view: Rtv | Dsv, previous: Attachment | null): Attachment {
+    const texture = this.textures.image(view.resource);
+    return previous?.resource === view.resource &&
+      previous.texture === texture &&
+      previous.mip === view.firstMip
+      ? previous
+      : {
+          resource: view.resource,
+          texture,
+          mip: view.firstMip,
+          format: view.resource.getDesc().format,
+        };
   }
 
   private depthStencil(state: D3d11DrawOutputState): void {
