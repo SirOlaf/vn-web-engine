@@ -30,7 +30,14 @@ intentional divergence from the native engines.
 - `src/audio`, `src/video`, `src/graphics`, `src/text`, `src/input` – shared
   media, rendering, font and input services.
 - `src/core/` – binary readers, scheduling, worker and wasm helpers.
+- `src/compiler/` – language-independent compiler infrastructure: the NIF tree format
+  that compiler stages exchange, source positions and diagnostics. See
+  `src/compiler/README.md`.
 - `src/formats/` – format readers (archives, PE, Ogg, MPEG, PNG, BGI formats).
+- `src/native/` – browser reimplementations of native libraries (engine plugins and
+  the system DLLs they import). They compose only through each library's
+  `contract.ts`; the loader is `src/platform/native-libraries.ts`. See
+  `src/native/README.md`.
 - `src/engines/` – engine interpreters. They do not select games.
 - `ui/` – Svelte library/player/explorer pages, per-game compatibility profiles
   (`ui/game-profiles/`) and runtime wiring (`ui/runtimes/`).
@@ -56,6 +63,22 @@ The `verify:*`, `benchmark-*`, and `probe-*` scripts under `tools/` cover
 archive, media, VM and performance checks that the unit suite does not.
 
 ## Rules
+
+### Workflow
+
+When asked to work on a system that you have no memory of, begin by surveying
+the project and the target. Once you have a solid understanding, you should
+think about how to integrate it into the web engine. A direct translation is
+only rarely appropriate, web platforms cannot directly match synchronization
+primitives or platform behavior (later section).
+
+If you believe your work is done, begin a thorough review. Nothing should be
+stubbed or left as WIP, if you touched a path, it must be 100% complete. This
+means a seemingly simple task may turn into a deep-dive into related subsystems.
+To avoid discovering a missing path late, try to avoid skipping branches.
+Once you confirm your implementations are complete, correct and performant, write up
+your final report for the user. If more work remains to be done to get a game
+to run completely, produce a handoff document and point the user towards it.
 
 ### Platform abstractions
 

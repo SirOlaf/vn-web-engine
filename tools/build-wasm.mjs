@@ -26,6 +26,20 @@ try {
     ],
     ['vc1-video', 'VC1_VIDEO_WASM_BINARY', 'src/formats/vc1/wasm-binary.ts', kernel],
     ['wma-audio', 'WMA_AUDIO_WASM_BINARY', 'src/formats/wma/wasm-binary.ts', kernel],
+    // Scalar: the DXT5 fallback must run where SIMD is unavailable.
+    [
+      's3tc',
+      'S3TC_WASM_BINARY',
+      'src/graphics/s3tc-wasm-binary.ts',
+      ['-C', 'link-arg=--export=__heap_base'],
+    ],
+    // Scalar: bit-identical to its TypeScript twin, also where SIMD is unavailable.
+    [
+      'emote-mesh',
+      'EMOTE_MESH_WASM_BINARY',
+      'src/native/emotedriver/runtime/mesh/wasm-binary.ts',
+      ['-C', 'link-arg=--export=__heap_base'],
+    ],
     [
       'aokana-bitmap',
       'BURIKO_BITMAP_WASM_BINARY',
