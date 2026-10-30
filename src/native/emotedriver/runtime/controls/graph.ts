@@ -1,3 +1,5 @@
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
+
 import {type EmoteControlRequest, crtPow, emoteSign, f32, ftol} from './common.js';
 
 /** A path segment: move linearly from `from` to `to` (a jump when they are equal). */
@@ -15,6 +17,8 @@ export type EmoteGraphSegment = readonly [from: number, to: number];
  * the current frame to a target frame: a list of segments whose summed length is `total`.
  */
 export class EmoteGraph {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
   /** Edges as [a, b] (graph +0x4). */
   readonly edges: readonly (readonly [number, number])[];
   /** Nodes as frame lists (graph +0x14). */
@@ -25,9 +29,13 @@ export class EmoteGraph {
   constructor(
     edges: readonly (readonly [number, number])[],
     nodes: readonly (readonly number[])[],
+    driverSha256?: string,
   ) {
-    this.edges = edges.map(([a, b]) => [f32(ftol(a)), f32(ftol(b))] as const);
-    this.nodes = nodes.map((n) => n.map((v) => f32(ftol(v))));
+    this.driverSha256 = emoteBuild(driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
+    const frame = (v: number) => f32(this.x64 ? v : ftol(v));
+    this.edges = edges.map(([a, b]) => [frame(a), frame(b)] as const);
+    this.nodes = nodes.map((n) => n.map(frame));
   }
 
   /** 0x10008420: first edge with a ≤ x ≤ b, or −1. */
@@ -76,7 +84,8 @@ export class EmoteGraph {
     }
     if (index === -1) {
       this.total = 0;
-      return [[f32(target), f32(target)]];
+      const value = this.x64 ? target : f32(target);
+      return [[value, value]];
     }
     this.total = best;
     return candidates[index]!.path.slice();
@@ -109,7 +118,10 @@ export class EmoteGraph {
       // 0x10008660 then the stack pop.
       current = stack.pop()!;
       const last = path.pop();
-      if (last) length = f32(length - Math.abs(last[1] - last[0]));
+      if (last) {
+        const difference = last[1] - last[0];
+        length = f32(length - Math.abs(this.x64 ? f32(difference) : difference));
+      }
     };
     const fail = () => {
       // 0x1000943a: the failed path is recorded with length −1.
@@ -150,6 +162,7 @@ export class EmoteGraph {
           case 3: {
             const forward = state === 2;
             const e = this.edgeAt(current);
+            if (this.x64 && e === -1) throw Error('emotedriver: graph node outside every edge');
             // The native code indexes edge −1 here; a node frame outside every edge does
             // not occur in data and is treated as a dead end.
             const end = e === -1 ? NaN : this.edges[e]![forward ? 1 : 0];
@@ -217,6 +230,7 @@ export class EmoteGraph {
  * frames / duration and the travelled length following `t^weight · total`.
  */
 export class EmoteGraphFollower {
+  private readonly x64: boolean;
   readonly graph: EmoteGraph;
   /** Request queue (+0x54 / +0x3c). */
   requests: EmoteControlRequest[] = [];
@@ -241,12 +255,13 @@ export class EmoteGraphFollower {
 
   constructor(graph: EmoteGraph, initial: number) {
     this.graph = graph;
+    this.x64 = graph.driverSha256 === EMOTEDRIVER_X64_SHA256;
     this.value = f32(initial);
   }
 
   /** Setter (0x10005460 / 0x10007ce0). */
   set(value: number, frames: number, weight: number, queued: boolean): void {
-    if (!(frames > 0)) {
+    if (!(this.x64 ? f32(frames) > 0 : frames > 0)) {
       this.requests = [];
       this.segments = [];
       this.value = f32(value);
@@ -254,11 +269,24 @@ export class EmoteGraphFollower {
       return;
     }
     if (!queued) {
+      if (this.x64 && this.state !== 0) {
+        const last = this.segments.length
+          ? this.segments[this.segments.length - 1]![1]
+          : this.target;
+        const remaining = f32(
+          f32(1 - powf(f32(this.travelled / this.total), f32(1 / this.weight))) / this.rate,
+        );
+        if (last === f32(value) && remaining < f32(frames)) return;
+      }
       this.requests = [];
       this.segments = [];
       this.state = 0;
     }
-    this.requests.push({value: f32(value), frames: f32(frames), weight: f32(weight)});
+    this.requests.push({
+      value: f32(value),
+      frames: f32(frames),
+      weight: this.x64 ? weight : f32(weight),
+    });
   }
 
   /**
@@ -267,6 +295,7 @@ export class EmoteGraphFollower {
    * always empty in state 0, so both leave the state unchanged.
    */
   advance(frames: number): void {
+    if (this.x64) return this.advanceX64(frames);
     if (this.state === 0) {
       const request = this.requests.shift();
       if (!request) return;
@@ -313,6 +342,58 @@ export class EmoteGraphFollower {
     } else this.travelled = f32(this.travelled + delta);
   }
 
+  /** x64 0x180028ab0/0x180027f20: all state transitions consume the same interval. */
+  private advanceX64(frames: number): void {
+    const dt = f32(frames);
+    for (;;) {
+      if (this.state === 0) {
+        const entry = this.requests.shift();
+        if (!entry) return;
+        this.segments = this.graph.search(this.value, entry.value);
+        this.state = 1;
+        this.total = this.graph.total;
+        this.travelled = 0;
+        this.rate = f32(1 / entry.frames);
+        this.weight = entry.weight;
+        continue;
+      }
+      if (this.state === 1) {
+        const seg = this.segments.shift();
+        if (!seg) {
+          this.state = 0;
+          continue;
+        }
+        const [from, to] = seg;
+        if (from === to) {
+          this.value = to;
+          continue;
+        }
+        this.target = to;
+        this.value = from;
+        this.sign = f32(to - from) >= 0 ? 1 : -1;
+        this.state = 2;
+        continue;
+      }
+      const u = f32(
+        powf(f32(this.travelled / this.total), f32(1 / this.weight)) + f32(dt * this.rate),
+      );
+      const delta = f32(f32(powf(u, this.weight) * this.total) - this.travelled);
+      const cur = f32(this.value + f32(this.sign * delta));
+      const reached =
+        this.sign > 0
+          ? !(f32(cur - this.target) < -f32(0.0001))
+          : !(f32(cur - this.target) > f32(0.0001));
+      if (!reached) {
+        this.value = cur;
+        this.travelled = f32(this.travelled + delta);
+        return;
+      }
+      this.travelled = f32(f32(f32(this.target - cur) * this.sign) + f32(this.travelled + delta));
+      this.value = this.target;
+      this.state = 1;
+    }
+  }
+
   /**
    * `Skip` (eye 0x10017020, eyebrow 0x10018760): with queued requests the last request's
    * value becomes current and both queues are dropped; otherwise a running route jumps to
@@ -351,4 +432,8 @@ export class EmoteGraphFollower {
     this.weight = source.weight;
     this.rate = source.rate;
   }
+}
+
+function powf(x: number, y: number): number {
+  return f32(Math.pow(f32(x), f32(y)));
 }

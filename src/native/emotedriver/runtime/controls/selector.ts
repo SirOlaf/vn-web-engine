@@ -1,3 +1,5 @@
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
+
 import type {EmoteSelectorControl} from '../../../../formats/kirikiri/emote-metadata.js';
 import {type EmoteControlRequest, f32, ftol} from './common.js';
 
@@ -28,6 +30,8 @@ const SELECTOR_EPSILON = f32(1.1920928955078125e-7);
  * (0x10019a50); an unknown label leaves the option without one.
  */
 export class EmoteSelector {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
   readonly label: string;
   readonly options: readonly {
     readonly transition: EmoteSelectorTransition | null;
@@ -44,12 +48,15 @@ export class EmoteSelector {
   constructor(
     control: EmoteSelectorControl,
     transition: (label: string) => EmoteSelectorTransition | null,
+    driverSha256?: string,
   ) {
+    this.driverSha256 = emoteBuild(driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
     this.label = control.label;
     this.options = control.optionList.map((o) => ({
       transition: transition(o.label),
-      offValue: f32(o.offValue),
-      onValue: f32(o.onValue),
+      offValue: this.x64 ? o.offValue : f32(o.offValue),
+      onValue: this.x64 ? o.onValue : f32(o.onValue),
     }));
     this.select(0, 0, 0);
   }
@@ -62,6 +69,14 @@ export class EmoteSelector {
       if (!option.transition) continue;
       const target = i === this.selected ? option.onValue : option.offValue;
       const current = option.transition.step(0)[0]!;
+      if (this.x64) {
+        const difference = f32(current - target);
+        if (option.transition.busy || Math.abs(difference) >= SELECTOR_EPSILON) {
+          const ratio = Math.abs(f32(difference / f32(option.onValue - option.offValue)));
+          option.transition.set([target], f32(ratio * f32(frames)), weight, false);
+        }
+        continue;
+      }
       const ratio = f32(Math.abs(f32((current - target) / (option.onValue - option.offValue))));
       if (!option.transition.busy && Math.abs(ratio) < SELECTOR_EPSILON) continue;
       option.transition.set([target], f32(ratio * frames), weight, false);
@@ -70,21 +85,26 @@ export class EmoteSelector {
 
   /** `SetVariable` on the label (0x1000b7d0). */
   set(value: number, frames: number, weight: number, queued: boolean): void {
-    if (!(frames > 0)) {
+    if (this.x64 ? f32(frames) <= 0 : !(frames > 0)) {
       this.requests = [];
       this.state = 0;
-      this.select(ftol(f32(value)), 0, 0);
+      this.select(this.x64 ? Math.trunc(value) : ftol(f32(value)), 0, 0);
       return;
     }
     if (!queued) {
       this.requests = [];
       this.state = 0;
     }
-    this.requests.push({value: f32(value), frames: f32(frames), weight: f32(weight)});
+    this.requests.push({
+      value: f32(value),
+      frames: f32(frames),
+      weight: this.x64 ? weight : f32(weight),
+    });
   }
 
   /** 0x1000b870: one sub-step; returns the selected index. */
   update(frames: number): number {
+    if (this.x64) return this.updateX64(frames);
     if (this.state === 1) {
       const t = f32(this.rate * frames + this.progress);
       this.progress = t;
@@ -104,6 +124,28 @@ export class EmoteSelector {
     return f32(this.selected);
   }
 
+  /** x64 0x180018450: completing a selection can consume the next request immediately. */
+  private updateX64(frames: number): number {
+    const dt = f32(frames);
+    for (;;) {
+      if (this.state !== 0) {
+        if (this.state === 1) {
+          this.progress = f32(f32(dt * this.rate) + this.progress);
+          if (f32(this.progress - 1) < -f32(0.0001)) break;
+          this.progress = 1;
+          this.state = 0;
+        }
+      }
+      const entry = this.requests.shift();
+      if (!entry) break;
+      this.select(Math.trunc(entry.value), entry.frames, entry.weight);
+      this.state = 1;
+      this.progress = 0;
+      this.rate = f32(1 / entry.frames);
+    }
+    return this.selected;
+  }
+
   /** Selector part of `Skip` (0x1001a680). */
   skip(): void {
     const last = this.requests[this.requests.length - 1];
@@ -115,7 +157,7 @@ export class EmoteSelector {
       return;
     }
     this.state = 0;
-    this.select(ftol(last.value), 0, 0);
+    this.select(this.x64 ? Math.trunc(last.value) : ftol(last.value), 0, 0);
     this.requests = [];
   }
 

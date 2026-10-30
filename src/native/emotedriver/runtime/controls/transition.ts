@@ -1,3 +1,5 @@
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
+
 /**
  * `emote::EPTransitionControl` (vtable 0x1007191c, 0x3c bytes): a queued tween of a fixed
  * number of float values. The player uses it for `SetCoord` (2 values, `p+0x13c`), `SetScale`
@@ -9,16 +11,21 @@
  * The easing curve is `pow(t, power)` (CRT `_CIpow` 0x100680b0 in 0x1000c300), with the power
  * derived from the caller's easing value by `easingPower` (0x10012310). It is unrelated to the
  * keyframe easing curve 0x1002a590.
+ *
+ * The exact x64 image in `../../build.ts` selects 0x18002c580/0x18002c6c0:
+ * same-target retarget retention, immediate queue progress, full-dt carry and
+ * additional float stores. The default x86 image retains its original timing.
  */
 
 const f32 = Math.fround;
 
 /** 0x10012310 (inlined in 0x10012510, 0x1001b3a0 …): easing value → `pow` exponent. */
-export function easingPower(easing: number): number {
+export function easingPower(easing: number, driverSha256?: string): number {
+  const x64 = emoteBuild(driverSha256) === EMOTEDRIVER_X64_SHA256;
   const e = f32(easing);
   if (e === 0) return 1;
   if (e > 0) return f32(e + 1);
-  return f32(1 / (1 - e));
+  return f32(1 / (x64 ? f32(1 - e) : 1 - e));
 }
 
 /** Queue entry (0x18 bytes, pushed by 0x1000bb50/0x1000d140): targets, frames, power. */
@@ -29,6 +36,8 @@ interface TweenEntry {
 }
 
 export class EmoteTween {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
   /** Value count (+0x1c). */
   readonly count: number;
   /** Pending tweens (deque at +0x4; size +0x14). */
@@ -45,7 +54,9 @@ export class EmoteTween {
   invFrames = 0;
 
   /** 0x1000bbe0: all values zero. */
-  constructor(count: number) {
+  constructor(count: number, driverSha256?: string) {
+    this.driverSha256 = emoteBuild(driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
     this.count = count;
     this.current = new Float32Array(count);
     this.start = new Float32Array(count);
@@ -62,6 +73,11 @@ export class EmoteTween {
     return this.state !== 0 || this.queue.length !== 0;
   }
 
+  /** Last queued values, or the running target (x64 animation/selector queries). */
+  get lastTarget(): Float32Array {
+    return this.queue[this.queue.length - 1]?.values ?? this.target;
+  }
+
   /**
    * 0x1000c220. With `frames > 0` the tween is queued; unless `queue` (player `p+0x30`) is set
    * the queue is cleared and the running tween dropped first. Otherwise the values are set
@@ -70,13 +86,23 @@ export class EmoteTween {
   set(values: ArrayLike<number>, frames: number, power: number, queue: boolean): void {
     const fr = f32(frames);
     if (fr > 0) {
+      const v = new Float32Array(this.count);
+      for (let i = 0; i < this.count; i++) v[i] = values[i] ?? 0;
+      const entry = {values: v, frames: fr, power: f32(power)};
       if (!queue) {
+        // 0x18002c580 retains a running tween when a repeated target would
+        // otherwise postpone its completion. The x86 setter always replaces it.
+        if (
+          this.x64 &&
+          this.state !== 0 &&
+          sameValues(v, this.target) &&
+          !(fr <= f32(f32(1 - this.t) / this.invFrames))
+        )
+          return;
         this.queue = [];
         this.state = 0;
       }
-      const v = new Float32Array(this.count);
-      for (let i = 0; i < this.count; i++) v[i] = values[i] ?? 0;
-      this.queue.push({values: v, frames: fr, power: f32(power)});
+      this.queue.push(entry);
       return;
     }
     this.queue = [];
@@ -90,6 +116,7 @@ export class EmoteTween {
    * the current values (the native copies them to the caller's output).
    */
   step(frames: number): Float32Array {
+    if (this.x64) return this.stepX64(frames);
     if (this.state === 0) {
       const entry = this.queue.shift();
       if (entry) {
@@ -116,6 +143,39 @@ export class EmoteTween {
         this.current.set(this.target);
         this.state--;
       }
+    }
+    return this.current;
+  }
+
+  /** 0x18002c6c0: start/advance and completed queue entries share the full dt. */
+  private stepX64(frames: number): Float32Array {
+    const dt = f32(frames);
+    for (;;) {
+      if (this.state === 0) {
+        const entry = this.queue.shift();
+        if (!entry) break;
+        this.start.set(this.current);
+        this.target.set(entry.values);
+        this.t = 0;
+        this.state = 1;
+        this.invFrames = f32(1 / entry.frames);
+        this.power = entry.power;
+        continue;
+      }
+      if (this.state !== 1) break;
+      const t = f32(dt * this.invFrames + this.t);
+      this.t = t;
+      if (f32(t - 1) < f32(-0.0001)) {
+        const k = f32(Math.pow(t, this.power));
+        for (let i = 0; i < this.count; i++) {
+          const start = this.start[i]!;
+          this.current[i] = f32(f32(this.target[i]! - start) * k + start);
+        }
+        break;
+      }
+      this.t = 1;
+      this.current.set(this.target);
+      this.state = 0;
     }
     return this.current;
   }
@@ -150,4 +210,9 @@ export class EmoteTween {
     this.t = source.t;
     this.invFrames = source.invFrames;
   }
+}
+
+function sameValues(a: Float32Array, b: Float32Array): boolean {
+  for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i]) && a[i] !== b[i]) return false;
+  return true;
 }

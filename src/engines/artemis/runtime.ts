@@ -106,11 +106,11 @@ import {ArtemisInput, type ArtemisInputSample} from './input.js';
 import {ArtemisVariables} from './variables.js';
 import {ArtemisEmoteLayer, artemisEmoteLayerSize} from './emote-layer.js';
 import {
-  EmoteDevice,
-  emoteDriverProfile,
-  type EmoteDriverProfile,
-} from '../../native/emotedriver/driver.js';
-import type {EmoteModel} from '../../formats/emote/model.js';
+  EMOTE_DRIVER_D3D11,
+  type EmoteDriverD3d11Exports,
+  type IEmoteD3d11Device,
+} from '../../native/emotedriver/contract.js';
+import type {ArtemisNativeGraphics} from './native-graphics.js';
 import {sha256} from '../../core/sha256.js';
 
 /** Font-stack frame: attribute overrides over the 0x140193720 defaults and the overflow
@@ -265,6 +265,10 @@ export interface ArtemisRuntimeServices {
   readonly storage: ArtemisRuntimeStorage;
   /** Seconds since the Unix epoch that seed the script random generator. */
   readonly randomSeed: number;
+  /** UI-prepared process library table and native GPU resources, available after createLayers. */
+  readonly nativeGraphics?: () => ArtemisNativeGraphics | null;
+  /** The UI prepares its chosen implementation from read-only installation DLL bytes. */
+  readonly prepareNativeGraphics?: (dll: Uint8Array) => void;
   readonly createLayers: (host: ArtemisRuntimeLayerHost) => ArtemisRuntimeLayers;
   readonly glyphs: ArtemisRuntimeGlyphs;
   readonly surfaces: ArtemisRuntimeSurfaces;
@@ -451,24 +455,36 @@ export class ArtemisRuntime {
       }
     const saves = await ArtemisSaveDirectory.open(services.storage);
     // The executable imports emotedriver.dll; its exact build selects the driver profile.
-    let emoteDriver: EmoteDriverProfile | null = null;
+    let emoteDriver: string | null = null;
     if (artemisRevision(services.executableSha256).emote) {
       const dll = await files.read('emotedriver.dll');
       if (dll === null) throw new Error('Missing emotedriver.dll');
       const digest = await sha256(dll);
-      emoteDriver = emoteDriverProfile(
-        [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join(''),
-      );
+      emoteDriver = [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+      services.prepareNativeGraphics?.(dll);
     }
-    return new ArtemisRuntime(
-      services,
-      readSystemIni(iniBytes),
-      prepared,
-      plain,
-      bytes,
-      saves,
-      emoteDriver,
-    );
+    let initializing: ArtemisRuntime | undefined;
+    try {
+      return new ArtemisRuntime(
+        services,
+        readSystemIni(iniBytes),
+        prepared,
+        plain,
+        bytes,
+        saves,
+        emoteDriver,
+        (runtime) => {
+          initializing = runtime;
+        },
+      );
+    } catch (error) {
+      try {
+        initializing?.close();
+      } catch (cleanup) {
+        throw new AggregateError([error, cleanup], 'Artemis initialization and cleanup failed');
+      }
+      throw error;
+    }
   }
 
   private constructor(
@@ -478,8 +494,10 @@ export class ArtemisRuntime {
     plainFiles: ReadonlyMap<string, Uint8Array>,
     readonly preparedBytes: number,
     private readonly saves: ArtemisSaveDirectory,
-    emoteDriver: EmoteDriverProfile | null,
+    emoteDriver: string | null,
+    initializing: (runtime: ArtemisRuntime) => void,
   ) {
+    initializing(this);
     const hash = services.executableSha256,
       {files, sound, glyphs} = services,
       {width, height} = ini;
@@ -1185,42 +1203,116 @@ export class ArtemisRuntime {
     const surfaces = services.surfaces;
     // createEmoteLayer: motion files not yet read suspend the Lua call, which repeats after
     // they are read; models parse at the repeated call.
-    const emoteDevice = emoteDriver && new EmoteDevice(emoteDriver, services.randomSeed);
-    const emoteBytes = new Map<string, Uint8Array>();
-    const emote: ArtemisLuaEmoteHost | null = emoteDevice && {
-      version: `${emoteDevice.profile.sdkVersion}\n${emoteDevice.profile.buildDateTime}`,
+    let emoteDevice: IEmoteD3d11Device | null = null;
+    let emoteExports: EmoteDriverD3d11Exports | null = null;
+    if (emoteDriver) {
+      const native = services.nativeGraphics?.();
+      if (!native) throw new Error('Artemis E-mote native graphics owner missing');
+      const loaded = native.libraries.load('emotedriver.dll');
+      if (loaded.status !== 'loaded')
+        throw new Error('Unsupported Artemis emotedriver image: ' + emoteDriver);
+      let ownedDevice: IEmoteD3d11Device | null = null;
+      this.closers.push(() => {
+        try {
+          ownedDevice?.release();
+        } finally {
+          native.libraries.free(loaded.library);
+        }
+      });
+      if (
+        loaded.library.identity.kind !== 'image' ||
+        loaded.library.identity.sha256.toLowerCase() !== emoteDriver
+      )
+        throw new Error('Unsupported Artemis emotedriver image: ' + emoteDriver);
+      emoteExports = loaded.library.exports(EMOTE_DRIVER_D3D11);
+      if (!emoteExports) throw new Error('Artemis emotedriver contract revision unavailable');
+      emoteDevice = emoteExports.emoteCreate({
+        device: native.graphics.device,
+        context: native.graphics.context,
+      });
+      ownedDevice = emoteDevice;
+      // CEmoteSurface constructor0x14001a270 explicitly selects alpha masks (device slot5).
+      emoteDevice.setMaskMode(1);
+    }
+    // Pending reads are consumed at the repeated Lua call. The completed cache
+    // retains the sixteen most recently used files, like the former model cache.
+    const emoteBytes = new Map<string, Uint8Array>(),
+      emoteCache = new Map<string, Uint8Array>();
+    let emoteOpen = true;
+    this.closers.push(() => {
+      emoteOpen = false;
+      emoteBytes.clear();
+      emoteCache.clear();
+    });
+    const emoteOwner = emoteDevice;
+    const emote: ArtemisLuaEmoteHost | null = emoteOwner && {
+      version: `${emoteExports!.emoteGetSDKVersion()}\n${emoteExports!.emoteGetBuildDateTime()}`,
       createLayer: (request) => {
         const layers = this.layers;
         if (!layers.createEmoteLayer) throw Error('Unsupported Artemis E-mote layer owner');
-        const models: EmoteModel[] = [],
-          reads: Promise<void>[] = [];
+        const images: Uint8Array[] = [],
+          resolvedFiles: string[] = [],
+          reads: {file: string; resolved: string}[] = [];
         for (const file of request.files) {
-          const resolved = files.resolvePath(file);
-          const model = emoteDevice.cachedModel(resolved);
-          const bytes = emoteBytes.get(resolved);
-          if (model) models.push(model);
-          else if (bytes) {
-            emoteBytes.delete(resolved);
-            models.push(emoteDevice.loadModel(resolved, bytes));
+          const resolved = files.resolvePath(file),
+            cached = emoteCache.get(resolved),
+            bytes = cached ?? emoteBytes.get(resolved);
+          resolvedFiles.push(resolved);
+          if (bytes) {
+            images.push(bytes);
+            if (cached) {
+              emoteCache.delete(resolved);
+              emoteCache.set(resolved, cached);
+            }
           } else if (!files.paths.has(resolved)) return 'missing';
-          else
-            reads.push(
-              files.read(file).then((data) => {
-                if (data === null) throw Error('Artemis E-mote file disappeared: ' + file);
-                emoteBytes.set(resolved, data);
-              }),
-            );
+          else reads.push({file, resolved});
         }
         if (reads.length) {
-          suspend(Promise.all(reads));
+          // Publish only a complete successful read batch. Failed or late reads
+          // must not leave orphaned bytes after a call fails or the runtime closes.
+          suspend(
+            Promise.all(
+              reads.map(async ({file, resolved}) => {
+                const data = await files.read(file);
+                if (data === null) throw Error('Artemis E-mote file disappeared: ' + file);
+                return {resolved, data};
+              }),
+            ).then((loaded) => {
+              if (emoteOpen) for (const {resolved, data} of loaded) emoteBytes.set(resolved, data);
+            }),
+          );
           return 'suspended';
         }
-        const player = emoteDevice.createPlayer(models);
-        const size = artemisEmoteLayerSize(player, request.width, request.height, {width, height});
-        layers.createEmoteLayer(
-          request.id,
-          new ArtemisEmoteLayer(player, size.width, size.height, request.progress),
-        );
+        // Capture every member before eviction: one player may need more than
+        // sixteen files even though only sixteen completed inputs stay cached.
+        for (const resolved of resolvedFiles) emoteBytes.delete(resolved);
+        const player = emoteOwner.createPlayers(images);
+        if (!player) throw new Error('E-mote player requires a motion file');
+        for (let i = 0; i < resolvedFiles.length; i++) {
+          const resolved = resolvedFiles[i]!;
+          emoteCache.delete(resolved);
+          emoteCache.set(resolved, images[i]!);
+          while (emoteCache.size > 16) emoteCache.delete(emoteCache.keys().next().value!);
+        }
+        let layer: ArtemisEmoteLayer | null = null;
+        try {
+          const size = artemisEmoteLayerSize(player, request.width, request.height, {
+            width,
+            height,
+          });
+          layer = new ArtemisEmoteLayer(
+            player,
+            size.width,
+            size.height,
+            request.progress,
+            emoteOwner,
+          );
+          layers.createEmoteLayer(request.id, layer);
+        } catch (error) {
+          if (layer) layer.dispose();
+          else player.release();
+          throw error;
+        }
         return player;
       },
       layer: (id) => {
@@ -1954,6 +2046,13 @@ export class ArtemisRuntime {
     return name === undefined ? undefined : this.saves.read(name);
   }
   close(): void {
-    for (const close of this.closers) close();
+    const errors: unknown[] = [];
+    for (const close of this.closers.splice(0))
+      try {
+        close();
+      } catch (error) {
+        errors.push(error);
+      }
+    if (errors.length) throw new AggregateError(errors, 'Artemis resource retirement failed');
   }
 }

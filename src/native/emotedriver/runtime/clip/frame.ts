@@ -2,16 +2,27 @@ import type {
   EmoteFrame,
   EmoteFrameContent,
   EmoteModel,
+  EmoteX64Layer,
 } from '../../../../formats/kirikiri/emote-model.js';
-import {CurveCursor} from './interpolate.js';
+import {emoteBuild, EMOTEDRIVER_X86_SHA256, EMOTEDRIVER_X64_SHA256} from '../../build.js';
+import {EmoteUnsupportedError} from '../errors.js';
+import {CurveCursor, EMPTY_PATCH} from './interpolate.js';
+export {EMPTY_PATCH} from './interpolate.js';
 
 /**
  * Keyframe slot of a layer node (0xd0 bytes at node +0xb0 and +0x180; `emotedriver.dll`
  * SHA-256 `a3b693b6…5e70b3a86`). A node holds the current frame and the next one; node
  * +0x250 selects which slot is current. The header (0x10035f50) and the content (0x100362b0)
  * load separately: scans load headers while stepping and contents once at the end.
+ * The x64 image uses the same value storage for its eagerly loaded, read-only per-layer
+ * sequences; x86 keeps two mutable slots whose content can survive header changes.
  */
 export class FrameSlot {
+  readonly driverSha256: string;
+  constructor(driverSha256 = EMOTEDRIVER_X86_SHA256) {
+    this.driverSha256 = emoteBuild(driverSha256);
+  }
+
   /** +0x00 frame index, +0x04 time, +0x08 `ti`, +0x0c `content.mask`. */
   index = 0;
   time = 0;
@@ -25,16 +36,20 @@ export class FrameSlot {
   singleColor = true;
   colorUnset = true;
   /** +0x18/+0x1c `src`, `icon`. */
-  src = '';
-  icon = '';
+  /** X86 normalizes absent keys to empty strings; x64 retains null keys. */
+  src: string | null = '';
+  icon: string | null = '';
   /** +0x20 `bm`, +0x24/+0x28 `ox`/`oy`, +0x2c..+0x38 corner colours, +0x3c `opa`. */
   bm = 0x10;
+  bmParam = 0;
+  /** X64 defers unsupported curve/path rejection until interpolation. */
+  eased = false;
   ox = 0;
   oy = 0;
   readonly colors = new Uint32Array(4);
   opa = 255;
   /** +0x40..+0x48 `coord`, +0x4c/+0x4d `fx`/`fy`, +0x50 `angle`, +0x54.. `zx`,`zy`,`sx`,`sy`. */
-  readonly coord = [0, 0, 0];
+  readonly coord: [number, number, number] = [0, 0, 0];
   fx = false;
   fy = false;
   angle = 0;
@@ -60,6 +75,8 @@ export class FrameSlot {
   readonly motion: SlotMotion = {flags: 0, dt: 0, dofst: 0, docmpl: false, dtgt: '', timeOffset: 0};
 
   copyFrom(o: FrameSlot): void {
+    if (this.driverSha256 !== o.driverSha256)
+      throw new Error('cannot copy frame slots between DLL builds');
     Object.assign(this, {...o, colors: this.colors, coord: this.coord, motion: this.motion});
     this.colors.set(o.colors);
     this.coord[0] = o.coord[0]!;
@@ -91,8 +108,6 @@ export interface SlotMotion {
   timeOffset: number;
 }
 
-export const EMPTY_PATCH = new Float32Array(0);
-
 /** Raised for model features NEKOPARA does not use and the runtime does not reproduce. */
 export class EmoteClipUnsupportedError extends Error {
   override name = 'EmoteClipUnsupportedError';
@@ -104,6 +119,10 @@ export class EmoteClipUnsupportedError extends Error {
  * out-of-range read as the last frame.
  */
 export function loadHeader(slot: FrameSlot, frames: readonly EmoteFrame[], index: number): void {
+  if (slot.driverSha256 === EMOTEDRIVER_X64_SHA256) {
+    loadX64Header(slot, frames[index], index);
+    return;
+  }
   // A layer without frames reads past the frame vector natively (the seek clamps with
   // `min(index, count - 2)` unsigned); no shipped file has one. It loads as an empty frame.
   const frame = frames[Math.min(Math.max(index, 0), frames.length - 1)] ?? {
@@ -148,10 +167,14 @@ export function loadContent(
   slot: FrameSlot,
   frames: readonly EmoteFrame[],
   layerType: number,
-  model: EmoteModel,
+  model: Pick<EmoteModel, 'easing'>,
 ): void {
   slot.loaded = true;
   if (slot.empty) return;
+  if (slot.driverSha256 === EMOTEDRIVER_X64_SHA256) {
+    loadX64Content(slot, frames[slot.index]!.content!);
+    return;
+  }
   const content = frames[Math.min(Math.max(slot.index, 0), frames.length - 1)]!.content;
   slot.colors.fill(0x808080ff);
   slot.zx = slot.zy = 1;
@@ -229,4 +252,120 @@ function rejectUnused(c: EmoteFrameContent): void {
   for (const key of ['cp', 'prt', 'camera', 'anchor', 'model', 'feedback'] as const)
     if (c[key] !== null)
       throw new EmoteClipUnsupportedError(`frame content '${key}' is not supported`);
+}
+
+/** X64 missing slots have infinite time; every header resets mesh and motion defaults. */
+function loadX64Header(slot: FrameSlot, frame: EmoteFrame | undefined, index: number): void {
+  slot.index = index;
+  slot.time = frame ? Math.fround(frame.time) : Infinity;
+  slot.ti = slot.mask = 0;
+  slot.empty = !frame || frame.type === 0 || !frame.content;
+  slot.tween = false;
+  slot.loaded = false;
+  slot.singleColor = slot.colorUnset = true;
+  slot.src = slot.icon = null;
+  slot.act = null;
+  slot.bm = 0x10;
+  slot.bmParam = slot.ox = slot.oy = 0;
+  slot.colors.fill(0x808080ff);
+  slot.opa = 255;
+  slot.coord[0] = slot.coord[1] = slot.coord[2] = 0;
+  slot.fx = slot.fy = false;
+  slot.angle = slot.sx = slot.sy = 0;
+  slot.zx = slot.zy = 1;
+  slot.coordCurve = slot.colorCurve = slot.angleCurve = slot.zoomCurve = slot.slantCurve = null;
+  slot.meshCurve = null;
+  slot.meshPatch = EMPTY_PATCH;
+  slot.eased = false;
+  const motion = slot.motion;
+  motion.flags = motion.dofst = motion.timeOffset = 0;
+  motion.dt = 1;
+  motion.docmpl = false;
+  motion.dtgt = '';
+  if (slot.empty || !frame) return;
+  if (frame.type !== 2 && frame.type !== 3)
+    throw new EmoteUnsupportedError(`keyframe type ${frame.type}`);
+  slot.tween = frame.type === 3;
+  slot.mask = frame.content!.mask;
+  if (slot.mask & 0x40000) slot.act = frame.content!.act;
+}
+
+/** 0x18003b9f0: x64 content fields, including full-range RGB normalization. */
+function loadX64Content(slot: FrameSlot, c: EmoteFrameContent): void {
+  if (c.prt || c.camera || c.anchor || c.model || c.feedback)
+    throw new EmoteUnsupportedError('particle, camera, anchor, model or feedback keyframes');
+  if ('stc' in c.unread) throw new EmoteUnsupportedError('stencil alpha test');
+  const f = Math.fround;
+  slot.bm = c.bm >>> 0;
+  slot.colors.set(c.color);
+  if ((slot.bm & 0xf0) === 0) {
+    slot.bm = (slot.bm & ~0xe0) | 0x10;
+    for (let i = 0; i < 4; i++) {
+      const color = slot.colors[i]!;
+      slot.colors[i] = ((color >>> 1) & 0x7f7f7f00) | (color & 0xff);
+    }
+  }
+  slot.singleColor = !c.colorList;
+  slot.colorUnset = !c.colorKey;
+  slot.src = c.src;
+  slot.icon = c.icon;
+  slot.bmParam = f(c.bmParam!);
+  slot.ox = f(c.ox);
+  slot.oy = f(c.oy);
+  slot.opa = c.opa & 0xff;
+  slot.coord[0] = f(c.coord[0]);
+  slot.coord[1] = f(c.coord[1]);
+  slot.coord[2] = f(c.coord[2]);
+  slot.fx = c.fx;
+  slot.fy = c.fy;
+  slot.angle = f(c.angle);
+  slot.zx = f(c.zx);
+  slot.zy = f(c.zy);
+  slot.sx = f(c.sx);
+  slot.sy = f(c.sy);
+  slot.ti = slot.tween ? c.ti >>> 0 : 0;
+  slot.eased =
+    c.ccc !== null ||
+    c.acc !== null ||
+    c.zcc !== null ||
+    c.scc !== null ||
+    c.occ !== null ||
+    c.cp !== null ||
+    (c.mesh?.cc ?? null) !== null;
+  slot.meshPatch = c.mesh?.bp ?? EMPTY_PATCH;
+  if (c.motion) {
+    const m = c.motion;
+    if (m.dtgt !== null) throw new EmoteUnsupportedError('nested-motion direction target');
+    const motion = slot.motion;
+    motion.flags = m.flags ?? 0;
+    motion.dt = m.dt ?? 1;
+    motion.dofst = m.dofst ?? 0;
+    motion.docmpl = m.docmpl ?? false;
+    motion.timeOffset = f(m.timeOffset);
+  }
+}
+
+/** Loaded x64 keyframes use the shared slot storage; scans only change node references. */
+export type EmoteScalarFrameState = Readonly<FrameSlot>;
+
+/** A keyframe past the end of the list: never reached, never interpolated towards. */
+export function missingScalarState(index: number): EmoteScalarFrameState {
+  const slot = new FrameSlot(EMOTEDRIVER_X64_SHA256);
+  loadHeader(slot, [], index);
+  return slot;
+}
+
+const stateCache = new WeakMap<EmoteX64Layer, readonly EmoteScalarFrameState[]>();
+export function scalarLayerStates(layer: EmoteX64Layer): readonly EmoteScalarFrameState[] {
+  let states = stateCache.get(layer);
+  if (!states) {
+    states = layer.frames.map((_, index) => {
+      const slot = new FrameSlot(EMOTEDRIVER_X64_SHA256);
+      loadHeader(slot, layer.frames, index);
+      loadContent(slot, layer.frames, layer.type, {easing: null});
+      return slot;
+    });
+    stateCache.set(layer, states);
+  }
+  return states;
 }

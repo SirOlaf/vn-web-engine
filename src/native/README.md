@@ -65,22 +65,23 @@ that. Engine and library code do not.
 
 ## Libraries
 
-| Library             | Contract                  | Implementation       | Notes                                              |
-| ------------------- | ------------------------- | -------------------- | -------------------------------------------------- |
-| `emotedriver.dll`   | `emotedriver/contract.ts` | `emotedriver/`       | E-mote D3D runtime; `IEmoteDevice`, `IEmotePlayer` |
-| `d3d9.dll`          | `d3d9/contract.ts`        | `d3d9/webgl2/`       | Direct3D 9 device on WebGL2; see `d3d9/README.md`  |
-| TVP plugins         | `tvp-plugin/contract.ts`  | per plugin           | `V2Link` surface shared by every Kirikiri plugin   |
-| `nekopara_vol1.tpm` | `tvp-plugin/contract.ts`  | `nekopara_vol1.tpm/` | CxDec `archive://` storage medium                  |
-| `win32dialog.dll`   | `tvp-plugin/contract.ts`  | `win32dialog/`       | `WIN32Dialog`: dialogs from templates, controls    |
-| `k2compat.dll`      | `tvp-plugin/contract.ts`  | `k2compat/`          | `System.ModelessOwnerWindow`, `Window.TouchMouse`  |
-| `PackinOne.dll`     | `tvp-plugin/contract.ts`  | `PackinOne/`         | Ten bundled ncbind plugins; see its `library.ts`   |
-| `KAGParserEx.dll`   | `tvp-plugin/contract.ts`  | `KAGParserEx/`       | Replaces `KAGParser`; see its `library.ts`         |
-| `kernel32.dll`      | `kernel32/contract.ts`    | `kernel32/`          | Last error, messages, code pages, files, mutexes   |
-| `user32.dll`        | `user32/contract.ts`      | `user32/`            | Windows, messages, dialogs, standard controls      |
-| `gdi32.dll`         | `gdi32/contract.ts`       | `gdi32/`             | DIB sections, DCs, `BitBlt`, font resources        |
-| `comctl32.dll`      | `comctl32/contract.ts`    | `comctl32/`          | Progress, trackbar, up-down, tab, ComboBoxEx       |
-| `comdlg32.dll`      | `comdlg32/contract.ts`    | `comdlg32/`          | `ChooseColorW`                                     |
-| `advapi32.dll`      | `advapi32/contract.ts`    | `advapi32/`          | Registry writes over the platform registry         |
+| Library             | Contract                  | Implementation       | Notes                                                                    |
+| ------------------- | ------------------------- | -------------------- | ------------------------------------------------------------------------ |
+| `emotedriver.dll`   | `emotedriver/contract.ts` | `emotedriver/`       | E-mote D3D runtime; `IEmoteDevice`, `IEmotePlayer`                       |
+| `d3d9.dll`          | `d3d9/contract.ts`        | `d3d9/webgl2/`       | Direct3D 9 device on WebGL2; see `d3d9/README.md`                        |
+| `d3d11.dll`         | `d3d11/contract.ts`       | `d3d11/webgl2/`      | Direct3D 11 device/context on WebGL2; x64 E-mote uses contract revision2 |
+| TVP plugins         | `tvp-plugin/contract.ts`  | per plugin           | `V2Link` surface shared by every Kirikiri plugin                         |
+| `nekopara_vol1.tpm` | `tvp-plugin/contract.ts`  | `nekopara_vol1.tpm/` | CxDec `archive://` storage medium                                        |
+| `win32dialog.dll`   | `tvp-plugin/contract.ts`  | `win32dialog/`       | `WIN32Dialog`: dialogs from templates, controls                          |
+| `k2compat.dll`      | `tvp-plugin/contract.ts`  | `k2compat/`          | `System.ModelessOwnerWindow`, `Window.TouchMouse`                        |
+| `PackinOne.dll`     | `tvp-plugin/contract.ts`  | `PackinOne/`         | Ten bundled ncbind plugins; see its `library.ts`                         |
+| `KAGParserEx.dll`   | `tvp-plugin/contract.ts`  | `KAGParserEx/`       | Replaces `KAGParser`; see its `library.ts`                               |
+| `kernel32.dll`      | `kernel32/contract.ts`    | `kernel32/`          | Last error, messages, code pages, files, mutexes                         |
+| `user32.dll`        | `user32/contract.ts`      | `user32/`            | Windows, messages, dialogs, standard controls                            |
+| `gdi32.dll`         | `gdi32/contract.ts`       | `gdi32/`             | DIB sections, DCs, `BitBlt`, font resources                              |
+| `comctl32.dll`      | `comctl32/contract.ts`    | `comctl32/`          | Progress, trackbar, up-down, tab, ComboBoxEx                             |
+| `comdlg32.dll`      | `comdlg32/contract.ts`    | `comdlg32/`          | `ChooseColorW`                                                           |
+| `advapi32.dll`      | `advapi32/contract.ts`    | `advapi32/`          | Registry writes over the platform registry                               |
 
 ## TVP plugins
 

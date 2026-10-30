@@ -1,3 +1,5 @@
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
+
 /**
  * `emote::EPRotateControl` (vtable 0x1007190c, 0x38 bytes, player `p+0x148`): the queued
  * `SetRot` tween. Angles are radians in [0, 2π) and the tween takes the shorter way round.
@@ -31,6 +33,18 @@ interface RotateEntry {
 }
 
 export class EmoteRotateTween {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
+
+  constructor(driverSha256?: string) {
+    this.driverSha256 = emoteBuild(driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
+  }
+
+  private wrap(value: number, period: number): number {
+    if (this.x64 && !Number.isFinite(f32(value))) return f32(value);
+    return wrapAngle(value, period);
+  }
   /** Deque at +0x4 (entry 0xc bytes: angle, frames, power; pushed by 0x10005c80). */
   private queue: RotateEntry[] = [];
   /** 0 idle, 1 running (+0x1c). */
@@ -53,10 +67,17 @@ export class EmoteRotateTween {
 
   /** 0x1000b2d0: as `EmoteTween.set` for one angle, wrapped to [0, 2π) first. */
   set(radians: number, frames: number, power: number, queue: boolean): void {
-    const a = wrapAngle(radians, EMOTE_TWO_PI);
+    const a = this.wrap(radians, EMOTE_TWO_PI);
     const fr = f32(frames);
     if (fr > 0) {
       if (!queue) {
+        if (
+          this.x64 &&
+          this.state !== 0 &&
+          this.wrap(this.target, EMOTE_TWO_PI) === a &&
+          f32(f32(1 - this.t) / this.invFrames) < fr
+        )
+          return;
         this.queue = [];
         this.state = 0;
       }
@@ -70,6 +91,7 @@ export class EmoteRotateTween {
 
   /** 0x1000b380: returns the current angle (radians). */
   step(frames: number): number {
+    if (this.x64) return this.stepX64(frames);
     if (this.state === 0) {
       const entry = this.queue.shift();
       if (entry) {
@@ -95,9 +117,44 @@ export class EmoteRotateTween {
         this.current = wrapAngle(f32((this.target - this.start) * k + this.start), EMOTE_TWO_PI);
       } else {
         this.t = 1;
-        this.current = wrapAngle(this.target, EMOTE_TWO_PI);
+        this.current = this.wrap(this.target, EMOTE_TWO_PI);
         this.state = 0;
       }
+    }
+    return this.current;
+  }
+
+  /** 0x18002bb10: immediate progress and float32 shortest-arc arithmetic. */
+  private stepX64(frames: number): number {
+    const dt = f32(frames);
+    for (;;) {
+      if (this.state === 0) {
+        const entry = this.queue.shift();
+        if (!entry) break;
+        const cur = this.current,
+          a = entry.angle;
+        this.start = cur;
+        this.target = a;
+        if (a <= cur) {
+          if (PI < f32(cur - a)) this.target = f32(a + EMOTE_TWO_PI);
+        } else if (PI < f32(a - cur)) this.target = f32(a - EMOTE_TWO_PI);
+        this.t = 0;
+        this.state = 1;
+        this.invFrames = f32(1 / entry.frames);
+        this.power = entry.power;
+        continue;
+      }
+      if (this.state !== 1) break;
+      const t = f32(dt * this.invFrames + this.t);
+      this.t = t;
+      if (f32(t - 1) < f32(-0.0001)) {
+        const k = f32(Math.pow(t, this.power));
+        this.current = this.wrap(f32(f32(this.target - this.start) * k + this.start), EMOTE_TWO_PI);
+        break;
+      }
+      this.t = 1;
+      this.current = this.wrap(this.target, EMOTE_TWO_PI);
+      this.state = 0;
     }
     return this.current;
   }
@@ -108,7 +165,7 @@ export class EmoteRotateTween {
     if (!last) {
       if (this.state !== 0) {
         this.state = 0;
-        this.current = wrapAngle(this.target, EMOTE_TWO_PI);
+        this.current = this.wrap(this.target, EMOTE_TWO_PI);
       }
       return;
     }

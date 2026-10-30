@@ -3,6 +3,9 @@ import type {EmoteClipNodes, EmoteNodeView, EmoteVertexGrid} from '../interfaces
 import type {EmotePlayerRenderer, EmotePlayerRendererState, PEmotePlayer} from '../../player.js';
 import {EMOTE_FLT_MAX, type EmoteDeviceCore, type EmoteTextureRecord} from './device-core.js';
 import {loadEmoteTexture} from './texture.js';
+import {buildBlockDrawList, fillBlockDrawItem, type EmoteDrawItem} from './draw-list.js';
+import {EMOTE_NEUTRAL_COLOR} from './color.js';
+export {EMOTE_NEUTRAL_COLOR, modulateColor as emoteMultiplyColor} from './color.js';
 
 /**
  * `MMotionRenderer` (vtable 0x1007272c): the draw list of one player and its texture table.
@@ -11,8 +14,6 @@ import {loadEmoteTexture} from './texture.js';
  */
 
 const f = Math.fround;
-/** Neutral RGBA colour: grey 0x80 is 1.0 in the ×2 colour product, alpha 0xff. */
-export const EMOTE_NEUTRAL_COLOR = 0x808080ff;
 const WHITE = new Uint32Array([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]);
 /** Pass table 0x100718b4: include masks, then exclude masks. */
 const MASK_PASS_ROLES = [1, 2] as const;
@@ -34,57 +35,9 @@ const intersect = (a: Rect, b: Rect): Rect => [
   a[3] < b[3] ? a[3] : b[3],
 ];
 
-/**
- * RGBA colour product (0x1002b1c0): RGB × 2 / 256 clamped to 255, alpha × / 255. The neutral
- * colour on either side returns the other.
- */
-export function emoteMultiplyColor(a: number, b: number): number {
-  a >>>= 0;
-  b >>>= 0;
-  if (b === EMOTE_NEUTRAL_COLOR) return a;
-  if (a === EMOTE_NEUTRAL_COLOR) return b;
-  const alpha = Math.floor(((a & 0xff) * (b & 0xff)) / 0xff),
-    channel = (shift: number): number =>
-      Math.min(0xff, (((a >>> shift) & 0xff) * ((b >>> shift) & 0xff)) >>> 7);
-  return ((channel(24) << 24) | (channel(16) << 16) | (channel(8) << 8) | alpha) >>> 0;
-}
-
-/** Opacity applied to the alpha byte of an RGBA colour (0x1002aca0). */
-function applyOpacity(color: number, opacity: number): number {
-  if (opacity === 0xff) return color >>> 0;
-  return ((Math.floor(((color & 0xff) * opacity) / 0xff) | (color & 0xffffff00)) >>> 0) >>> 0;
-}
-
 const ror8 = (c: number): number => ((c >>> 8) | (c << 24)) >>> 0;
 
-/** Draw item (0x74 bytes, node +0x2d4). */
-export interface EmoteDrawItem {
-  /** +0x00. */
-  skip: boolean;
-  /** +0x08: clip `+0x1b4`, secondary sort key. */
-  priority: number;
-  /** +0x0c. */
-  blend: number;
-  /** +0x20. */
-  z: number;
-  /** +0x24 / +0x28. */
-  texture: number;
-  flags: number;
-  /** +0x2c..+0x38 (u, v, w, h). */
-  rect: Rect;
-  /** +0x3c. */
-  opacity: number;
-  /** +0x40..+0x4c, RGBA, in node corner order. */
-  colors: Uint32Array;
-  /** +0x58. */
-  clip: Float32Array | null;
-  /** +0x60. */
-  grid: EmoteVertexGrid | null;
-  /** +0x64 / +0x68 / +0x6c. */
-  stencilType: number;
-  mask: EmoteDrawItem | null;
-  children: EmoteDrawItem[];
-}
+export type {EmoteDrawItem} from './draw-list.js';
 
 function newItem(): EmoteDrawItem {
   return {
@@ -124,10 +77,10 @@ export class EmoteMotionRenderer implements EmotePlayerRenderer, EmotePlayerRend
   /** +0x98: `IEmotePlayer::SetSmoothing`. */
   smoothing = true;
   /** +0x14: draw list of the current frame. */
-  private list: EmoteDrawItem[] = [];
+  list: EmoteDrawItem[] = [];
   private readonly items = new WeakMap<EmoteNodeView, EmoteDrawItem>();
   /** Node +0x2d0: filled during the current build. */
-  private filled = new WeakSet<EmoteNodeView>();
+  filled = new WeakSet<EmoteNodeView>();
   private readonly sourceTextures = new Map<string, number>();
 
   constructor(readonly core: EmoteDeviceCore) {}
@@ -163,99 +116,19 @@ export class EmoteMotionRenderer implements EmotePlayerRenderer, EmotePlayerRend
     return this.sourceTextures.get(source) ?? -1;
   }
 
-  private itemOf(node: EmoteNodeView): EmoteDrawItem {
+  itemOf(node: EmoteNodeView): EmoteDrawItem {
     let item = this.items.get(node);
     if (item === undefined) this.items.set(node, (item = newItem()));
     return item;
   }
 
-  /** 0x10044d70: fills node draw items and the draw list, walking the draw order backwards. */
+  /** 0x10044d70: native draw construction through its runtime interface. */
   build(clip: EmoteClipNodes, parentColor: number, collect: EmoteDrawItem[] | null): void {
-    if (clip.drawSuppressed === true) return;
-    const color = emoteMultiplyColor(parentColor, clip.color ?? EMOTE_NEUTRAL_COLOR),
-      nodes = clip.nodes,
-      order = clip.drawOrder ?? nodes.slice(1).map((_, i) => i + 1);
-    for (let k = order.length - 1; k >= 0; k--) {
-      const node = nodes[order[k]!];
-      if (node === undefined) continue;
-      this.filled.delete(node);
-      const inherited = (node.inheritMask & 0x200) !== 0 ? color : EMOTE_NEUTRAL_COLOR;
-      if (node.type === 4) {
-        const players = node.childPlayers ?? (node.child === null ? [] : [node.child]);
-        for (const child of players) this.build(child, inherited, collect);
-        continue;
-      }
-      if (!(node.shown ?? node.visible)) continue;
-      if (node.type === 3) {
-        if (node.stencilChild !== true) {
-          if (node.child !== null) this.build(node.child, inherited, collect);
-          continue;
-        }
-        const item = this.itemOf(node);
-        this.filled.add(node);
-        item.stencilType = node.stencilType;
-        item.mask = node.maskNode == null ? null : this.itemOf(node.maskNode);
-        item.children = [];
-        if (node.child !== null) this.build(node.child, inherited, item.children);
-        if (collect !== null) collect.push(...item.children);
-        continue;
-      }
-      if (((1 << (node.type & 0x1f)) & 0x1401) === 0 || !node.drawable) continue;
-      const item = this.itemOf(node);
-      this.filled.add(node);
-      this.fillItem(item, node, clip, color);
-      if (((1 << (node.type & 0x1f)) & 0x401) !== 0) this.list.push(item);
-      if (collect !== null) collect.push(item);
-    }
-    for (const index of clip.stencilCompositeNodes ?? []) {
-      const node = nodes[index];
-      if (node === undefined || (node.stencilType & 4) === 0 || !this.filled.has(node)) continue;
-      const item = this.itemOf(node);
-      item.children = [item];
-      for (const member of node.compositeMaskNodes ?? []) {
-        if (!this.filled.has(member)) continue;
-        if (member.type === 0) item.children.push(this.itemOf(member));
-        else if (member.type === 3) item.children.push(...this.itemOf(member).children);
-      }
-    }
+    buildBlockDrawList(this, clip, parentColor, collect);
   }
 
-  private fillItem(
-    item: EmoteDrawItem,
-    node: EmoteNodeView,
-    clip: EmoteClipNodes,
-    color: number,
-  ): void {
-    item.skip = node.hidden === true;
-    item.priority = f(clip.drawPriority ?? 0);
-    item.blend = node.blendMode;
-    item.z = f(node.z);
-    item.texture = node.textureIndex ?? -1;
-    item.flags = node.drawFlags ?? 0;
-    const rect = node.sourceRect ?? [0, 0, 0, 0];
-    item.rect = [f(rect[0]), f(rect[1]), f(rect[2]), f(rect[3])];
-    item.opacity = node.opacity;
-    const corners = node.colors;
-    if (node.singleColor !== true) {
-      let alphas = 0;
-      for (let i = 0; i < 4; i++) {
-        const c = emoteMultiplyColor(applyOpacity(corners[i]!, node.opacity), color);
-        alphas |= c & 0xff;
-        item.colors[i] = c;
-      }
-      if (alphas !== 0xff) item.flags &= ~2;
-    } else if (color !== EMOTE_NEUTRAL_COLOR || node.opacity !== 0xff) {
-      const c = emoteMultiplyColor(applyOpacity(corners[0]!, node.opacity), color);
-      item.colors.fill(c);
-      if ((c & 0xff) !== 0xff) item.flags &= ~2;
-    } else {
-      item.colors.set(corners.subarray(0, 4));
-      if (node.protectColor === true) item.flags |= 4;
-    }
-    item.clip = node.clipRect ?? null;
-    item.grid = node.grid;
-    item.stencilType = node.stencilType;
-    item.mask = node.maskNode == null ? null : this.itemOf(node.maskNode);
+  fillItem(item: EmoteDrawItem, node: EmoteNodeView, clip: EmoteClipNodes, color: number): void {
+    fillBlockDrawItem(this, item, node, clip, color);
   }
 
   /**

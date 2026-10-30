@@ -218,16 +218,22 @@ export function createMetadataLayerFixture(
     },
     copyImageLayer(old) {
       if (!actors.has(old)) throw Error('Probe actor released');
-      // A CEmoteLayer copy clones its player (0x14001a4f0), which is not modeled.
-      if (old.kind === 'emote') throw Error('Unsupported Artemis E-mote layer copy');
-      const actor = {
-        ...old,
-        id: ++sequence,
-        animation: old.animation?.copy(),
-        display: old.display.copy(),
-        properties: {...old.properties},
-        shader: old.shader?.copy(),
-      };
+      const emote = old.emote?.copy();
+      let actor;
+      try {
+        actor = {
+          ...old,
+          ...(emote ? {emote} : {}),
+          id: ++sequence,
+          animation: old.animation?.copy(),
+          display: old.display.copy(),
+          properties: {...old.properties},
+          shader: old.shader?.copy(),
+        };
+      } catch (error) {
+        emote?.dispose();
+        throw error;
+      }
       if (actor.kind === 'message') actor.messageOwner.retain(actor.message);
       if (actor.video) videos.set(actor.video, videos.get(actor.video) + 1);
       actors.add(actor);
@@ -272,6 +278,7 @@ export function createMetadataLayerFixture(
       if (!actors.delete(actor)) throw Error('Probe actor released twice');
       actor.shader?.close();
       actor.animation?.close();
+      actor.emote?.dispose();
       if (actor.kind === 'message') actor.messageOwner.release(actor.message);
       if (actor.video) {
         const references = videos.get(actor.video) - 1;

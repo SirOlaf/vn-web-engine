@@ -1,14 +1,100 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createEmoteClip} from '../dist/native/emotedriver/runtime/clip.js';
+import {createEmoteClip, EmoteClip} from '../dist/native/emotedriver/runtime/clip.js';
 import {
   bernsteinTable,
   createEmoteMeshKernel,
   emoteMeshKernelJs,
 } from '../dist/native/emotedriver/runtime/mesh/index.js';
 import {EmoteMotionRenderer} from '../dist/native/emotedriver/runtime/render/renderer.js';
+import {EMOTEDRIVER_X64_SHA256} from '../dist/native/emotedriver/build.js';
+import {
+  lerpAngle,
+  lerpCoord,
+  lerpPatch,
+} from '../dist/native/emotedriver/runtime/clip/interpolate.js';
+
+import {FrameSlot, loadHeader, loadContent} from '../dist/native/emotedriver/runtime/clip/frame.js';
+import {ClipParameter, NodeState} from '../dist/native/emotedriver/runtime/clip/node.js';
+import {EmoteClipTime} from '../dist/native/emotedriver/runtime/clip/time.js';
+import {EmoteMotionClip, EmoteResource} from '../dist/native/emotedriver/runtime/clip.js';
+
+test('x64 variable ranges include loaded nested degenerate parameters and mesh-combinator ranges', async () => {
+  const {emoteScalarClipFactory} = await import('../dist/native/emotedriver/runtime/clip.js');
+  const parameter = (id, rangeBegin, rangeEnd) => ({
+    id,
+    rangeBegin,
+    rangeEnd,
+    division: 10,
+    discretization: false,
+    unread: {},
+  });
+  const patch = Float32Array.from({length: 32}, (_, i) => (i & 1 ? i >> 3 : (i >> 1) & 3) / 3);
+  const child = motion([], {parameters: [parameter('mixed', 5, 5)]});
+  const main = motion(
+    [
+      layer('nested', [frame(0, 2, {mask: 1, src: 'child', icon: 'm'})], {type: 3}),
+      layer(
+        'mesh',
+        [frame(0, 2, {mask: 0x2000001, src: 'tex', icon: 'i', mesh: {bp: patch, cc: null}})],
+        {
+          meshTransform: 1,
+          mesh: {
+            syncChildMask: 0,
+            division: 4,
+            combine: false,
+            combinators: [
+              {
+                key: 'shape',
+                rangeBegin: 7,
+                rangeEnd: -3,
+                meshCount: 2,
+                neutralIndex: 0,
+                raw: new Float32Array(64),
+              },
+            ],
+          },
+        },
+      ),
+    ],
+    {parameters: [parameter('mixed', 1, 0), parameter('constant', 2, 2)]},
+  );
+  const file = model({object: {main}, child: {m: child}});
+  file.sources.get('tex').icons.get('i').resolution = 1;
+  for (const wasm of [false, true]) {
+    const kernel = createEmoteMeshKernel({driverSha256: EMOTEDRIVER_X64_SHA256, wasm});
+    const clip = emoteScalarClipFactory([file], {kernel})(main);
+    clip.progress(0);
+    assert.deepEqual(clip.getVariableRange('mixed'), [0, 5]);
+    assert.deepEqual(clip.getVariableRange('shape'), [-3, 7]);
+    assert.equal(clip.getVariableRange('constant'), null);
+    assert.equal(clip.getVariableRange('unknown'), null);
+  }
+});
+import {
+  composeEmoteMatrix,
+  multiplyEmoteMatrices,
+} from '../dist/native/emotedriver/runtime/clip/matrix.js';
 
 const f = Math.fround;
+
+test('clip interpolation preserves each image’s angle wrap and near-zero mesh weight', () => {
+  assert.equal(lerpAngle(null, 350, 10, 0.5), 360);
+  assert.equal(lerpAngle(null, 350, 10, 0.5, EMOTEDRIVER_X64_SHA256), 0);
+  assert.equal(lerpAngle(null, 360, 360, 0.5, EMOTEDRIVER_X64_SHA256), 360);
+  const a = new Float32Array(32).fill(1),
+    b = new Float32Array(32).fill(3);
+  const x86 = new Float32Array(32),
+    x64 = new Float32Array(32);
+  lerpPatch(null, a, b, 2 ** -25, x86);
+  lerpPatch(null, a, b, 2 ** -25, x64, EMOTEDRIVER_X64_SHA256);
+  assert.equal(x86[0], 1.0000001192092896);
+  assert.equal(x64[0], 1);
+  const coordinates = new Float32Array(5).fill(9);
+  lerpCoord(null, [1, 2, 3], [5, 6, 7], 0.25, coordinates, 1, EMOTEDRIVER_X64_SHA256);
+  assert.deepEqual([...coordinates], [9, 2, 3, 4, 9]);
+  assert.throws(() => lerpAngle(null, 0, 0, 0, '3.9.8'), /unsupported DLL build/);
+});
 
 // ---------------------------------------------------------------------------------------
 // Synthetic models (the typed reader's shapes, built directly).
@@ -489,4 +575,814 @@ test('clip → renderer: evaluated nodes become draw items with grid, rect and c
   assert.deepEqual([...item.colors], [0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff]);
   // Icon origin (5, 5): the 10×10 quad spans (15, 25)..(25, 35).
   assert.deepEqual([...item.grid.positions], [15, 25, 25, 25, 15, 35, 25, 35]);
+});
+
+test('frame slots retain each image’s mesh lifetime, color presence and end sentinel', () => {
+  const patch = new Float32Array(32).fill(0.25);
+  const frames = [
+    frame(1.1, 3, {
+      mask: 0x2000000 | 0x200,
+      bm: 0,
+      bmParam: 0.3,
+      color: [0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff],
+      colorList: true,
+      colorKey: true,
+      mesh: {cc: null, bp: patch},
+    }),
+    frame(2, 2, {bmParam: 0, colorList: false, colorKey: false}),
+  ];
+  const x86 = new FrameSlot(),
+    x64 = new FrameSlot(EMOTEDRIVER_X64_SHA256);
+  const read = (slot, index) => {
+    loadHeader(slot, frames, index);
+    loadContent(slot, frames, 0, {easing: null});
+  };
+  read(x86, 0);
+  read(x64, 0);
+  assert.equal(x86.singleColor, true);
+  assert.equal(x64.singleColor, false);
+  assert.equal(x86.colors[0], 0xffffffff);
+  assert.equal(x64.colors[0], 0x7f7f7fff);
+  assert.equal(x64.bm, 0x10);
+  assert.equal(x64.time, f(1.1));
+  read(x86, 1);
+  read(x64, 1);
+  assert.equal(x86.meshPatch, patch);
+  assert.equal(x64.meshPatch.length, 0);
+  read(x86, 2);
+  read(x64, 2);
+  assert.equal(x86.time, 2);
+  assert.equal(x64.time, Infinity);
+  assert.equal(x64.empty, true);
+  assert.equal(x64.zx, 1);
+  assert.equal(x64.motion.dt, 1);
+  assert.throws(() => x86.copyFrom(x64), /between DLL builds/);
+  assert.throws(() => new FrameSlot('3.9.8'), /unsupported DLL build/);
+});
+
+test('x64 frame loading retains deferred curves and rejects unsupported native payloads', () => {
+  const slot = new FrameSlot(EMOTEDRIVER_X64_SHA256);
+  const frames = [frame(0, 3, {ccc: 0, bmParam: 0})];
+  loadHeader(slot, frames, 0);
+  loadContent(slot, frames, 0, {easing: null});
+  assert.equal(slot.eased, true);
+  const bad = [frame(0, 2, {unread: {stc: 0}, bmParam: 0})];
+  loadHeader(slot, bad, 0);
+  assert.throws(() => loadContent(slot, bad, 0, {easing: null}), /stencil alpha test/);
+});
+
+test('clip parameters preserve each image’s input float store and reversed ranges', () => {
+  const x86 = new ClipParameter('p', false, 0, 1, 3);
+  const x64 = new ClipParameter('p', false, 0, 1, 3, EMOTEDRIVER_X64_SHA256);
+  const value = 1 / 3 + 2 ** -27;
+  x86.apply(value);
+  x64.apply(value);
+  assert.equal(x86.position, f(f(value) * 3));
+  assert.equal(x64.position, f(value * 3));
+  const reverse = new ClipParameter('p', true, 2, -2, 10, EMOTEDRIVER_X64_SHA256);
+  reverse.flags = 7;
+  reverse.apply(-0.75);
+  assert.equal(reverse.position, 5);
+  assert.equal(reverse.flags, 0);
+  reverse.apply(99);
+  assert.equal(reverse.position, -0);
+  const empty = new ClipParameter('p', false, 1, 1, 0);
+  empty.apply(Infinity);
+  assert.equal(empty.position, 0);
+  assert.throws(() => new ClipParameter('p', false, 0, 1, 1, '3.9.8'), /unsupported DLL build/);
+});
+
+test('matrix composition accepts transform views and caller-owned, aliasable output', () => {
+  const state = {
+    flipX: true,
+    flipY: false,
+    angle: 0,
+    zoomX: 2,
+    zoomY: 3,
+    slantX: 0.25,
+    slantY: -0.5,
+  };
+  for (const sha of [undefined, EMOTEDRIVER_X64_SHA256]) {
+    const output = new Float32Array(4);
+    composeEmoteMatrix(state, [0, 3, 2, 1], output, sha);
+    assert.deepEqual([...output], [-2, 0.5, 1.5, 3]);
+    let scalar;
+    const target = {
+      setMatrix: (m00, m01, m10, m11) => {
+        scalar = [m00, m01, m10, m11];
+      },
+    };
+    composeEmoteMatrix(state, [0, 3, 2, 1], target, sha);
+    assert.deepEqual(scalar, [...output]);
+    multiplyEmoteMatrices(
+      {m00: 2, m01: 1, m10: 0, m11: 3},
+      {m00: 1, m01: 2, m10: 3, m11: 4},
+      target,
+      sha,
+    );
+    assert.deepEqual(scalar, [5, 8, 9, 12]);
+    const left = new Float32Array([2, 1, 0, 3]),
+      right = new Float32Array([1, 2, 3, 4]);
+    multiplyEmoteMatrices(left, right, right, sha);
+    assert.deepEqual([...right], [5, 8, 9, 12]);
+  }
+  const output = new Float32Array(4).fill(42);
+  assert.throws(() => composeEmoteMatrix(state, [], output, '3.9.8'), /unsupported DLL build/);
+  assert.deepEqual([...output], [42, 42, 42, 42]);
+});
+
+test('x64 mesh backends agree on transformed grids, offset points and double matrix inputs', () => {
+  const js = createEmoteMeshKernel({driverSha256: EMOTEDRIVER_X64_SHA256, wasm: false});
+  const wasm = createEmoteMeshKernel({driverSha256: EMOTEDRIVER_X64_SHA256});
+  assert.equal(js.accelerated, false);
+  const patch = Float32Array.from({length: 32}, (_, i) => f(Math.sin(i * 0.31)));
+  const matrix = new Float64Array([1 + 2 ** -30, -0.25, 0.5, 0.75]);
+  const grids = [];
+  for (const kernel of [js, wasm]) {
+    const out = new Float32Array(6 * 5 * 2);
+    kernel.evaluateTransformedPatch(patch, 5, 4, matrix, 0.1, -0.3, out);
+    const points = new Float32Array([17, 18, 0.25, 0.75, 19, 20]);
+    kernel.mapPatchPoints(points, 1, patch, 2);
+    assert.deepEqual([...points.slice(0, 2)], [17, 18]);
+    assert.deepEqual([...points.slice(4)], [19, 20]);
+    const affine = new Float32Array([0.123, -0.34, 0.81, 0.22]);
+    kernel.affinePoints(affine, 2, matrix, 0.1, -0.2);
+    grids.push([out, points, affine]);
+  }
+  for (let i = 0; i < grids[0].length; i++)
+    assert.deepEqual(new Uint32Array(grids[1][i].buffer), new Uint32Array(grids[0][i].buffer));
+  assert.throws(() => createEmoteMeshKernel({driverSha256: '3.9.8'}), /unsupported DLL build/);
+});
+
+test('clip clock keeps zero-delta replay and scan stop order per DLL image', () => {
+  class FrameHost extends EmoteClipTime {
+    constructor(sha, stopOnSeek = false) {
+      super(sha);
+      this.calls = [];
+      this.motionParameter = null;
+      this.parameters = [];
+      this.stopOnSeek = stopOnSeek;
+      this.playing = this.starting = this.replay = true;
+      this.timeRunning = this.time = 5;
+      this.lastTime = 10;
+      this.loopTime = -1;
+    }
+    resetFrames() {
+      this.calls.push(['seek', this.time]);
+      if (this.stopOnSeek) this.alignStop = true;
+    }
+    scanForward() {
+      this.calls.push(['forward', this.time]);
+    }
+    scanBackward() {
+      this.calls.push(['backward', this.time]);
+    }
+    scanParameterNodes() {
+      this.calls.push(['parameters', this.time]);
+    }
+  }
+  const x86 = new FrameHost(),
+    x64 = new FrameHost(EMOTEDRIVER_X64_SHA256);
+  x86.advance(0);
+  x64.advance(0);
+  assert.deepEqual(x86.calls, [
+    ['seek', 10],
+    ['backward', 5],
+  ]);
+  assert.deepEqual(x64.calls, [
+    ['seek', 0],
+    ['forward', 5],
+  ]);
+  const held = new FrameHost(undefined, true);
+  held.advance(0);
+  assert.deepEqual(held.calls, [['seek', 10]]);
+  assert.equal(held.time, 10, 'a held scan retains the tag position');
+  assert.throws(() => new FrameHost('ff'), /unsupported DLL build/);
+});
+
+test('x64 clip phases preserve a queued whole-call hold and resume on the next pass', () => {
+  const m = motion([]),
+    n = motion([]),
+    file = model({o: {m, n}});
+  const clip = new EmoteMotionClip(new EmoteResource([file]));
+  clip.selectObject('o');
+  clip.setMotion('m');
+  clip.progress(1);
+  clip.rootX = 42;
+  clip.rootDirty = true;
+  clip.setMotion('n', 0x40);
+  clip.advance(10);
+  clip.evaluate();
+  clip.dispatchEvents({
+    action() {
+      assert.fail('x64 action retired through x86 listener');
+    },
+  });
+  assert.equal(clip.motionName, 'n');
+  assert.equal(clip.timeRunning, 0);
+  assert.equal(clip.rootDirty, true, 'the held pass must not evaluate the root');
+  clip.advance(1);
+  clip.evaluate();
+  clip.dispatchEvents();
+  assert.equal(clip.rootDirty, false);
+  assert.equal(clip.rootX, 42);
+  clip.advance(1);
+  clip.evaluate();
+  assert.equal(clip.timeRunning, 1);
+  assert.equal(clip.isModified(), false);
+  assert.deepEqual(clip.events, []);
+  assert.throws(() => clip.nodes, /x86 node view/);
+  assert.throws(() => clip.nodeIndex('root'), /x86 node lookup/);
+});
+
+test('clip interfaces copy borrowed root transforms before the caller reuses the record', () => {
+  const m = motion([layer('point', [frame(0, 2, {mask: 2})], {type: 1, shape: 0})]);
+  const file = model({o: {m}}),
+    x86 = createEmoteClip(file, m);
+  const x64 = new EmoteMotionClip(new EmoteResource([file]));
+  x64.selectObject('o');
+  x64.setMotion('m');
+  for (const [clip, point] of [
+    [x86, () => x86.shapePoint('point')],
+    [x64, () => x64.layerPosition('point')],
+  ]) {
+    clip.rootVisible = true;
+    const input = {x: 7.5, y: -4.25, angle: 0, scaleX: 1, scaleY: 1, mirror: false};
+    clip.setRootTransform(input);
+    input.x = 900;
+    input.scaleX = 99;
+    input.mirror = true;
+    clip.advance(0);
+    clip.evaluate();
+    assert.deepEqual(point(), {x: 7.5, y: -4.25});
+  }
+});
+
+test('x64 cached keyframes retain source identity across seeks and independent players', () => {
+  const m = motion([
+    layer('image', [
+      frame(0, 2, {src: null, icon: '', bmParam: 0}),
+      frame(5, 2, {src: '', icon: '', bmParam: 0}),
+      frame(10, 2, {src: 'tex', icon: 'i', bmParam: 0}),
+      frame(15, 2, {src: null, icon: '', bmParam: 0}),
+      frame(20, 0),
+    ]),
+  ]);
+  const file = model({o: {m}});
+  const source = file.sources.get('tex');
+  source.icons.get('i').resolution = 1;
+  file.sources.set('', {...source, icons: new Map([['', source.icons.get('i')]])});
+  const resource = new EmoteResource([file]);
+  const players = [new EmoteMotionClip(resource), new EmoteMotionClip(resource)];
+  for (const clip of players) {
+    clip.selectObject('o');
+    clip.setMotion('m');
+    clip.rootVisible = true;
+  }
+  const at = (clip, time) => {
+    clip.seekTo(time);
+    clip.progress(0);
+    return clip.drawList.map((item) => ({
+      source: item.source,
+      width: item.width,
+      height: item.height,
+      colors: [...item.colors],
+    }));
+  };
+  assert.deepEqual(at(players[0], 0), [], 'a missing source must not resolve the empty key');
+  const emptyKey = at(players[0], 5);
+  assert.equal(emptyKey.length, 1);
+  assert.equal(emptyKey[0].source, '');
+  assert.equal(at(players[1], 10)[0].source, 'tex');
+  assert.deepEqual(at(players[0], 5), emptyKey, 'another player must not alter cached frames');
+  assert.equal(at(players[0], 10)[0].source, 'tex');
+  assert.deepEqual(at(players[0], 5), emptyKey, 'backward seeks must retain earlier content');
+  assert.deepEqual(at(players[0], 15), []);
+});
+
+test('source transitions preserve blank sizes, stale rectangles and current-file lookup', () => {
+  const m = motion([
+    layer('image', [
+      frame(0, 2, {src: 'tex', icon: 'i', bmParam: 0}),
+      frame(5, 2, {src: 'blank', icon: '4294967303:17:-0:-0', bmParam: 0}),
+      frame(10, 2, {src: 'missing', icon: 'i', bmParam: 0}),
+      frame(15, 2, {src: 'tex', icon: 'i', bmParam: 0}),
+      frame(20, 0),
+      frame(25, 2, {src: 'tex', icon: 'i', bmParam: 0}),
+      frame(30, 0),
+    ]),
+  ]);
+  const file = model({o: {m}});
+  file.sources.get('tex').icons.get('i').resolution = 1;
+  const x86 = createEmoteClip(file, m, {textureIndexOf: () => 7});
+  x86.rootVisible = true;
+  const at86 = (time) => {
+    x86.seek(time);
+    x86.advance(0);
+    x86.evaluate();
+    return x86.nodes[1];
+  };
+  assert.deepEqual(at86(0).sourceRect, [16, 8, 10, 10]);
+  assert.equal(at86(0).textureIndex, 7);
+  const blank = at86(5);
+  assert.equal(blank.drawable, true);
+  assert.equal(blank.hidden, true);
+  assert.deepEqual(blank.sourceRect, [16, 8, 7, 17], 'x86 blank size uses signed integer stores');
+  assert.equal(Object.is(blank.resolved.originX, -0), true);
+  assert.equal(at86(10).drawable, false);
+  assert.deepEqual(at86(10).sourceRect, [16, 8, 7, 17], 'a miss retains the old rectangle');
+  assert.deepEqual(at86(15).sourceRect, [16, 8, 10, 10]);
+  assert.equal(at86(20).visible, false, 'an empty frame hides the x86 layer');
+  assert.deepEqual(at86(0).sourceRect, [16, 8, 10, 10]);
+  assert.equal(at86(30).visible, true, 'the terminal sentinel retains the last content');
+
+  const other = model({});
+  other.sources.get('tex').icons.get('i').width = 99;
+  file.sources = new Map([['unused', {icons: new Map()}], ...file.sources]);
+  const x64 = new EmoteMotionClip(new EmoteResource([other, file]));
+  x64.selectObject('o');
+  x64.setMotion('m');
+  x64.rootVisible = true;
+  const at64 = (time) => {
+    x64.seekTo(time);
+    x64.progress(0);
+    return x64.drawList;
+  };
+  const selected = at64(0)[0];
+  assert.equal(selected.file, file, 'the current motion file wins a duplicate source');
+  assert.equal(selected.texIndex, 1, 'the texture index belongs to the selected file');
+  assert.equal(selected.width, 10);
+  const blank64 = at64(5)[0];
+  assert.equal(blank64.blank, true);
+  assert.equal(blank64.width, f(4294967303), 'x64 blank size is not truncated to signed32');
+  assert.equal(blank64.left, 16);
+  assert.deepEqual(at64(10), []);
+  assert.equal(at64(15)[0].file, file);
+  assert.equal(at64(15)[0].width, 10);
+  assert.deepEqual(at64(20), [], 'an empty frame hides the x64 layer');
+  assert.equal(at64(0)[0].width, 10);
+  assert.equal(at64(30)[0].width, 10, 'the terminal sentinel retains the last content');
+});
+
+test('layer projection retains the native intermediate float store for each image', () => {
+  const point = layer('point', [frame(0, 2, {mask: 2, coord: [1, 1, 0]})], {
+    type: 1,
+    shape: 0,
+  });
+  const m = motion([
+    layer('parent', [frame(0, 2, {mask: 2, coord: [-1, 0, 0], sx: 2 ** -24})], {
+      type: 2,
+      children: [point],
+    }),
+  ]);
+  const file = model({o: {m}});
+  const x86 = createEmoteClip(file, m);
+  x86.rootVisible = true;
+  x86.advance(0);
+  x86.evaluate();
+  assert.equal(x86.findNode('point').x, 0);
+  const x64 = new EmoteMotionClip(new EmoteResource([file]));
+  x64.selectObject('o');
+  x64.setMotion('m');
+  x64.rootVisible = true;
+  x64.progress(0);
+  assert.equal(x64.layerPosition('point').x, 2 ** -24);
+});
+
+test('mesh subdivision retains the native minimum axes for each image', () => {
+  const bp = new Float32Array(32);
+  for (let i = 0; i < 16; i++) {
+    bp[i * 2] = f((i & 3) / 3);
+    bp[i * 2 + 1] = f((i >> 2) / 3);
+  }
+  const m = motion([
+    layer(
+      'mesh',
+      [frame(0, 2, {mask: 0x2000000, src: 'blank', icon: '100:50:0:0', mesh: {bp, cc: null}})],
+      {
+        meshTransform: 1,
+        mesh: {syncChildMask: 8, division: 6, combine: false},
+        children: [
+          layer('img', [frame(0, 2, {mask: 3, src: 'tex', icon: 'i'})], {meshTransform: 0}),
+        ],
+      },
+    ),
+  ]);
+  const file = model({o: {m}});
+  const x86 = createEmoteClip(file, m);
+  x86.rootVisible = true;
+  run(x86, 1);
+  const grid86 = x86.findNode('img').grid;
+  assert.deepEqual([grid86.columns, grid86.rows, grid86.positions.length], [1, 1, 8]);
+  const x64 = new EmoteMotionClip(new EmoteResource([file]));
+  x64.selectObject('o');
+  x64.setMotion('m');
+  x64.rootVisible = true;
+  x64.progress(0);
+  const grid64 = x64.drawList.find((item) => !item.blank).grid;
+  assert.deepEqual([grid64.cols, grid64.rows, grid64.points.length], [2, 2, 18]);
+  assert.equal(x64.progress(0), undefined);
+  assert.equal(x64.drawList.find((item) => !item.blank).grid, grid64, 'the clip retains its grid');
+});
+
+test('mesh synchronization keeps child versus parent projection axes and native errors', async () => {
+  const {syncToParentMeshX86, syncToParentMeshX64} =
+    await import('../dist/native/emotedriver/runtime/clip/vertices.js');
+  const bp = new Float32Array(32);
+  for (let i = 0; i < 16; i++) {
+    bp[i * 2] = f(((i & 3) / 3) * 2);
+    bp[i * 2 + 1] = f(i >> 2);
+  }
+  const cur = {ox: 0, oy: 0};
+  const x86 = {coordinate: 0, inheritMask: 0, state: {x: 16, y: 32, z: 16}};
+  const parent86 = {
+    mesh: {local: bp},
+    state: {visible: true},
+    resolved: {drawable: true, rect: Int32Array.of(0, 0, 64, 64), originX: 0, originY: 0},
+    meshSync: 1,
+    meshKind: 1,
+    cur,
+  };
+  syncToParentMeshX86(parent86, x86);
+  assert.ok(Math.abs(x86.state.x - 32) < 1e-5);
+  assert.ok(Math.abs(x86.state.y - 96) < 1e-5);
+  assert.equal(x86.state.z, 16);
+  parent86.meshSync = 3;
+  x86.inheritMask = 0x10;
+  assert.throws(() => syncToParentMeshX86(parent86, x86), /meshSyncChildMask angle\/zoom/);
+  const parent64 = {
+    mstate: {bp},
+    visible: true,
+    drawable: true,
+    syncChildMask: 7,
+    meshKind: 1,
+    coordinate: 1,
+    cur,
+    originX: 0,
+    originY: 0,
+    w: 64,
+    h: 64,
+  };
+  for (const wasm of [false, true]) {
+    const kernel = createEmoteMeshKernel({driverSha256: EMOTEDRIVER_X64_SHA256, wasm});
+    const x64 = {inheritMask: 0x70, x: 16, y: 32, z: 16, angle: 0, zoomX: 1, zoomY: 1};
+    syncToParentMeshX64.call({resource: {kernel}}, parent64, x64);
+    assert.ok(Math.abs(x64.x - 32) < 1e-5);
+    assert.equal(x64.y, 32);
+    assert.ok(Math.abs(x64.z - 48) < 1e-5);
+    assert.ok(Math.abs(x64.angle) < 1e-3);
+    assert.ok(x64.zoomX > 2 && x64.zoomY > 2, 'the x64 finite-difference zoom path runs');
+  }
+});
+
+test('root velocity retains each image’s product store before translation', () => {
+  const m = motion([]),
+    file = model({o: {m}}),
+    step = 1 - 2 ** -23,
+    velocity = 1 + 2 ** -23;
+  const x86 = createEmoteClip(file, m);
+  x86.root.adjust.x = -1;
+  x86.rootVelocity[0] = velocity;
+  x86.advance(step);
+  x86.evaluate();
+  assert.equal(x86.root.state.x, -(2 ** -46));
+  const x64 = new EmoteMotionClip(new EmoteResource([file]));
+  x64.selectObject('o');
+  x64.setMotion('m');
+  x64.rootX = -1;
+  x64.velocity[0] = velocity;
+  x64.progress(step);
+  assert.equal(x64.rootX, 0);
+});
+
+test('frame evaluation retains each image’s epsilon boundary', () => {
+  const m = motion([
+    layer(
+      'point',
+      [frame(0, 3, {mask: 2, coord: [0, 0, 0]}), frame(1, 2, {mask: 2, coord: [8, 0, 0]})],
+      {
+        type: 1,
+        shape: 0,
+      },
+    ),
+  ]);
+  const file = model({o: {m}}),
+    epsilon = 2 ** -23;
+  const x86 = createEmoteClip(file, m);
+  x86.advance(0);
+  x86.evaluate();
+  x86.advance(epsilon);
+  x86.evaluate();
+  assert.equal(x86.shapePoint('point').x, 0);
+  const x64 = new EmoteMotionClip(new EmoteResource([file]));
+  x64.selectObject('o');
+  x64.setMotion('m');
+  x64.progress(0);
+  x64.progress(epsilon);
+  assert.equal(x64.layerPosition('point').x, f(8 * epsilon));
+});
+
+test('nested child interfaces retain native flags, reverse loop endpoints and event retirement', () => {
+  for (const scalar of [false, true]) {
+    const calls = [];
+    const current = new FrameSlot(scalar ? EMOTEDRIVER_X64_SHA256 : undefined);
+    Object.assign(current, {empty: false, src: 'object', icon: 'motion'});
+    current.motion.flags = 1;
+    const state = new NodeState();
+    const meshParent = {id: 7},
+      maskParent = {id: 8};
+    const node = {
+      ...state,
+      state,
+      matrix: new Float32Array([1, 0, 0, 1]),
+      m00: 1,
+      m01: 0,
+      m10: 0,
+      m11: 1,
+      cur: current,
+      next: new FrameSlot(),
+      param: null,
+      parameter: null,
+      framesDirty: true,
+      coordinate: 0,
+      colors: new Uint32Array([0x808080ff, 0x808080ff, 0x808080ff, 0x808080ff]),
+      meshParent,
+      maskNode: maskParent,
+      stencilParent: maskParent,
+      clipRect: new Float32Array([0, 0, 100, 100]),
+    };
+    const childRoot = {
+      adjust: new NodeState(),
+      matrix: new Float32Array(4),
+      m00: 0,
+      m01: 0,
+      m10: 0,
+      m11: 0,
+      meshParent: null,
+      maskNode: null,
+      stencilParent: null,
+      clipRect: null,
+      copyMatrix(source) {
+        for (const key of ['m00', 'm01', 'm10', 'm11']) this[key] = source[key];
+      },
+    };
+    const event = {type: 0, layer: 'nested', label: 'action'};
+    const child = {
+      root: childRoot,
+      playing: true,
+      jumped: true,
+      replay: false,
+      loopTime: 0,
+      lastTime: 6,
+      motionName: '',
+      objectName: '',
+      playingName: '',
+      color: 0,
+      events: [],
+      layerEvents: [],
+      selectObject(name) {
+        calls.push(['object', name]);
+      },
+      selectMotion(name, flags) {
+        calls.push(['motion', name, flags]);
+      },
+      setMotion(name, flags) {
+        calls.push(['motion', name, flags]);
+      },
+      seek(time) {
+        calls.push(['seek', time]);
+      },
+      seekTo(time) {
+        calls.push(['seek', time]);
+      },
+      advance(step) {
+        calls.push(['advance', step]);
+        this.events.push(event);
+      },
+      evaluate() {
+        calls.push(['evaluate']);
+      },
+      progressSub(step) {
+        calls.push(['progress', step]);
+        this.layerEvents.push(event);
+      },
+      unload() {
+        assert.fail('valid child must not unload');
+      },
+      reset() {
+        assert.fail('valid child must not reset');
+      },
+    };
+    node.child = child;
+    node.sub = child;
+    const parent = {
+      time: 6,
+      timeRunning: 6,
+      step: -1,
+      jumped: false,
+      motionParameter: {flags: 2},
+      motionNodes: [node],
+      subNodes: [node],
+      events: [],
+      layerEvents: [],
+    };
+    const queue = scalar ? child.layerEvents : child.events;
+    if (scalar) EmoteMotionClip.prototype.evaluateSubclips.call(parent);
+    else EmoteClip.prototype.evaluateMotions.call(parent);
+    assert.deepEqual(calls, [
+      ['object', 'object'],
+      ['motion', 'motion', scalar ? 3 : 1],
+      ['seek', scalar ? 0 : 6],
+      ...(scalar ? [['progress', -1]] : [['advance', -1], ['evaluate']]),
+    ]);
+    assert.equal(child.replay, true);
+    assert.equal(childRoot.meshParent, meshParent);
+    assert.equal(scalar ? childRoot.stencilParent : childRoot.maskNode, maskParent);
+    if (!scalar) assert.equal(childRoot.clipRect, node.clipRect);
+    assert.deepEqual(scalar ? parent.layerEvents : parent.events, [event]);
+    assert.deepEqual(scalar ? child.layerEvents : child.events, []);
+    assert.notEqual(scalar ? child.layerEvents : child.events, queue);
+  }
+});
+
+test('scalar clip factories create independent clips with shared native file resources and exact motion ownership', async () => {
+  const {emoteScalarClipFactory} = await import('../dist/native/emotedriver/runtime/clip.js');
+  for (const wasm of [false, true]) {
+    const firstMotion = motion([layer('image', [frame(0, 2, {src: 'tex', icon: 'i'})])]);
+    const lastMotion = motion([layer('image', [frame(0, 2, {src: 'tex', icon: 'i'})])]);
+    const first = model({object: {main: firstMotion}}),
+      last = model({object: {main: lastMotion}});
+    first.sources.get('tex').icons.get('i').width = 99;
+    first.sources.get('tex').icons.get('i').resolution = 1;
+    last.sources.get('tex').icons.get('i').resolution = 1;
+    const files = [first, last],
+      kernel = createEmoteMeshKernel({driverSha256: EMOTEDRIVER_X64_SHA256, wasm});
+    const create = emoteScalarClipFactory(files, {kernel});
+    files.pop(); // The native player snapshots its file-pointer array.
+    const a = create(lastMotion),
+      b = create(firstMotion),
+      c = create(lastMotion);
+    assert.ok(a instanceof EmoteMotionClip);
+    assert.notEqual(a, c);
+    assert.equal(a.resource, b.resource);
+    assert.equal(a.resource, c.resource);
+    assert.equal(a.resource.kernel, kernel);
+    assert.deepEqual(a.resource.files, [first, last]);
+    assert.equal(a.file, last);
+    assert.equal(b.file, first);
+    assert.equal(a.motion, lastMotion);
+    assert.equal(b.motion, firstMotion);
+    assert.notEqual(a.root.id, c.root.id);
+    a.rootVisible = b.rootVisible = true;
+    a.progress(0);
+    b.progress(0);
+    assert.equal(a.drawList[0].file, last);
+    assert.equal(a.drawList[0].width, 10);
+    assert.equal(b.drawList[0].file, first);
+    assert.equal(b.drawList[0].width, 99);
+    a.rootX = 42;
+    assert.equal(c.rootX, 0);
+    assert.throws(() => create(motion([])), /outside the player file group/);
+  }
+  assert.throws(() => emoteScalarClipFactory([]), /requires a motion file/);
+});
+
+test('scalar clip copies retain clocks, parameters, nested ownership and independent mesh bytes on both kernels', async () => {
+  const {emoteScalarClipFactory} = await import('../dist/native/emotedriver/runtime/clip.js');
+  const patch = Float32Array.from({length: 32}, (_, i) => (i & 1 ? i >> 3 : (i >> 1) & 3) / 3);
+  const parameter = {
+    id: 'face',
+    discretization: false,
+    rangeBegin: -1,
+    rangeEnd: 1,
+    division: 10,
+    unread: {},
+  };
+  const child = motion(
+    [
+      layer('image', [frame(0, 2, {mask: 1, src: 'tex', icon: 'i'})]),
+      layer(
+        'point',
+        [frame(0, 3, {mask: 2, coord: [0, 0, 0]}), frame(10, 2, {mask: 2, coord: [20, 0, 0]})],
+        {type: 1, shape: 0, parameterize: 0},
+      ),
+    ],
+    {parameters: [parameter]},
+  );
+  const main = motion(
+    [
+      layer('nested', [frame(0, 2, {mask: 1, src: 'child', icon: 'm'})], {type: 3}),
+      layer(
+        'mesh',
+        [frame(0, 2, {mask: 0x2000001, src: 'tex', icon: 'i', mesh: {bp: patch, cc: null}})],
+        {
+          meshTransform: 1,
+          mesh: {
+            syncChildMask: 0,
+            division: 4,
+            combine: false,
+            combinators: [
+              {
+                key: 'shape',
+                rangeBegin: 0,
+                rangeEnd: 1,
+                meshCount: 2,
+                neutralIndex: 0,
+                raw: Float32Array.from({length: 64}, (_, i) => patch[i % 32] + (i >= 32 ? 0.1 : 0)),
+              },
+            ],
+          },
+        },
+      ),
+      layer('composite', [frame(0, 2, {mask: 1, src: 'blank', icon: '10:10:0:0'})], {
+        type: 12,
+        stencilType: 5,
+        stencilCompositeMaskLayerList: ['mesh', 'nested'],
+      }),
+    ],
+    {parameters: [parameter]},
+  );
+  const alternate = motion([
+    layer('alternate', [frame(0, 2, {mask: 3, src: 'tex', icon: 'i', coord: [5, 7, 0]})]),
+  ]);
+  const file = model({object: {main, alternate}, child: {m: child}});
+  file.sources.get('tex').icons.get('i').resolution = 1;
+  const draw = (clip) =>
+    clip.drawList.map((item) => ({
+      file: item.file,
+      source: item.source,
+      colors: [...item.colors],
+      z: item.z,
+      grid: item.grid && {
+        cols: item.grid.cols,
+        rows: item.grid.rows,
+        points: [...new Uint32Array(item.grid.points.buffer)],
+      },
+    }));
+  for (const wasm of [false, true]) {
+    const create = emoteScalarClipFactory([file], {
+      kernel: createEmoteMeshKernel({driverSha256: EMOTEDRIVER_X64_SHA256, wasm}),
+    });
+    const source = create(main),
+      copy = create(alternate);
+    source.rootVisible = true;
+    source.rootX = 12;
+    source.setVariable('face', 0.5);
+    source.setVariable('shape', 0.5);
+    source.progress(0);
+    source.progress(4.25);
+    source.layerEvents.push({type: 0, layer: 'nested', label: 'copied'});
+    copy.setVariable('stale', 5);
+    copy.assignState(source);
+    assert.equal(copy.motion, main);
+    assert.equal(copy.timeRunning, source.timeRunning);
+    assert.equal(copy.rootDirty, true);
+    assert.deepEqual(draw(copy), draw(source));
+    assert.notEqual(copy.layerEvents, source.layerEvents);
+    assert.notEqual(copy.layerEvents[0], source.layerEvents[0]);
+    assert.deepEqual(copy.layerEvents, source.layerEvents);
+    assert.equal(copy.values.has('stale'), false);
+    const a = source.layerNodes[1].sub,
+      b = copy.layerNodes[1].sub;
+    assert.notEqual(a, b);
+    assert.equal(b.parentClip, copy);
+    assert.equal(b.top, copy);
+    assert.notEqual(source.parameters[0], copy.parameters[0]);
+    assert.notEqual(a.parameters[0], b.parameters[0]);
+    assert.equal(a.parameters[0].position, b.parameters[0].position);
+    const originalMesh = source.layerNodes[2],
+      copiedMesh = copy.layerNodes[2];
+    assert.notEqual(originalMesh.grid.points.buffer, copiedMesh.grid.points.buffer);
+    assert.notEqual(originalMesh.mstate.world.buffer, copiedMesh.mstate.world.buffer);
+    assert.notEqual(originalMesh.mstate.bp.buffer, copiedMesh.mstate.bp.buffer);
+    assert.deepEqual(copy.layerNodes[3].masks, [copiedMesh, copy.layerNodes[1]]);
+    assert.notEqual(copy.layerNodes[3].masks, source.layerNodes[3].masks);
+    for (const frames of [0, 1, 2.5, -0.5]) {
+      source.progress(frames);
+      copy.progress(frames);
+      assert.deepEqual(draw(copy), draw(source));
+    }
+    copy.setVariable('face', -1);
+    assert.equal(a.parameters[0].position, 7.5);
+    assert.equal(b.parameters[0].position, 0);
+    const oldPatch = originalMesh.mstate.bp.slice();
+    copy.setVariable('shape', 1);
+    copy.progress(0);
+    assert.deepEqual(originalMesh.mstate.bp, oldPatch);
+    assert.notDeepEqual(copiedMesh.mstate.bp, oldPatch);
+    copiedMesh.grid.points[0] = 999;
+    assert.notEqual(originalMesh.grid.points[0], 999);
+    // A motion queued with the native hold bit survives a copy without ticking.
+    source.setMotion('alternate', 0x60);
+    copy.assignState(source);
+    assert.equal(copy.motion, main);
+    copy.progress(1);
+    source.progress(1);
+    assert.equal(copy.motion, alternate);
+    assert.equal(copy.timeRunning, source.timeRunning);
+    copy.assignState(copy);
+    assert.throws(() => copy.assignState(createEmoteClip(file, main)), /not a scalar/);
+    const foreign = new EmoteMotionClip(new EmoteResource([model({object: {main}})]));
+    assert.throws(() => copy.assignState(foreign), /different E-mote file group/);
+  }
 });

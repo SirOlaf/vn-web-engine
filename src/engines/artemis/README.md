@@ -1446,17 +1446,45 @@ shared E-mote driver port in `src/native/emotedriver` (see its README).
   A missing file reports the native error and returns nil. A zero width or height takes
   the rectangle of the `boundsLeft`/`boundsTop`/`boundsRight`/`boundsBottom` chara
   profiles (`artemisEmoteLayerSize`), or the stage size when it is empty.
+  Motion-file bytes use a sixteen-entry cache in access order, keyed by resolved
+  installation paths. Pending batches remain available until the repeated call can
+  supply every file, including players larger than the cache capacity. Runtime
+  shutdown clears both pending and cached bytes and discards late read completions.
 - `getEmoteLayer(id)` returns the player of the current actor at `id`; the luabind
   wrapper (`emote-lua.ts`) exposes the `IEmotePlayer` methods with the native argument
-  conversions.
+  conversions. Scalar state queries, stereovision controls, explicit rendering,
+  API-log recording/replay and core initialization call the public Native contract.
+  Lua floats are stored as float32, unsigned arguments keep their low32 bits and
+  narrow strings stop at NUL. Void methods return no Lua values. `clone` returns
+  borrowed userdata over the clone's initial native reference; `assignState` accepts
+  player userdata. Manual `addRef`, `release` and `refCount` reach the Native player.
+  The two reference-output getters require native `float&` userdata and remain refused.
 - Drawing (`ArtemisEmoteLayer`, CEmoteLayer draw 0x14001adf0): each draw that reaches the
   layer advances the player by the elapsed clock time (at most 1000 ms, as 60 fps frames;
   `progress(0)` on the first draw) when `progress` is set, then renders the clip's draw
-  list into the layer's render target, cleared to transparent black. `image-graphics.ts`
-  holds the layer as an image actor whose texture is that target; the E-mote commands of a
-  draw list precede its other targets, and each layer renders once per draw list.
-- A CEmoteLayer copy clones its player natively (0x14001a4f0); that clone is not modeled
-  and a copy is refused.
+  list into the layer's render target, cleared to transparent black. The engine calls
+  revision2 of the Native E-mote contract and the D3D11 contract. `image-graphics.ts`
+  holds the layer as an image actor whose texture is that target; native rendering
+  completes before the compositor samples it, once per draw list.
+- A CEmoteLayer copy prepares its own target and clones the public player
+  (CEmoteSurface::Copy(true), 0x14001a4f0). It retains the progress flag and last
+  draw timestamp, so each actor advances independently from the copied clock.
+  The new target receives its own native render; no prior target pixels are copied.
+
+`ui/runtimes/artemis-native.ts` prepares the exact DLL's shaders and mesh kernel,
+then registers the E-mote and D3D11 implementations with the existing library loader.
+Both graphics implementations share the compositor's WebGL2 context. A
+`D3d11SurfaceHost` supplies owned target views and GPU-only images; the backend's
+texture lease keeps each native allocation alive until the compositor detaches it.
+Native texture row0 is the logical top, while ordinary compositor render surfaces
+retain their bottom-row convention. Compositor draws restore fixed raster state
+after native rendering. Passing a native surface to the compositor requires no
+framebuffer readback or CPU pixel copy. Lua player proxies borrow native pointers,
+matching the native luabind raw-pointer holder. Creating or collecting a proxy does
+not change the player's reference count. Callers retain a player explicitly when
+it must survive its layer; using userdata after the final native release is refused.
+The host tracks explicit Lua `addRef`/`clone` references for shutdown cleanup,
+independently of userdata collection. It does not add a hidden native reference.
 
 ## Nonvisual resource geometry probe
 

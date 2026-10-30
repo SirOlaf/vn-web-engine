@@ -53,6 +53,9 @@ import {
   d3dxMatrixTranspose,
   d3dxVec3Project,
 } from './d3dx.js';
+import {emoteGridColors} from './vertex-colors.js';
+export {emoteGridColors} from './vertex-colors.js';
+
 import {
   EMOTE_PIXEL_SHADER_COUNT,
   EMOTE_VERTEX_SHADER_COUNT,
@@ -178,52 +181,6 @@ function roundHalfAway(x: number): number {
 }
 
 const u32ToFloat = (value: number): number => f(value >>> 0);
-
-/** Fixed-point corner interpolation along a line of `count` cells (0x1002ab90). */
-function lerpLine(colors: Uint32Array, start: number, count: number, stride: number): void {
-  if (count <= 2) return;
-  const a = colors[start]!,
-    b = colors[start + (count - 1) * stride]!;
-  if (a === b) {
-    for (let k = 1; k < count - 1; k++) colors[start + k * stride] = a;
-    return;
-  }
-  const steps = count - 1,
-    aLow = a & 0xff00ff,
-    bLow = b & 0xff00ff,
-    aHigh = (a >>> 8) & 0xff00ff,
-    bHigh = (b >>> 8) & 0xff00ff;
-  for (let k = 1; k < steps; k++) {
-    const t = ((k * 256) / steps) >>> 0,
-      s = 256 - t,
-      low = ((Math.imul(t, bLow) + Math.imul(s, aLow)) >>> 0) >>> 8,
-      high = (Math.imul(t, bHigh) + Math.imul(s, aHigh)) >>> 0;
-    colors[start + k * stride] = (((low ^ high) & 0xff00ff) ^ high) >>> 0;
-  }
-}
-
-/**
- * Per-vertex colours of a (columns + 1) × (rows + 1) grid from four corners
- * [top-left, top-right, bottom-left, bottom-right] (0x1002dc40).
- */
-export function emoteGridColors(corners: Uint32Array, columns: number, rows: number): Uint32Array {
-  const across = columns + 1,
-    down = rows + 1,
-    out = new Uint32Array(across * down);
-  const c0 = corners[0]!;
-  if (corners[1] === c0 && corners[2] === c0 && corners[3] === c0) {
-    out.fill(c0);
-    return out;
-  }
-  out[0] = c0;
-  out[across - 1] = corners[1]!;
-  out[rows * across] = corners[2]!;
-  out[across * down - 1] = corners[3]!;
-  lerpLine(out, 0, down, across);
-  lerpLine(out, across - 1, down, across);
-  for (let row = 0; row < down; row++) lerpLine(out, row * across, across, 1);
-  return out;
-}
 
 export class EmoteDeviceCore {
   /** +0x08 D3DCAPS9 fields; +0x60/+0x64 lowered by `SetMaxTextureSize`. */

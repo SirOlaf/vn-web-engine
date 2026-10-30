@@ -1,7 +1,13 @@
 import {GpuRenderSurface} from './gpu-render-surface.js';
+import {GpuTextureImage} from './gpu-texture-image.js';
 import type {BlendFactor, BlendOperation, BlendState} from './blend.js';
 import type {DrawList, DrawCommand, SpriteDraw, SolidDraw, DrawListTarget} from './draw-list.js';
 import type {TriangleDraw, TriangleImage} from './triangle-draw.js';
+const flipImage = (image: TriangleImage | undefined): number =>
+  image instanceof GpuRenderSurface ||
+  (image instanceof GpuTextureImage && image.rowOrigin === 'bottom')
+    ? 1
+    : 0;
 interface DrawProgram {
   program: WebGLProgram;
   uniforms: Map<string, WebGLUniformLocation | null>;
@@ -24,6 +30,7 @@ export class WebGLDrawTarget implements DrawListTarget {
   private maxTextureSize = 0;
   private readonly samplers = new Map<string, WebGLSampler>();
   private readonly images = new Map<object, WebGLTexture>();
+  private readonly externalImages = new Set<GpuTextureImage>();
   private readonly renderSurfaces = new Map<GpuRenderSurface, WebGLFramebuffer>();
   private activeRenderSurface: GpuRenderSurface | null = null;
   private readonly preparedImages = new Set<object>();
@@ -98,6 +105,26 @@ export class WebGLDrawTarget implements DrawListTarget {
     gl.disable(gl.DITHER);
     gl.enable(gl.BLEND);
     return gl;
+  }
+  /** UI backend registration shares this exact context; engines use native contracts. */
+  sharedContext(): WebGL2RenderingContext {
+    return this.initialize();
+  }
+
+  /** Attach a borrowed color image; its owner must detach before releasing the texture. */
+  attachSharedImage(
+    image: GpuTextureImage,
+    context: WebGL2RenderingContext,
+    texture: WebGLTexture,
+  ): void {
+    const gl = this.initialize();
+    if (context !== gl || !gl.isTexture(texture))
+      throw new Error('Shared image belongs to another GPU context');
+    if (image instanceof GpuRenderSurface || this.images.has(image))
+      throw new Error('GPU image is already prepared');
+    this.images.set(image, texture);
+    this.externalImages.add(image);
+    this.preparedImages.add(image);
   }
   prepareTriangleShader(fragment: string, additionalTextureCount: number): void {
     if (!Number.isInteger(additionalTextureCount) || additionalTextureCount < 0)
@@ -195,6 +222,8 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
     gl.activeTexture(gl.TEXTURE0 + unit);
     let texture = this.images.get(image);
     if (!texture) {
+      if (image instanceof GpuTextureImage)
+        throw new Error('GPU image is not attached to this target');
       // The upload arguments are validated here instead of reading gl.getError(), which
       // synchronizes with the GPU process for every new texture (each glyph image).
       const {width, height, pixels} = image;
@@ -410,8 +439,8 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
     );
     this.bind(image, 0, draw.filter, draw.wrapS, draw.wrapT);
     gl.uniform1i(uniform('atlas'), 0);
-    gl.uniform1i(uniform('flipAtlas'), image instanceof GpuRenderSurface ? 1 : 0);
-    gl.uniform1i(uniform('flipMask'), mask?.image instanceof GpuRenderSurface ? 1 : 0);
+    gl.uniform1i(uniform('flipAtlas'), flipImage(image));
+    gl.uniform1i(uniform('flipMask'), flipImage(mask?.image));
     gl.uniform2f(
       uniform('textureSize'),
       draw.normalizedUV ? 1 : image.width,
@@ -438,10 +467,7 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
       throw new Error('Invalid shader parameters');
     gl.uniform4fv(uniform('parameters[0]'), parameters);
     for (let i = 0; i < extraCount; i++)
-      gl.uniform1i(
-        uniform(`flipAdditional${i}`),
-        additional[i] instanceof GpuRenderSurface ? 1 : 0,
-      );
+      gl.uniform1i(uniform(`flipAdditional${i}`), flipImage(additional[i]));
     for (let i = 0; i < extras.length; i++) {
       const t = extras[i]!;
       this.bind(additional[i]!, 2 + i, t.filter, t.wrapS, t.wrapT);
@@ -564,6 +590,27 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
       throw new Error('Invalid draw-list clear color');
     const gl = this.initialize();
     if (gl.isContextLost()) throw new Error('Graphics context lost');
+    // Another native backend can have drawn on this context between compositor lists.
+    // Paint owns its programs/VAOs/samplers; restore the fixed raster state before clears.
+    for (const state of [
+      gl.DEPTH_TEST,
+      gl.CULL_FACE,
+      gl.STENCIL_TEST,
+      gl.SCISSOR_TEST,
+      gl.RASTERIZER_DISCARD,
+      gl.POLYGON_OFFSET_FILL,
+      gl.SAMPLE_ALPHA_TO_COVERAGE,
+      gl.SAMPLE_COVERAGE,
+      gl.DITHER,
+    ])
+      gl.disable(state);
+    gl.enable(gl.BLEND);
+    gl.colorMask(true, true, true, true);
+    gl.depthRange(0, 1);
+    const polygon = gl.getExtension('WEBGL_polygon_mode');
+    if (polygon) polygon.polygonModeWEBGL(gl.FRONT_AND_BACK, polygon.FILL_WEBGL);
+    const clamp = gl.getExtension('EXT_depth_clamp');
+    if (clamp) gl.disable(clamp.DEPTH_CLAMP_EXT);
     this.activeRenderSurface = null;
     this.activeFramebuffer = this.framebuffer;
     this.activeWidth = this.width;
@@ -908,6 +955,11 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
       this.prepareRenderSurface(image);
       return;
     }
+    if (image instanceof GpuTextureImage) {
+      if (!this.externalImages.has(image))
+        throw new Error('GPU image is not attached to this target');
+      return;
+    }
     this.bind(image, 0);
     this.preparedImages.add(image);
   }
@@ -922,7 +974,8 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
     this.preparedImages.delete(image);
     const t = this.images.get(image);
     if (t) {
-      this.gl?.deleteTexture(t);
+      if (!(image instanceof GpuTextureImage && this.externalImages.delete(image)))
+        this.gl?.deleteTexture(t);
       this.images.delete(image);
     }
   }
@@ -931,7 +984,9 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
     const gl = this.gl;
     if (gl) {
       for (const framebuffer of this.renderSurfaces.values()) gl.deleteFramebuffer(framebuffer);
-      for (const t of this.images.values()) gl.deleteTexture(t);
+      for (const [image, t] of this.images)
+        if (!(image instanceof GpuTextureImage && this.externalImages.has(image)))
+          gl.deleteTexture(t);
       for (const p of this.programs.values()) {
         for (const layout of p.layouts.values()) gl.deleteVertexArray(layout);
         gl.deleteProgram(p.program);
@@ -945,6 +1000,7 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
     this.renderSurfaces.clear();
     this.activeRenderSurface = null;
     this.images.clear();
+    this.externalImages.clear();
     this.programs.clear();
     this.samplers.clear();
     this.gl = undefined;

@@ -33,12 +33,12 @@ try {
       'src/graphics/s3tc-wasm-binary.ts',
       ['-C', 'link-arg=--export=__heap_base'],
     ],
-    // Scalar: bit-identical to its TypeScript twin, also where SIMD is unavailable.
+    // The x64 paired-coordinate loops use SIMD; the TypeScript twin covers hosts without it.
     [
       'emote-mesh',
       'EMOTE_MESH_WASM_BINARY',
       'src/native/emotedriver/runtime/mesh/wasm-binary.ts',
-      ['-C', 'link-arg=--export=__heap_base'],
+      kernel,
     ],
     [
       'aokana-bitmap',

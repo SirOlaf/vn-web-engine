@@ -1,6 +1,7 @@
+import {emoteDriverImage, EMOTE_DRIVER_X64_SHA256} from './psb-filter.js';
 import type {PsbObject, PsbValue} from './psb.js';
 import {
-  EmoteDiagnostics,
+  type EmoteDiagnosticSink,
   boolField,
   field,
   floatField,
@@ -34,6 +35,11 @@ export interface EmoteMetadata {
   readonly mirror: boolean;
   /** Model scale; the runtime also stores its reciprocal. */
   readonly scale: number;
+  /** x64 metadata fields; absent on the x86 reader's result. */
+  readonly suitableClearColor?: {readonly r: number; readonly g: number; readonly b: number} | null;
+  readonly immediateControl?: readonly string[];
+  readonly charaProfile?: EmoteCharaProfile | null;
+  readonly orbitControl?: readonly (EmoteOrbitControl | EmoteDisabledControl)[];
   readonly bustControl: readonly (EmoteBustControl | EmoteDisabledControl)[];
   readonly hairControl: readonly (EmotePendulumControl | EmoteDisabledControl)[];
   readonly partsControl: readonly (EmotePendulumControl | EmoteDisabledControl)[];
@@ -42,9 +48,9 @@ export interface EmoteMetadata {
   readonly mouthControl: readonly (EmoteMouthControl | EmoteDisabledControl)[];
   readonly transitionControl: readonly (EmoteTransitionControl | EmoteDisabledControl)[];
   /** Optional. */
-  readonly selectorControl: readonly EmoteSelectorControl[] | null;
+  readonly selectorControl: readonly (EmoteSelectorControl | EmoteDisabledControl)[] | null;
   readonly clampControl: readonly (EmoteClampControl | EmoteDisabledControl)[];
-  readonly loopControl: readonly (EmoteLoopControl | EmoteDisabledControl)[];
+  readonly loopControl?: readonly (EmoteLoopControl | EmoteDisabledControl)[];
   /** `mirrorControl.variableMatchList` (0x1001c4f0): variable-name fragments. */
   readonly mirrorControl: EmoteVariableMatch;
   /** Optional `instantVariableList` (0x10012c20). */
@@ -56,6 +62,29 @@ export interface EmoteMetadata {
   readonly variableList: readonly EmoteVariableFrames[] | null;
   /** `catalog`, `customPartsOrder`, `editLock`, `psd*ImportInfo*`: editor data, not read. */
   readonly unread: Readonly<Record<string, PsbValue>>;
+}
+
+export interface EmoteCharaProfile {
+  readonly height: number;
+  readonly markers: readonly {readonly label: string; readonly value: number}[];
+}
+
+/** `orbitControl` entry: a value list cycled over `interval` frames. */
+export interface EmoteOrbitControl {
+  readonly enabled: true;
+  readonly label: string;
+  readonly interval: number;
+  readonly tween: boolean;
+  readonly orbitFrameList: readonly number[];
+  readonly unread: Readonly<Record<string, PsbValue>>;
+}
+
+export interface EmoteX64Metadata extends EmoteMetadata {
+  readonly suitableClearColor: {readonly r: number; readonly g: number; readonly b: number} | null;
+  readonly immediateControl: readonly string[];
+  readonly charaProfile: EmoteCharaProfile | null;
+  readonly orbitControl: readonly (EmoteOrbitControl | EmoteDisabledControl)[];
+  readonly selectorControl: readonly (EmoteSelectorControl | EmoteDisabledControl)[];
 }
 
 export interface EmoteDisabledControl {
@@ -170,6 +199,8 @@ export interface EmoteTransitionControl {
 
 /** `selectorControl` entry (0x10019a50); not gated by `enabled`. */
 export interface EmoteSelectorControl {
+  /** X64 gates selectors by this field; the x86 reader leaves it in unread. */
+  readonly enabled?: true;
   readonly label: string;
   readonly optionList: readonly {
     readonly label: string;
@@ -266,7 +297,51 @@ const METADATA_KEYS = keys(
   'variableList',
 );
 
-export function readEmoteMetadata(o: PsbObject, diag: EmoteDiagnostics): EmoteMetadata {
+const METADATA_X64_KEYS = keys(
+  'format',
+  'version',
+  'base',
+  'mirror',
+  'scale',
+  'variableList',
+  'suitableClearColor',
+  'bustControl',
+  'hairControl',
+  'partsControl',
+  'eyeControl',
+  'eyebrowControl',
+  'mouthControl',
+  'transitionControl',
+  'selectorControl',
+  'immediateControl',
+  'clampControl',
+  'mirrorControl',
+  'instantVariableList',
+  'timelineControl',
+  'stereovisionControl',
+  'charaProfile',
+  'orbitControl',
+);
+
+/** x64 defaults (table 0x181fcc8a0), used when immediateControl is absent. */
+export const EMOTE_DEFAULT_IMMEDIATE = Object.freeze(['face_cheek', 'face_tears', 'face_eye_hi']);
+
+export function readEmoteMetadata(
+  o: PsbObject,
+  diag: EmoteDiagnosticSink,
+  driverSha256: typeof EMOTE_DRIVER_X64_SHA256,
+): EmoteX64Metadata;
+export function readEmoteMetadata(
+  o: PsbObject,
+  diag: EmoteDiagnosticSink,
+  driverSha256?: string,
+): EmoteMetadata;
+export function readEmoteMetadata(
+  o: PsbObject,
+  diag: EmoteDiagnosticSink,
+  driverSha256?: string,
+): EmoteMetadata {
+  if (emoteDriverImage(driverSha256) === EMOTE_DRIVER_X64_SHA256) return readX64Metadata(o, diag);
   const p = '$.metadata';
   const format = has(o, 'format') ? toText(o.format!, `${p}.format`) : null;
   let version: number | null = null;
@@ -322,6 +397,122 @@ export function readEmoteMetadata(o: PsbObject, diag: EmoteDiagnostics): EmoteMe
     unread: unreadKeys(o, METADATA_KEYS),
   });
 }
+
+function readX64Metadata(o: PsbObject, diag: EmoteDiagnosticSink): EmoteX64Metadata {
+  const p = '$.metadata';
+  const format = has(o, 'format') ? toText(o.format!, `${p}.format`) : null;
+  let version: number | null = null;
+  if (format === 'emote' && has(o, 'version')) {
+    const v = toFloat(o.version!, `${p}.version`);
+    if (v >= 1) version = v;
+  }
+  const base = objectField(o, 'base', p);
+  const list = (key: string) => listField(o, key, p);
+  const optionalList = (key: string) => (has(o, key) ? listField(o, key, p) : null);
+  const gated = <T>(key: string, read: (o: PsbObject, path: string) => T) =>
+    entries(list(key), `${p}.${key}`, true, read);
+  const clear = has(o, 'suitableClearColor') ? objectField(o, 'suitableClearColor', p) : null;
+  const cp = `${p}.suitableClearColor`;
+  const variables = optionalList('variableList');
+  const eye = has(o, 'eyeControl');
+  const clamp = eye && has(o, 'clampControl');
+  const timeline = clamp && has(o, 'timelineControl');
+  const instant = clamp ? optionalList('instantVariableList') : null;
+  const immediate = eye && has(o, 'immediateControl') ? list('immediateControl') : null;
+  return Object.freeze({
+    format,
+    version,
+    base: Object.freeze({
+      chara: textField(base, 'chara', `${p}.base`),
+      motion: textField(base, 'motion', `${p}.base`),
+    }),
+    mirror: boolField(o, 'mirror', p),
+    scale: floatField(o, 'scale', p),
+    suitableClearColor:
+      clear &&
+      Object.freeze({
+        r: intField(clear, 'r', cp),
+        g: intField(clear, 'g', cp),
+        b: intField(clear, 'b', cp),
+      }),
+    bustControl: gated('bustControl', readBust),
+    hairControl: gated('hairControl', readPendulum),
+    partsControl: gated('partsControl', readPendulum),
+    eyeControl: eye ? gated('eyeControl', readEye) : [],
+    eyebrowControl: eye ? gated('eyebrowControl', readEyebrow) : [],
+    mouthControl: eye ? gated('mouthControl', readMouth) : [],
+    transitionControl: eye ? gated('transitionControl', readTransition) : [],
+    selectorControl:
+      eye && has(o, 'selectorControl')
+        ? gated('selectorControl', (o, p) => readSelector(o, p, true))
+        : [],
+    immediateControl: !eye
+      ? []
+      : immediate
+        ? Object.freeze(
+            immediate.flatMap((v, i) => {
+              const ip = `${p}.immediateControl[${i}]`,
+                entry = toObject(v, ip);
+              return boolField(entry, 'enabled', ip) ? [textField(entry, 'label', ip)] : [];
+            }),
+          )
+        : EMOTE_DEFAULT_IMMEDIATE,
+    clampControl: clamp ? gated('clampControl', readClamp) : [],
+    mirrorControl: clamp
+      ? readVariableMatch(objectField(o, 'mirrorControl', p), `${p}.mirrorControl`)
+      : Object.freeze({variableMatchList: Object.freeze([])}),
+    instantVariableList:
+      instant && Object.freeze(instant.map((v, i) => toText(v, `${p}.instantVariableList[${i}]`))),
+    timelineControl: timeline
+      ? Object.freeze(
+          list('timelineControl').map((v, i) =>
+            readTimeline(
+              toObject(v, `${p}.timelineControl[${i}]`),
+              `${p}.timelineControl[${i}]`,
+              diag,
+            ),
+          ),
+        )
+      : [],
+    stereovisionControl:
+      timeline && has(o, 'stereovisionControl')
+        ? readVariableMatch(objectField(o, 'stereovisionControl', p), `${p}.stereovisionControl`)
+        : null,
+    charaProfile:
+      timeline && has(o, 'charaProfile')
+        ? readCharaProfile(objectField(o, 'charaProfile', p), `${p}.charaProfile`)
+        : null,
+    orbitControl: timeline && has(o, 'orbitControl') ? gated('orbitControl', readOrbit) : [],
+    variableList: variables && Object.freeze(variables.map((v, i) => readVariable(v, i))),
+    unread: unreadKeys(o, METADATA_X64_KEYS),
+  });
+}
+
+function readCharaProfile(o: PsbObject, p: string): EmoteCharaProfile {
+  const markers = objectField(o, 'pixelMarker', p);
+  return Object.freeze({
+    height: floatField(o, 'height', p),
+    markers: Object.freeze(
+      Object.keys(markers).map((label) =>
+        Object.freeze({label, value: floatField(markers, label, `${p}.pixelMarker`)}),
+      ),
+    ),
+  });
+}
+
+function readOrbit(o: PsbObject, p: string): EmoteOrbitControl {
+  return Object.freeze({
+    enabled: true,
+    label: textField(o, 'label', p),
+    interval: floatField(o, 'interval', p),
+    tween: boolField(o, 'tween', p),
+    orbitFrameList: Object.freeze(
+      listField(o, 'orbitFrameList', p).map((v, i) => toFloat(v, `${p}.orbitFrameList[${i}]`)),
+    ),
+    unread: unreadKeys(o, ORBIT_KEYS),
+  });
+}
+const ORBIT_KEYS = keys('enabled', 'label', 'interval', 'tween', 'orbitFrameList');
 
 /** Reads a control list; with `gated`, entries whose `enabled` is false stay raw. */
 function entries<T>(
@@ -524,8 +715,9 @@ function readTransition(o: PsbObject, p: string): EmoteTransitionControl {
 }
 const TRANSITION_KEYS = keys('enabled', 'label');
 
-function readSelector(o: PsbObject, p: string): EmoteSelectorControl {
+function readSelector(o: PsbObject, p: string, x64 = false): EmoteSelectorControl {
   return Object.freeze({
+    ...(x64 ? {enabled: true as const} : {}),
     optionList: Object.freeze(
       listField(o, 'optionList', p).map((v, i) => {
         const op = `${p}.optionList[${i}]`,
@@ -538,10 +730,11 @@ function readSelector(o: PsbObject, p: string): EmoteSelectorControl {
       }),
     ),
     label: textField(o, 'label', p),
-    unread: unreadKeys(o, SELECTOR_KEYS),
+    unread: unreadKeys(o, x64 ? SELECTOR_X64_KEYS : SELECTOR_KEYS),
   });
 }
 const SELECTOR_KEYS = keys('optionList', 'label');
+const SELECTOR_X64_KEYS = keys('enabled', 'optionList', 'label');
 
 function readClamp(o: PsbObject, p: string): EmoteClampControl {
   return Object.freeze({
@@ -584,7 +777,7 @@ function readVariableMatch(o: PsbObject, p: string): EmoteVariableMatch {
 
 const TIMELINE_KEYS = keys('label', 'diff', 'loopBegin', 'loopEnd', 'lastTime', 'variableList');
 
-function readTimeline(o: PsbObject, p: string, diag: EmoteDiagnostics): EmoteTimeline {
+function readTimeline(o: PsbObject, p: string, diag: EmoteDiagnosticSink): EmoteTimeline {
   const variables = Object.freeze(
     listField(o, 'variableList', p).map((v, i) => {
       const vp = `${p}.variableList[${i}]`,

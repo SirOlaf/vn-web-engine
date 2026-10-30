@@ -1,3 +1,5 @@
+import type {EmoteX64Model} from '../../../formats/kirikiri/emote-model.js';
+
 /**
  * Boundaries between the parts of the TypeScript `emotedriver.dll` implementation. They
  * follow the native class split (SHA-256 `a3b693b6…5e70b3a86`):
@@ -9,6 +11,9 @@
  *   bust/hair/parts physics;
  * - mesh kernel (`mesh/`): bezier-patch and mesh vertex evaluation;
  * - renderer (`MMotionRenderer`, `MMotionDevice`, `render/`): draw list and D3D9 calls.
+ *
+ * Scalar record offsets refer to the x64 image SHA-256
+ * `80d28bd088dda8e97c7c47a9c664e55159f70505b0f9fde3158d8ce2a3e1e051`.
  *
  * These interfaces are internal to `src/native/emotedriver/`; the library's public surface
  * is `../contract.ts`. Extend them additively.
@@ -51,6 +56,21 @@ export interface EmoteControlHost {
   readonly rootY?: number;
   /** `p+0x20`: 1 / (`SetScale` scale · metadata `scale`) (default 1). */
   readonly inverseScale?: number;
+  /** x64 0x18000e6d0: base point after outer rotation and coordinate-flag scaling. */
+  physicsBasePosition?(label: string): {readonly x: number; readonly y: number} | null;
+  /** x64 clip plus outer rotation in radians (0x180018cb0). */
+  readonly physicsAngle?: number;
+  /** x64 accumulated outer forces, integrated by the player before physics. */
+  readonly outerForces?: {
+    readonly bust: EmotePhysicsForce;
+    readonly hair: EmotePhysicsForce;
+    readonly parts: EmotePhysicsForce;
+  };
+}
+
+export interface EmotePhysicsForce {
+  readonly x: number;
+  readonly y: number;
 }
 
 /** `StartWind` parameters and the wind control's running state (0x1001c340, 0x1000d780). */
@@ -62,6 +82,11 @@ export interface EmoteWindState {
   readonly powerMax: number;
   /** Current wind output fed to the pendulum controls. */
   power: number;
+}
+
+/** Wind acceleration sampled by a pendulum joint; independent of gust storage. */
+export interface EmoteWindField {
+  query(x: number): number;
 }
 
 /** Read access to a clip's evaluated layer nodes. */
@@ -194,6 +219,8 @@ export interface EmoteVertexGrid {
  * Rust/Wasm with a TypeScript twin of identical output.
  */
 export interface EmoteMeshKernel {
+  /** True for the WebAssembly implementation; false for its TypeScript twin. */
+  readonly accelerated?: boolean;
   /**
    * Evaluates a 4×4 bezier patch (`bp`: 16 control points as 32 floats) on a
    * (columns + 1) × (rows + 1) grid into `out` (x, y pairs).
@@ -224,6 +251,30 @@ export interface EmoteMeshKernel {
   subdivideQuad(corners: Float32Array, columns: number, rows: number, out: Float32Array): void;
 }
 
+/** X64 mesh operations used by the layer pass and its compatibility binding. */
+export interface EmoteX64MeshKernel extends EmoteMeshKernel {
+  /** Map x/y pairs in place through a patch; offset counts floats, not points. */
+  mapPatchPoints(points: Float32Array, count: number, patch: Float32Array, offset?: number): void;
+  /** Double products/offsets followed by a float32 point store. */
+  affinePoints(
+    points: Float32Array,
+    count: number,
+    matrix: ArrayLike<number>,
+    x: number,
+    y: number,
+  ): void;
+  /** Transform control points, then evaluate a grid into caller-owned output. */
+  evaluateTransformedPatch(
+    patch: Float32Array,
+    columns: number,
+    rows: number,
+    matrix: ArrayLike<number>,
+    x: number,
+    y: number,
+    out: Float32Array,
+  ): void;
+}
+
 /** Events a clip queues during `advance` (`+0x2ec`) and dispatches to its player (0x10033fe0). */
 export interface EmoteClipListener {
   /** Keyframe `act` label reached (AMotionPlayer slots 1 and 2 forward these). */
@@ -240,11 +291,11 @@ export interface EmoteClipDriver extends EmoteClipNodes {
   advance(frames: number): void;
   /** Layer pass (0x1003ece0). */
   evaluate(): void;
-  /** Dispatches events queued by `advance` (0x10033fe0). */
+  /** Dispatches queued events (x86 0x10033fe0); the x64 host retires its actions internally. */
   dispatchEvents(listener: EmoteClipListener): void;
   /** Player colour RGBA (`+0x150`, 0x808080ff neutral), set by the `SetColor` tween. */
   color: number;
-  /** Root tween targets written by the player (root node +0x283, +0x288..+0x2a8). */
+  /** Root tween targets (+0x283, +0x288..+0x2a8). Borrowed for this call; copy values to retain them. */
   setRootTransform(transform: EmoteRootTransform): void;
   /** Copies time and node state from another clip of the same motion (`AssignState`). */
   assignState(source: EmoteClipDriver): void;
@@ -279,6 +330,23 @@ export interface EmoteClipPlayerAccess {
   meshDivisionRatio: number;
   /** Any node dirty (+0x25), `IsModified` (0x10032950). */
   isModified(): boolean;
+}
+
+/** Additional clip state used by the exact x64 player's transform and physics calls. */
+export interface EmoteX64ClipPlayerAccess extends EmoteClipPlayerAccess {
+  /** Native 0x180038480; required when stereovisionControl requests variable bounds. */
+  getVariableRange?(label: string): readonly [number, number] | null;
+  /** Root dirty byte (+0x340); x64 writes it even when the transform is unchanged. */
+  rootDirty: boolean;
+  smoothing: boolean;
+  readonly ownRotation: boolean;
+  readonly ownRotationAngle: number;
+  setOwnRotation(degrees: number): void;
+  setGrayscale(mode: number, level: number): void;
+  readonly grayscaleMode: number;
+  readonly grayscaleLevel: number;
+  /** World position of a plain layer, or null when no such layer exists. */
+  layerPosition(label: string): {readonly x: number; readonly y: number} | null;
 }
 
 /** Creates the clip for a motion (`MEmotePlayer` vtable[1] 0x1000f160). */
@@ -351,8 +419,9 @@ export interface EmoteControlSet {
   /**
    * `Skip` (0x10012190) for these controls, in native order: bust 0x10013b80, hair and parts
    * 0x10015480, eye 0x10017020, eyebrow 0x10018760, mouth 0x10019220, selector 0x1001a680.
+   * The x64 caller supplies its host so the physics outputs are zeroed immediately.
    */
-  skip(): void;
+  skip(host?: EmoteControlHost): void;
   /**
    * `IsAnimating` (0x100108f0) for selectors, eyes, eyebrows and mouths: true when a control's
    * tween is running or queued and its variable is not in `timelineVariables` (the track labels
@@ -372,8 +441,18 @@ export type EmoteControlSetFactory = (
   links: EmoteControlLinks,
 ) => EmoteControlSet;
 
+/** Blink API added by the x64 player image. */
+export interface EmoteX64ControlSet extends EmoteControlSet {
+  setBlinkEnabled(enabled: boolean): void;
+  getBlinkEnabled(): boolean;
+}
+
 /** Player-owned objects controls refer to while loading. */
 export interface EmoteControlLinks {
+  /** Exact driver image; absent keeps the x86 control factory behavior. */
+  readonly driverSha256?: string;
+  /** Process-wide blink and wind generator, supplied by the runtime's device. */
+  readonly random?: () => number;
   /** Transition control (`p+0xe4`) by label, for selector options (0x10019a50). */
   transition(label: string): EmoteSelectorTransition | null;
 }
@@ -385,4 +464,95 @@ export type EmoteSelectorTransition = import('./controls/selector.js').EmoteSele
 export interface EmoteControlHostRandom {
   /** MSVC CRT `rand()`: 0..0x7fff, process-wide sequence, seed 1. */
   rand(): number;
+}
+
+/** Current variables sampled by the x64 mesh-combinator registry. */
+export interface EmoteCombinatorVariables {
+  getVariable(label: string): number;
+}
+
+/** Mesh output of one layer, independent of the layer's concrete node storage. */
+export interface EmoteCombinatorTarget {
+  readonly meshType: number;
+  /** The patch is borrowed for this synchronous call; null restores the neutral mesh. */
+  applyCombinatorPatch(patch: Float32Array | null): void;
+}
+
+/** Mesh state of a `meshTransform` 1 layer (0x88 bytes at payload +0x10). */
+export interface EmoteScalarMeshState {
+  /** +0x20/+0x24: tessellation segments. */
+  cols: number;
+  rows: number;
+  /** +0x30: the current patch (16 points), or null when the layer does not deform. */
+  bp: Float32Array | null;
+  /** +0x48: [w·m00, h·m01, w·m10, h·m11]. */
+  readonly ms: Float32Array;
+  /** +0x58: the patch in world coordinates (deformers only). */
+  readonly world: Float32Array;
+  /** +0x70: inverse of `ms`. */
+  readonly inv: Float32Array;
+  /** +0x80/+0x84: the negated translation. */
+  negTx: number;
+  negTy: number;
+}
+
+/** Vertex grid (node +0x3c0): (rows + 1)·(cols + 1) world points, rows outer. */
+export interface EmoteScalarVertexGrid {
+  cols: number;
+  rows: number;
+  points: Float32Array;
+}
+
+/** Draw item (0xa8 bytes at node +0x3b8), the renderer's input. */
+export interface EmoteScalarDrawItem {
+  /** +4: blank icons are skipped by the renderer. */
+  blank: boolean;
+  /** +8. */
+  nodeId: number;
+  /** +0xc: clip +0x250. */
+  clipFlags: number;
+  /** +0x10/+0x14: blend mode and parameter. */
+  bm: number;
+  bmParam: number;
+  /** +0x18/+0x1c: clip grayscale mode (5 or 0) and level. */
+  grayscaleMode: number;
+  grayscaleLevel: number;
+  /** +0x20/+0x24: clip +0x1d8/+0x1dc. */
+  effectMode: number;
+  effectLevel: number;
+  /** +0x28. */
+  z: number;
+  /** +0x2c: texture (source) index in `file`. */
+  texIndex: number;
+  file: EmoteX64Model | null;
+  source: string | null;
+  /** +0x30: icon attributes; bit 1 opaque, bit 2 uniform per-vertex colour. */
+  attr: number;
+  /** +0x34..+0x40: icon rectangle in texels. */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  /** +0x44. */
+  opa: number;
+  /** +0x48..+0x54: corner colours (alpha in the low byte, 0x80 = 1.0 for colour bytes). */
+  readonly colors: Uint32Array;
+  /** +0x58. */
+  objTriPriority: number;
+  /** +0x5c. */
+  coordinate: number;
+  /** +0x68: the mesh state when the layer deforms itself. */
+  mesh: EmoteScalarMeshState | null;
+  /** +0x70. */
+  grid: EmoteScalarVertexGrid | null;
+  /** +0x78. */
+  stencilType: number;
+  /** +0x7c..+0x84. */
+  alphaTest: boolean;
+  alphaScale: number;
+  alphaOffset: number;
+  /** +0x88: the stencil parent's item. */
+  stencilParent: EmoteScalarDrawItem | null;
+  /** +0x90: composite list (stencil masks and nested-clip items). */
+  readonly composite: EmoteScalarDrawItem[];
 }

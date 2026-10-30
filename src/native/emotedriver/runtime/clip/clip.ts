@@ -14,20 +14,14 @@ import type {
 } from '../interfaces.js';
 import {createEmoteMeshKernel} from '../mesh/index.js';
 import {EmoteClipUnsupportedError, loadContent, loadHeader, type FrameSlot} from './frame.js';
-import {
-  IDENTITY_PATCH,
-  lerp,
-  lerpAngle,
-  lerpColor,
-  lerpCoord,
-  lerpPatch,
-  patchPoint,
-  roundHalfAway,
-  roundHalfEven,
-  truncate,
-} from './interpolate.js';
+import {evaluateBlockFrame, roundHalfEven} from './interpolate.js';
+import {evaluateBlockMotions} from './nested.js';
 import {ClipParameter, EmoteNode} from './node.js';
-import {clipRectPass, maskPass, meshPass, shapePass} from './vertices.js';
+import {EmoteClipTime} from './time.js';
+import {EmoteSourceResolver} from './source.js';
+import {EmoteLayerPass} from './layer.js';
+import {syncToParentMeshX86} from './vertices.js';
+import {composeEmoteMatrix, multiplyEmoteMatrices as multiply} from './matrix.js';
 
 /**
  * `MMotionPlayer` of `emotedriver.dll` (SHA-256 `a3b693b6…5e70b3a86`): one motion clip with
@@ -41,7 +35,6 @@ import {clipRectPass, maskPass, meshPass, shapePass} from './vertices.js';
  */
 
 const f = Math.fround;
-const EPSILON = 1.1920929e-7;
 let nodeIds = 0;
 
 export interface EmoteClipOptions {
@@ -69,7 +62,7 @@ const UNSUPPORTED_TYPES = new Map([
   [10, 'screenBounds (0x100444b0)'],
 ]);
 
-export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
+export class EmoteClip extends EmoteClipTime implements EmoteClipDriver, EmoteClipPlayerAccess {
   readonly kernel: EmoteMeshKernel;
   /** +0x0c referencing clip, +0x08 top clip. */
   readonly parentClip: EmoteClip | null;
@@ -77,6 +70,8 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
   readonly zProjection: number;
   readonly textureIndexOf: (source: string) => number;
   private ratio: number;
+  private readonly sources: EmoteSourceResolver;
+  private readonly layerPass = new EmoteLayerPass();
   /** +0x1b4: secondary draw sort key, inherited by nested clips (0x10033c60). */
   drawPriority = 0;
 
@@ -96,22 +91,8 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
   readonly pathVariables = new Map<string, number>();
 
   /** +0x110 playing, +0x111 time set (no step this frame), +0x112, +0x113 start, +0x114 replay events, +0x115 force. */
-  playing = false;
-  jumped = true;
   flag112 = true;
-  starting = false;
-  replay = false;
   force = false;
-  /** +0x1d0 stopped by a `sync` tag, +0x1d1 stopped by an `align` tag. */
-  syncStop = false;
-  alignStop = false;
-  /** +0x118 running time, +0x11c clamped time, +0x120 speed, +0x124 step. */
-  timeRunning = 0;
-  time = 0;
-  speed = 1;
-  step = 0;
-  loopTime = 0;
-  lastTime = 0;
   /** +0x128..+0x130 root velocity, +0x134 decay. */
   readonly rootVelocity = new Float32Array(3);
   decay = 1;
@@ -144,11 +125,13 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
     parent: EmoteClip | null,
     options: EmoteClipOptions = {},
   ) {
+    super();
     this.parentClip = parent;
     this.top = parent?.top ?? this;
     this.kernel = options.kernel ?? parent?.kernel ?? createEmoteMeshKernel();
     this.zProjection = options.zProjection ?? parent?.zProjection ?? 0;
     this.textureIndexOf = options.textureIndexOf ?? parent?.textureIndexOf ?? (() => -1);
+    this.sources = new EmoteSourceResolver([model], undefined, this);
     this.drawPriority = parent?.drawPriority ?? 0;
     this.ratio = f(options.meshDivisionRatio ?? 1);
     // 0x1002eab0: the root node; its adjustment block is hidden (+0x282 = 0) until `Show`.
@@ -219,7 +202,7 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
           break;
         }
       }
-      setParameterValue(p, value);
+      p.apply(value);
     }
     for (let c: EmoteClip | null = this; c; c = c.parentClip)
       for (const p of this.parameters) {
@@ -271,7 +254,7 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
   }
 
   /** 0x10039620: drops the layer nodes (the root stays). */
-  private unload(): void {
+  unload(): void {
     this.unregisterParameters();
     this.nodes = [this.root];
     this.shapeNodes = [];
@@ -370,7 +353,7 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
   }
 
   private applyParameters(id: string, value: number): void {
-    for (const p of this.parameterMap.get(id) ?? []) setParameterValue(p, value);
+    for (const p of this.parameterMap.get(id) ?? []) p.apply(value);
   }
 
   setRootTransform(t: EmoteRootTransform): void {
@@ -403,108 +386,6 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
 
   // ---------------------------------------------------------------------------------------
   // Time
-
-  /** 0x1003aaf0. */
-  advance(frames: number): void {
-    this.alignStop = false;
-    this.step = f(this.speed * frames);
-    if (this.motionParameter) {
-      const t = this.motionParameter.position;
-      if (this.starting) {
-        this.timeRunning = this.time = t;
-        this.starting = false;
-        this.resetFrames();
-      } else if (this.time < t) {
-        this.timeRunning = this.time = t;
-        this.scanForward();
-      } else if (t < this.time) {
-        this.timeRunning = this.time = t;
-        this.scanBackward();
-      } else this.scanParameterNodes();
-      return;
-    }
-    if (!this.starting && !this.playing) {
-      if (this.parameters.length) this.scanParameterNodes();
-      return;
-    }
-    if (this.syncStop || this.alignStop) return;
-    const stopped = () => this.syncStop || this.alignStop;
-    let stepped = false;
-    if (this.starting) {
-      this.starting = false;
-      if (this.step < 0 && this.timeRunning === 0) this.time = this.timeRunning = this.lastTime;
-      if (this.replay) {
-        this.replay = false;
-        if (this.step > 0) {
-          const saved = this.time;
-          this.time = 0;
-          this.resetFrames();
-          if (stopped()) return;
-          this.time = saved;
-          this.scanForward();
-          if (stopped()) return;
-          stepped = true;
-        } else if (this.timeRunning < this.lastTime) {
-          const saved = this.time;
-          this.time = this.lastTime;
-          this.resetFrames();
-          if (stopped()) return;
-          this.time = saved;
-          this.scanBackward();
-          if (stopped()) return;
-          stepped = true;
-        }
-      }
-      if (!stepped) {
-        this.resetFrames();
-        if (stopped()) return;
-      }
-    }
-    const jumped = this.jumped;
-    if (!jumped) {
-      this.timeRunning = f(this.step + this.timeRunning);
-      this.time = this.lastTime <= this.timeRunning ? this.lastTime : this.timeRunning;
-    }
-    if (this.step >= 0) {
-      if (this.lastTime <= this.timeRunning) {
-        this.time = this.lastTime;
-        if (this.loopTime >= 0) {
-          this.scanForward();
-          if (stopped()) return;
-          this.time = this.loopTime;
-          this.resetFrames();
-          if (stopped()) return;
-          while (this.lastTime <= this.timeRunning)
-            this.timeRunning = f(this.timeRunning - this.lastTime + this.loopTime);
-          this.time = this.timeRunning;
-          this.scanForward();
-          return;
-        }
-        this.playing = false;
-      }
-      if (!jumped) this.scanForward();
-    } else {
-      if (this.timeRunning < 0 || this.timeRunning < this.loopTime) {
-        if (this.loopTime >= 0) {
-          this.time = this.loopTime;
-          this.scanBackward();
-          if (stopped()) return;
-          this.time = this.lastTime;
-          this.resetFrames();
-          if (stopped()) return;
-          while (this.timeRunning < this.loopTime)
-            this.timeRunning = f(this.timeRunning - this.loopTime + this.lastTime);
-          this.time = this.timeRunning;
-          this.scanBackward();
-          return;
-        }
-        this.time = 0;
-        this.playing = false;
-        this.timeRunning = 0;
-      }
-      if (!jumped) this.scanBackward();
-    }
-  }
 
   /** Frame index search of the seek (0x1003afd0), including its out-of-range results. */
   private static findFrame(
@@ -740,34 +621,8 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
   private resolveSource(node: EmoteNode, slot: FrameSlot): void {
     if (slot.empty) return;
     const r = node.resolved;
-    if (r.src === slot.src && r.icon === slot.icon) return;
-    r.src = slot.src;
-    r.icon = slot.icon;
-    if (slot.src === 'blank') {
-      const parts = slot.icon.split(':');
-      r.drawable = true;
-      r.hidden = true;
-      r.attr = 0;
-      r.texture = -1;
-      r.rect[2] = atoi(parts[0]);
-      r.rect[3] = atoi(parts[1]);
-      r.originX = f(atof(parts[2]));
-      r.originY = f(atof(parts[3]));
-    } else {
-      const icon = this.model.sources.get(slot.src)?.icons.get(slot.icon);
-      r.hidden = false;
-      r.drawable = icon !== undefined;
-      r.texture = this.textureIndexOf(slot.src);
-      if (icon) {
-        r.attr = icon.attr;
-        r.originX = f(icon.originX);
-        r.originY = f(icon.originY);
-        r.rect[0] = icon.left ?? 0;
-        r.rect[1] = icon.top ?? 0;
-        r.rect[2] = icon.width;
-        r.rect[3] = icon.height;
-      }
-    }
+    if (r.srcKey === slot.src && r.iconKey === slot.icon) return;
+    if (!this.sources.resolve(r, slot, this.model)) return;
     if (node.mesh) {
       const w = r.rect[2]!,
         h = r.rect[3]!;
@@ -781,269 +636,25 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
   // ---------------------------------------------------------------------------------------
   // Layer pass
 
-  /** 0x1003ece0. */
+  /** Complete native array/block evaluation through its typed receiver. */
   evaluate(): void {
-    const nodes = this.nodes,
-      root = nodes[0]!;
-    const v = this.rootVelocity,
-      a = root.adjust;
-    if (v[0] !== 0) {
-      a.x = f(this.step * v[0]! + a.x);
-      a.changed = true;
-    }
-    if (v[1] !== 0) {
-      a.y = f(this.step * v[1]! + a.y);
-      a.changed = true;
-    }
-    if (v[2] !== 0) {
-      a.z = f(this.step * v[2]! + a.z);
-      a.changed = true;
-    }
-    if (this.decay !== 1) {
-      const k = f(Math.pow(this.decay, f(this.step / 60)));
-      v[0] = f(k * v[0]!);
-      v[1] = f(k * v[1]!);
-      v[2] = f(k * v[2]!);
-    }
-    for (const n of nodes) {
-      n.velocity[0] = n.state.x;
-      n.velocity[1] = n.state.y;
-      n.velocity[2] = n.state.z;
-    }
-    root.state.copyFrom(a);
-    a.changed = false;
-    if (!this.nested) computeMatrix(root);
-    for (let i = 1; i < nodes.length; i++) this.evaluateNode(nodes[i]!, root);
-    for (const n of nodes) {
-      const s = n.state;
-      if (this.jumped) n.velocity.fill(0);
-      else {
-        n.velocity[0] = f(s.x - n.velocity[0]!);
-        n.velocity[1] = f(s.y - n.velocity[1]!);
-        n.velocity[2] = f(s.z - n.velocity[2]!);
-      }
-    }
-    this.force = false;
-    meshPass(this);
-    maskPass(this);
-    clipRectPass(this);
-    if (this.features & 0x2) shapePass(this);
-    if (this.features & 0x8) this.motionPass();
-    for (const n of nodes) {
-      n.framesDirty = false;
-      n.state.changed = false;
-    }
-    for (const p of this.parameters) p.flags = 0;
-    this.jumped = false;
-    this.flag112 = false;
+    this.layerPass.evaluateBlockClip<EmoteNode>(this);
   }
 
-  private evaluateNode(node: EmoteNode, root: EmoteNode): void {
-    let parent = this.nodes[node.parent]!;
-    while (parent.inheritMask & 0x400000) parent = this.nodes[parent.parent]!;
-    const curIndex = node.current;
-    const force = this.force || parent.state.changed || node.adjust.changed;
-    if (!evaluateFrame(this, node, force)) return;
-    node.adjust.changed = false;
-    const s = node.state,
-      p = parent.state;
-    if (node.slots[curIndex]!.empty) {
-      const changed = p.changed || node.framesDirty;
-      s.copyFrom(p);
-      s.changed = changed;
-      s.visible = false;
-      s.shown = p.shown && node.adjust.shown;
-      node.matrix.set(parent.matrix);
-      return;
-    }
-    const a = node.adjust;
-    s.changed = true;
-    s.shown = a.shown && p.shown;
-    s.visible = a.visible && s.shown;
-    s.flipX = s.flipX !== a.flipX;
-    s.flipY = s.flipY !== a.flipY;
-    s.angle = f(a.angle + s.angle);
-    s.zoomX = f(a.zoomX * s.zoomX);
-    s.zoomY = f(a.zoomY * s.zoomY);
-    s.slantX = f(a.slantX + s.slantX);
-    s.slantY = f(a.slantY + s.slantY);
-    s.opacity = Math.trunc(Math.imul(a.opacity, s.opacity) / 255) >>> 0;
-    s.x = f(a.x + s.x);
-    s.y = f(a.y + s.y);
-    s.z = f(a.z + s.z);
-    if (parent.meshKind !== 0) syncToParentMesh(parent, node);
-    const m = parent.matrix;
-    let lx: number, ly: number, lz: number;
-    if (node.coordinate === 0) {
-      lx = f(m[1]! * s.y + m[0]! * s.x);
-      ly = f(m[2]! * s.x + m[3]! * s.y);
-      lz = s.z;
-    } else {
-      lx = f(m[0]! * s.x + s.z * m[1]!);
-      lz = f(m[2]! * s.x + m[3]! * s.z);
-      ly = s.y;
-    }
-    s.x = f(p.x + lx);
-    s.y = f(p.y + ly);
-    s.z = f(p.z + lz);
-    const mask = node.inheritMask;
-    if (mask & 0x400) s.opacity = Math.trunc(Math.imul(p.opacity, s.opacity) / 255) >>> 0;
-    else if (!this.independent)
-      s.opacity = Math.trunc(Math.imul(root.state.opacity, s.opacity) / 255) >>> 0;
-    if ((mask & 0x1fc) === 0x1fc) {
-      computeMatrix(node);
-      multiply(m, node.matrix, node.matrix);
-      s.flipX = s.flipX !== p.flipX;
-      s.flipY = s.flipY !== p.flipY;
-      s.angle = f(p.angle + s.angle);
-      s.zoomX = f(p.zoomX * s.zoomX);
-      s.zoomY = f(p.zoomY * s.zoomY);
-      s.slantX = f(p.slantX + s.slantX);
-      s.slantY = f(p.slantY + s.slantY);
-      return;
-    }
-    inheritPartial(s, p, mask, 1);
-    if (this.independent) {
-      computeMatrix(node);
-      return;
-    }
-    const r = root.state;
-    inheritPartial(s, r, mask, -1);
-    computeMatrix(node);
-    inheritPartial(s, r, mask, 1);
-    multiply(root.matrix, node.matrix, node.matrix);
+  evaluateFrame(node: EmoteNode, force: boolean): boolean {
+    return evaluateBlockFrame(this, node, force);
   }
 
-  /** 0x10041510: nested motion layers (type 3). */
-  private motionPass(): void {
-    const clipFlags = this.motionParameter?.flags ?? 0;
-    for (const node of this.motionNodes) {
-      const child = node.child as EmoteClip;
-      const cur = node.cur,
-        other = node.next;
-      const time = node.parameter ? node.parameter.position : this.timeRunning;
-      const stepRef = node.parameter ? node.parameter.position : this.step;
-      const flags = node.parameter ? node.parameter.flags : clipFlags;
-      if (node.state.changed || flags !== 0) {
-        if (cur.empty || cur.src === '') {
-          child.playing = false;
-          child.unload();
-          child.objectName = child.motionName = '';
-          continue;
-        }
-        if (node.framesDirty || flags & 5) {
-          child.selectObject(cur.src);
-          child.selectMotion(cur.icon, cur.motion.flags);
-          if (child.playing && child.jumped) {
-            let t = f(f(time - cur.time) + cur.motion.timeOffset);
-            if (this.step < 0 && child.loopTime > 0 && t > child.lastTime)
-              do t = f(t - child.lastTime + child.loopTime);
-              while (t > child.lastTime);
-            child.seek(t);
-            if (!this.jumped) child.replay = true;
-          }
-        }
-        let dofst = cur.motion.dofst,
-          angle = 0,
-          apply = false;
-        if (cur.motion.dt !== 0) {
-          if (cur.motion.docmpl && cur.tween && !other.empty && other.motion.dt !== 0)
-            dofst = lerpAngle(
-              cur.angleCurve,
-              dofst,
-              other.motion.dofst,
-              f((stepRef - cur.time) / (other.time - cur.time)),
-            );
-          if (cur.motion.dt !== 1)
-            throw new EmoteClipUnsupportedError(`nested motion direction type ${cur.motion.dt}`);
-          angle = f(node.state.angle + dofst);
-          apply = true;
-        }
-        const s = node.state,
-          m = node.matrix;
-        let x = s.x,
-          y = s.y,
-          z = s.z;
-        if (cur.ox !== 0 || cur.oy !== 0) {
-          const ox = -cur.ox,
-            oy = -cur.oy;
-          const dx = f(ox * m[0]! + oy * m[1]!),
-            dy = f(oy * m[3]! + m[2]! * ox);
-          if (node.coordinate === 0) {
-            x = f(x + dx);
-            y = f(y + dy);
-          } else if (node.coordinate === 1) {
-            x = f(x + dx);
-            z = f(z + dy);
-          }
-        }
-        const ra = child.root.adjust;
-        const set = <K extends keyof typeof ra>(key: K, value: (typeof ra)[K]) => {
-          if (ra[key] !== value) {
-            ra.changed = true;
-            ra[key] = value;
-          }
-        };
-        if (ra.x !== x || ra.y !== y || ra.z !== z) {
-          ra.changed = true;
-          ra.x = x;
-          ra.y = y;
-          ra.z = z;
-        }
-        if (ra.flipX !== s.flipX || ra.flipY !== s.flipY) {
-          ra.changed = true;
-          ra.flipX = s.flipX;
-          ra.flipY = s.flipY;
-        }
-        if (ra.zoomX !== s.zoomX || ra.zoomY !== s.zoomY) {
-          ra.changed = true;
-          ra.zoomX = s.zoomX;
-          ra.zoomY = s.zoomY;
-        }
-        if (apply) set('angle', angle);
-        if (ra.slantX !== s.slantX || ra.slantY !== s.slantY) {
-          ra.changed = true;
-          ra.slantX = s.slantX;
-          ra.slantY = s.slantY;
-        }
-        set('opacity', s.opacity);
-        set('shown', s.visible);
-        child.color = node.colors[0]!;
-        const cm = child.root.matrix;
-        if (!apply || s.angle === angle) cm.set(m);
-        else {
-          let rad = f(f((angle - s.angle) * 3.1415927410125732 * 2) / 360);
-          if (s.flipY !== s.flipX) rad = -rad;
-          const sn = f(Math.sin(rad)),
-            cs = f(Math.cos(rad)),
-            ns = -sn;
-          const m0 = m[0]!,
-            m1 = m[1]!,
-            m2 = m[2]!,
-            m3 = m[3]!;
-          cm[0] = m1 * sn + cs * m0;
-          cm[1] = m1 * cs + ns * m0;
-          cm[2] = m2 * cs + m3 * sn;
-          cm[3] = cs * m3 + m2 * ns;
-        }
-        ra.changed = true;
-      }
-      // LAB_10041f72: links, then the child steps with this clip and evaluates.
-      const cr = child.root;
-      cr.meshParent = node.meshParent;
-      cr.maskNode = node.maskNode;
-      cr.clipRect = node.clipRect;
-      child.advance(this.step);
-      child.evaluate();
-      if (child.events.length) {
-        this.events.push(...child.events);
-        child.events = [];
-      }
-    }
+  readonly syncToParentMesh = syncToParentMeshX86;
+
+  /** 0x10041510: nested motion through its shared runtime interface. */
+  evaluateMotions(): void {
+    const flags = this.motionParameter?.flags ?? 0;
+    evaluateBlockMotions<EmoteNode>(this, this.motionNodes, flags);
   }
 
   /** 0x10032c70 / 0x10032d70: a different object name stops the clip and clears its motion. */
-  private selectObject(name: string): void {
+  selectObject(name: string): void {
     if (name === this.objectName) return;
     this.objectName = name;
     this.motionName = '';
@@ -1051,7 +662,7 @@ export class EmoteClip implements EmoteClipDriver, EmoteClipPlayerAccess {
   }
 
   /** 0x10032fa0 / 0x10033020: (re)loads the named motion of the object. */
-  private selectMotion(name: string, flags: number): void {
+  selectMotion(name: string, flags: number): void {
     if (flags & 0x10 && this.motionName === '') {
       this.motionName = name;
       return;
@@ -1171,228 +782,21 @@ const SCALAR_FIELDS = [
 
 // -----------------------------------------------------------------------------------------
 
-/**
- * 0x1003e1a0: evaluates the node's current frame into its state. Returns whether the node
- * changed (always when `force` or the frames were reloaded).
- */
-function evaluateFrame(clip: EmoteClip, node: EmoteNode, force: boolean): boolean {
-  const cur = node.cur,
-    next = node.next,
-    s = node.state;
-  let changed = force || node.framesDirty;
-  if (cur.empty) return changed;
-  if (cur.tween && !next.empty) {
-    const now = node.parameter ? node.parameter.position : clip.time;
-    let d = f(now - cur.time);
-    if (cur.ti !== 0) {
-      const ti = cur.ti >>> 0;
-      d = f((Math.imul(roundHalfEven(d / f(ti)), ti) >>> 0) as number);
-    }
-    const t = f(d / f(next.time - cur.time));
-    if (Math.abs(t) >= EPSILON) {
-      if (!changed && Math.abs(f(node.lastT - t)) < EPSILON) return false;
-      node.lastT = t;
-      s.flipX = cur.fx;
-      s.flipY = cur.fy;
-      s.angle = lerpAngle(cur.angleCurve, cur.angle, next.angle, t);
-      s.zoomX = lerp(cur.zoomCurve, cur.zx, next.zx, t);
-      s.zoomY = lerp(cur.zoomCurve, cur.zy, next.zy, t);
-      s.slantX = lerp(cur.slantCurve, cur.sx, next.sx, t);
-      s.slantY = lerp(cur.slantCurve, cur.sy, next.sy, t);
-      const xyz = [0, 0, 0];
-      lerpCoord(cur.coordCurve, cur.coord, next.coord, t, xyz, 0);
-      s.x = xyz[0]!;
-      s.y = xyz[1]!;
-      s.z = xyz[2]!;
-      const u = f(1 - t);
-      s.opacity = roundHalfAway(f((cur.opa >>> 0) * u + (next.opa >>> 0) * t));
-      node.singleColor = cur.singleColor && next.singleColor;
-      node.colorUnset = cur.colorUnset && next.colorUnset;
-      if (!node.singleColor)
-        for (let k = 0; k < 4; k++)
-          node.colors[k] = lerpColor(cur.colorCurve, cur.colors[k]!, next.colors[k]!, t);
-      else node.colors.fill(lerpColor(cur.colorCurve, cur.colors[0]!, next.colors[0]!, t));
-      if (node.mesh) {
-        const a = cur.meshPatch,
-          b = next.meshPatch;
-        if (a.length === 0 && b.length === 0) node.mesh.local = new Float32Array(0);
-        else {
-          const from = a.length ? a : IDENTITY_PATCH,
-            to = b.length ? b : IDENTITY_PATCH;
-          if (node.mesh.local.length !== from.length)
-            node.mesh.local = new Float32Array(from.length);
-          lerpPatch(cur.meshCurve, from, to, t, node.mesh.local);
-        }
-      }
-      return true;
-    }
-    if (Math.abs(f(node.lastT - t)) >= EPSILON) changed = true;
-    node.lastT = t;
-  }
-  if (!changed) return false;
-  s.flipX = cur.fx;
-  s.flipY = cur.fy;
-  s.angle = f(cur.angle);
-  s.zoomX = f(cur.zx);
-  s.zoomY = f(cur.zy);
-  s.slantX = f(cur.sx);
-  s.slantY = f(cur.sy);
-  s.x = f(cur.coord[0]!);
-  s.y = f(cur.coord[1]!);
-  s.z = f(cur.coord[2]!);
-  node.colors.set(cur.colors);
-  s.opacity = cur.opa >>> 0;
-  node.singleColor = cur.singleColor;
-  node.colorUnset = cur.colorUnset;
-  if (node.mesh) node.mesh.local = cur.meshPatch.slice();
-  return true;
-}
-
-/** 0x1003dd30: 2×2 frame from flips, rotation, zoom and slant in `transformOrder`. */
+/** 0x1003dd30: compose the evaluated node's local frame. */
 export function computeMatrix(node: EmoteNode): void {
-  const m: Float32Array = node.matrix,
-    s = node.state;
-  m[0] = 1;
-  m[1] = 0;
-  m[2] = 0;
-  m[3] = 1;
-  for (const op of node.transformOrder) {
-    switch (op) {
-      case 0:
-        if (s.flipX) {
-          m[0] = -m[0]!;
-          m[1] = -m[1]!;
-        }
-        if (s.flipY) {
-          m[2] = -m[2]!;
-          m[3] = -m[3]!;
-        }
-        break;
-      case 1:
-        if (s.angle !== 0) {
-          const rad = f((s.angle * 3.1415927410125732 * 2) / 360);
-          const sn = f(Math.sin(rad)),
-            cs = f(Math.cos(rad));
-          const m0: number = m[0]!,
-            m1: number = m[1]!,
-            m2: number = m[2]!,
-            m3: number = m[3]!;
-          m[0] = m0 * cs - m2 * sn;
-          m[1] = m1 * cs - m3 * sn;
-          m[2] = m0 * sn + m2 * cs;
-          m[3] = m1 * sn + m3 * cs;
-        }
-        break;
-      case 2:
-        if (s.zoomX !== 1 || s.zoomY !== 1) {
-          m[0] = m[0]! * s.zoomX;
-          m[1] = m[1]! * s.zoomX;
-          m[2] = m[2]! * s.zoomY;
-          m[3] = m[3]! * s.zoomY;
-        }
-        break;
-      case 3:
-        if (s.slantX !== 0 || s.slantY !== 0) {
-          const m0: number = m[0]!,
-            m1: number = m[1]!;
-          m[0] = m[2]! * s.slantX + m0;
-          m[1] = m[3]! * s.slantX + m1;
-          m[2] = m0 * s.slantY + m[2]!;
-          m[3] = m1 * s.slantY + m[3]!;
-        }
-        break;
-    }
-  }
-}
-
-/** out = a · b (row-major 2×2), as the layer pass composes parent and node frames. */
-function multiply(a: Float32Array, b: Float32Array, out: Float32Array): void {
-  const r0 = a[1]! * b[2]! + a[0]! * b[0]!,
-    r1 = a[0]! * b[1]! + b[3]! * a[1]!,
-    r2 = a[2]! * b[0]! + a[3]! * b[2]!,
-    r3 = b[1]! * a[2]! + a[3]! * b[3]!;
-  out[0] = r0;
-  out[1] = r1;
-  out[2] = r2;
-  out[3] = r3;
+  composeEmoteMatrix(node.state, node.transformOrder, node.matrix);
 }
 
 /**
  * The partial-inherit bits of the layer pass: 0x4 flipX, 0x8 flipY (xor), 0x10 angle
  * (add), 0x20/0x40 zoom (multiply), 0x80/0x100 slant (add). `sign` -1 removes `p` again.
  */
-function inheritPartial(
-  s: EmoteNode['state'],
-  p: EmoteNode['state'],
-  mask: number,
-  sign: number,
-): void {
-  if (mask & 0x4) s.flipX = s.flipX !== p.flipX;
-  if (mask & 0x8) s.flipY = s.flipY !== p.flipY;
-  if (sign > 0) {
-    if (mask & 0x10) s.angle = f(p.angle + s.angle);
-    if (mask & 0x20) s.zoomX = f(p.zoomX * s.zoomX);
-    if (mask & 0x40) s.zoomY = f(p.zoomY * s.zoomY);
-    if (mask & 0x80) s.slantX = f(p.slantX + s.slantX);
-    if (mask & 0x100) s.slantY = f(p.slantY + s.slantY);
-  } else {
-    if (mask & 0x10) s.angle = f(s.angle - p.angle);
-    if (mask & 0x20) s.zoomX = f(s.zoomX / p.zoomX);
-    if (mask & 0x40) s.zoomY = f(s.zoomY / p.zoomY);
-    if (mask & 0x80) s.slantX = f(s.slantX - p.slantX);
-    if (mask & 0x100) s.slantY = f(s.slantY - p.slantY);
-  }
-}
 
 /**
  * 0x1003e890: a parent mesh with `meshSyncChildMask` bit 1 moves the child's coordinate
  * through its patch. Bits 2 (angle) and 4 (zoom) are not used by NEKOPARA (census: masks 0
  * and 8 only) and are rejected.
  */
-function syncToParentMesh(parent: EmoteNode, node: EmoteNode): void {
-  const mesh = parent.mesh;
-  if (!mesh || mesh.local.length === 0 || !parent.state.visible || !parent.resolved.drawable)
-    return;
-  if (!(parent.meshSync & 1) || parent.meshKind !== 1) return;
-  if (
-    (parent.meshSync & 2 && node.inheritMask & 0x10) ||
-    (parent.meshSync & 4 && node.inheritMask & 0x60)
-  )
-    throw new EmoteClipUnsupportedError('meshSyncChildMask angle/zoom (0x1003e890)');
-  const cur = parent.cur,
-    w = parent.resolved.rect[2]!,
-    h = parent.resolved.rect[3]!;
-  const ox = f(cur.ox + parent.resolved.originX),
-    oy = f(cur.oy + parent.resolved.originY);
-  const s = node.state,
-    b = node.coordinate === 0 ? s.y : s.z;
-  const p = [0, 0];
-  patchPoint(mesh.local, f(f(ox + s.x) / w), f(f(oy + b) / h), p);
-  s.x = f(w * p[0]! - ox);
-  if (node.coordinate === 0) s.y = f(h * p[1]! - oy);
-  else s.z = f(h * p[1]! - oy);
-}
-
-function setParameterValue(p: ClipParameter, value: number): void {
-  // 0x10031400 (via 0x10031940): flags cleared, position = clamp(v)·division / range.
-  p.flags = 0;
-  if (p.rangeEnd === p.rangeBegin) {
-    p.position = 0;
-    return;
-  }
-  if (!(0 < p.division)) {
-    p.position = 0;
-    return;
-  }
-  let v = f(value);
-  if (p.discretization) v = f(truncate(v));
-  const lo = p.rangeEnd <= p.rangeBegin ? p.rangeEnd : p.rangeBegin,
-    hi = p.rangeBegin <= p.rangeEnd ? p.rangeEnd : p.rangeBegin;
-  let c = v <= lo ? lo : v;
-  c = hi <= c ? hi : c;
-  p.position = f(((c - p.rangeBegin) * p.division) / (p.rangeEnd - p.rangeBegin));
-}
-
 /** 0x100314c0: "path::name" or "path/name" (the first `::`, else the first `/`). */
 function splitVariable(label: string): [string, string] | null {
   let i = label.indexOf('::');
@@ -1410,16 +814,6 @@ function psbObject(v: PsbValue | undefined): PsbObject | null {
 
 function psbTime(v: PsbValue | undefined): number {
   return f(Number(psbObject(v)?.time ?? 0));
-}
-
-function atoi(s: string | undefined): number {
-  const m = /^\s*[+-]?\d+/.exec(s ?? '');
-  return m ? parseInt(m[0], 10) | 0 : 0;
-}
-
-function atof(s: string | undefined): number {
-  const v = parseFloat(s ?? '');
-  return Number.isNaN(v) ? 0 : v;
 }
 
 /** Creates the clip for `motion` and loads it (0x1002eab0, 0x10033810). */

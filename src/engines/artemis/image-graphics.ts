@@ -26,11 +26,7 @@ import {artemisRevision} from './revision.js';
 import type {ArtemisTheoraThreadOpener, ArtemisTheoraVideo} from './video.js';
 import type {ArtemisStagePresentation} from './layer-owner.js';
 import type {ArtemisEmoteLayer} from './emote-layer.js';
-import {
-  EmoteRenderer,
-  EmoteTextureCache,
-  type EmoteRenderHost,
-} from '../../native/emotedriver/renderer.js';
+import type {D3d11Surface, D3d11SurfaceHost} from '../../graphics/d3d11-surfaces.js';
 import {
   artemisHasRasterEffects,
   type ArtemisRasterPolicy,
@@ -240,7 +236,7 @@ interface Texture {
   /** E-mote actor: the layer and its renderer; `drawn` is the last draw that rendered it. */
   readonly emote?: {
     readonly layer: ArtemisEmoteLayer;
-    readonly renderer: EmoteRenderer;
+    readonly surface: D3d11Surface;
     drawn: number;
   };
 }
@@ -338,6 +334,7 @@ export class ArtemisImageGraphics implements ArtemisLayerHost<ArtemisDisplayActo
     private readonly shaderPrograms?: ArtemisImageShaderPrograms,
     /** timeGetTime after timeBeginPeriod(1); required only to draw animation layers. */
     private readonly clock?: {now(): number},
+    private readonly nativeGraphics?: D3d11SurfaceHost,
   ) {
     this.hash = artemisRevision(executableSha256).executableSha256;
     if (![target.width, target.height].every((n) => Number.isInteger(n) && n > 0))
@@ -429,21 +426,14 @@ export class ArtemisImageGraphics implements ArtemisLayerHost<ArtemisDisplayActo
    * render target, redrawn by the player on each draw (0x14001adf0). */
   createEmoteLayer(emote: ArtemisEmoteLayer): ArtemisImageActor {
     if (!this.clock) throw Error('Artemis E-mote layers require a clock owner');
-    if (!this.target.prepareRenderSurface)
-      throw new Error('Artemis E-mote GPU surface owner missing');
-    this.emoteTextures ??= new EmoteTextureCache(this.emoteHost);
-    const renderer = new EmoteRenderer(
-      this.emoteHost,
-      this.emoteTextures,
-      emote.width,
-      emote.height,
-    );
+    if (!this.nativeGraphics) throw new Error('Artemis E-mote native surface owner missing');
+    const surface = this.nativeGraphics.createSurface(emote.width, emote.height);
     const texture: Texture = {
-      id: renderer.texture,
-      image: renderer.surface,
+      id: this.nextTexture++,
+      image: surface.image,
       references: 1,
       managed: true,
-      emote: {layer: emote, renderer, drawn: -1},
+      emote: {layer: emote, surface, drawn: -1},
     };
     this.textures.set(texture.id, texture);
     const actor: ArtemisImageActor = {
@@ -464,25 +454,6 @@ export class ArtemisImageGraphics implements ArtemisLayerHost<ArtemisDisplayActo
     this.checkActor(actor);
     return actor.texture === null ? undefined : this.textures.get(actor.texture)!.emote?.layer;
   }
-  /** Texture registration of the E-mote renderers: render targets and decoded atlases. */
-  private readonly emoteHost: EmoteRenderHost = {
-    addTexture: (image) => {
-      if (image instanceof GpuRenderSurface) this.target.prepareRenderSurface!(image);
-      else this.target.prepareImage(image);
-      const id = this.nextTexture++;
-      this.textures.set(id, {id, image, references: 0, managed: true});
-      return id;
-    },
-    removeTexture: (id) => {
-      const texture = this.textures.get(id);
-      if (!texture) return;
-      this.textures.delete(id);
-      this.target.invalidate(texture.image);
-    },
-  };
-  private emoteTextures: EmoteTextureCache | null = null;
-  /** The E-mote draws of this draw list, before any of its targets. */
-  private emoteCommands: DrawCommand[] = [];
   /** CEmoteLayer draw 0x14001adf0 once per draw list: the player advances by the draw's
    * clock sample, then renders its draw list into the layer target, cleared to zero. */
   private emoteFrame(actor: ArtemisImageActor): number | undefined {
@@ -492,8 +463,23 @@ export class ArtemisImageGraphics implements ArtemisLayerHost<ArtemisDisplayActo
       emote.drawn = this.draws;
       if (this.now === null) this.now = this.clock!.now() >>> 0;
       emote.layer.advance(this.now);
-      const clip = emote.layer.player.clip;
-      this.emoteCommands.push(...emote.renderer.render(clip.drawList, clip.smoothing));
+      const native = this.nativeGraphics!,
+        layer = emote.layer;
+      layer.device.setRenderTarget(emote.surface.view, null);
+      layer.device.setScreenRect(0, 0, layer.width, layer.height, 1);
+      native.context.rsSetViewports([
+        {
+          topLeftX: 0,
+          topLeftY: 0,
+          width: layer.width,
+          height: layer.height,
+          minDepth: 0,
+          maxDepth: 1,
+        },
+      ]);
+      native.context.clearRenderTargetView(emote.surface.view, [0, 0, 0, 0]);
+      layer.player.render();
+      emote.surface.prepare();
     }
     return emote.drawn;
   }
@@ -651,19 +637,49 @@ export class ArtemisImageGraphics implements ArtemisLayerHost<ArtemisDisplayActo
   copyImageLayer(old: ArtemisDisplayActor): ArtemisDisplayActor;
   copyImageLayer(old: ArtemisDisplayActor): ArtemisDisplayActor {
     this.checkActor(old);
-    // A CEmoteLayer copy clones its player (0x14001a4f0), which is not modeled.
-    if (old.texture !== null && this.check(old).emote)
-      throw new Error('Unsupported Artemis E-mote layer copy');
-    const actor: ArtemisDisplayActor = {
-      ...old,
-      display: old.display.copy(),
-      shaderState: old.shaderState.copy(),
-      shaderConstants: old.shaderConstants.copy(),
-      raster: {...old.raster},
-      ...(isAnimation(old) ? {animation: old.animation.copy()} : {}),
-    };
+    const emote = old.texture === null ? undefined : this.check(old).emote;
+    let copiedTexture: Texture | undefined;
+    if (emote) {
+      // Native Copy(true) prepares a fresh target before cloning the player; no pixels copy.
+      const surface = this.nativeGraphics!.createSurface(emote.layer.width, emote.layer.height);
+      try {
+        const layer = emote.layer.copy();
+        copiedTexture = {
+          id: this.nextTexture++,
+          image: surface.image,
+          references: 1,
+          managed: true,
+          emote: {layer, surface, drawn: -1},
+        };
+      } catch (error) {
+        surface.dispose();
+        throw error;
+      }
+    }
+    let actor: ArtemisDisplayActor;
+    try {
+      actor = {
+        ...old,
+        display: old.display.copy(),
+        shaderState: old.shaderState.copy(),
+        shaderConstants: old.shaderConstants.copy(),
+        raster: {...old.raster},
+        ...(isAnimation(old) ? {animation: old.animation.copy()} : {}),
+      };
+      if (copiedTexture && actor.texture !== null) actor = {...actor, texture: copiedTexture.id};
+    } catch (error) {
+      if (copiedTexture?.emote) {
+        try {
+          copiedTexture.emote.surface.dispose();
+        } finally {
+          copiedTexture.emote.layer.dispose();
+        }
+      }
+      throw error;
+    }
     if (isText(old)) old.text.retain();
-    if (old.texture !== null) this.check(old).references++;
+    if (copiedTexture) this.textures.set(copiedTexture.id, copiedTexture);
+    else if (old.texture !== null) this.check(old).references++;
     this.wrappers.get(actor.wrapper)!.references++;
     this.actors.add(actor);
     const mask = this.masks.get(old);
@@ -908,7 +924,13 @@ export class ArtemisImageGraphics implements ArtemisLayerHost<ArtemisDisplayActo
     if (isText(actor)) actor.text.release();
     if (texture && --texture.references === 0) {
       // The renderer releases its own target and atlases.
-      texture.emote?.renderer.close();
+      if (texture.emote) {
+        try {
+          texture.emote.surface.dispose();
+        } finally {
+          texture.emote.layer.dispose();
+        }
+      }
       this.textures.delete(texture.id);
       if (!texture.video && !texture.emote)
         this.images.delete(texture.sourceImage ?? texture.image);
@@ -1406,8 +1428,6 @@ export class ArtemisImageGraphics implements ArtemisLayerHost<ArtemisDisplayActo
   ): DrawList {
     this.now = null;
     this.draws++;
-    this.emoteTextures?.beginFrame();
-    this.emoteCommands = [];
     for (const texture of this.textures.values()) if (texture.video) texture.video.updated = false;
     const commands: DrawCommand[] = [],
       updates: (() => void)[] = [];
@@ -1977,7 +1997,7 @@ export class ArtemisImageGraphics implements ArtemisLayerHost<ArtemisDisplayActo
       if (offscreen) commands.push({kind: 'gpu-target', surface: null});
       const list: DrawList = {
         sprites: [],
-        commands: this.emoteCommands.length ? [...this.emoteCommands, ...commands] : commands,
+        commands,
         clearColor: this.raster.clearColor,
         ...(offscreen ? {offscreen: true} : {}),
       };

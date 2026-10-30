@@ -1,3 +1,4 @@
+import type {D3d11SurfaceHost} from '../../../graphics/d3d11-surfaces.js';
 import type {AsbTag} from '../../../formats/artemis/asb.js';
 import type {DrawListTarget} from '../../../graphics/draw-list.js';
 import type {TriangleImage} from '../../../graphics/triangle-draw.js';
@@ -45,6 +46,7 @@ export function artemisCursorLayer(vm: Lua51): string | null {
 export interface ArtemisBrowserLayerOptions {
   readonly executableSha256: string;
   readonly target: DrawListTarget;
+  readonly nativeGraphics?: D3d11SurfaceHost;
   readonly raster: ArtemisRasterPolicy;
   /** The surface manager: layer images share its cache and loans. */
   readonly images: ArtemisImageSource;
@@ -284,6 +286,7 @@ export function createArtemisBrowserLayers(options: ArtemisBrowserLayerOptions):
         options.raster,
         options.shaderPrograms,
         options.clock,
+        options.nativeGraphics,
       )),
     images: options.images,
     runMode: options.runMode,

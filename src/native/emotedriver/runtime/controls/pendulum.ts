@@ -1,7 +1,16 @@
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
 import type {EmotePendulumControl} from '../../../../formats/kirikiri/emote-metadata.js';
-import {EMOTE_DOWN, EMOTE_WIND_AXIS, emoteGravity, emoteSoftAngle} from './bust.js';
+import {
+  EMOTE_DOWN,
+  EMOTE_WIND_AXIS,
+  EMOTE_ANGLE_GAIN,
+  EMOTE_ANGLE_UNIT,
+  emoteGravity,
+  emoteSoftAngle,
+  emoteAngleFromScaled,
+} from './bust.js';
 import {f32} from './common.js';
-import type {EmoteWind} from './wind.js';
+import type {EmoteWindField} from '../interfaces.js';
 
 /** |var_ud| above which the bend oscillation builds up (double 28.0 at 0x10072818). */
 const BEND_THRESHOLD = 28;
@@ -44,6 +53,8 @@ export interface EmotePendulumOutput {
  * phase.
  */
 export class EmotePendulum {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
   /** +0x4 gravity, +0x8 friction_x, +0xc friction_y, +0x10 b_rate, +0x14 v_bound. */
   readonly gravity: number;
   readonly frictionX: number;
@@ -73,14 +84,16 @@ export class EmotePendulum {
 
   private readonly initial: EmotePendulumControl['param'];
 
-  constructor(control: EmotePendulumControl) {
+  constructor(control: EmotePendulumControl, driverSha256?: string) {
+    this.driverSha256 = emoteBuild(driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
     this.initial = control.param;
     this.gravity = f32(control.gravity);
     this.frictionX = f32(control.friction_x);
     this.frictionY = f32(control.friction_y);
     this.bRate = f32(control.b_rate);
     this.vBound = f32(control.v_bound);
-    this.udEffect = control.ud_eft;
+    this.udEffect = this.x64 ? Math.trunc(control.ud_eft) : control.ud_eft;
     this.length = [f32(control.length[0]), f32(control.length[1])];
     this.scaleX = [f32(control.scale_x[0]), f32(control.scale_x[1])];
     this.scaleY = [f32(control.scale_y[0]), f32(control.scale_y[1])];
@@ -117,7 +130,7 @@ export class EmotePendulum {
    * 0x1000ab30 then 0x1000b050: one step of `frames` with the base layer at (x, y), the
    * hair or parts scale, the root rotation in radians and the player's wind (`+0xac`, set
    * from `p+0x138` before each driver call). `out` keeps values a step does not write
-   * (`var_ud` when `ud_eft` is neither 0 nor 1).
+   * (`var_ud` when `ud_eft` is neither 0 nor 1). The x64 build clears that output.
    */
   update(
     x: number,
@@ -125,9 +138,13 @@ export class EmotePendulum {
     frames: number,
     scale: number,
     rad: number,
-    wind: EmoteWind | null,
+    wind: EmoteWindField | null,
     out: EmotePendulumOutput,
   ): void {
+    if (this.x64) {
+      this.updateX64(x, y, frames, scale, rad, wind, out);
+      return;
+    }
     const {op} = this;
     if (this.first) {
       this.first = false;
@@ -215,5 +232,137 @@ export class EmotePendulum {
     const sway = f32(f32(Math.sin(this.bendR)) * this.bendS * this.bendVolume);
     out.lr = f32(out.lr + sway);
     out.lrm = f32(out.lrm - sway);
+  }
+
+  /** x64 0x18002b380, preserving each intermediate float store. */
+  private updateX64(
+    x: number,
+    y: number,
+    dt: number,
+    scale: number,
+    angle: number,
+    wind: EmoteWindField | null,
+    out: EmotePendulumOutput,
+  ): void {
+    if (!this.first) {
+      this.op[0] = f32(x + this.offset[0]!);
+      this.op[1] = f32(y + this.offset[1]!);
+    } else {
+      this.first = false;
+      this.offset[0] = f32(this.op[0]! - x);
+      this.offset[1] = f32(this.op[1]! - y);
+    }
+    const len = this.length;
+    // Rest joints hang along gravity from the anchor.
+    this.bp[0][0] = f32(f32(len[0]! * EMOTE_DOWN[0]) + this.op[0]!);
+    this.bp[0][1] = f32(f32(len[0]! * EMOTE_DOWN[1]) + this.op[1]!);
+    this.bp[0][2] = f32(f32(len[0]! * 0) + this.op[2]!);
+    this.bp[1][0] = f32(f32(len[1]! * EMOTE_DOWN[0]) + this.bp[0][0]!);
+    this.bp[1][1] = f32(f32(len[1]! * EMOTE_DOWN[1]) + this.bp[0][1]!);
+    this.bp[1][2] = f32(f32(len[1]! * 0) + this.bp[0][2]!);
+    const a = f32(-angle);
+    const sn = f32(Math.sin(a)),
+      cs = f32(Math.cos(a));
+    const sx = f32(sn * EMOTE_DOWN[0]),
+      cx = f32(cs * EMOTE_DOWN[0]),
+      sy = f32(sn * EMOTE_DOWN[1]),
+      cy = f32(cs * EMOTE_DOWN[1]);
+    out.ud = 0;
+    for (let i = 0; i < 2; i++) {
+      const anchor = i === 0 ? this.op : this.p[0];
+      const m = this.p[i]!,
+        v = this.pv[i]!;
+      const l = len[i]!;
+      const dx = f32(anchor[0]! - m[0]!),
+        dy = f32(anchor[1]! - m[1]!),
+        dz = f32(anchor[2]! - m[2]!);
+      const d2 = f32(f32(f32(dy * dy) + f32(dx * dx)) + f32(dz * dz));
+      if (f32(l * l) < d2) {
+        const d = f32(Math.sqrt(d2));
+        if (MIN_ROD < d) {
+          const inv = f32(1 / d);
+          const ext = f32(d - l);
+          const nx = f32(inv * dx),
+            nz = f32(inv * dz),
+            ny = f32(inv * dy);
+          if (i === 1) {
+            m[0] = f32(f32(nx * ext) + m[0]!);
+            m[2] = f32(f32(nz * ext) + m[2]!);
+            m[1] = f32(f32(ny * ext) + m[1]!);
+            const k = f32(
+              f32(
+                f32(f32(f32(nx * v[0]!) + f32(ny * v[1]!)) + f32(nz * v[2]!)) *
+                  f32(-f32(this.vBound)),
+              ) * dt,
+            );
+            v[0] = f32(f32(nx * k) + v[0]!);
+            v[1] = f32(f32(k * ny) + v[1]!);
+            v[2] = f32(f32(k * nz) + v[2]!);
+          } else {
+            const k = f32(f32(ext * f32(this.bRate)) * dt);
+            v[0] = f32(f32(nx * k) + v[0]!);
+            v[1] = f32(f32(k * ny) + v[1]!);
+            v[2] = f32(f32(k * nz) + v[2]!);
+          }
+        }
+      }
+      const kg = f32(dt * f32(this.gravity));
+      let vx = f32(f32(f32(cx - sy) * kg) + v[0]!);
+      let vy = f32(f32(f32(cy + sx) * kg) + v[1]!);
+      let vz = f32(f32(kg * 0) + v[2]!);
+      if (wind) {
+        const w = wind.query(m[0]!);
+        vx = f32(f32(w * 1) + vx);
+        vy = f32(f32(w * 0) + vy);
+        vz = f32(f32(w * -0) + vz);
+      }
+      vx = f32(vx - f32(f32(vx * f32(this.frictionX)) * dt));
+      m[0] = f32(f32(vx * dt) + m[0]!);
+      vy = f32(vy - f32(f32(vy * f32(this.frictionY)) * dt));
+      m[1] = f32(f32(vy * dt) + m[1]!);
+      m[2] = f32(f32(vz * dt) + m[2]!);
+      v[0] = vx;
+      v[1] = vy;
+      v[2] = vz;
+      const r = this.bp[i]!;
+      const lr = emoteAngleFromScaled(
+        f32(
+          f32(
+            f32(f32(f32(-f32(r[0]! - m[0]!)) * f32(this.scaleX[i]!)) * scale) * EMOTE_ANGLE_GAIN,
+          ) * EMOTE_ANGLE_UNIT,
+        ),
+      );
+      if (i === 0) out.lrm = lr;
+      else out.lr = lr;
+      if (i === Math.trunc(this.udEffect)) {
+        out.ud = emoteAngleFromScaled(
+          f32(
+            f32(
+              f32(f32(f32(this.ofs - f32(r[1]! - m[1]!)) * f32(this.scaleY[i]!)) * scale) *
+                EMOTE_ANGLE_GAIN,
+            ) * EMOTE_ANGLE_UNIT,
+          ),
+        );
+      }
+    }
+    this.bendX64(dt, out);
+  }
+
+  /** x64 0x180014180 bend tail; the stored period differs by one float bit. */
+  private bendX64(frames: number, out: EmotePendulumOutput): void {
+    let amplitude: number;
+    if (Math.abs(out.ud) <= BEND_THRESHOLD) {
+      const value = f32(this.bendS - f32(frames * BEND_RAMP));
+      amplitude = 0 <= value ? value : 0;
+    } else {
+      const value = f32(f32(frames * BEND_RAMP) + this.bendS);
+      amplitude = value <= 1 ? value : 1;
+    }
+    this.bendS = amplitude;
+    const phase = f32(f32(f32(amplitude * this.bendSpeed) * frames) + this.bendR);
+    this.bendR = f32(phase % f32(6.283185));
+    const sway = f32(f32(f32(Math.sin(this.bendR)) * amplitude) * this.bendVolume);
+    out.lrm = f32(out.lrm - sway);
+    out.lr = f32(out.lr + sway);
   }
 }

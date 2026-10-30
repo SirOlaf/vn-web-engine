@@ -1,5 +1,7 @@
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
 import type {EmoteTimeline} from '../../../../formats/kirikiri/emote-metadata.js';
 import {EmoteTween, easingPower} from '../controls/transition.js';
+import type {EmoteApiLogScope} from './api-log.js';
 
 /**
  * Timelines of `MEmotePlayer` (`timelineControl`): the label lists (`p+0x1a0` main,
@@ -22,8 +24,20 @@ const DIFFERENCE = 2;
 /** Set by `Pass` (0x1001f180) on a difference timeline that is fading out. */
 const PASSING = 4;
 
+/** x64 0x18001ff10: fold fullwidth ASCII; native non-BMP labels match nothing. */
+export function normalizeTimelineLabel(label: string): string | null {
+  let out = '';
+  for (const ch of label) {
+    const c = ch.codePointAt(0)!;
+    if (c > 0xffff) return null;
+    out += c >= 0xff01 && c <= 0xff5e ? String.fromCharCode(c - 0xfee0) : ch;
+  }
+  return out;
+}
+
 /** What timelines call back into on their player. */
 export interface EmoteTimelineHost {
+  readonly apiLog?: EmoteApiLogScope | null;
   /** `p+0x30` (`queuing`): tweens queue instead of replacing. */
   readonly queuing: boolean;
   /** 0x10012510 (`SetVariable` core; `easing` is converted there). */
@@ -54,6 +68,7 @@ class Track {
 
 /** Timeline state (map value at node +0x28). Fields are zero until the body is loaded. */
 export class EmoteTimelineState {
+  readonly driverSha256: EmoteBuild;
   /** +0x0 non-null once loaded (0x1001d980 runs on the first play). */
   loaded = false;
   tracks: Track[] = [];
@@ -63,6 +78,8 @@ export class EmoteTimelineState {
   stopWhenBlendDone = 0;
   /** Play flags (+0x8). */
   flags = 0;
+  /** x64: a loop has wrapped since play. */
+  stepped = false;
   /** +0x14, +0x18, +0x1c, +0x20. A negative `loopBegin` means no loop. */
   loopBegin = 0;
   loopEnd = 0;
@@ -71,21 +88,29 @@ export class EmoteTimelineState {
   /** Current segment start per track (vector at +0x2c, rebuilt by every seek). */
   frameIndex: number[] = [];
 
-  constructor(readonly definition: EmoteTimeline) {}
+  constructor(
+    readonly definition: EmoteTimeline | null,
+    driverSha256?: string,
+  ) {
+    this.driverSha256 = emoteBuild(driverSha256);
+  }
 
   /** 0x1001d980. */
   load(instant: ReadonlySet<string>): void {
     const d = this.definition;
     this.loaded = true;
+    this.blend = new EmoteTween(1, this.driverSha256);
+    this.tracks = [];
+    if (!d) return;
     this.loopBegin = f32(d.loopBegin);
     this.loopEnd = f32(d.loopEnd);
     // The reader already replaced a negative `lastTime` by the latest frame time (≥ 0).
     this.lastTime = f32(d.lastTime);
-    this.blend = new EmoteTween(1);
-    this.blendRatio = 1;
-    this.stopWhenBlendDone = 0;
-    this.blend.set([1], 0, 0, false);
-    this.tracks = [];
+    if (this.driverSha256 !== EMOTEDRIVER_X64_SHA256) {
+      this.blendRatio = 1;
+      this.stopWhenBlendDone = 0;
+      this.blend.set([1], 0, 0, false);
+    }
     for (const v of d.variables) {
       if (v.frames.length === 0) continue;
       const frames = v.frames.map((fr) => ({
@@ -109,7 +134,14 @@ function nextTime(frames: readonly TrackFrame[], index: number, fallback: number
   return frames[index + 1]?.time ?? fallback;
 }
 
+function frameCountTo(frames: readonly TrackFrame[], index: number, t: number): number {
+  const d = f32(f32((frames[index + 1]?.time ?? 0) - t) - 1);
+  return d >= 0 ? d : 0;
+}
+
 export class EmoteTimelineSet {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
   /** `p+0x1a0`, `p+0x1b0`: labels in list order (duplicates kept). */
   readonly mainLabels: string[] = [];
   readonly diffLabels: string[] = [];
@@ -121,25 +153,53 @@ export class EmoteTimelineSet {
   constructor(
     private readonly host: EmoteTimelineHost,
     private readonly instant: ReadonlySet<string>,
-  ) {}
+    driverSha256?: string,
+  ) {
+    this.driverSha256 = emoteBuild(driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
+  }
+
+  private key(label: string): string | null {
+    return this.x64 ? normalizeTimelineLabel(label) : label;
+  }
+
+  private find(label: string): EmoteTimelineState | undefined {
+    const key = this.key(label);
+    return key === null ? undefined : this.states.get(key);
+  }
 
   /** 0x1001d4a0: `label` and optional `diff` of every entry; bodies load on first play. */
   loadList(timelines: readonly EmoteTimeline[]): void {
     for (const t of timelines) {
       (t.diff ? this.diffLabels : this.mainLabels).push(t.label);
-      if (!this.states.has(t.label)) this.states.set(t.label, new EmoteTimelineState(t));
+      const key = this.key(t.label);
+      if (key !== null && !this.states.has(key))
+        this.states.set(key, new EmoteTimelineState(t, this.driverSha256));
     }
   }
 
   /** 0x1001caf0. Without the parallel flag every playing timeline stops first. */
   play(label: string, flags: number): void {
-    if ((flags & PARALLEL) === 0) this.stop('');
-    const state = this.states.get(label);
-    if (!state) return;
-    if (!this.playing.includes(label)) this.playing.push(label);
-    if (!state.loaded) state.load(this.instant);
-    this.setupPlay(state, flags);
-    this.seek(state, 0);
+    try {
+      if (this.host.apiLog?.enter()) this.host.apiLog.record('PlayTimeline', [label, flags]);
+      if ((flags & PARALLEL) === 0) this.stop('');
+      const key = this.key(label);
+      if (key === null) return;
+      const state = this.states.get(key);
+      if (!state) return;
+      if (!this.playing.includes(key)) this.playing.push(key);
+      if (!state.loaded) state.load(this.instant);
+      if (this.x64) {
+        state.blendRatio = 1;
+        state.stopWhenBlendDone = 0;
+        state.stepped = false;
+        state.blend!.set([1], 0, 0, false);
+      }
+      this.setupPlay(state, flags);
+      this.seek(state, 0);
+    } finally {
+      this.host.apiLog?.leave();
+    }
   }
 
   /** 0x1001e650: stores the flags; difference tracks get a tween reset to 0. */
@@ -148,49 +208,85 @@ export class EmoteTimelineSet {
     if ((flags & DIFFERENCE) === 0) return;
     for (const track of state.tracks) {
       if (track.instant) continue;
-      if (!track.tween) track.tween = new EmoteTween(1);
+      if (!track.tween) track.tween = new EmoteTween(1, this.driverSha256);
       else track.tween.set([0], 0, 0, false);
     }
   }
 
   /** 0x1001cc90. The empty label asks whether any timeline plays. */
   isPlaying(label: string): boolean {
-    if (label === '') return this.playing.length !== 0;
-    return this.playing.includes(label);
+    const key = this.key(label);
+    if (key === '') return this.playing.length !== 0;
+    return key !== null && this.playing.includes(key);
   }
 
   /** 0x1001cdc0. The empty label stops all. */
   stop(label: string): void {
-    if (label === '') {
-      this.playing = [];
-      return;
+    try {
+      if (this.host.apiLog?.enter()) this.host.apiLog.record('StopTimeline', [label]);
+      const key = this.key(label);
+      if (key === '') {
+        this.playing = [];
+        return;
+      }
+      if (key === null) return;
+      if (this.x64) {
+        this.playing = this.playing.filter((name) => name !== key);
+        return;
+      }
+      const i = this.playing.indexOf(key);
+      if (i >= 0) this.removeAt(i);
+    } finally {
+      this.host.apiLog?.leave();
     }
-    const i = this.playing.indexOf(label);
-    if (i >= 0) this.playing.splice(i, 1);
   }
 
   /** 0x1001cf30. Only loaded timelines; the blend tween advances only in the fade step. */
   setBlendRatio(label: string, value: number, frames: number, easing: number, stop: boolean): void {
-    const state = this.states.get(label);
-    if (!state?.loaded || !state.blend) return;
-    state.blend.set([f32(value)], f32(frames), easingPower(easing), this.host.queuing);
-    state.stopWhenBlendDone = stop ? 1 : 0;
+    try {
+      if (this.host.apiLog?.enter())
+        this.host.apiLog.record('SetTimelineBlendRatio', [label, value, frames, easing, stop]);
+      const state = this.find(label);
+      if (!state?.loaded || !state.blend) return;
+      state.blend.set(
+        [f32(value)],
+        f32(frames),
+        easingPower(easing, this.driverSha256),
+        this.host.queuing,
+      );
+      state.stopWhenBlendDone = stop ? 1 : 0;
+    } finally {
+      this.host.apiLog?.leave();
+    }
   }
 
   /** 0x1001d090. */
   getBlendRatio(label: string): number {
-    const state = this.states.get(label);
+    const state = this.find(label);
     return state?.loaded ? state.blendRatio : 0;
   }
 
   /** 0x1001d1c0: `loopBegin >= 0`; an unloaded state reads 0 and counts as looping. */
   isLoop(label: string): boolean {
-    const state = this.states.get(label);
+    const state = this.find(label);
     return state ? state.loopBegin >= 0 : false;
   }
 
   /** 0x1001c9d0 (slot 42). */
+  playingLabelAt(index: number): string {
+    return this.playing[index] ?? '';
+  }
+
+  totalFrameCount(label: string): number {
+    const state = this.find(label);
+    return state && state.loopBegin < 0 ? state.lastTime : 0;
+  }
+
   playingFlagsAt(index: number): number {
+    if (this.x64) {
+      const state = this.states.get(this.playingLabelAt(index));
+      return state ? (state.flags | PARALLEL) >>> 0 : 0;
+    }
     const label = index < this.playing.length ? this.playing[index]! : '';
     const state = this.states.get(label);
     return state ? state.flags | 1 : 0;
@@ -200,15 +296,20 @@ export class EmoteTimelineSet {
     let state = this.states.get(label);
     if (!state) {
       // 0x10020920 inserts a missing key; every playing label is in the map.
-      state = new EmoteTimelineState({
-        label,
-        diff: false,
-        loopBegin: 0,
-        loopEnd: 0,
-        lastTime: 0,
-        variables: [],
-        unread: {},
-      });
+      state = new EmoteTimelineState(
+        this.x64
+          ? null
+          : {
+              label,
+              diff: false,
+              loopBegin: 0,
+              loopEnd: 0,
+              lastTime: 0,
+              variables: [],
+              unread: {},
+            },
+        this.driverSha256,
+      );
       this.states.set(label, state);
     }
     return state;
@@ -216,6 +317,10 @@ export class EmoteTimelineSet {
 
   /** 0x1001e780: positions every track at `time` and starts the segment's transition. */
   seek(state: EmoteTimelineState, time: number): void {
+    if (this.x64) {
+      this.seekX64(state, time);
+      return;
+    }
     const t = f32(time);
     state.frameIndex = [];
     const passing = (state.flags & PASSING) !== 0;
@@ -234,7 +339,12 @@ export class EmoteTimelineSet {
       if (frame.empty) continue;
       const frameCount = Math.max(0, f32(nextTime(frames, index, t) - t - 1));
       if (diff) {
-        track.tween?.set([frame.value], frameCount, easingPower(frame.easing), this.host.queuing);
+        track.tween?.set(
+          [frame.value],
+          frameCount,
+          easingPower(frame.easing, this.driverSha256),
+          this.host.queuing,
+        );
       } else {
         this.host.setVariable(track.label, frame.value, frameCount, frame.easing);
       }
@@ -247,6 +357,10 @@ export class EmoteTimelineSet {
    * too). Passing a keyframe completes the previous transition and starts the next one.
    */
   evaluate(state: EmoteTimelineState, time: number, inclusive: boolean): void {
+    if (this.x64) {
+      this.evaluateX64(state, time, inclusive);
+      return;
+    }
     const t = f32(time);
     const passing = (state.flags & PASSING) !== 0;
     state.tracks.forEach((track, i) => {
@@ -269,7 +383,12 @@ export class EmoteTimelineSet {
         if (!next.empty) {
           const frameCount = Math.max(0, f32(nextTime(frames, index, t) - t - 1));
           if (diff) {
-            track.tween?.set([next.value], frameCount, easingPower(next.easing), this.host.queuing);
+            track.tween?.set(
+              [next.value],
+              frameCount,
+              easingPower(next.easing, this.driverSha256),
+              this.host.queuing,
+            );
           } else {
             this.host.setVariable(track.label, next.value, frameCount, next.easing);
           }
@@ -282,6 +401,7 @@ export class EmoteTimelineSet {
 
   /** 0x1001edf0: blend ratio and difference track tweens. */
   private fade(state: EmoteTimelineState, frames: number): void {
+    if (this.x64 && (state.flags & DIFFERENCE) === 0) return;
     if (state.blend) state.blendRatio = state.blend.step(frames)[0]!;
     for (const track of state.tracks) {
       if (track.instant || !track.tween) continue;
@@ -291,6 +411,10 @@ export class EmoteTimelineSet {
 
   /** 0x1001ee80: advances every playing timeline; loops, ends and removes. */
   advance(frames: number): void {
+    if (this.x64) {
+      this.advanceX64(frames);
+      return;
+    }
     let dt = f32(frames);
     if (dt === 0) return;
     let i = 0;
@@ -300,7 +424,7 @@ export class EmoteTimelineSet {
         this.evaluate(state, f32(state.time + dt), true);
         if (state.flags & DIFFERENCE) this.fade(state, dt);
         if (state.lastTime <= state.time) {
-          this.playing.splice(i, 1);
+          this.removeAt(i);
           continue;
         }
       } else {
@@ -313,7 +437,7 @@ export class EmoteTimelineSet {
         if (state.flags & DIFFERENCE) this.fade(state, dt);
       }
       if (state.stopWhenBlendDone !== 0 && state.blend && !state.blend.busy) {
-        this.playing.splice(i, 1);
+        this.removeAt(i);
         continue;
       }
       i++;
@@ -329,7 +453,7 @@ export class EmoteTimelineSet {
       const state = this.state(this.playing[i]!);
       if (!state.loops) {
         this.evaluate(state, state.lastTime, true);
-        this.playing.splice(i, 1);
+        this.removeAt(i);
         continue;
       }
       state.blend?.skip();
@@ -369,7 +493,7 @@ export class EmoteTimelineSet {
             this.host.setVariable(track.label, frame.value, frame.time, frame.easing);
         }
       });
-      if ((state.flags & PASSING) === 0) this.playing.splice(i, 1);
+      if ((state.flags & PASSING) === 0) this.removeAt(i);
       else i++;
     }
   }
@@ -381,7 +505,10 @@ export class EmoteTimelineSet {
       const state = this.state(name);
       if ((state.flags & DIFFERENCE) === 0) continue;
       for (const track of state.tracks) {
-        if (!track.instant && track.label === label) v = f32(track.value * state.blendRatio + v);
+        if (!track.instant && track.label === label && (!this.x64 || track.tween)) {
+          const product = track.value * state.blendRatio;
+          v = f32((this.x64 ? f32(product) : product) + v);
+        }
       }
     }
     return v;
@@ -408,6 +535,8 @@ export class EmoteTimelineSet {
    * copies the stop flag and the blend tween.
    */
   assignFrom(source: EmoteTimelineSet): void {
+    if (source.driverSha256 !== this.driverSha256)
+      throw Error('emotedriver: cannot assign timelines between DLL builds');
     this.stop('');
     for (const label of source.playing) {
       const from = source.states.get(label);
@@ -418,5 +547,168 @@ export class EmoteTimelineSet {
       to.stopWhenBlendDone = from.stopWhenBlendDone;
       if (from.blend && to.blend) to.blend.copyFrom(from.blend);
     }
+  }
+
+  private seekX64(state: EmoteTimelineState, time: number): void {
+    const t = f32(time);
+    state.frameIndex = [];
+    const passing = (state.flags & PASSING) !== 0;
+    for (const track of state.tracks) {
+      if (passing && track.instant) continue;
+      const diff = (state.flags & DIFFERENCE) !== 0 && !track.instant;
+      const frames = track.frames;
+      let index = 0,
+        content = -1;
+      if (frames.length !== 1) {
+        for (let i = 0; ;) {
+          if (!frames[i]!.empty) content = i;
+          if (frames[i]!.time <= t && t < frames[i + 1]!.time) break;
+          index = ++i;
+          if (i >= frames.length - 1) break;
+        }
+      }
+      state.frameIndex.push(index);
+      if (content < 0) continue;
+      const frame = frames[content]!,
+        fr = frameCountTo(frames, content, t);
+      if (diff)
+        track.tween?.set(
+          [frame.value],
+          fr,
+          easingPower(frame.easing, this.driverSha256),
+          this.host.queuing,
+        );
+      else this.host.setVariable(track.label, frame.value, fr, frame.easing);
+    }
+    state.time = t;
+  }
+
+  private evaluateX64(state: EmoteTimelineState, time: number, inclusive: boolean): void {
+    const t = f32(time);
+    const passing = (state.flags & PASSING) !== 0;
+    state.tracks.forEach((track, k) => {
+      if (passing && track.instant) return;
+      const diff = (state.flags & DIFFERENCE) !== 0 && !track.instant;
+      const frames = track.frames;
+      // With skipped tracks the index vector is shorter than the track list; the native
+      // indexes it by track number regardless.
+      let index = state.frameIndex[k] ?? 0;
+      while (index < frames.length - 1) {
+        const ft = frames[index + 1]!.time;
+        if (inclusive ? t < ft : t <= ft) break;
+        index++;
+        const frame = frames[index]!;
+        if (frame.empty) continue;
+        const fr = frameCountTo(frames, index, t);
+        if (diff)
+          track.tween?.set(
+            [frame.value],
+            fr,
+            easingPower(frame.easing, this.driverSha256),
+            this.host.queuing,
+          );
+        else this.host.setVariable(track.label, frame.value, fr, frame.easing);
+      }
+      state.frameIndex[k] = index;
+    });
+    state.time = t;
+  }
+
+  private advanceX64(frames: number): void {
+    const dt = f32(frames);
+    if (dt === 0) return;
+    let i = 0;
+    while (i < this.playing.length) {
+      const key = this.playing[i]!,
+        state = this.state(key);
+      if (state.loops) {
+        this.fade(state, dt);
+        let d = dt;
+        // A loop end at or before its begin never terminates natively.
+        if (state.loopEnd > state.loopBegin) {
+          while (state.loopEnd <= f32(state.time + d)) {
+            d = f32(d - f32(state.loopEnd - state.time));
+            this.evaluate(state, state.loopEnd, false);
+            this.seek(state, state.loopBegin);
+            state.stepped = true;
+          }
+        }
+        this.evaluate(state, f32(state.time + (d >= 0 ? d : 0)), true);
+      } else {
+        this.evaluate(state, f32(state.time + dt), true);
+        this.fade(state, dt);
+        if (!(state.time < state.lastTime)) {
+          this.removePlaying(key);
+          continue;
+        }
+      }
+      if (this.blendDone(state)) {
+        this.removePlaying(key);
+        continue;
+      }
+      i++;
+    }
+  }
+
+  private blendDone(state: EmoteTimelineState): boolean {
+    return state.stopWhenBlendDone !== 0 && !!state.blend && !state.blend.busy;
+  }
+
+  private removePlaying(key: string): void {
+    this.playing = this.playing.filter((l) => l !== key);
+  }
+
+  step(): void {
+    if (!this.x64) throw Error('emotedriver: timeline step requires the x64 DLL build');
+    let i = 0;
+    while (i < this.playing.length) {
+      const key = this.playing[i]!,
+        state = this.state(key);
+      if (!state.loops || state.stopWhenBlendDone !== 0) {
+        this.evaluate(state, state.lastTime, true);
+        this.removePlaying(key);
+        continue;
+      }
+      if (!state.stepped) {
+        const end = state.loopEnd,
+          remaining = f32(end - state.time);
+        this.evaluate(state, end, false);
+        this.seek(state, state.loopBegin);
+        this.evaluate(state, state.loopBegin, true);
+        this.fade(state, remaining);
+        state.stepped = true;
+      }
+      state.blend?.skip();
+      i++;
+    }
+  }
+
+  fadeIn(label: string, frames: number, easing: number): void {
+    try {
+      if (this.host.apiLog?.enter())
+        this.host.apiLog.record('FadeInTimeline', [label, frames, easing]);
+      if (!this.isPlaying(label)) {
+        this.play(label, PARALLEL | DIFFERENCE);
+        this.setBlendRatio(label, 0, 0, 0, false);
+      }
+      this.setBlendRatio(label, 1, frames, easing, false);
+    } finally {
+      this.host.apiLog?.leave();
+    }
+  }
+
+  fadeOut(label: string, frames: number, easing: number): void {
+    try {
+      if (this.host.apiLog?.enter())
+        this.host.apiLog.record('FadeOutTimeline', [label, frames, easing]);
+      this.setBlendRatio(label, 0, frames, easing, true);
+    } finally {
+      this.host.apiLog?.leave();
+    }
+  }
+
+  private removeAt(index: number): void {
+    if (this.x64) this.removePlaying(this.playing[index]!);
+    else this.playing.splice(index, 1);
   }
 }

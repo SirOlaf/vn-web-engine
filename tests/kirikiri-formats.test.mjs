@@ -13,6 +13,7 @@ import {
 import {PsbFile, PsbResource} from '../dist/formats/kirikiri/psb.js';
 import {
   EMOTE_PSB_KEYS,
+  EMOTE_DRIVER_X64_SHA256,
   applyPsbKeystream,
   decryptPsbBody,
 } from '../dist/formats/kirikiri/psb-filter.js';
@@ -199,6 +200,89 @@ const assertSampleTree = (psb, names) => {
 test('PSB decodes names, scalars, strings, lists, objects and resources', () => {
   const {bytes, names} = samplePsb();
   assertSampleTree(new PsbFile(bytes), names);
+});
+
+function version4Psb(root) {
+  const blocks = {
+    names: concat(intArray([]), intArray([]), intArray([])),
+    strings: intArray([]),
+    stringData: new Uint8Array(),
+    offsets: intArray([0]),
+    lengths: intArray([3]),
+    data: Uint8Array.of(1, 2, 3),
+    extraOffsets: intArray([0]),
+    extraLengths: intArray([2]),
+    extraData: Uint8Array.of(4, 5),
+    root,
+  };
+  const offsets = {};
+  let at = 0x38;
+  for (const [key, block] of Object.entries(blocks)) {
+    offsets[key] = at;
+    at += block.length;
+  }
+  const header = new Uint8Array(0x38),
+    view = new DataView(header.buffer);
+  header.set(new TextEncoder().encode('PSB\0'));
+  view.setUint16(4, 4, true);
+  for (const [offset, key] of [
+    [8, 'names'],
+    [12, 'names'],
+    [16, 'strings'],
+    [20, 'stringData'],
+    [24, 'offsets'],
+    [28, 'lengths'],
+    [32, 'data'],
+    [36, 'root'],
+    [44, 'extraOffsets'],
+    [48, 'extraLengths'],
+    [52, 'extraData'],
+  ])
+    view.setUint32(offset, offsets[key], true);
+  return concat(header, ...Object.values(blocks));
+}
+
+test('x64 PSB shares resource identity, reads extra chunks and filters a copied header', () => {
+  const root = concat(
+    Uint8Array.of(0x20),
+    intArray([0, 2, 4]),
+    Uint8Array.of(0x19, 0, 0x19, 0, 0x22, 0),
+  );
+  const bytes = version4Psb(root),
+    key = 49327924,
+    filtered = bytes.slice();
+  new DataView(filtered.buffer).setUint16(6, 1, true);
+  applyPsbKeystream(key, filtered.subarray(8, 0x38));
+  const before = filtered.slice();
+  const psb = new PsbFile(filtered, {driverSha256: EMOTE_DRIVER_X64_SHA256, headerKey: key});
+  assert.deepEqual(filtered, before);
+  assert.equal(psb.root, psb.root);
+  assert.equal(psb.root[0], psb.root[1]);
+  assert.ok(psb.root[0] instanceof PsbResource);
+  assert.equal(psb.root[0].extra, false);
+  assert.equal(psb.root[2].extra, true);
+  assert.deepEqual([...psb.root[0].bytes], [1, 2, 3]);
+  assert.deepEqual([...psb.root[2].bytes], [4, 5]);
+  assert.throws(
+    () => new PsbFile(filtered, {driverSha256: EMOTE_DRIVER_X64_SHA256}),
+    /filter key is unknown/,
+  );
+  assert.throws(() => new PsbFile(filtered), /Encrypted PSB headers/);
+  assert.throws(() => new PsbFile(bytes, {driverSha256: 'unknown'}), /unsupported DLL build/);
+});
+
+test('PSB keeps default bigint values and x64 safe-integer validation', () => {
+  const bytes = version4Psb(concat(Uint8Array.of(0x0c), u64(0x7fffffffffffffffn)));
+  assert.equal(new PsbFile(bytes).root, 0x7fffffffffffffffn);
+  assert.throws(() => new PsbFile(bytes, {driverSha256: EMOTE_DRIVER_X64_SHA256}), /exceeds 2\^53/);
+  const ordinary = version4Psb(
+    concat(Uint8Array.of(0x20), intArray([0, 2]), Uint8Array.of(0x19, 0, 0x19, 0)),
+  );
+  const psb = new PsbFile(ordinary),
+    tree = psb.root;
+  assert.notEqual(psb.root, tree);
+  assert.notEqual(tree[0], tree[1]);
+  assert.equal(Object.hasOwn(tree[0], 'extra'), false);
 });
 
 test('E-mote keystream matches the runtime key', () => {

@@ -1,3 +1,4 @@
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
 import type {EmoteBustControl} from '../../../../formats/kirikiri/emote-metadata.js';
 import {f32} from './common.js';
 
@@ -16,6 +17,11 @@ export const EMOTE_ANGLE_UNIT = 0.039269909262657166;
 export function emoteSoftAngle(v: number): number {
   const scaled = f32(v * EMOTE_ANGLE_GAIN * EMOTE_ANGLE_UNIT);
   return f32(f32(Math.atan(scaled)) / EMOTE_ANGLE_UNIT);
+}
+
+/** Maps an already scaled float through the CRT atan and the stored angle unit. */
+export function emoteAngleFromScaled(value: number): number {
+  return f32(f32(Math.atan(f32(value))) / EMOTE_ANGLE_UNIT);
 }
 
 /**
@@ -38,6 +44,8 @@ export function emoteGravity(rad: number): [number, number] {
  * (−y − `ofs`, times `scale_y`) through the soft angle mapping.
  */
 export class EmoteBust {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
   /** +0x4 gravity, +0x8 spring, +0xc friction, +0x10 scale_x, +0x14 scale_y. */
   readonly gravity: number;
   readonly spring: number;
@@ -56,7 +64,9 @@ export class EmoteBust {
 
   private readonly initial: EmoteBustControl['param'];
 
-  constructor(control: EmoteBustControl) {
+  constructor(control: EmoteBustControl, driverSha256?: string) {
+    this.driverSha256 = emoteBuild(driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
     this.initial = control.param;
     this.gravity = f32(control.gravity);
     this.spring = f32(control.spring);
@@ -85,6 +95,7 @@ export class EmoteBust {
    * scale (`p+0x24`) and the root rotation in radians. Returns [var_lr, var_ud].
    */
   update(x: number, y: number, frames: number, scale: number, rad: number): [number, number] {
+    if (this.x64) return this.updateX64(x, y, frames, scale, rad);
     const {op, p, pv} = this;
     if (this.first) {
       this.first = false;
@@ -117,6 +128,69 @@ export class EmoteBust {
       ey = f32(scale * f32(op[1]! - p[1]!));
     const lr = emoteSoftAngle(f32(-ex * this.scaleX));
     const ud = emoteSoftAngle(f32((-ey - this.ofs) * this.scaleY));
+    return [lr, ud];
+  }
+
+  /** 0x180027be0. */
+  private updateX64(
+    x: number,
+    y: number,
+    dt: number,
+    scale: number,
+    angle: number,
+  ): [number, number] {
+    let ax: number, ay: number;
+    if (!this.first) {
+      ax = f32(x + this.offset[0]!);
+      ay = f32(y + this.offset[1]!);
+      this.op[0] = ax;
+      this.op[1] = ay;
+    } else {
+      ax = this.op[0]!;
+      ay = this.op[1]!;
+      this.first = false;
+      this.offset[0] = f32(ax - x);
+      this.offset[1] = f32(ay - y);
+    }
+    const a = f32(-angle);
+    const s = f32(Math.sin(a)),
+      c = f32(Math.cos(a));
+    const gyc = f32(c * EMOTE_DOWN[1]),
+      gxc = f32(c * EMOTE_DOWN[0]),
+      gys = f32(s * EMOTE_DOWN[1]),
+      gxs = f32(s * EMOTE_DOWN[0]);
+    const kg = f32(dt * this.gravity),
+      ks = f32(dt * this.spring),
+      kf = f32(dt * this.friction);
+    let vx = f32(f32(f32(ax - this.p[0]!) * ks) + this.pv[0]!);
+    this.pv[0] = vx;
+    vx = f32(f32(f32(gxc - gys) * kg) + vx);
+    let vz = f32(f32(f32(f32(this.op[2]! - this.p[2]!) * ks) + this.pv[2]!) + f32(kg * 0));
+    let vy = f32(f32(f32(f32(ay - this.p[1]!) * ks) + this.pv[1]!) + f32(f32(gyc + gxs) * kg));
+    vx = f32(vx - f32(vx * kf));
+    vy = f32(vy - f32(vy * kf));
+    vz = f32(vz - f32(vz * kf));
+    this.pv[0] = vx;
+    this.pv[1] = vy;
+    this.pv[2] = vz;
+    this.p[0] = f32(f32(vx * dt) + this.p[0]!);
+    this.p[1] = f32(f32(vy * dt) + this.p[1]!);
+    this.p[2] = f32(f32(vz * dt) + this.p[2]!);
+    const lr = emoteAngleFromScaled(
+      f32(
+        f32(
+          f32(f32(-f32(f32(this.op[0]! - this.p[0]!) * scale)) * this.scaleX) * EMOTE_ANGLE_GAIN,
+        ) * EMOTE_ANGLE_UNIT,
+      ),
+    );
+    const ud = emoteAngleFromScaled(
+      f32(
+        f32(
+          f32(f32(f32(-f32(f32(this.op[1]! - this.p[1]!) * scale)) - this.ofs) * this.scaleY) *
+            EMOTE_ANGLE_GAIN,
+        ) * EMOTE_ANGLE_UNIT,
+      ),
+    );
     return [lr, ud];
   }
 }

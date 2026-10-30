@@ -105,7 +105,12 @@ pub unsafe extern "C" fn deform_points(
 
 /// 0x1002d960: corners top-left, top-right, bottom-left, bottom-right.
 #[no_mangle]
-pub unsafe extern "C" fn subdivide_quad(corners: *const f32, columns: u32, rows: u32, out: *mut f32) {
+pub unsafe extern "C" fn subdivide_quad(
+    corners: *const f32,
+    columns: u32,
+    rows: u32,
+    out: *mut f32,
+) {
     let c = |i: usize| *corners.add(i);
     let inv_c = 1.0 / columns as f32;
     let inv_r = 1.0 / rows as f32;
@@ -122,6 +127,173 @@ pub unsafe extern "C" fn subdivide_quad(corners: *const f32, columns: u32, rows:
             let su = 1.0 - uu;
             *at = lx * su + rx * uu;
             *at.add(1) = su * ly + ry * uu;
+            at = at.add(2);
+        }
+    }
+}
+
+// X64 image 80d28bd0…1e051: double accumulation of each x/y pair. SIMD lanes
+// remain independent, preserving the native row/column accumulation order.
+use core::arch::wasm32::{f64x2, f64x2_add, f64x2_extract_lane, f64x2_mul, f64x2_splat};
+
+#[inline(always)]
+fn weights_x64(t: f64) -> [f64; 4] {
+    let s = 1.0 - t;
+    [s * s * s, 3.0 * s * s * t, 3.0 * s * t * t, t * t * t]
+}
+
+#[inline(always)]
+unsafe fn point_x64(cp: *const f32, u: &[f64; 4], v: &[f64; 4], out: *mut f32) {
+    let mut xy = f64x2_splat(0.0);
+    for r in 0..4usize {
+        for c in 0..4usize {
+            let p = cp.add((r * 4 + c) * 2);
+            let point = f64x2(*p as f64, *p.add(1) as f64);
+            let weight = f64x2_splat(u[c] * v[r]);
+            xy = f64x2_add(xy, f64x2_mul(point, weight));
+        }
+    }
+    *out = f64x2_extract_lane::<0>(xy) as f32;
+    *out.add(1) = f64x2_extract_lane::<1>(xy) as f32;
+}
+
+unsafe fn bernstein_table_x64(segments: u32, out: *mut f32) {
+    for i in 0..=segments {
+        let t = (i as f64 / segments as f64) as f32 as f64;
+        let s = (1.0 - t) as f32 as f64;
+        let p = out.add(i as usize * 4);
+        *p = (s * s * s) as f32;
+        *p.add(1) = (3.0 * s * s * t) as f32;
+        *p.add(2) = (3.0 * s * t * t) as f32;
+        *p.add(3) = (t * t * t) as f32;
+    }
+}
+
+#[inline(always)]
+unsafe fn table_point(p: *const f32) -> [f64; 4] {
+    [
+        *p as f64,
+        *p.add(1) as f64,
+        *p.add(2) as f64,
+        *p.add(3) as f64,
+    ]
+}
+
+/// 0x1800586f0: a grid from world-space float32 control points.
+#[no_mangle]
+pub unsafe extern "C" fn evaluate_patch_x64(
+    cp: *const f32,
+    columns: u32,
+    rows: u32,
+    scratch: *mut f32,
+    out: *mut f32,
+) {
+    let u = scratch;
+    let v = scratch.add((columns as usize + 1) * 4);
+    bernstein_table_x64(columns, u);
+    bernstein_table_x64(rows, v);
+    let mut at = out;
+    for j in 0..=rows as usize {
+        let vv = table_point(v.add(j * 4));
+        for i in 0..=columns as usize {
+            let uu = table_point(u.add(i * 4));
+            point_x64(cp, &uu, &vv, at);
+            at = at.add(2);
+        }
+    }
+}
+
+/// Preserve the control-point float store before the double grid accumulation.
+#[no_mangle]
+pub unsafe extern "C" fn evaluate_transformed_patch_x64(
+    cp: *const f32,
+    columns: u32,
+    rows: u32,
+    matrix: *const f64,
+    x: f64,
+    y: f64,
+    scratch: *mut f32,
+    out: *mut f32,
+) {
+    let mut world = [0f32; 32];
+    for i in 0..16usize {
+        let px = *cp.add(i * 2) as f64;
+        let py = *cp.add(i * 2 + 1) as f64;
+        world[i * 2] = (*matrix * px + *matrix.add(1) * py + x) as f32;
+        world[i * 2 + 1] = (*matrix.add(2) * px + *matrix.add(3) * py + y) as f32;
+    }
+    evaluate_patch_x64(world.as_ptr(), columns, rows, scratch, out);
+}
+
+/// 0x180058320: points already in unit patch coordinates, in place.
+#[no_mangle]
+pub unsafe extern "C" fn map_patch_points_x64(cp: *const f32, points: *mut f32, count: u32) {
+    for i in 0..count as usize {
+        let p = points.add(i * 2);
+        let u = weights_x64(*p as f64);
+        let v = weights_x64(*p.add(1) as f64);
+        point_x64(cp, &u, &v, p);
+    }
+}
+
+/// 0x180058130: double offset/products and one float store per coordinate.
+#[no_mangle]
+pub unsafe extern "C" fn affine_points_x64(
+    matrix: *const f64,
+    x: f64,
+    y: f64,
+    points: *mut f32,
+    count: u32,
+) {
+    for i in 0..count as usize {
+        let p = points.add(i * 2);
+        let px = *p as f64 + x;
+        let py = *p.add(1) as f64 + y;
+        *p = (*matrix * px + *matrix.add(1) * py) as f32;
+        *p.add(1) = (*matrix.add(2) * px + *matrix.add(3) * py) as f32;
+    }
+}
+
+/// The x64 ancestor walk: affine float store, then double patch evaluation.
+#[no_mangle]
+pub unsafe extern "C" fn deform_points_x64(
+    cp: *const f32,
+    inverse: *const f32,
+    x: f64,
+    y: f64,
+    points: *mut f32,
+    count: u32,
+) {
+    for i in 0..count as usize {
+        let p = points.add(i * 2);
+        let px = *p as f64 + x;
+        let py = *p.add(1) as f64 + y;
+        let a = (*inverse as f64 * px + *inverse.add(1) as f64 * py) as f32;
+        let b = (*inverse.add(2) as f64 * px + *inverse.add(3) as f64 * py) as f32;
+        point_x64(cp, &weights_x64(a as f64), &weights_x64(b as f64), p);
+    }
+}
+
+/// The x64 quad loop retains double bilinear products until the output store.
+#[no_mangle]
+pub unsafe extern "C" fn subdivide_quad_x64(
+    corners: *const f32,
+    columns: u32,
+    rows: u32,
+    out: *mut f32,
+) {
+    let c = |i: usize| *corners.add(i) as f64;
+    let dv = (1.0 / rows as f64) as f32 as f64;
+    let du = (1.0 / columns as f64) as f32 as f64;
+    let mut at = out;
+    for j in 0..=rows {
+        let v = (j as f64 * dv) as f32 as f64;
+        let iv = (1.0 - v) as f32 as f64;
+        for i in 0..=columns {
+            let u = (i as f64 * du) as f32 as f64;
+            let iu = (1.0 - u) as f32 as f64;
+            *at = (iu * (v * c(4) + c(0) * iv) + u * (c(2) * iv + c(6) * v)) as f32;
+            *at.add(1) = ((c(1) * iv + v * c(5)) * iu + (c(3) * iv + v * c(7)) * u) as f32;
             at = at.add(2);
         }
     }

@@ -19,6 +19,7 @@ import {
 } from '../player/artemis-library.js';
 import {rememberLastPlayed} from '../player/last-played.js';
 import {prepareArtemisLuaCompatibility} from '../game-profiles/artemis.js';
+import {prepareArtemisNativeGraphics} from './artemis-native.js';
 
 /** The Windows version this page reports to games (Windows 10, 10.0). Games that check the
  * version see a supported system instead of the unknown one a browser would report. */
@@ -265,6 +266,7 @@ play.onclick = () => {
     document,
     executableSha256,
     luaSourceOverrides,
+    prepareNativeGraphics: prepareArtemisNativeGraphics,
     files,
     paths,
     storage: storage(saves),

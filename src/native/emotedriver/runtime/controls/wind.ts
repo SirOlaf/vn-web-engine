@@ -1,4 +1,6 @@
 import {f32} from './common.js';
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
+import type {EmoteWindField} from '../interfaces.js';
 
 /** Gust slots of `EPWindControl` (+0x20, 128 × 12 bytes). */
 export const EMOTE_WIND_SLOTS = 128;
@@ -16,7 +18,9 @@ const GUST_CHANCE = 0.0625;
  * whose window (position ± 2 · power) contains x, as an x acceleration of ±power in the
  * travel direction.
  */
-export class EmoteWind {
+export class EmoteWind implements EmoteWindField {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
   /** +0x4, +0x8. */
   readonly start: number;
   readonly goal: number;
@@ -31,7 +35,9 @@ export class EmoteWind {
   readonly position = new Float32Array(EMOTE_WIND_SLOTS);
   readonly power = new Float32Array(EMOTE_WIND_SLOTS);
 
-  constructor(start: number, goal: number) {
+  constructor(start: number, goal: number, driverSha256?: string) {
+    this.driverSha256 = emoteBuild(driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
     this.start = f32(start);
     this.goal = f32(goal);
   }
@@ -48,6 +54,7 @@ export class EmoteWind {
 
   /** 0x1000d780: one sub-step of `frames`. `random` is the shared generator (0x100875ec). */
   update(frames: number, random: () => number): void {
+    if (this.x64) frames = f32(frames);
     this.clock = f32(frames + this.clock);
     if (this.clock >= 0) {
       do {
@@ -58,14 +65,17 @@ export class EmoteWind {
             this.active[i] = 1;
             this.position[i] = this.start;
             const r = random();
-            this.power[i] = f32(r * (this.powerMin - this.powerMax) + this.powerMax);
+            this.power[i] = this.x64
+              ? f32(f32(r * f32(this.powerMin - this.powerMax)) + this.powerMax)
+              : f32(r * (this.powerMin - this.powerMax) + this.powerMax);
           }
         }
       } while (this.clock >= 0);
     }
     for (let i = 0; i < EMOTE_WIND_SLOTS; i++) {
       if (!this.active[i]) continue;
-      const x = f32(frames * this.velocity + this.position[i]!);
+      const movement = this.x64 ? f32(frames * this.velocity) : frames * this.velocity;
+      const x = f32(movement + this.position[i]!);
       this.position[i] = x;
       if (this.velocity > 0 && this.goal < x) this.active[i] = 0;
       if (this.velocity < 0 && this.goal > x) this.active[i] = 0;
@@ -76,9 +86,11 @@ export class EmoteWind {
   query(x: number): number {
     for (let i = 0; i < EMOTE_WIND_SLOTS; i++) {
       if (!this.active[i]) continue;
-      const half = f32(this.power[i]! * 0.5 * 4);
+      const half = this.x64 ? f32(f32(this.power[i]! * 0.5) * 4) : f32(this.power[i]! * 0.5 * 4);
       const p = this.position[i]!;
-      if (p - half < x && x < half + p) return f32(this.power[i]! * (this.velocity < 0 ? -1 : 1));
+      const left = this.x64 ? f32(p - half) : p - half;
+      const right = this.x64 ? f32(half + p) : half + p;
+      if (left < x && x < right) return f32(this.power[i]! * (this.velocity < 0 ? -1 : 1));
     }
     return 0;
   }

@@ -117,7 +117,11 @@ export function unreadKeys(
 const EMPTY: Record<string, PsbValue> = Object.freeze(Object.create(null));
 
 /** Collects conditions that the native loader would abort or warn on but that are tolerated. */
-export class EmoteDiagnostics {
+export interface EmoteDiagnosticSink {
+  add(kind: EmoteDiagnostic['kind'], path: string, text: string): void;
+}
+
+export class EmoteDiagnostics implements EmoteDiagnosticSink {
   private readonly byText = new Map<
     string,
     {kind: EmoteDiagnostic['kind']; path: string; text: string; count: number}

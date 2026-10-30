@@ -1,3 +1,5 @@
+import {emoteBuild, EMOTEDRIVER_X64_SHA256} from '../../build.js';
+
 import type {EmoteEyebrowControl} from '../../../../formats/kirikiri/emote-metadata.js';
 import {f32, ftol} from './common.js';
 import {EmoteGraph, EmoteGraphFollower} from './graph.js';
@@ -11,11 +13,12 @@ export class EmoteEyebrow {
   readonly label: string;
   readonly motion: EmoteGraphFollower;
 
-  constructor(control: EmoteEyebrowControl) {
+  constructor(control: Omit<EmoteEyebrowControl, 'enabled' | 'unread'>, driverSha256?: string) {
+    const build = emoteBuild(driverSha256);
     this.label = control.label;
     this.motion = new EmoteGraphFollower(
-      new EmoteGraph(control.edge, control.node),
-      f32(ftol(control.beginFrame)),
+      new EmoteGraph(control.edge, control.node, build),
+      build === EMOTEDRIVER_X64_SHA256 ? f32(control.beginFrame) : f32(ftol(control.beginFrame)),
     );
   }
 

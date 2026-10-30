@@ -8,6 +8,8 @@ import {objectFitPlacement} from '../../../graphics/object-fit.js';
 import {decodeImageOffThread} from '../../../graphics/image-decode-offload.js';
 import {decodeOpaqueJpeg} from '../../../graphics/browser-jpeg.js';
 import {WebGLDrawTarget} from '../../../graphics/webgl-draw.js';
+import type {SharedGpuImageTarget} from '../../../graphics/gpu-texture-image.js';
+import type {ArtemisNativeGraphics} from '../native-graphics.js';
 import {BrowserWindowsDynamicLibraryHost} from '../../../platform/windows-dynamic-library.js';
 import {BrowserWindowsFolderPaths} from '../../../platform/windows-folder-path.js';
 import {BrowserWindowCaptionHost} from '../../../platform/window-caption.js';
@@ -76,6 +78,10 @@ export interface ArtemisBrowserPlayerOptions {
   readonly files: ArtemisFiles;
   /** Every archive and loose file name ('/'-separated). */
   readonly paths: ReadonlySet<string>;
+  /** Implementation registration is owned by the UI; preparation reads no mutable game state. */
+  readonly prepareNativeGraphics?: (
+    dll: Uint8Array,
+  ) => (target: SharedGpuImageTarget) => ArtemisNativeGraphics;
   readonly storage: ArtemisRuntimeStorage;
   /** The Windows version the page reports to the game; null reports none. */
   readonly windowsVersion: {readonly major: number; readonly minor: number} | null;
@@ -141,6 +147,9 @@ export class ArtemisBrowserPlayer {
   private readonly jumpNames = new Map<string, Promise<ArtemisReadAheadName[]>>();
   private started = false;
   private closed = false;
+  private nativeGraphics: ArtemisNativeGraphics | null = null;
+  private nativeGraphicsFactory: ((target: SharedGpuImageTarget) => ArtemisNativeGraphics) | null =
+    null;
   /** Pointer position in stage coordinates. */
   private pointer = {x: 0, y: 0};
   /** Diagnostic: the topmost hit layer with a registered pointer event. */
@@ -289,12 +298,20 @@ export class ArtemisBrowserPlayer {
       },
       storage: options.storage,
       randomSeed: Math.floor(Date.now() / 1000),
+      prepareNativeGraphics: (dll) => {
+        if (this.closed) throw new Error('Artemis player closed during initialization');
+        this.nativeGraphicsFactory = options.prepareNativeGraphics?.(dll) ?? null;
+      },
+      nativeGraphics: () => this.nativeGraphics,
       createLayers: (host) => {
+        if (this.closed) throw new Error('Artemis player closed during initialization');
         const {width, height} = host.stageSize();
         this.target = new WebGLDrawTarget(this.canvas, width, height);
+        this.nativeGraphics = this.nativeGraphicsFactory?.(this.target) ?? null;
         const {owner, graphics} = createArtemisBrowserLayers({
           executableSha256: hash,
           target: this.target,
+          nativeGraphics: this.nativeGraphics?.graphics,
           raster: createArtemisOrdinaryGpuRaster(hash, trig),
           images: this.surfaces,
           runMode: host,
@@ -400,6 +417,10 @@ export class ArtemisBrowserPlayer {
         ),
       reportError: (message) => report(new TextDecoder('shift_jis').decode(message)),
       ...(options.trace ? {trace: options.trace} : {}),
+    }).then((runtime) => {
+      this.runtime = runtime;
+      if (this.closed) runtime.close();
+      return runtime;
     });
     this.open.catch(() => {});
   }
@@ -815,7 +836,12 @@ export class ArtemisBrowserPlayer {
     void runtime.flushSaves().then(
       () => {
         if (this.closed) return;
-        this.dispose();
+        try {
+          this.dispose();
+        } catch (error) {
+          this.options.exit(error);
+          return;
+        }
         this.options.closed();
       },
       (error: unknown) => this.fail(error),
@@ -823,26 +849,48 @@ export class ArtemisBrowserPlayer {
   }
   private fail(error: unknown): void {
     if (this.closed) return;
-    this.dispose();
+    try {
+      this.dispose();
+    } catch (cleanup) {
+      error = new AggregateError([error, cleanup], 'Artemis failure and cleanup failed');
+    }
     this.options.exit(error);
   }
   dispose(): void {
     if (this.closed) return;
     this.closed = true;
-    if (this.request) cancelAnimationFrame(this.request);
-    this.abort.abort();
-    this.movie.close();
-    this.runtime?.close();
-    this.sound.close();
-    this.shaders.close();
-    this.glyphs.close();
-    void this.glyphBlocks.close().catch(() => {});
-    void this.fonts.close().catch(() => {});
-    void this.surfaces.close().catch(() => {});
-    this.painter.close();
-    this.fontWorker.close();
-    this.target?.dispose();
-    this.domText?.dispose();
-    this.panel.remove();
+    const errors: unknown[] = [];
+    for (const close of [
+      () => {
+        if (this.request) cancelAnimationFrame(this.request);
+      },
+      () => this.abort.abort(),
+      () => this.movie.close(),
+      () => this.runtime?.close(),
+      () => this.sound.close(),
+      () => this.shaders.close(),
+      () => this.glyphs.close(),
+      () => {
+        void this.glyphBlocks.close().catch(() => {});
+      },
+      () => {
+        void this.fonts.close().catch(() => {});
+      },
+      () => {
+        void this.surfaces.close().catch(() => {});
+      },
+      () => this.painter.close(),
+      () => this.fontWorker.close(),
+      () => this.nativeGraphics?.dispose(),
+      () => this.target?.dispose(),
+      () => this.domText?.dispose(),
+      () => this.panel.remove(),
+    ])
+      try {
+        close();
+      } catch (error) {
+        errors.push(error);
+      }
+    if (errors.length) throw new AggregateError(errors, 'Artemis browser retirement failed');
   }
 }

@@ -144,6 +144,7 @@ export async function runSyntheticBrowserProbe({
   fixture = {},
   pageMain,
   runtimeRoot = null,
+  modules = new Map(),
   name = 'vn-webgl-affine',
 }) {
   if (typeof WebSocket !== 'function')
@@ -196,6 +197,11 @@ export async function runSyntheticBrowserProbe({
     }
     // This optional route serves compiled JavaScript only, never assets or arbitrary files.
     const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+    if (modules.has(path)) {
+      response.writeHead(200, {'Content-Type': 'text/javascript', 'Cache-Control': 'no-store'});
+      response.end(modules.get(path));
+      return;
+    }
     if (
       runtimeDirectory !== null &&
       /^\/runtime\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]+\.js$/.test(path)

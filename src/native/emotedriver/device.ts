@@ -1,3 +1,4 @@
+import {EMOTEDRIVER_X86_SHA256 as EMOTEDRIVER_SHA256} from './build.js';
 import type {IDirect3DDevice9, IDirect3DTexture9} from '../d3d9/contract.js';
 import {readEmoteModel, type EmoteModel} from '../../formats/kirikiri/emote-model.js';
 import {EMOTE_PSB_KEYS, decryptPsbBody} from '../../formats/kirikiri/psb-filter.js';
@@ -7,8 +8,7 @@ import {EmoteMotionRenderer} from './runtime/render/renderer.js';
 import type {EmoteShaderBlobs} from './runtime/render/shaders.js';
 
 /** SHA-256 of the `emotedriver.dll` build this implementation reproduces. */
-export const EMOTEDRIVER_SHA256 =
-  'a3b693b605d67812e489b1fb62cd341012b5514fc9114a032fee4685e70b3a86';
+export {EMOTEDRIVER_SHA256};
 
 /** What the player core receives for a new player (PEmotePlayer ctor 0x10001880). */
 export interface EmotePlayerContext {

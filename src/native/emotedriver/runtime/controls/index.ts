@@ -2,7 +2,13 @@ import type {
   EmoteDisabledControl,
   EmoteMetadata,
 } from '../../../../formats/kirikiri/emote-metadata.js';
-import type {EmoteControlHost, EmoteControlSet, EmoteControlVariableType} from '../interfaces.js';
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
+import type {
+  EmoteControlHost,
+  EmoteControlSet,
+  EmoteControlVariableType,
+  EmotePhysicsForce,
+} from '../interfaces.js';
 import {EmoteBust} from './bust.js';
 import {f32} from './common.js';
 import {EmoteEye} from './eye.js';
@@ -20,6 +26,7 @@ export {EmoteEyebrow} from './eyebrow.js';
 export {EmoteGraph, EmoteGraphFollower, type EmoteGraphSegment} from './graph.js';
 export {EmoteLoop} from './loop.js';
 export {EmoteMouth} from './mouth.js';
+export {EmoteOrbit, type EmoteOrbitSettings} from './orbit.js';
 export {EmotePendulum, type EmotePendulumOutput} from './pendulum.js';
 export {EmoteXorshift128} from './random.js';
 export {EmoteSelector, type EmoteSelectorTransition} from './selector.js';
@@ -42,6 +49,7 @@ export const emoteSharedRandom = new EmoteXorshift128();
 
 /** Options of `createEmoteControls` beyond the `EmoteControlSetFactory` signature. */
 export interface EmoteControlsOptions {
+  readonly driverSha256?: string;
   /** Generator for blinks and wind; defaults to `emoteSharedRandom`. */
   readonly random?: () => number;
   /**
@@ -98,6 +106,8 @@ function write(host: EmoteControlHost, label: string, value: number): void {
  * `stepPhysics` with the whole frame count.
  */
 export class EmoteControls implements EmoteControlSet {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
   readonly eyes: readonly EmoteEye[];
   readonly eyebrows: readonly EmoteEyebrow[];
   readonly mouths: readonly EmoteMouth[];
@@ -112,7 +122,17 @@ export class EmoteControls implements EmoteControlSet {
   /** PSB list index of each enabled entry, per binding type. */
   private readonly bindings: Record<EmoteControlVariableType, {label: string; index: number}[]>;
 
+  setBlinkEnabled(enabled: boolean): void {
+    for (const eye of this.eyes) eye.setBlinkEnabled(enabled);
+  }
+
+  getBlinkEnabled(): boolean {
+    return this.eyes.some((eye) => eye.blinkEnabled !== 0);
+  }
+
   constructor(metadata: EmoteMetadata, options: EmoteControlsOptions = {}) {
+    this.driverSha256 = emoteBuild(options.driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
     this.random = options.random ?? (() => emoteSharedRandom.next());
     const transition = options.transition ?? (() => null);
     const physics = <T>(control: T, baseLayer: string) => ({
@@ -123,13 +143,13 @@ export class EmoteControls implements EmoteControlSet {
       prevY: 0,
     });
     this.busts = enabled(metadata.bustControl).map(({control: c}) => ({
-      ...physics(new EmoteBust(c), c.baseLayer),
+      ...physics(new EmoteBust(c, this.driverSha256), c.baseLayer),
       lr: c.var_lr,
       ud: c.var_ud,
     }));
     const pendulums = (list: EmoteMetadata['hairControl']) =>
       enabled(list).map(({control: c}) => ({
-        ...physics(new EmotePendulum(c), c.baseLayer),
+        ...physics(new EmotePendulum(c, this.driverSha256), c.baseLayer),
         lr: c.var_lr,
         lrm: c.var_lrm,
         ud: c.var_ud,
@@ -138,14 +158,18 @@ export class EmoteControls implements EmoteControlSet {
     this.hair = pendulums(metadata.hairControl);
     this.parts = pendulums(metadata.partsControl);
     const eyes = enabled(metadata.eyeControl);
-    this.eyes = eyes.map(({control}) => new EmoteEye(control, this.random));
+    this.eyes = eyes.map(({control}) => new EmoteEye(control, this.random, this.driverSha256));
     const brows = enabled(metadata.eyebrowControl);
-    this.eyebrows = brows.map(({control}) => new EmoteEyebrow(control));
+    this.eyebrows = brows.map(({control}) => new EmoteEyebrow(control, this.driverSha256));
     const mouths = enabled(metadata.mouthControl);
-    this.mouths = mouths.map(({control}) => new EmoteMouth(control));
-    const selectors = (metadata.selectorControl ?? []).map((control, index) => ({control, index}));
-    this.selectors = selectors.map(({control}) => new EmoteSelector(control, transition));
-    this.loops = enabled(metadata.loopControl).map(({control}) => new EmoteLoop(control));
+    this.mouths = mouths.map(({control}) => new EmoteMouth(control, this.driverSha256));
+    const selectors = enabled(metadata.selectorControl ?? []);
+    this.selectors = selectors.map(
+      ({control}) => new EmoteSelector(control, transition, this.driverSha256),
+    );
+    this.loops = this.x64
+      ? []
+      : enabled(metadata.loopControl ?? []).map(({control}) => new EmoteLoop(control));
     this.bindings = {
       4: eyes.map(({control, index}) => ({label: control.label, index})),
       5: brows.map(({control, index}) => ({label: control.label, index})),
@@ -244,7 +268,7 @@ export class EmoteControls implements EmoteControlSet {
 
   /** 0x1000d630 (from `StartWind` 0x1001c340): a new wind, gusts cleared. */
   createWind(start: number, goal: number): void {
-    this.wind = new EmoteWind(start, goal);
+    this.wind = new EmoteWind(start, goal, this.driverSha256);
   }
 
   /** 0x1000d690. */
@@ -272,15 +296,34 @@ export class EmoteControls implements EmoteControlSet {
     if (total === 0) return;
     for (const entry of this.busts) {
       const out = {lr: 0, ud: 0};
-      drive(host, entry, total, (x, y, step, rad) => {
-        [out.lr, out.ud] = entry.control.update(x, y, step, f32(host.bustScale), rad);
-      });
+      drive(
+        host,
+        entry,
+        total,
+        (x, y, step, rad) => {
+          [out.lr, out.ud] = entry.control.update(x, y, step, f32(host.bustScale), rad);
+        },
+        this.x64,
+        this.x64 ? host.outerForces?.bust : undefined,
+      );
       if (Math.abs(out.lr) <= PHYSICS_REST && Math.abs(out.ud) <= PHYSICS_REST) out.lr = out.ud = 0;
       write(host, entry.lr, out.lr);
       write(host, entry.ud, out.ud);
     }
-    this.drivePendulums(host, this.hair, host.hairScale, total);
-    this.drivePendulums(host, this.parts, host.partsScale, total);
+    this.drivePendulums(
+      host,
+      this.hair,
+      host.hairScale,
+      total,
+      this.x64 ? host.outerForces?.hair : undefined,
+    );
+    this.drivePendulums(
+      host,
+      this.parts,
+      host.partsScale,
+      total,
+      this.x64 ? host.outerForces?.parts : undefined,
+    );
   }
 
   private drivePendulums(
@@ -288,12 +331,19 @@ export class EmoteControls implements EmoteControlSet {
     list: readonly PendulumEntry[],
     scale: number,
     frames: number,
+    force?: EmotePhysicsForce,
   ): void {
     const s = f32(scale);
     for (const entry of list) {
       const {out} = entry;
-      drive(host, entry, frames, (x, y, step, rad) =>
-        entry.control.update(x, y, step, s, rad, this.wind, out),
+      if (this.x64) out.lr = out.lrm = out.ud = 0;
+      drive(
+        host,
+        entry,
+        frames,
+        (x, y, step, rad) => entry.control.update(x, y, step, s, rad, this.wind, out),
+        this.x64,
+        force,
       );
       if (
         Math.abs(out.lr) <= PHYSICS_REST &&
@@ -312,14 +362,24 @@ export class EmoteControls implements EmoteControlSet {
    * return to their loaded `param` state and first-step flags; eyes, eyebrows, mouths and
    * selectors finish their requests (0x10017020, 0x10018760, 0x10019220, 0x1001a680).
    */
-  skip(): void {
+  skip(host?: EmoteControlHost): void {
+    if (this.x64 && !host) throw Error('emotedriver: x64 physics reset requires its control host');
     for (const e of this.busts) {
       e.control.reset();
       e.first = true;
+      if (this.x64) {
+        write(host!, e.lr, 0);
+        write(host!, e.ud, 0);
+      }
     }
     for (const e of [...this.hair, ...this.parts]) {
       e.control.reset();
       e.first = true;
+      if (this.x64) {
+        write(host!, e.lr, 0);
+        write(host!, e.lrm, 0);
+        write(host!, e.ud, 0);
+      }
     }
     for (const eye of this.eyes) eye.motion.skip();
     for (const brow of this.eyebrows) brow.motion.skip();
@@ -349,6 +409,8 @@ export class EmoteControls implements EmoteControlSet {
    */
   assignState(source: EmoteControlSet): void {
     if (!(source instanceof EmoteControls) || source === this) return;
+    if (source.driverSha256 !== this.driverSha256)
+      throw Error('emotedriver: cannot assign controls between DLL builds');
     const copy = <T extends {label: string; assign(s: T): void}>(
       from: readonly T[],
       to: readonly T[],
@@ -368,15 +430,23 @@ function drive<T>(
   entry: PhysicsEntry<T>,
   frames: number,
   step: (x: number, y: number, frames: number, rad: number) => void,
+  x64 = false,
+  force?: EmotePhysicsForce,
 ): void {
-  const [x, y] = basePosition(host, entry.baseLayer, entry.prevX, entry.prevY);
+  const point = x64 ? host.physicsBasePosition?.(entry.baseLayer) : null;
+  const [x, y] = x64
+    ? [f32((point?.x ?? 0) + (force?.x ?? 0)), f32((point?.y ?? 0) + (force?.y ?? 0))]
+    : basePosition(host, entry.baseLayer, entry.prevX, entry.prevY);
   // Degrees → radians with the double 2π (0x10072760) and 360 (0x10072758).
-  const rad = () => f32((f32(host.rootAngle) * 6.2831854820251465) / 360);
+  const rad = () =>
+    x64
+      ? f32(host.physicsAngle ?? f32(f32(f32(host.rootAngle) * 6.2831854820251465) / 360))
+      : f32((f32(host.rootAngle) * 6.2831854820251465) / 360);
   if (entry.first) {
     entry.first = false;
-    step(x, y, frames, rad());
+    step(x, y, x64 ? 0 : frames, rad());
   } else {
-    const limit = frames - PHYSICS_EPSILON;
+    const limit = x64 ? f32(frames - PHYSICS_EPSILON) : frames - PHYSICS_EPSILON;
     if (limit > 0) {
       let t = 0;
       do {
@@ -384,8 +454,12 @@ function drive<T>(
         const sub = rest <= SUBSTEP_LIMIT ? rest : EMOTE_SUBSTEP;
         t = f32(sub + t);
         const ratio = f32(t / frames);
-        const xi = f32(ratio * x + entry.prevX * (1 - ratio));
-        const yi = f32((1 - ratio) * entry.prevY + y * ratio);
+        const xi = x64
+          ? f32(f32(f32(1 - ratio) * entry.prevX) + f32(ratio * x))
+          : f32(ratio * x + entry.prevX * (1 - ratio));
+        const yi = x64
+          ? f32(f32(f32(1 - ratio) * entry.prevY) + f32(ratio * y))
+          : f32((1 - ratio) * entry.prevY + y * ratio);
         step(xi, yi, sub, rad());
       } while (t < limit);
     }

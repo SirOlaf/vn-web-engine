@@ -1,11 +1,22 @@
 import {ByteView} from '../../core/binary.js';
+import {applyPsbKeystream, emoteDriverImage, EMOTE_DRIVER_X64_SHA256} from './psb-filter.js';
 
 /** A resource chunk referenced from the tree. */
 export class PsbResource {
+  readonly bytes: Uint8Array;
+  /** Present on the x64 resource layout; ordinary resources have false. */
+  declare readonly extra?: boolean;
+  constructor(index: number, bytes: Uint8Array);
+  constructor(index: number, extra: boolean, bytes: Uint8Array);
   constructor(
     readonly index: number,
-    readonly bytes: Uint8Array,
-  ) {}
+    bytesOrExtra: Uint8Array | boolean,
+    bytes?: Uint8Array,
+  ) {
+    this.bytes = typeof bytesOrExtra === 'boolean' ? bytes! : bytesOrExtra;
+    if (typeof bytesOrExtra === 'boolean')
+      Object.defineProperty(this, 'extra', {value: bytesOrExtra, enumerable: true});
+  }
 }
 export type PsbValue =
   null | boolean | number | bigint | string | PsbResource | readonly PsbValue[] | PsbObject;
@@ -13,10 +24,17 @@ export interface PsbObject {
   readonly [key: string]: PsbValue;
 }
 
+export interface PsbReadOptions {
+  readonly driverSha256?: string;
+  /** Header-filter key; a filtered x64 header requires an explicitly supplied key. */
+  readonly headerKey?: number;
+}
+
 /**
  * PSB ("packed struct binary", M2 / E-mote) tree reader. Covers the unencrypted header layout
  * of versions 2 to 4 and the value types those files use for scenarios (`.scn`) and E-mote
- * data; version-4 extra chunks and encrypted headers are rejected. E-mote files carry a body
+ * data. The exact x64 E-mote image enables filtered headers, version-4 extra chunks,
+ * shared resource identity and its safe-integer policy. E-mote files carry a body
  * filter that `decryptPsbBody` (psb-filter.ts) removes first.
  *
  * Layout: names are stored as a double-array trie (charset, tree, name indices); strings as an
@@ -33,41 +51,87 @@ export class PsbFile {
   private readonly chunkLengths: readonly number[];
   private readonly chunkData: number;
   private readonly rootOffset: number;
+  private readonly x64: boolean;
+  private readonly extraOffsets: readonly number[];
+  private readonly extraLengths: readonly number[];
+  private readonly extraData: number;
+  private readonly resources = new Map<number, PsbResource>();
+  private readonly parsedRoot: PsbValue | undefined;
   private readonly strings = new Map<number, string>();
   private readonly utf8 = new TextDecoder('utf-8', {fatal: true});
 
-  constructor(readonly bytes: Uint8Array) {
+  constructor(
+    readonly bytes: Uint8Array,
+    options: PsbReadOptions = {},
+  ) {
+    this.x64 = emoteDriverImage(options.driverSha256) === EMOTE_DRIVER_X64_SHA256;
     const data = (this.data = new ByteView(bytes, {littleEndian: true}));
     if (data.ascii(0, 4) !== 'PSB\0') throw new Error('Not a PSB file');
     this.version = data.u16(4);
     if (this.version < 2 || this.version > 4)
       throw new Error(`Unsupported PSB version ${this.version}`);
-    if (data.u16(6)) throw new Error('Encrypted PSB headers are not supported');
-    const names = data.u32(12);
-    this.stringOffsets = this.intArray(data.u32(16)).values;
-    this.stringData = data.u32(20);
-    this.chunkOffsets = this.intArray(data.u32(24)).values;
-    this.chunkLengths = this.intArray(data.u32(28)).values;
-    this.chunkData = data.u32(32);
-    this.rootOffset = data.u32(36);
+    const flags = data.u16(6);
+    let fields = data;
+    if (this.x64) {
+      const header = data.range(0, this.version >= 4 ? 0x38 : 0x2c).slice();
+      if (flags & ~1) throw Error(`Unsupported PSB filter flags ${flags}`);
+      if (flags & 1) {
+        if (options.headerKey === undefined) throw Error('PSB header filter key is unknown');
+        applyPsbKeystream(options.headerKey, header.subarray(8));
+      }
+      fields = new ByteView(header, {littleEndian: true});
+    } else if (flags) throw new Error('Encrypted PSB headers are not supported');
+    const names = fields.u32(12);
+    this.stringOffsets = this.intArray(fields.u32(16)).values;
+    this.stringData = fields.u32(20);
+    this.chunkOffsets = this.intArray(fields.u32(24)).values;
+    this.chunkLengths = this.intArray(fields.u32(28)).values;
+    this.chunkData = fields.u32(32);
+    this.rootOffset = fields.u32(36);
+    this.extraOffsets = this.x64 && this.version >= 4 ? this.intArray(fields.u32(0x2c)).values : [];
+    this.extraLengths = this.x64 && this.version >= 4 ? this.intArray(fields.u32(0x30)).values : [];
+    this.extraData = this.x64 && this.version >= 4 ? fields.u32(0x34) : 0;
     const charset = this.intArray(names),
       tree = this.intArray(charset.end),
       indices = this.intArray(tree.end);
     this.names = indices.values.map((index, i) =>
       decodeName(charset.values, tree.values, index, i),
     );
+    if (this.x64) {
+      for (let i = 0; i < this.stringOffsets.length; i++) this.string(i);
+      for (const [offsets, lengths, base] of [
+        [this.chunkOffsets, this.chunkLengths, this.chunkData],
+        [this.extraOffsets, this.extraLengths, this.extraData],
+      ] as const) {
+        if (offsets.length !== lengths.length) throw Error('PSB resource tables differ in length');
+        offsets.forEach((offset, index) => data.check(base + offset, lengths[index]!));
+      }
+      this.parsedRoot = this.value(this.rootOffset);
+    }
   }
 
   get root(): PsbValue {
-    return this.value(this.rootOffset);
+    return this.x64 ? this.parsedRoot! : this.value(this.rootOffset);
   }
 
-  resource(index: number): PsbResource {
-    const offset = this.chunkOffsets[index],
-      length = this.chunkLengths[index];
+  resource(index: number, extra = false): PsbResource {
+    if (!Number.isSafeInteger(index) || index < 0)
+      throw Error(`PSB resource ${index} out of range`);
+    const key = extra ? -1 - index : index;
+    if (this.x64) {
+      const cached = this.resources.get(key);
+      if (cached) return cached;
+    }
+    const offset = (extra ? this.extraOffsets : this.chunkOffsets)[index],
+      length = (extra ? this.extraLengths : this.chunkLengths)[index];
     if (offset === undefined || length === undefined)
       throw new Error(`PSB resource ${index} out of range`);
-    return new PsbResource(index, this.data.range(this.chunkData + offset, length));
+    const bytes = this.data.range((extra ? this.extraData : this.chunkData) + offset, length);
+    const resource = this.x64
+      ? new PsbResource(index, extra, bytes)
+      : new PsbResource(index, bytes);
+    if (this.x64) this.resources.set(key, resource);
+    return resource;
   }
 
   string(index: number): string {
@@ -91,7 +155,12 @@ export class PsbFile {
     if (type === 0x04) return 0;
     if (type >= 0x05 && type <= 0x0c) return this.signed(offset + 1, type - 0x04);
     if (type >= 0x0d && type <= 0x14) return this.intArray(offset).values;
-    if (type >= 0x15 && type <= 0x18) return this.string(this.unsigned(offset + 1, type - 0x14));
+    if (type >= 0x15 && type <= 0x18) {
+      const index = this.unsigned(offset + 1, type - 0x14);
+      if (this.x64 && this.stringOffsets[index] === undefined)
+        throw Error(`PSB string out of range at ${offset}`);
+      return this.string(index);
+    }
     if (type >= 0x19 && type <= 0x1c) return this.resource(this.unsigned(offset + 1, type - 0x18));
     if (type === 0x1d) return 0;
     if (type === 0x1e) return data.f32(offset + 1);
@@ -113,6 +182,8 @@ export class PsbFile {
       });
       return object;
     }
+    if (this.x64 && type >= 0x22 && type <= 0x25 && this.version >= 4)
+      return this.resource(this.unsigned(offset + 1, type - 0x21), true);
     throw new Error(`Unsupported PSB value type 0x${type.toString(16)} at ${offset}`);
   }
 
@@ -146,6 +217,11 @@ export class PsbFile {
     let value = 0n;
     for (let i = width - 1; i >= 0; i--) value = (value << 8n) | BigInt(bytes[i]!);
     value = BigInt.asIntN(width * 8, value);
+    if (
+      this.x64 &&
+      (value < BigInt(Number.MIN_SAFE_INTEGER) || value > BigInt(Number.MAX_SAFE_INTEGER))
+    )
+      throw Error(`PSB integer at ${offset} exceeds 2^53`);
     return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)
       ? Number(value)
       : value;

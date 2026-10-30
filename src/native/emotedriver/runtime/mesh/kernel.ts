@@ -160,4 +160,9 @@ export function subdivideQuad(
 }
 
 /** The TypeScript kernel. */
-export const emoteMeshKernelJs: EmoteMeshKernel = {evaluatePatch, deformPoints, subdivideQuad};
+export const emoteMeshKernelJs: EmoteMeshKernel = {
+  accelerated: false,
+  evaluatePatch,
+  deformPoints,
+  subdivideQuad,
+};

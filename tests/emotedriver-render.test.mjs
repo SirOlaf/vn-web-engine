@@ -8,6 +8,11 @@ import {
   EmoteMotionRenderer,
   emoteMultiplyColor,
 } from '../dist/native/emotedriver/runtime/render/renderer.js';
+import {
+  buildBlockDrawList,
+  fillBlockDrawItem,
+  buildScalarDrawList,
+} from '../dist/native/emotedriver/runtime/render/draw-list.js';
 import {loadEmoteTexture} from '../dist/native/emotedriver/runtime/render/texture.js';
 import {
   d3dxMatrixLookAtLH,
@@ -323,6 +328,119 @@ function drawPhase(log) {
   const end = log.findIndex((e, i) => i > start && e[0] === 'setFVF' && e[1] === 0x44);
   return log.slice(start + 1, end);
 }
+
+test('alternate draw hosts preserve native opacity flags and stencil list ownership', () => {
+  const neutral = 0x808080ff;
+  const colors = Uint32Array.of(neutral, 0x808080fe, 0x808080fd, 0x808080fb);
+  const pool = new Map();
+  const block = {
+    list: [],
+    filled: new WeakSet(),
+    itemOf(n) {
+      if (!pool.has(n)) pool.set(n, {colors: new Uint32Array(4), children: []});
+      return pool.get(n);
+    },
+    build(clip, color, collect) {
+      buildBlockDrawList(this, clip, color, collect);
+    },
+    fillItem(item, n, clip, color) {
+      fillBlockDrawItem(this, item, n, clip, color);
+    },
+  };
+  const image = node({colors, drawFlags: 2});
+  const child = node({type: 3, stencilChild: true, child: clipOf([node()])});
+  const mask = node({type: 12, stencilType: 4, compositeMaskNodes: [image, child]});
+  const clip = clipOf([image, mask, child], {stencilCompositeNodes: [2]});
+  const oldBlockChildren = block.itemOf(mask).children;
+  block.build(clip, neutral, null);
+  assert.equal(block.itemOf(image).flags & 2, 2); // The x86 alpha reduction is OR.
+  assert.notEqual(block.itemOf(mask).children, oldBlockChildren);
+  assert.deepEqual(block.itemOf(mask).children, [
+    block.itemOf(mask),
+    block.itemOf(image),
+    ...block.itemOf(child).children,
+  ]);
+
+  const makeNode = (extra = {}) => ({
+    type: 0,
+    drawn: false,
+    visible: true,
+    drawable: true,
+    hidden: false,
+    inheritMask: 0,
+    sub: null,
+    stencilVisible: false,
+    maskLayer: false,
+    item: {colors: new Uint32Array(4), composite: []},
+    stencilType: 0,
+    stencilParent: null,
+    masks: [],
+    id: 1,
+    coordinate: 0,
+    layer: null,
+    cur: {bm: 0, bmParam: 0},
+    z: 0,
+    texture: 0,
+    file: null,
+    source: null,
+    attr: 2,
+    left: 0,
+    top: 0,
+    w: 64,
+    h: 32,
+    resolution: 1,
+    opacity: 255,
+    scalarColor: false,
+    defaultColor: false,
+    colors,
+    meshKind: 0,
+    mstate: null,
+    grid: null,
+    ...extra,
+  });
+  const scalarImage = makeNode();
+  const leaf = {colors: new Uint32Array(4), composite: []};
+  const calls = [];
+  const scalarChild = makeNode({
+    type: 3,
+    stencilVisible: true,
+    inheritMask: 0x200,
+    sub: {
+      buildDrawList(color, collector) {
+        calls.push(color);
+        collector.push(leaf);
+      },
+    },
+  });
+  const scalarMask = makeNode({type: 12, stencilType: 4, masks: [scalarImage, scalarChild]});
+  const scalar = {
+    jumped: false,
+    color: neutral,
+    layerNodes: [null, scalarImage, scalarMask, scalarChild],
+    order: [0, 1, 2],
+    stencilNodes: [scalarMask],
+    top: {drawList: []},
+    clipFlags: 0,
+    grayscaleMode: 0,
+    grayscaleLevel: 0,
+    effectMode: 0,
+    effectLevel: 0,
+    buildDrawList(color, collector) {
+      buildScalarDrawList(this, color, collector);
+    },
+  };
+  const oldScalarComposite = scalarMask.item.composite;
+  const collector = [];
+  scalar.buildDrawList(neutral, collector);
+  assert.equal(scalarImage.item.attr & 2, 0); // The x64 alpha reduction is AND.
+  assert.equal(scalarMask.item.composite, oldScalarComposite);
+  assert.deepEqual(scalarMask.item.composite, [scalarMask.item, scalarImage.item, leaf]);
+  assert.deepEqual(collector, [leaf, scalarMask.item, scalarImage.item]);
+  assert.deepEqual(calls, [neutral]);
+  assert.deepEqual(scalar.top.drawList, [scalarImage.item]);
+  assert.equal(scalarChild.item.alphaScale, 1);
+  assert.equal(scalarChild.item.alphaOffset, 0);
+});
 
 test('device init: caps, format checks, shader level and render-target probe', () => {
   const {blobs} = syntheticBlobs();

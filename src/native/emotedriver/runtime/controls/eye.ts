@@ -1,3 +1,5 @@
+import {emoteBuild, EMOTEDRIVER_X64_SHA256, type EmoteBuild} from '../../build.js';
+
 import type {EmoteEyeControl} from '../../../../formats/kirikiri/emote-metadata.js';
 import {f32, ftol} from './common.js';
 import {EmoteGraph, EmoteGraphFollower} from './graph.js';
@@ -23,6 +25,8 @@ export const EmoteBlinkState = {
  * [beginFrame, endFrame].
  */
 export class EmoteEye {
+  readonly driverSha256: EmoteBuild;
+  private readonly x64: boolean;
   readonly label: string;
   /** +0x4, +0xc. */
   readonly beginFrame: number;
@@ -32,7 +36,7 @@ export class EmoteEye {
   readonly intervalMax: number;
   readonly blinkFrameCount: number;
   /** +0x94: `blinkEnabled` stored as 0 or 1. */
-  readonly blinkEnabled: number;
+  blinkEnabled: number;
   readonly motion: EmoteGraphFollower;
   /** +0x88, +0x8c, +0x90. */
   blinkState: number = EmoteBlinkState.open;
@@ -40,16 +44,22 @@ export class EmoteEye {
   blinkTimer: number;
 
   /** `random` is the shared generator (0x10005190); the constructor draws one interval. */
-  constructor(control: EmoteEyeControl, random: () => number) {
+  constructor(
+    control: Omit<EmoteEyeControl, 'enabled' | 'unread'>,
+    private readonly random: () => number,
+    driverSha256?: string,
+  ) {
+    this.driverSha256 = emoteBuild(driverSha256);
+    this.x64 = this.driverSha256 === EMOTEDRIVER_X64_SHA256;
     this.label = control.label;
-    this.beginFrame = ftol(control.beginFrame);
-    this.endFrame = ftol(control.endFrame);
+    this.beginFrame = this.x64 ? f32(control.beginFrame) : ftol(control.beginFrame);
+    this.endFrame = this.x64 ? f32(control.endFrame) : ftol(control.endFrame);
     this.intervalMin = f32(control.blinkIntervalMin);
     this.intervalMax = f32(control.blinkIntervalMax);
     this.blinkFrameCount = f32(control.blinkFrameCount);
     this.blinkEnabled = control.blinkEnabled ? 1 : 0;
     this.motion = new EmoteGraphFollower(
-      new EmoteGraph(control.edge, control.node),
+      new EmoteGraph(control.edge, control.node, this.driverSha256),
       f32(this.beginFrame),
     );
     this.blinkValue = f32(this.beginFrame);
@@ -57,7 +67,21 @@ export class EmoteEye {
   }
 
   /** 0x10005a10: rand · (max − min) + min. */
+  setBlinkEnabled(enabled: boolean): void {
+    if (!this.x64) throw Error('emotedriver: blink API requires the x64 DLL build');
+    const value = enabled ? 1 : 0;
+    if (value === this.blinkEnabled) return;
+    this.blinkEnabled = value;
+    if (value === 0) {
+      this.blinkState = EmoteBlinkState.open;
+      this.blinkValue = this.beginFrame;
+      this.blinkTimer = this.interval(this.random);
+    }
+  }
+
   private interval(random: () => number): number {
+    if (this.x64)
+      return f32(f32(random() * f32(this.intervalMax - this.intervalMin)) + this.intervalMin);
     return f32(random() * (this.intervalMax - this.intervalMin) + this.intervalMin);
   }
 
@@ -68,6 +92,7 @@ export class EmoteEye {
 
   /** 0x10005520: one sub-step of `frames`; returns the variable value. */
   update(frames: number, random: () => number): number {
+    if (this.x64) return this.updateX64(frames, random);
     this.motion.advance(frames);
     const span = this.endFrame - this.beginFrame;
     // Blink speed: frames · 2.5 / blinkFrameCount, times the frame span.
@@ -106,12 +131,71 @@ export class EmoteEye {
         break;
       }
     }
+    return this.output();
+  }
+
+  output(): number {
     const value = this.motion.value;
     const begin = f32(this.beginFrame),
       end = f32(this.endFrame);
-    if (begin <= value && value <= end)
-      return f32(((end - value) * (this.blinkValue - begin)) / span + value);
+    if (begin <= value && value <= end) {
+      if (this.x64)
+        return f32(
+          f32(f32(f32(this.blinkValue - begin) * f32(end - value)) / f32(end - begin)) + value,
+        );
+      return f32(
+        ((end - value) * (this.blinkValue - begin)) / (this.endFrame - this.beginFrame) + value,
+      );
+    }
     return value;
+  }
+
+  /** x64 0x180028ab0: same-call blink phase transitions and float stores. */
+  private updateX64(frames: number, random: () => number): number {
+    const dt = f32(frames);
+    this.motion.advance(dt);
+    const speed = f32(f32(dt * 2.5) / this.blinkFrameCount);
+    const range = f32(this.endFrame - this.beginFrame);
+    for (;;) {
+      if (this.blinkState === 0) {
+        if (this.blinkEnabled !== 0 && Math.trunc(this.blinkValue) === this.beginFrame) {
+          this.blinkTimer = f32(this.blinkTimer - dt);
+          if (this.blinkTimer <= 0) {
+            this.blinkState = 10;
+            continue;
+          }
+        }
+        break;
+      }
+      if (this.blinkState === 10) {
+        this.blinkValue = f32(this.blinkValue + f32(range * speed));
+        if (this.blinkValue >= this.endFrame) {
+          this.blinkState = 11;
+          this.blinkValue = this.endFrame;
+          this.blinkTimer = f32(this.blinkFrameCount / 5);
+        }
+        break;
+      }
+      if (this.blinkState === 11) {
+        this.blinkTimer = f32(this.blinkTimer - dt);
+        if (this.blinkTimer <= 0) {
+          this.blinkState = 12;
+          this.blinkTimer = this.interval(random);
+        }
+        break;
+      }
+      if (this.blinkState === 12) {
+        this.blinkValue = f32(this.blinkValue - f32(speed * range));
+        if (this.blinkValue <= this.beginFrame) {
+          this.blinkValue = this.beginFrame;
+          this.blinkState = 0;
+          continue;
+        }
+        break;
+      }
+      break;
+    }
+    return this.output();
   }
 
   /** `AssignState` (0x1000f2a0) copies the graph motion, not the blink. */

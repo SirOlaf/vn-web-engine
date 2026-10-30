@@ -1,4 +1,4 @@
-import type {EmotePlayer} from '../../native/emotedriver/player.js';
+import type {IEmoteD3d11Device, IEmoteD3d11Player} from '../../native/emotedriver/contract.js';
 
 const f32 = Math.fround;
 /** 0x14040cde0: milliseconds to 60 fps frames. */
@@ -11,7 +11,10 @@ const FRAMES_PER_MILLISECOND = f32(0.06);
  * right − left + 1), rounded up; an empty rectangle falls back to `stage`.
  */
 export function artemisEmoteLayerSize(
-  player: Pick<EmotePlayer, 'countCharaProfiles' | 'getCharaProfileLabelAt' | 'getCharaProfile'>,
+  player: Pick<
+    IEmoteD3d11Player,
+    'countCharaProfiles' | 'getCharaProfileLabelAt' | 'getCharaProfile'
+  >,
   width: number,
   height: number,
   stage: {readonly width: number; readonly height: number},
@@ -42,12 +45,15 @@ export function artemisEmoteLayerSize(
 export class ArtemisEmoteLayer {
   /** +0x84: `timeGetTime` of the previous draw; 0 before the first. */
   private last = 0;
+  private closed = false;
   constructor(
-    readonly player: EmotePlayer,
+    readonly player: IEmoteD3d11Player,
     readonly width: number,
     readonly height: number,
     /** +0x80. */
     readonly progress: boolean,
+    /** Borrowed while the player owns its native device reference. */
+    readonly device: IEmoteD3d11Device,
   ) {}
 
   /** The draw-time advance of 0x14001adf0 at millisecond clock `now`: progress(0) on the
@@ -59,5 +65,25 @@ export class ArtemisEmoteLayer {
     else
       this.player.progress(f32(Math.min((time - this.last) >>> 0, 1000) * FRAMES_PER_MILLISECOND));
     this.last = time;
+  }
+  /** Native CEmoteSurface::Copy(true), 0x14001a4f0: copy player, flags and last draw clock. */
+  copy(): ArtemisEmoteLayer {
+    if (this.closed) throw new Error('Copying a released Artemis E-mote layer');
+    const player = this.player.clone();
+    if (!player) throw new Error('Artemis E-mote player clone failed');
+    const layer = new ArtemisEmoteLayer(
+      player,
+      this.width,
+      this.height,
+      this.progress,
+      this.device,
+    );
+    layer.last = this.last;
+    return layer;
+  }
+  dispose(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.player.release();
   }
 }

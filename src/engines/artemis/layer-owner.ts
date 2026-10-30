@@ -351,8 +351,11 @@ export class ArtemisLayerOwner<
    * E-mote actor at `id`, replacing any node there. Command registrations are untouched. */
   createEmoteLayer(id: string, emote: ArtemisEmoteLayer): void {
     if (!this.graphics.createEmoteLayer) throw Error('Unsupported Artemis E-mote layer owner');
-    if (!this.layers.attachActor(id, this.graphics.createEmoteLayer(emote)))
+    const actor = this.graphics.createEmoteLayer(emote);
+    if (!this.layers.attachActor(id, actor)) {
+      this.graphics.releaseImageLayer(actor);
       throw Error('Unsupported Artemis E-mote layer under an image layer: ' + id);
+    }
     this.host.trace?.({kind: 'emoteLayer', id, width: emote.width, height: emote.height});
   }
   /** `getEmoteLayer` lookup (+0x140) of `id` and the cast of its current actor: undefined

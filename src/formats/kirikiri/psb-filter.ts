@@ -1,5 +1,19 @@
 import {ByteView} from '../../core/binary.js';
 
+export const EMOTE_DRIVER_X86_SHA256 =
+  'a3b693b605d67812e489b1fb62cd341012b5514fc9114a032fee4685e70b3a86';
+export const EMOTE_DRIVER_X64_SHA256 =
+  '80d28bd088dda8e97c7c47a9c664e55159f70505b0f9fde3158d8ce2a3e1e051';
+export type EmoteDriverImage = typeof EMOTE_DRIVER_X86_SHA256 | typeof EMOTE_DRIVER_X64_SHA256;
+
+/** Exact runtime identities used by E-mote format readers and native implementations. */
+export function emoteDriverImage(sha256: string = EMOTE_DRIVER_X86_SHA256): EmoteDriverImage {
+  const image = sha256.toLowerCase();
+  if (image !== EMOTE_DRIVER_X86_SHA256 && image !== EMOTE_DRIVER_X64_SHA256)
+    throw Error(`emotedriver: unsupported DLL build ${sha256}`);
+  return image;
+}
+
 /**
  * E-mote PSB body keys by SHA-256 of the motion runtime that holds them. Both runtimes parse
  * the key from a decimal string with `atoi`.
@@ -9,7 +23,8 @@ import {ByteView} from '../../core/binary.js';
  */
 export const EMOTE_PSB_KEYS: ReadonlyMap<string, number> = new Map([
   ['536361228be24fb47de73e7c72409060577e8b926fefa24e1ffd5854e6779541', 742877301],
-  ['a3b693b605d67812e489b1fb62cd341012b5514fc9114a032fee4685e70b3a86', 742877301],
+  [EMOTE_DRIVER_X86_SHA256, 742877301],
+  [EMOTE_DRIVER_X64_SHA256, 49327924],
 ]);
 
 /**

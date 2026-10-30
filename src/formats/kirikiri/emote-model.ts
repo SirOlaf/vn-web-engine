@@ -1,3 +1,4 @@
+import {emoteDriverImage, EMOTE_DRIVER_X64_SHA256, EMOTE_PSB_KEYS} from './psb-filter.js';
 import {PsbFile, type PsbObject, type PsbResource, type PsbValue} from './psb.js';
 import {
   EmoteDiagnostics,
@@ -22,7 +23,7 @@ import {
   unreadKeys,
   type EmoteDiagnostic,
 } from './emote-fields.js';
-import {readEmoteMetadata, type EmoteMetadata} from './emote-metadata.js';
+import {readEmoteMetadata, type EmoteMetadata, type EmoteX64Metadata} from './emote-metadata.js';
 
 export {EmoteModelError, type EmoteDiagnostic} from './emote-fields.js';
 
@@ -30,7 +31,9 @@ export {EmoteModelError, type EmoteDiagnostic} from './emote-fields.js';
  * Typed, immutable model of an E-mote motion PSB as `emotedriver.dll` (SHA-256
  * `a3b693b605d67812e489b1fb62cd341012b5514fc9114a032fee4685e70b3a86`) reads it. Every key
  * the runtime reads is a typed field; keys it does not read stay in `unread` as raw PSB
- * values. Addresses in the comments are the native readers in that build.
+ * values. Addresses in the comments are the native readers in that build. The exact x64
+ * 3.9.8 image also reads frame blend parameters (0x18003b9f0), icon resolution
+ * (0x180031810) and mesh combinators (0x180058c50).
  *
  * Strictness follows the runtime: a key it reads without a presence test is required and a
  * missing one throws `EmoteModelError` (the runtime aborts with "psb: undefined object key").
@@ -128,6 +131,8 @@ export interface EmoteIcon {
   readonly height: number;
   /** `krkr` only: separate image (`compress: "RL"`), unread by the D3D runtime. */
   readonly pixel: PsbResource | null;
+  /** x64 icon texel scale. Absent for x86. */
+  readonly resolution?: number;
   readonly unread: Readonly<Record<string, PsbValue>>;
 }
 
@@ -251,6 +256,19 @@ export interface EmoteLayerMesh {
   readonly syncChildMask: number;
   readonly division: number;
   readonly combine: boolean;
+  /** x64 `meshCombinator.combinatorList`; its combined mesh replaces the frame mesh. */
+  readonly combinators?: readonly EmoteMeshCombinator[] | null;
+}
+
+export interface EmoteMeshCombinator {
+  /** `rawMeshList`: `meshCount` patches of 32 floats (16 x, y pairs), little endian. */
+  readonly raw: Float32Array;
+  /** `neutralIndex`; -1 when absent. At this index the combinator contributes nothing. */
+  readonly neutralIndex: number;
+  readonly key: string;
+  readonly rangeBegin: number;
+  readonly rangeEnd: number;
+  readonly meshCount: number;
 }
 
 export interface EmoteParticleSettings {
@@ -339,6 +357,12 @@ export interface EmoteFrameContent {
    * (mask 0x20600) is present without `color` and `bm & 0xf0` is zero. A scalar fills all four.
    */
   readonly color: readonly [number, number, number, number];
+  /** x64: `color` was a list. Absent for x86. */
+  readonly colorList?: boolean;
+  /** x64: `color` was present. Absent for x86. */
+  readonly colorKey?: boolean;
+  /** x64: `bp` (mask 0x40000000), default 0. Absent for x86. */
+  readonly bmParam?: number;
   /** Default 255 (stored `& 0xff`). */
   readonly opa: number;
   /** Default 0x10. */
@@ -393,15 +417,70 @@ export interface EmoteFrameMotion {
 
 // ---------------------------------------------------------------------------------------
 
+export type EmoteX64Icon = EmoteIcon & {readonly resolution: number};
+export type EmoteX64Source = Omit<EmoteSource, 'icons'> & {
+  readonly icons: ReadonlyMap<string, EmoteX64Icon>;
+};
+export type EmoteX64LayerMesh = EmoteLayerMesh & {
+  readonly combinators: readonly EmoteMeshCombinator[] | null;
+};
+export type EmoteX64FrameContent = EmoteFrameContent & {
+  readonly colorList: boolean;
+  readonly colorKey: boolean;
+  readonly bmParam: number;
+};
+export type EmoteX64Frame = Omit<EmoteFrame, 'content'> & {
+  readonly content: EmoteX64FrameContent | null;
+};
+export type EmoteX64Layer = Omit<EmoteLayer, 'mesh' | 'frames' | 'children'> & {
+  readonly mesh: EmoteX64LayerMesh | null;
+  readonly frames: readonly EmoteX64Frame[];
+  readonly children: readonly EmoteX64Layer[];
+};
+export type EmoteX64Motion = Omit<EmoteMotion, 'layers'> & {
+  readonly layers: readonly EmoteX64Layer[];
+};
+export type EmoteX64Object = Omit<EmoteObject, 'motions'> & {
+  readonly motions: ReadonlyMap<string, EmoteX64Motion>;
+};
+export type EmoteX64Model = Omit<EmoteModel, 'metadata' | 'sources' | 'objects'> & {
+  readonly metadata: EmoteX64Metadata;
+  readonly sources: ReadonlyMap<string, EmoteX64Source>;
+  readonly objects: ReadonlyMap<string, EmoteX64Object>;
+};
+
+/** Reader-local build context, threaded through the existing traversal. */
+class EmoteReadContext extends EmoteDiagnostics {
+  constructor(readonly x64: boolean) {
+    super();
+  }
+}
+
 /** Parses a filtered E-mote PSB (`decryptPsbBody` output) or its root value. */
-export function readEmoteModel(input: PsbFile | Uint8Array | PsbValue): EmoteModel {
+export function readEmoteModel(
+  input: PsbFile | Uint8Array | PsbValue,
+  driverSha256: typeof EMOTE_DRIVER_X64_SHA256,
+): EmoteX64Model;
+export function readEmoteModel(
+  input: PsbFile | Uint8Array | PsbValue,
+  driverSha256?: string,
+): EmoteModel;
+export function readEmoteModel(
+  input: PsbFile | Uint8Array | PsbValue,
+  driverSha256?: string,
+): EmoteModel {
+  const build = emoteDriverImage(driverSha256);
+  const x64 = build === EMOTE_DRIVER_X64_SHA256;
   const root =
     input instanceof PsbFile
       ? input.root
       : input instanceof Uint8Array
-        ? new PsbFile(input).root
+        ? new PsbFile(
+            input,
+            x64 ? {driverSha256: build, headerKey: EMOTE_PSB_KEYS.get(build)} : undefined,
+          ).root
         : input;
-  const diag = new EmoteDiagnostics();
+  const diag = new EmoteReadContext(x64);
   const o = toObject(root, '$');
   const id = has(o, 'id') ? toText(o.id!, '$.id') : null;
   const spec = textField(o, 'spec', '$');
@@ -424,7 +503,7 @@ export function readEmoteModel(input: PsbFile | Uint8Array | PsbValue): EmoteMod
     sources: readSources(objectField(o, 'source', '$'), diag),
     objects: readObjects(objectField(o, 'object', '$'), diag),
     easing: has(o, 'easing') ? readEasingTable(listField(o, 'easing', '$')) : null,
-    metadata: readEmoteMetadata(objectField(o, 'metadata', '$'), diag),
+    metadata: readEmoteMetadata(objectField(o, 'metadata', '$'), diag, build),
     diagnostics: diag.entries,
     unread: unreadKeys(o, ROOT_KEYS),
   };
@@ -456,7 +535,7 @@ function readScreenSize(o: PsbObject): EmoteScreenSize {
 
 /** Reads a key the D3D runtime requires; absent keys become null with an `abort` entry. */
 function required<T>(
-  diag: EmoteDiagnostics,
+  diag: EmoteReadContext,
   o: PsbObject,
   key: string,
   path: string,
@@ -483,8 +562,9 @@ const TEXTURE_KEYS = keys(
   'mipMap',
 );
 const ICON_KEYS = keys('attr', 'originX', 'originY', 'left', 'top', 'width', 'height', 'pixel');
+const ICON_X64_KEYS = new Set([...ICON_KEYS, 'resolution']);
 
-function readSources(o: PsbObject, diag: EmoteDiagnostics): ReadonlyMap<string, EmoteSource> {
+function readSources(o: PsbObject, diag: EmoteReadContext): ReadonlyMap<string, EmoteSource> {
   const out = new Map<string, EmoteSource>();
   for (const [name, value] of Object.entries(o)) {
     const p = `$.source.${name}`,
@@ -535,7 +615,7 @@ function readTexture(o: PsbObject, p: string): EmoteTexture {
   });
 }
 
-function readIcon(o: PsbObject, p: string, diag: EmoteDiagnostics): EmoteIcon {
+function readIcon(o: PsbObject, p: string, diag: EmoteReadContext): EmoteIcon {
   return Object.freeze({
     attr: readAttr(o, p, diag),
     originX: floatField(o, 'originX', p),
@@ -545,12 +625,13 @@ function readIcon(o: PsbObject, p: string, diag: EmoteDiagnostics): EmoteIcon {
     width: intField(o, 'width', p),
     height: intField(o, 'height', p),
     pixel: has(o, 'pixel') ? toResource(o.pixel!, `${p}.pixel`) : null,
-    unread: unreadKeys(o, ICON_KEYS),
+    ...(diag.x64 ? {resolution: has(o, 'resolution') ? floatField(o, 'resolution', p) : 1} : {}),
+    unread: unreadKeys(o, diag.x64 ? ICON_X64_KEYS : ICON_KEYS),
   });
 }
 
 /** Optional int, default 0; a null value (krkr icons) is a conversion abort natively. */
-function readAttr(o: PsbObject, p: string, diag: EmoteDiagnostics): number {
+function readAttr(o: PsbObject, p: string, diag: EmoteReadContext): number {
   if (!has(o, 'attr')) return 0;
   if (o.attr === null) {
     diag.add('abort', `${p}.attr`, "psb: can't convert value to int.");
@@ -600,7 +681,7 @@ const MOTION_KEYS = keys(
 );
 const PARAMETER_KEYS = keys('id', 'discretization', 'rangeBegin', 'rangeEnd', 'division');
 
-function readObjects(o: PsbObject, diag: EmoteDiagnostics): ReadonlyMap<string, EmoteObject> {
+function readObjects(o: PsbObject, diag: EmoteReadContext): ReadonlyMap<string, EmoteObject> {
   const out = new Map<string, EmoteObject>();
   for (const [name, value] of Object.entries(o)) {
     const p = `$.object.${name}`,
@@ -630,7 +711,7 @@ function readBounds(v: PsbValue, p: string): EmoteBounds {
   });
 }
 
-function readMotion(o: PsbObject, p: string, diag: EmoteDiagnostics): EmoteMotion {
+function readMotion(o: PsbObject, p: string, diag: EmoteReadContext): EmoteMotion {
   const priority = listField(o, 'priority', p),
     tag = listField(o, 'tag', p),
     loopTime = floatField(o, 'loopTime', p),
@@ -708,13 +789,14 @@ const LAYER_TYPE_KEYS: Readonly<Record<number, readonly string[]>> = {
   12: ['stencilCompositeMaskLayerList'],
 };
 const layerKeySets = new Map<string, ReadonlySet<string>>();
-function layerKeys(type: number, mesh: boolean): ReadonlySet<string> {
-  const id = `${type}:${mesh}`;
+function layerKeys(type: number, mesh: boolean, x64: boolean): ReadonlySet<string> {
+  const id = `${type}:${mesh}:${x64}`;
   let set = layerKeySets.get(id);
   if (!set) {
     set = new Set([
       ...LAYER_KEYS_BASE,
       ...(mesh ? LAYER_MESH_KEYS : []),
+      ...(mesh && x64 ? ['meshCombinator'] : []),
       ...(LAYER_TYPE_KEYS[type] ?? []),
     ]);
     layerKeySets.set(id, set);
@@ -725,14 +807,14 @@ function layerKeys(type: number, mesh: boolean): ReadonlySet<string> {
 function readLayers(
   list: readonly PsbValue[],
   p: string,
-  diag: EmoteDiagnostics,
+  diag: EmoteReadContext,
 ): readonly EmoteLayer[] {
   return Object.freeze(
     list.map((v, i) => readLayer(toObject(v, `${p}[${i}]`), `${p}[${i}]`, diag)),
   );
 }
 
-function readLayer(o: PsbObject, p: string, diag: EmoteDiagnostics): EmoteLayer {
+function readLayer(o: PsbObject, p: string, diag: EmoteReadContext): EmoteLayer {
   const label = textField(o, 'label', p),
     parameterize = nullableIntField(o, 'parameterize', p),
     frameList = listField(o, 'frameList', p),
@@ -754,6 +836,13 @@ function readLayer(o: PsbObject, p: string, diag: EmoteDiagnostics): EmoteLayer 
           syncChildMask: intField(o, 'meshSyncChildMask', p),
           division: intField(o, 'meshDivision', p),
           combine: boolField(o, 'meshCombine', p),
+          ...(diag.x64
+            ? {
+                combinators: has(o, 'meshCombinator')
+                  ? readCombinators(o.meshCombinator!, `${p}.meshCombinator`)
+                  : null,
+              }
+            : {}),
         })
       : null;
   const layer: EmoteLayer = {
@@ -787,9 +876,33 @@ function readLayer(o: PsbObject, p: string, diag: EmoteDiagnostics): EmoteLayer 
       frameList.map((f, i) => readFrame(f, type, `${p}.frameList[${i}]`, diag)),
     ),
     children: readLayers(listField(o, 'children', p), `${p}.children`, diag),
-    unread: unreadKeys(o, layerKeys(type, meshTransform !== 0)),
+    unread: unreadKeys(o, layerKeys(type, meshTransform !== 0, diag.x64)),
   };
   return Object.freeze(layer);
+}
+
+function readCombinators(value: PsbValue, p: string): readonly EmoteMeshCombinator[] {
+  const list = listField(toObject(value, p), 'combinatorList', p);
+  return Object.freeze(
+    list.map((v, i) => {
+      const cp = `${p}.combinatorList[${i}]`;
+      const c = toObject(v, cp);
+      const variable = toObject(field(c, 'variable', cp), `${cp}.variable`);
+      const vp = `${cp}.variable`;
+      const bytes = toResource(field(c, 'rawMeshList', cp), `${cp}.rawMeshList`).bytes;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const raw = new Float32Array(bytes.byteLength >>> 2);
+      for (let k = 0; k < raw.length; k++) raw[k] = view.getFloat32(k * 4, true);
+      return Object.freeze({
+        raw,
+        neutralIndex: has(c, 'neutralIndex') ? toInt(c.neutralIndex!, `${cp}.neutralIndex`) : -1,
+        key: textField(variable, 'key', vp),
+        rangeBegin: floatField(variable, 'rangeBegin', vp),
+        rangeEnd: floatField(variable, 'rangeEnd', vp),
+        meshCount: intField(variable, 'meshCount', vp),
+      });
+    }),
+  );
 }
 
 function readParticle(o: PsbObject, p: string): EmoteParticleSettings {
@@ -811,7 +924,7 @@ function readFrame(
   value: PsbValue,
   layerType: number,
   p: string,
-  diag: EmoteDiagnostics,
+  diag: EmoteReadContext,
 ): EmoteFrame {
   const o = toObject(value, p),
     time = floatField(o, 'time', p),
@@ -833,7 +946,7 @@ function readContent(
   layerType: number,
   frameType: number,
   p: string,
-  diag: EmoteDiagnostics,
+  diag: EmoteReadContext,
 ): EmoteFrameContent {
   const mask = intField(o, 'mask', p) >>> 0;
   const consumed = new Set(['mask']);
@@ -850,7 +963,7 @@ function readContent(
   // Mask 0x40000: the runtime reads `act` and returns (0x10035f50).
   if (mask & EmoteContentMask.Action) {
     const act = toText(get('act'), `${p}.act`);
-    return Object.freeze({...emptyContent(mask), act, unread: unreadKeys(o, consumed)});
+    return Object.freeze({...emptyContent(mask, diag.x64), act, unread: unreadKeys(o, consumed)});
   }
   const source = EMOTE_SOURCE_LAYER_TYPES.has(layerType);
   const src = source ? toText(get('src'), `${p}.src`) : null,
@@ -869,13 +982,19 @@ function readContent(
   }
   let opa = 255,
     bm = 0x10,
+    bmParam = 0,
+    colorList = false,
+    colorKey = false,
     color: readonly [number, number, number, number] = DEFAULT_COLOR4;
-  if (has1(0x20600)) {
+  if (has1(diag.x64 ? 0x40020600 : 0x20600)) {
     if (has1(0x400)) opa = n('opa') & 0xff;
     if (has1(0x20000)) bm = n('bm');
+    if (diag.x64 && has1(0x40000000)) bmParam = f('bp');
     if (has1(0x200)) {
+      colorKey = true;
       const c = get('color');
       if (Array.isArray(c)) {
+        colorList = true;
         const list = c as readonly PsbValue[];
         color = Object.freeze(
           [0, 1, 2, 3].map((i) => toInt(list[i] ?? null, `${p}.color[${i}]`) >>> 0),
@@ -957,6 +1076,7 @@ function readContent(
     sx,
     sy,
     color,
+    ...(diag.x64 ? {colorList, colorKey, bmParam} : {}),
     opa,
     bm,
     ti,
@@ -992,7 +1112,7 @@ const WHITE4 = Object.freeze([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]) a
   number,
 ];
 
-function emptyContent(mask: number): Omit<EmoteFrameContent, 'act' | 'unread'> {
+function emptyContent(mask: number, x64: boolean): Omit<EmoteFrameContent, 'act' | 'unread'> {
   return {
     mask,
     src: null,
@@ -1008,6 +1128,7 @@ function emptyContent(mask: number): Omit<EmoteFrameContent, 'act' | 'unread'> {
     sx: 0,
     sy: 0,
     color: DEFAULT_COLOR4,
+    ...(x64 ? {colorList: false, colorKey: false, bmParam: 0} : {}),
     opa: 255,
     bm: 0x10,
     ti: 0,

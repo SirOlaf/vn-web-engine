@@ -1,7 +1,13 @@
+import {EmoteEye} from '../dist/native/emotedriver/runtime/controls/eye.js';
+import {EmoteEyebrow} from '../dist/native/emotedriver/runtime/controls/eyebrow.js';
+import {EmoteGraph, EmoteGraphFollower} from '../dist/native/emotedriver/runtime/controls/graph.js';
+import {EMOTEDRIVER_X64_SHA256} from '../dist/native/emotedriver/build.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   EmoteBust,
+  EmoteMouth,
+  EmoteOrbit,
   EmotePendulum,
   EmoteWind,
   EmoteXorshift128,
@@ -9,6 +15,7 @@ import {
   emoteSoftAngle,
 } from '../dist/native/emotedriver/runtime/controls/index.js';
 import {EmoteTween} from '../dist/native/emotedriver/runtime/controls/transition.js';
+import {EmoteSelector} from '../dist/native/emotedriver/runtime/controls/selector.js';
 
 const f32 = Math.fround;
 const vec = (x = 0, y = 0, z = 0) => ({x, y, z});
@@ -158,6 +165,21 @@ test('mouth: frame variable and eased talk level', () => {
   assert.equal(h.value('t'), 0.5);
 });
 
+test('x64 mouth uses immediate value-tween progress and copies queued state', () => {
+  const settings = {enabled: true, label: 'shape', talkLabel: 'talk', beginFrame: 2.75, unread: {}};
+  const mouth = new EmoteMouth(settings, EMOTEDRIVER_X64_SHA256);
+  mouth.set(1, 4, 1, false);
+  assert.deepEqual(mouth.update(1), [2, 0.25]);
+  mouth.set(0, 2, 1, true);
+  const copy = new EmoteMouth(settings, EMOTEDRIVER_X64_SHA256);
+  copy.assign(mouth);
+  assert.deepEqual(copy.update(1), mouth.update(1));
+  copy.skip();
+  assert.deepEqual(copy.update(0), [2, 0]);
+  assert.equal(copy.busy, false);
+  assert.throws(() => copy.assign(new EmoteMouth(settings)), /between DLL builds/);
+});
+
 test('loop control cycles its transition list', () => {
   const loop = {
     enabled: true,
@@ -176,6 +198,17 @@ test('loop control cycles its transition list', () => {
     out.push(h.value('L'));
   }
   assert.deepEqual(out, [2.5, 5, 7.5, 10, 5, 0, 2.5]);
+});
+
+test('x64 orbit emits variable requests at value boundaries and wraps its interval', () => {
+  const settings = {label: 'orbit', interval: 8, tween: true, orbitFrameList: [0, 10, 20, 30]};
+  const orbit = new EmoteOrbit(settings, EMOTEDRIVER_X64_SHA256);
+  assert.deepEqual(orbit.step(1), {value: 0, frames: 2});
+  assert.equal(orbit.step(1), null);
+  assert.deepEqual(orbit.step(1), {value: 10, frames: 2});
+  assert.deepEqual(orbit.step(2), {value: 20, frames: 2});
+  assert.deepEqual(orbit.step(4), {value: 0, frames: 2});
+  assert.throws(() => new EmoteOrbit(settings, 'unknown'), /unsupported DLL build/);
 });
 
 test('selector drives transition tweens to on and off values', () => {
@@ -207,6 +240,42 @@ test('selector drives transition tweens to on and off values', () => {
   assert.equal(tweens.get('b').current[0], 1);
 });
 
+test('selector accepts an alternate transition and preserves each build’s distance threshold', () => {
+  const control = {
+    label: 'select',
+    optionList: [{label: 'option', offValue: 0, onValue: 100000000}],
+    unread: {},
+  };
+  const calls = [];
+  const transition = {
+    busy: false,
+    step: () => [99999992],
+    set: (...args) => calls.push(args),
+  };
+  new EmoteSelector(control, () => transition);
+  assert.deepEqual(calls, []);
+  new EmoteSelector(control, () => transition, EMOTEDRIVER_X64_SHA256);
+  assert.deepEqual(calls, [[[100000000], 0, 0, false]]);
+  assert.throws(
+    () => new EmoteSelector(control, () => transition, 'unknown'),
+    /unsupported DLL build/,
+  );
+});
+
+test('x64 selector advances queued selections in the completing call', () => {
+  const control = {label: 'select', optionList: [], unread: {}};
+  const selector = new EmoteSelector(control, () => null, EMOTEDRIVER_X64_SHA256);
+  selector.set(1, 1, 1, false);
+  selector.set(2, 1, 1, true);
+  assert.equal(selector.update(1), 2);
+  assert.equal(selector.busy, false);
+  const upstream = new EmoteSelector(control, () => null);
+  upstream.set(1, 1, 1, false);
+  upstream.set(2, 1, 1, true);
+  assert.equal(upstream.update(1), 1);
+  assert.equal(upstream.busy, true);
+});
+
 test('wind spawns, moves and retires gusts', () => {
   const draws = [0.01, 0.5, 0.9];
   const wind = new EmoteWind(0, 100);
@@ -225,6 +294,28 @@ test('wind spawns, moves and retires gusts', () => {
   const back = new EmoteWind(100, 0);
   back.set(2, 2, 5);
   assert.equal(back.velocity, -5);
+});
+
+test('wind preserves each DLL build’s float stores in gust power', () => {
+  const values = [];
+  for (const build of [undefined, EMOTEDRIVER_X64_SHA256]) {
+    const random = new EmoteXorshift128(1700000000);
+    const wind = new EmoteWind(0, 100, build);
+    wind.set(1.3, 0.1, 0.7);
+    for (let i = 0; i < 7; i++) wind.update(f32(1.1), () => random.next());
+    values.push(wind.query(0));
+  }
+  assert.deepEqual(values, [0.9549545645713806, 0.9549546241760254]);
+  const bounds = [];
+  for (const build of [undefined, EMOTEDRIVER_X64_SHA256]) {
+    const wind = new EmoteWind(0, 100, build);
+    wind.active[0] = 1;
+    wind.position[0] = 100000000;
+    wind.power[0] = 0.1;
+    bounds.push(wind.query(100000000.1));
+  }
+  assert.deepEqual(bounds, [f32(0.1), 0]);
+  assert.throws(() => new EmoteWind(0, 100, 'unknown'), /unsupported DLL build/);
 });
 
 const bustControl = (fields = {}) => ({
@@ -332,6 +423,30 @@ test('pendulum: wind gust pushes both joints', () => {
   assert.equal(out.lrm, emoteSoftAngle(0.5));
   // Joint 1 is also pulled back onto its rod towards the displaced joint 0.
   assert.ok(out.lr > out.lrm);
+  const alternate = new EmotePendulum(hair({gravity: 0}));
+  const alternateOut = {lr: 0, lrm: 0, ud: 0};
+  alternate.update(0, 0, 1, 1, 0, {query: () => 0.5}, alternateOut);
+  assert.deepEqual(alternateOut, out);
+});
+
+test('x64 physics samples an alternate wind field through its query interface', () => {
+  const pendulum = new EmotePendulum(hair({gravity: 0}), EMOTEDRIVER_X64_SHA256);
+  const samples = [],
+    out = {lr: 0, lrm: 0, ud: 0};
+  const wind = {
+    query: (x) => {
+      samples.push(x);
+      return 0.5;
+    },
+  };
+  // The native entry driver anchors its first sample at zero time.
+  pendulum.update(0, 0, 0, 1, 0, wind, out);
+  assert.ok(out.lr === 0 && out.lrm === 0 && out.ud === 0);
+  assert.equal(samples.length, 2);
+  pendulum.update(0, 0, 1, 1, 0, wind, out);
+  assert.equal(samples.length, 4);
+  assert.ok(out.lr > 0);
+  assert.ok(out.lrm > 0);
 });
 
 test('pendulum bend sways lr against lrm when |ud| exceeds 28', () => {
@@ -345,6 +460,23 @@ test('pendulum bend sways lr against lrm when |ud| exceeds 28', () => {
   assert.equal(out.lr, f32(0 + sway));
 });
 
+test('pendulum retains each DLL build’s stored bend period', () => {
+  const settings = hair({gravity: 0, bend_spd: 0, bend_vol: 2});
+  settings.param.bendR = f32(2 * Math.PI);
+  settings.param.bendS = 1;
+  const upstream = new EmotePendulum(settings);
+  const x64 = new EmotePendulum(settings, EMOTEDRIVER_X64_SHA256);
+  const oldOut = {lr: 0, lrm: 0, ud: 0},
+    newOut = {...oldOut};
+  upstream.update(0, 0, 0, 1, 0, null, oldOut);
+  x64.update(0, 0, 0, 1, 0, null, newOut);
+  assert.equal(upstream.bendR, 0);
+  assert.equal(x64.bendR, 4.76837158203125e-7);
+  assert.equal(newOut.lr, 9.5367431640625e-7);
+  assert.equal(newOut.lrm, -9.5367431640625e-7);
+  assert.throws(() => new EmotePendulum(settings, 'unknown'), /unsupported DLL build/);
+});
+
 test('skip resets physics to the loaded parameters', () => {
   const controls = createEmoteControls(metadata({bustControl: [bustControl()]}));
   const h = host();
@@ -354,6 +486,52 @@ test('skip resets physics to the loaded parameters', () => {
   assert.equal(controls.busts[0].first, true);
 });
 
+test('x64 control set composes exact-build controls through the host interface', () => {
+  const md = metadata({
+    bustControl: [bustControl()],
+    mouthControl: [{enabled: true, label: 'm', talkLabel: 't', beginFrame: 2.75, unread: {}}],
+    selectorControl: [{enabled: false, raw: {}}],
+  });
+  const controls = createEmoteControls(md, {driverSha256: EMOTEDRIVER_X64_SHA256});
+  const h = host({
+    shapePoint: () => {
+      throw Error('x86 base-point path');
+    },
+    physicsBasePosition: () => ({x: 0, y: 0}),
+    physicsAngle: 0,
+    outerForces: {bust: {x: 1, y: 2}, hair: {x: 0, y: 0}, parts: {x: 0, y: 0}},
+  });
+  assert.equal(controls.selectors.length, 0);
+  controls.setVariable(6, 0, 't', 1, 4, 1, false);
+  controls.stepMouths(h, 1);
+  assert.equal(h.value('m'), 2);
+  assert.equal(h.value('t'), 0.25);
+  controls.stepPhysics(h, 1);
+  assert.equal(h.value('ud'), 0);
+  controls.stepPhysics(h, 1);
+  assert.ok(h.value('ud') > 0);
+  assert.throws(() => controls.skip(), /requires its control host/);
+  controls.skip(h);
+  assert.equal(h.value('ud'), 0);
+  assert.throws(() => controls.assignState(createEmoteControls(metadata())), /between DLL builds/);
+  assert.throws(() => createEmoteControls(md, {driverSha256: 'unknown'}), /unsupported DLL build/);
+});
+
+test('x86 control set does not query x64 physics host inputs', () => {
+  const controls = createEmoteControls(
+    metadata({bustControl: [bustControl()], hairControl: [hair()]}),
+  );
+  const h = host();
+  for (const key of ['outerForces', 'physicsAngle', 'physicsBasePosition'])
+    Object.defineProperty(h, key, {
+      get: () => {
+        throw Error(`unexpected x64 input ${key}`);
+      },
+    });
+  controls.stepPhysics(h, 1);
+  assert.ok(h.value('ud') > 0);
+});
+
 test('assignState copies eye motion by label', () => {
   const md = metadata({eyeControl: [eyeControl({edge: [[0, 20]]})]});
   const a = createEmoteControls(md, {random: () => 0}),
@@ -361,4 +539,49 @@ test('assignState copies eye motion by label', () => {
   a.setVariable(4, 0, 'eye', 15, 0, 1, false);
   b.assignState(a);
   assert.equal(b.eyes[0].motion.value, 15);
+});
+
+test('x64 graph preserves fractional frames and advances queued motion immediately', () => {
+  const graph = new EmoteGraph([[0.25, 10.75]], [[0.25], [10.75]], EMOTEDRIVER_X64_SHA256);
+  assert.deepEqual(graph.search(0.25, 10.75), [[0.25, 10.75]]);
+  assert.equal(graph.total, 10.5);
+  const follower = new EmoteGraphFollower(graph, 0.25);
+  follower.set(10.75, 4, 1, false);
+  follower.advance(1);
+  assert.equal(follower.value, 2.875);
+  follower.set(10.75, 20, 1, false);
+  follower.advance(1);
+  assert.equal(follower.value, 5.5);
+  follower.set(0.25, 1, 1, true);
+  follower.advance(2);
+  assert.equal(follower.value, 0.25);
+  assert.equal(follower.busy, false);
+  assert.throws(() => new EmoteGraph([], [], 'unknown'), /unsupported DLL build/);
+});
+
+test('x64 blink consumes phase changes immediately and disabling resets its cycle', () => {
+  let draws = 0;
+  const random = () => {
+    draws++;
+    return 0;
+  };
+  const settings = eyeControl({blinkIntervalMin: 0, blinkIntervalMax: 0, blinkFrameCount: 10});
+  const eye = new EmoteEye(settings, random, EMOTEDRIVER_X64_SHA256);
+  const values = Array.from({length: 12}, () => eye.update(1, random));
+  assert.deepEqual(values, [2.5, 5, 7.5, 10, 10, 10, 7.5, 5, 2.5, 2.5, 5, 7.5]);
+  const before = draws;
+  eye.setBlinkEnabled(false);
+  assert.equal(draws, before + 1);
+  assert.equal(eye.update(1, random), 0);
+  eye.setBlinkEnabled(false);
+  assert.equal(draws, before + 1);
+  eye.setBlinkEnabled(true);
+  assert.equal(eye.update(1, random), 2.5);
+  const brow = new EmoteEyebrow(
+    {label: 'brow', beginFrame: 0.25, edge: [[0.25, 10.75]], node: []},
+    EMOTEDRIVER_X64_SHA256,
+  );
+  assert.equal(brow.update(0), 0.25);
+  brow.set(10.75, 4, 1, false);
+  assert.equal(brow.update(1), 2.875);
 });

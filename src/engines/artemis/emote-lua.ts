@@ -1,5 +1,5 @@
 import {luaText, type LuaValue} from '../../core/lua51/runtime.js';
-import {EmoteUnsupportedError, type EmotePlayer} from '../../native/emotedriver/player.js';
+import type {IEmoteD3d11Player} from '../../native/emotedriver/contract.js';
 
 /** luabind's argument converters of the IEmotePlayer class (0x14001b070): `f` float and
  * `u` unsigned int take Lua numbers, `s` char const* Lua strings, `b` bool Lua booleans. */
@@ -7,7 +7,7 @@ type Argument = 'f' | 'u' | 's' | 'b';
 type Converted = number | string | boolean;
 interface Method {
   readonly args: readonly Argument[];
-  readonly call: (player: EmotePlayer, args: readonly Converted[]) => LuaValue | void;
+  readonly call: (player: IEmoteD3d11Player, args: readonly Converted[]) => LuaValue | void;
 }
 
 const n = (value: Converted) => value as number;
@@ -25,14 +25,14 @@ const methods: ReadonlyMap<string, Method> = new Map<string, Method>([
   ['getSmoothing', {args: [], call: (p) => p.getSmoothing()}],
   ['setMeshDivisionRatio', {args: ['f'], call: (p, a) => p.setMeshDivisionRatio(n(a[0]!))}],
   ['getMeshDivisionRatio', {args: [], call: (p) => p.getMeshDivisionRatio()}],
-  ['setQueuing', {args: ['b'], call: (p, a) => void (p.queuing = b(a[0]!))}],
-  ['getQueuing', {args: [], call: (p) => p.queuing}],
-  ['setHairScale', {args: ['f'], call: (p, a) => void (p.hairScale = n(a[0]!))}],
-  ['getHairScale', {args: [], call: (p) => p.hairScale}],
-  ['setPartsScale', {args: ['f'], call: (p, a) => void (p.partsScale = n(a[0]!))}],
-  ['getPartsScale', {args: [], call: (p) => p.partsScale}],
-  ['setBustScale', {args: ['f'], call: (p, a) => void (p.bustScale = n(a[0]!))}],
-  ['getBustScale', {args: [], call: (p) => p.bustScale}],
+  ['setQueuing', {args: ['b'], call: (p, a) => p.setQueuing(b(a[0]!))}],
+  ['getQueuing', {args: [], call: (p) => p.getQueuing()}],
+  ['setHairScale', {args: ['f'], call: (p, a) => p.setHairScale(n(a[0]!))}],
+  ['getHairScale', {args: [], call: (p) => p.getHairScale()}],
+  ['setPartsScale', {args: ['f'], call: (p, a) => p.setPartsScale(n(a[0]!))}],
+  ['getPartsScale', {args: [], call: (p) => p.getPartsScale()}],
+  ['setBustScale', {args: ['f'], call: (p, a) => p.setBustScale(n(a[0]!))}],
+  ['getBustScale', {args: [], call: (p) => p.getBustScale()}],
   [
     'setCoord',
     {
@@ -53,6 +53,7 @@ const methods: ReadonlyMap<string, Method> = new Map<string, Method>([
   ['getGrayscale', {args: [], call: (p) => p.getGrayscale()}],
   ['setAsOriginalScale', {args: ['b'], call: (p, a) => p.setAsOriginalScale(b(a[0]!))}],
   ['isAsOriginalScale', {args: [], call: (p) => p.isAsOriginalScale()}],
+  ['getState', {args: ['s'], call: (p, a) => p.getState(s(a[0]!))}],
   ['countVariables', {args: [], call: (p) => p.countVariables()}],
   ['getVariableLabelAt', {args: ['u'], call: (p, a) => text(p.getVariableLabelAt(n(a[0]!)))}],
   ['countVariableFrameAt', {args: ['u'], call: (p, a) => p.countVariableFrameAt(n(a[0]!))}],
@@ -145,8 +146,21 @@ const methods: ReadonlyMap<string, Method> = new Map<string, Method>([
   ['step', {args: [], call: (p) => p.step()}],
   ['progress', {args: ['f'], call: (p, a) => p.progress(n(a[0]!))}],
   ['isModified', {args: [], call: (p) => p.isModified()}],
+  ['render', {args: [], call: (p) => p.render()}],
   ['setStereovisionEnabled', {args: ['b'], call: (p, a) => p.setStereovisionEnabled(b(a[0]!))}],
   ['getStereovisionEnabled', {args: [], call: (p) => p.getStereovisionEnabled()}],
+  ['setStereovisionVolume', {args: ['f'], call: (p, a) => p.setStereovisionVolume(n(a[0]!))}],
+  ['getStereovisionVolume', {args: [], call: (p) => p.getStereovisionVolume()}],
+  [
+    'setStereovisionParallaxRatio',
+    {args: ['f'], call: (p, a) => p.setStereovisionParallaxRatio(n(a[0]!))},
+  ],
+  ['getStereovisionParallaxRatio', {args: [], call: (p) => p.getStereovisionParallaxRatio()}],
+  [
+    'setStereovisionRenderScreen',
+    {args: ['u'], call: (p, a) => p.setStereovisionRenderScreen(n(a[0]!))},
+  ],
+  ['getStereovisionRenderScreen', {args: [], call: (p) => p.getStereovisionRenderScreen()}],
   ['isCharaProfileAvailable', {args: [], call: (p) => p.isCharaProfileAvailable()}],
   ['getCharaHeight', {args: [], call: (p) => p.getCharaHeight()}],
   ['countCharaProfiles', {args: [], call: (p) => p.countCharaProfiles()}],
@@ -160,41 +174,25 @@ const methods: ReadonlyMap<string, Method> = new Map<string, Method>([
     {args: ['f', 'f', 'f'], call: (p, a) => p.setOuterRot(n(a[0]!), n(a[1]!), n(a[2]!))},
   ],
   ['getOuterRot', {args: [], call: (p) => p.getOuterRot()}],
+  ['startRecordAPILog', {args: [], call: (p) => p.startRecordAPILog()}],
+  ['stopRecordAPILog', {args: [], call: (p) => p.stopRecordAPILog()}],
+  ['isRecordingAPILog', {args: [], call: (p) => p.isRecordingAPILog()}],
+  ['startReplayAPILog', {args: [], call: (p) => p.startReplayAPILog()}],
+  ['stopReplayAPILog', {args: [], call: (p) => p.stopReplayAPILog()}],
+  ['isReplayingAPILog', {args: [], call: (p) => p.isReplayingAPILog()}],
+  ['clearAPILog', {args: [], call: (p) => p.clearAPILog()}],
+  ['getAPILog', {args: [], call: (p) => text(p.getAPILog())}],
+  ['setAPILog', {args: ['s'], call: (p, a) => p.setAPILog(s(a[0]!))}],
   ['getSuitableClearColor', {args: [], call: (p) => p.getSuitableClearColor()}],
+  ['initCore', {args: [], call: (p) => p.initCore()}],
   ['setBlinkEnabled', {args: ['b'], call: (p, a) => p.setBlinkEnabled(b(a[0]!))}],
   ['getBlinkEnabled', {args: [], call: (p) => p.getBlinkEnabled()}],
 ]);
 
-/** Bound IEmotePlayer names without a modeled implementation: reference counting and
- * cloning, state assignment, out-parameter getters, rendering, stereovision volume and
- * screen, API logs and core initialization. Calling one is refused. */
-const unmodeled = [
-  'addRef',
-  'release',
-  'refCount',
-  'clone',
-  'assignState',
-  'getCoord',
-  'getState',
-  'getOuterForce',
-  'render',
-  'setStereovisionVolume',
-  'getStereovisionVolume',
-  'setStereovisionParallaxRatio',
-  'getStereovisionParallaxRatio',
-  'setStereovisionRenderScreen',
-  'getStereovisionRenderScreen',
-  'startRecordAPILog',
-  'stopRecordAPILog',
-  'isRecordingAPILog',
-  'startReplayAPILog',
-  'stopReplayAPILog',
-  'isReplayingAPILog',
-  'clearAPILog',
-  'getAPILog',
-  'setAPILog',
-  'initCore',
-];
+/** Object conversions and explicit references are dispatched by the Lua handle owner. */
+const objectMethods = ['addRef', 'release', 'refCount', 'clone', 'assignState'];
+/** Native null-policy float& arguments require typed userdata, not ordinary Lua numbers. */
+const unmodeled = ['getCoord', 'getOuterForce'];
 
 function convert(kind: Argument, value: LuaValue | undefined): Converted | undefined {
   switch (kind) {
@@ -221,13 +219,14 @@ const nul = (value: Uint8Array) => {
 /** Calls the IEmotePlayer method `name` with Lua arguments, as luabind's overload match:
  * a wrong argument count or type raises the Lua error. */
 export function callArtemisEmotePlayer(
-  player: EmotePlayer,
+  player: IEmoteD3d11Player,
   name: string,
   args: readonly LuaValue[],
 ): LuaValue[] {
   const method = methods.get(name);
   if (!method) {
-    if (unmodeled.includes(name)) throw new EmoteUnsupportedError(`IEmotePlayer:${name}`);
+    if (unmodeled.includes(name) || objectMethods.includes(name))
+      throw unsupported(`IEmotePlayer:${name}`);
     throw Error(`IEmotePlayer has no method ${name}`);
   }
   if (args.length !== method.args.length)
@@ -242,11 +241,16 @@ export function callArtemisEmotePlayer(
 }
 
 /** Every method name of the bound class. */
-export const artemisEmotePlayerMethodNames: readonly string[] = [...methods.keys(), ...unmodeled];
+export const artemisEmotePlayerMethodNames: readonly string[] = [
+  ...methods.keys(),
+  ...objectMethods,
+  ...unmodeled,
+];
 
 /** Installs the Lua side of the IEmotePlayer class: each player is a `newproxy` userdata
  * whose methods forward to the host by handle. Collected proxies queue their handles, which
- * the next forwarded call releases. Returns the Lua prelude source that wraps `engine`; it
+ * the next forwarded call forgets without releasing the native borrowed pointer. Returns
+ * the Lua prelude source that wraps `engine`; it
  * runs where `resourceFailure` is in scope. */
 export function artemisEmoteLuaPrelude(): string {
   const names = artemisEmotePlayerMethodNames.map((name) => `'${name}'`).join(',');
@@ -268,14 +272,6 @@ export function artemisEmoteLuaPrelude(): string {
           end
         end
         local emoteMethods = {}
-        for _, name in ipairs({${names}}) do
-          emoteMethods[name] = function(proxy, ...)
-            local handle = emoteHandles[proxy]
-            if handle == nil then error('IEmotePlayer method on a non-player value', 2) end
-            emoteFlush(engine)
-            return emoteCall(engine, handle, name, ...)
-          end
-        end
         local function emoteWrap(handle)
           if handle == nil then return nil end
           local proxy = newproxy(true)
@@ -285,6 +281,24 @@ export function artemisEmoteLuaPrelude(): string {
           meta.__gc = function() emoteReleased[#emoteReleased + 1] = handle end
           emoteHandles[proxy] = handle
           return proxy
+        end
+        for _, name in ipairs({${names}}) do
+          emoteMethods[name] = function(proxy, ...)
+            local handle = emoteHandles[proxy]
+            if handle == nil then error('IEmotePlayer method on a non-player value', 2) end
+            emoteFlush(engine)
+            if name == 'clone' then
+              return emoteWrap(emoteCall(engine, handle, name, ...))
+            elseif name == 'assignState' then
+              local source = ...
+              local other = emoteHandles[source]
+              if select('#', ...) ~= 1 or (source ~= nil and other == nil) then
+                error('No matching overload found for IEmotePlayer:assignState', 2)
+              end
+              return emoteCall(engine, handle, name, other)
+            end
+            return emoteCall(engine, handle, name, ...)
+          end
         end
         engine.createEmoteLayer = function(self, args)
           emoteFlush(self)
@@ -299,4 +313,11 @@ export function artemisEmoteLuaPrelude(): string {
           emoteFlush(self)
           return emoteWrap(emoteGet(self, args))
         end`;
+}
+
+/** Keep the established Lua host error text without importing a DLL implementation. */
+function unsupported(feature: string): Error {
+  const error = new Error(`E-mote: ${feature} is not supported`);
+  error.name = 'EmoteUnsupportedError';
+  return error;
 }
