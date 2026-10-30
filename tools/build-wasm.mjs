@@ -5,17 +5,27 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+// `npm run build:wasm -- <crate>...` rebuilds only the named crates.
+const only = new Set(process.argv.slice(2));
 const target = await mkdtemp(join(tmpdir(), 'vn-web-wasm-'));
 try {
   const kernel = ['-C', 'target-feature=+simd128', '-C', 'link-arg=--export=__heap_base'];
   for (const [name, exported, destination, flags] of [
     ['linear-rgb', 'LINEAR_RGB_WASM_BINARY', 'src/graphics/linear-rgb-wasm-binary.ts', kernel],
     [
+      'outline-raster',
+      'OUTLINE_RASTER_WASM_BINARY',
+      'src/text/outline-font/raster-wasm-binary.ts',
+      kernel,
+    ],
+    [
       'mpeg1-video',
       'MPEG1_VIDEO_WASM_BINARY',
       'src/formats/mpeg1/wasm-binary.ts',
       ['-C', 'target-feature=+simd128'],
     ],
+    ['vc1-video', 'VC1_VIDEO_WASM_BINARY', 'src/formats/vc1/wasm-binary.ts', kernel],
+    ['wma-audio', 'WMA_AUDIO_WASM_BINARY', 'src/formats/wma/wasm-binary.ts', kernel],
     [
       'aokana-bitmap',
       'BURIKO_BITMAP_WASM_BINARY',
@@ -38,6 +48,7 @@ try {
       ],
     ],
   ]) {
+    if (only.size && !only.has(name)) continue;
     const result = spawnSync(
       'cargo',
       [

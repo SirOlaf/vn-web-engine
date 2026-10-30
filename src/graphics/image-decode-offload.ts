@@ -1,12 +1,14 @@
-import type {DecodedPng} from '../formats/png/decode.js';
+import type {DecodedPng, PngDecodeOptions} from '../formats/png/decode.js';
 import {WorkerPool} from '../platform/worker-pool.js';
+import {beginRuntimeSpan} from '../platform/runtime-performance.js';
 
-/** `png` uses the engine's PNG decoder; a MIME type uses the browser codec (`decodeBrowserImage`). */
-export type ImageDecodeFormat = 'png' | 'image/webp' | 'image/jpeg';
+/** Named formats use pure byte decoders; MIME types use the browser-owned codec. */
+export type ImageDecodeFormat = 'png' | 'artemis-psd' | 'opaque-jpeg' | 'image/webp' | 'image/jpeg';
 
 export interface ImageDecodeRequest {
   readonly format: ImageDecodeFormat;
   readonly bytes: Uint8Array;
+  readonly png?: PngDecodeOptions;
 }
 
 export type ImageDecodeResponse =
@@ -26,7 +28,11 @@ function decodePool() {
  * hosts) or the decode failed, in which case the in-thread decoder raises the original error.
  * Worker results are identical to the in-thread decoders'.
  */
-export function decodeImageOffThread(bytes: Uint8Array, format: 'png'): Promise<DecodedPng | null>;
+export function decodeImageOffThread(
+  bytes: Uint8Array,
+  format: 'png',
+  png?: PngDecodeOptions,
+): Promise<DecodedPng | null>;
 export function decodeImageOffThread(
   bytes: Uint8Array,
   format: Exclude<ImageDecodeFormat, 'png'>,
@@ -34,9 +40,19 @@ export function decodeImageOffThread(
 export async function decodeImageOffThread(
   bytes: Uint8Array,
   format: ImageDecodeFormat,
+  png?: PngDecodeOptions,
 ): Promise<ImageDecodeResponse | null> {
   const workers = decodePool();
   if (!workers.available) return null;
-  const snapshot = bytes.slice();
-  return (await workers.run({format, bytes: snapshot}, [snapshot.buffer])) ?? null;
+  // Records the time until the decoded image is back, worker queueing included.
+  const finish = beginRuntimeSpan(`graphics.decode.${format.replace('/', '-')}`, {
+    bytes: bytes.length,
+  });
+  // A Uint8Array subclass (for example Node Buffer) may implement slice as a borrowed view.
+  const snapshot = Uint8Array.from(bytes);
+  try {
+    return (await workers.run({format, bytes: snapshot, png}, [snapshot.buffer])) ?? null;
+  } finally {
+    finish?.();
+  }
 }

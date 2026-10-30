@@ -17,6 +17,11 @@ export default defineConfig(({mode}) => {
       emptyOutDir: true,
       sourcemap: profiling,
       minify: profiling ? false : undefined,
+      // Vite's preload helper adds <link> elements for a dynamic import's dependencies.
+      // Worker chunks have no document, so their dynamic imports preload nothing.
+      modulePreload: {
+        resolveDependencies: (filename, deps, {hostId}) => (/worker/i.test(hostId) ? [] : deps),
+      },
       rolldownOptions: {
         output: {keepNames: profiling},
         input: [
@@ -24,6 +29,7 @@ export default defineConfig(({mode}) => {
           'buriko.html',
           'noah.html',
           'rscript.html',
+          'artemis.html',
           'assets.html',
           'buriko-assets.html',
         ],

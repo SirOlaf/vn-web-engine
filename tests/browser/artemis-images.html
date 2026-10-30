@@ -1,0 +1,2143 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Artemis synthetic image pipeline</title>
+<canvas id="frame" style="width: 256px; height: 128px; image-rendering: pixelated"></canvas>
+<pre id="result">Running synthetic PNG / Lua / raster checks</pre>
+<script type="module">
+  import {ArtemisDrawShaderResource} from '../../dist/engines/artemis/draw-shader.js';
+  import {ArtemisShaderLibrary} from '../../dist/engines/artemis/shader-library.js';
+  import {ArtemisShaderConstantStorage} from '../../dist/engines/artemis/shader-properties.js';
+  import {createArtemisDrawShaderPreset} from '../../dist/engines/artemis/draw-shader.js';
+  import {
+    artemisDx9ShaderSources,
+    artemisDx9ShaderShade,
+  } from '../../dist/engines/artemis/dx9-shader.js';
+  import {
+    ARTEMIS_2898_EXECUTABLE_SHA256,
+    ARTEMIS_2908_EXECUTABLE_SHA256,
+  } from '../../dist/engines/artemis/revision.js';
+  import {artemisRadialShade} from '../../dist/engines/artemis/radial-shader.js';
+  import {ArtemisBrowserRasterShader} from '../../dist/engines/artemis/browser-raster-shader.js';
+  import {createArtemisRollingVoice} from '../../dist/engines/artemis/browser-rolling-voice.js';
+  import {createArtemisBufferedSoundDecoder} from '../../dist/engines/artemis/buffered-sound-decoder.js';
+  import {ArtemisWaveSource} from '../../dist/engines/artemis/wave-source.js';
+  import {encodeWav} from '../../dist/audio/pcm.js';
+  import {ArtemisSoundLoader} from '../../dist/engines/artemis/sound-loader.js';
+  import {createArtemisBrowserEffectVoices} from '../../dist/engines/artemis/browser-effect-voices.js';
+  import {ArtemisTextInsertion} from '../../dist/engines/artemis/text-insertion.js';
+  import {ArtemisTextGlyphs} from '../../dist/engines/artemis/text-glyphs.js';
+  import {ArtemisFileFonts} from '../../dist/engines/artemis/file-fonts.js';
+  import {ArtemisGlyphPainter} from '../../dist/engines/artemis/glyph-paint-client.js';
+  import {FreeTypeWorker} from '../../dist/text/freetype-worker-client.js';
+  import {buildAtlasFont} from '../../dist/text/atlas-font.js';
+  import {ArtemisImageGraphics} from '../../dist/engines/artemis/image-graphics.js';
+  import {ArtemisLayers} from '../../dist/engines/artemis/layers.js';
+  import {
+    createArtemisImageLoader,
+    createArtemisBrowserImageLoader,
+  } from '../../dist/engines/artemis/image-loader.js';
+  import {ArtemisSurfaceCache} from '../../dist/engines/artemis/surface-cache.js';
+  import {createArtemisOrdinaryGpuRaster} from '../../dist/engines/artemis/gpu-raster.js';
+  import {ARTEMIS_3179_EXECUTABLE_SHA256 as revision} from '../../dist/engines/artemis/revision.js';
+  import {ArtemisLua} from '../../dist/engines/artemis/lua.js';
+  import {ArtemisScript} from '../../dist/engines/artemis/script.js';
+  import {ArtemisStage} from '../../dist/engines/artemis/stage.js';
+  import {ArtemisTransition} from '../../dist/engines/artemis/transition.js';
+  import {artemisCursorLayer} from '../../dist/engines/artemis/browser/layers.js';
+  import {ArtemisLayerCommands} from '../../dist/engines/artemis/layer-commands.js';
+  import {GpuRenderSurface} from '../../dist/graphics/gpu-render-surface.js';
+  import {CanvasDrawTarget} from '../../dist/graphics/draw-list.js';
+
+  /** Synthetic single rectangle glyph. Remap the cmap from COLR's empty base to its
+   * outline layer, so historical FreeType tests ordinary glyf data without COLR.
+   */
+  function rectangleFont() {
+    const bytes = new Uint8Array(
+      buildAtlasFont([
+        {
+          codePoint: 65,
+          width: 0.25,
+          height: 0.5,
+          advance: 0.75,
+          pixels: Uint8Array.of(255, 255, 255, 255),
+          pixelWidth: 1,
+          pixelHeight: 1,
+          sourceX: 0,
+          sourceY: 0,
+          sourceWidth: 1,
+          sourceHeight: 1,
+        },
+      ]),
+    );
+    const view = new DataView(bytes.buffer);
+    const sum = (start, length) => {
+      let value = 0;
+      for (let i = 0; i < length; i += 4) value = (value + view.getUint32(start + i)) >>> 0;
+      return value;
+    };
+    let head;
+    for (let i = 0; i < view.getUint16(4); i++) {
+      const at = 12 + i * 16,
+        tag = new TextDecoder().decode(bytes.subarray(at, at + 4)),
+        offset = view.getUint32(at + 8),
+        length = view.getUint32(at + 12);
+      if (tag === 'cmap') {
+        view.setUint32(offset + 36, 2);
+        view.setUint32(at + 4, sum(offset, (length + 3) & ~3));
+      }
+      if (tag === 'head') head = offset;
+    }
+    view.setUint32(head + 8, 0);
+    view.setUint32(head + 8, (0xb1b0afba - sum(0, bytes.length)) >>> 0);
+    return bytes;
+  }
+
+  const png = Uint8Array.from(
+    atob(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAD0lEQVR4nGP4zwAE/xkaAAt+An+rqPSSAAAAAElFTkSuQmCC',
+    ),
+    (c) => c.charCodeAt(0),
+  );
+  const assert = (value, message) => {
+    if (!value) throw new Error(message);
+  };
+  const command = (name, args = {}) => ({
+    kind: 'tag',
+    name,
+    sourceLine: -1,
+    args: new Map(Object.entries(args)),
+  });
+  const effects = [];
+  const tracked = new Set(),
+    created = [],
+    deleted = [];
+  let uploads = 0,
+    context;
+  const prototype = WebGL2RenderingContext.prototype;
+  const originalUpload = prototype.texImage2D,
+    originalCreate = prototype.createTexture,
+    originalDelete = prototype.deleteTexture;
+  prototype.createTexture = function (...args) {
+    const texture = originalCreate.apply(this, args);
+    created.push(texture);
+    return texture;
+  };
+  prototype.deleteTexture = function (texture) {
+    deleted.push(texture);
+    return originalDelete.call(this, texture);
+  };
+  prototype.texImage2D = function (...args) {
+    context = this;
+    if (args[3] === 2 && args[4] === 1 && args[8] instanceof Uint8Array && args[8].length === 8) {
+      uploads++;
+      tracked.add(this.getParameter(this.TEXTURE_BINDING_2D));
+    }
+    return originalUpload.apply(this, args);
+  };
+  let target, layers, lua, cache;
+  try {
+    const canvas = document.querySelector('#frame');
+    const commandRegistry = new ArtemisLayerCommands(revision);
+    target = new CanvasDrawTarget(canvas, 4, 2);
+    const graphics = new ArtemisImageGraphics(
+      revision,
+      target,
+      {
+        creationMode: () => 0,
+        clearLayerCommands: (ids) => {
+          commandRegistry.clear(ids);
+          effects.push(['clear', ...ids]);
+        },
+        resetLayerCommands: (id, tag) => {
+          commandRegistry.reset(id, tag);
+          effects.push(['reset', id]);
+        },
+        recordLayerProperties: (tag) => {
+          commandRegistry.record(tag);
+          effects.push(['record', tag.args.get('id')]);
+        },
+        imageLoadFailed: () => {
+          throw new Error('synthetic image missing');
+        },
+        layerNotFound: () => {
+          throw new Error('synthetic layer missing');
+        },
+      },
+      {
+        filter: 'nearest',
+        blend: {
+          color: {source: 'source-alpha', destination: 'inverse-source-alpha', operation: 'add'},
+          alpha: {source: 'one', destination: 'inverse-source-alpha', operation: 'add'},
+        },
+      },
+    );
+    let surfacePrepares = 0;
+    cache = new ArtemisSurfaceCache(
+      revision,
+      8n,
+      createArtemisImageLoader(revision, async (path) => (path === 'synthetic.png' ? png : null)),
+      {
+        storageBytes: () => 8, // Explicit synthetic surface layout, not a native format guess.
+        prepare: (resource) => {
+          surfacePrepares++;
+          target.prepareImage(resource.image);
+        },
+        dispose: (resource) => target.invalidate(resource.image),
+      },
+    );
+    layers = new ArtemisLayers(revision, cache, graphics);
+    const stageState = {transition: 0, dirty: false, refresh: 0};
+    const stage = new ArtemisStage(revision, {
+      captureMode: () => 0,
+      transitionState: () => stageState.transition,
+      clearTransitionRule: () => {
+        ruleImage = null;
+      },
+      resetTransitionLayerValue: () => {},
+      setTransitionState: (value) => {
+        stageState.transition = value;
+      },
+      markSceneDirty: () => {
+        stageState.dirty = true;
+      },
+      commitLayers: () => layers.commit(),
+      refreshState: () => stageState.refresh,
+      setRefreshState: (value) => {
+        stageState.refresh = value;
+      },
+    });
+    const source = new TextEncoder().encode(
+      `[lua]function prepare(e) e:tag{'lyc',id='2',file='synthetic'}; completed=true end[/lua][calllua function="prepare"][flip][stop]`,
+    );
+    let script, pending;
+    lua = new ArtemisLua({
+      readFile: () => source,
+      fileExists: () => true,
+      now: () => 0,
+      variable: () => '0',
+      suspendableTags: true,
+      tag: (tag) => script.executeTag(tag),
+      enqueueTag: () => {},
+    });
+    script = new ArtemisScript(lua, {
+      readFile: () => source,
+      dispatch: (tag) => {
+        if (tag.name === 'lyc') {
+          pending = layers.dispatch(tag);
+          return 'suspended';
+        }
+        if (stage.dispatch(tag)) return;
+        if (tag.name === 'stop') return 'stopped';
+        throw new Error('unexpected synthetic command');
+      },
+    });
+    script.load('synthetic boot');
+    assert(script.run() === 'waiting', 'Lua did not wait for PNG resource');
+    await pending;
+    assert(uploads === 1, 'image was not prepared exactly once');
+    assert(
+      graphics.drawCommitted(layers.scene).commands.length === 0,
+      'uncommitted layer presented',
+    );
+    assert(
+      [...tracked].every((texture) => !deleted.includes(texture)),
+      'prepared image evicted by empty frame',
+    );
+    script.resumeLua();
+    assert(script.run() === 'stopped', 'Lua did not resume through native flip');
+    assert(lua.vm.getGlobal('completed') === true, 'Lua local continuation lost');
+    assert(stageState.dirty === true, 'native flip did not mark scene dirty');
+    graphics.drawCommitted(layers.scene);
+    const pixels = [...canvas.getContext('2d').getImageData(0, 0, 4, 2).data];
+    assert(pixels.slice(0, 4).join(',') === '0,0,0,255', 'transparent red changed the frame');
+    assert(pixels.slice(4, 8).join(',') === '0,128,0,255', 'shared GPU alpha/color mismatch');
+    assert(uploads === 1, 'committed image was uploaded again');
+    // Pointer hit test: inverse matrix into the image bounds, then the clickable threshold
+    // gates the pixel alpha (transparent red, half-opaque green).
+    const hits = (x, y) => graphics.hitTest(layers.scene, x, y).join(',');
+    assert(hits(0, 0) === '2' && hits(1.5, 0.5) === '2', 'threshold 0 hit test missed');
+    assert(hits(2, 0) === '' && hits(-0.5, 0) === '' && hits(0, 1) === '', 'hit outside image');
+    const hitDisplay = layers.scene.entry('2').value.display;
+    hitDisplay.apply({clickablethreshold: 1});
+    assert(hits(0, 0) === '' && hits(1, 0) === '2', 'alpha threshold hit test mismatch');
+    hitDisplay.apply({clickablethreshold: 0});
+    // Real command order: pending layer edits become visible through trans, whose
+    // completion commits them. A flip before trans would hide the renderer regression.
+    let crossfade = 0,
+      vague = 0,
+      threshold = 0,
+      ruleImage = null,
+      ruleRevision = 0;
+    let transitionTween,
+      transitionMode = 0;
+    const grayRule = {
+      width: 4,
+      height: 2,
+      bytesPerPixel: 1,
+      format: 0,
+      pixels: new Uint8Array(8).fill(128),
+    };
+    const transition = new ArtemisTransition(revision, {
+      captureMode: () => 0,
+      commit: () => stage.commit(),
+      enterRunMode: (mode) => {
+        transitionMode = mode;
+      },
+      releaseRunMode: () => {
+        transitionMode = 0;
+      },
+      now: () => 100,
+      setWaitStart: () => {
+        throw new Error('unexpected type 0 wait');
+      },
+      skipState: () => ({allowed: true, command: false, control: false}),
+      setTransitionState: (state) => {
+        stageState.transition = state;
+      },
+      setCrossfade: (value) => {
+        crossfade = value;
+      },
+      stageSize: () => ({width: 4, height: 2}),
+      loadRule: async () => grayRule,
+      setRuleImage: (image) => {
+        ruleImage = image;
+        ruleRevision++;
+      },
+      ruleImage: () => grayRule,
+      setVague: (value) => {
+        vague = value;
+      },
+      setRuleThreshold: (value) => {
+        threshold = value;
+      },
+      registerTween: (tween) => {
+        transitionTween = tween;
+      },
+      reportError: () => {
+        throw new Error('synthetic transition error');
+      },
+    });
+    const presentation = () => ({
+      state: stageState.transition,
+      crossfade,
+      vague,
+      threshold,
+      rule: ruleImage,
+      ruleRevision,
+    });
+    const stagePixel = () => [...canvas.getContext('2d').getImageData(1, 0, 1, 1).data].join(',');
+    graphics.drawStage(layers.scene, presentation());
+    assert(stagePixel() === '0,128,0,255', 'stage frame differs from the committed frame');
+    await layers.dispatch(command('lyprop', {id: '2', visible: '0'}));
+    transition.dispatch(command('trans', {type: '1', time: '4', input: '0'}));
+    transitionTween.tick(100);
+    graphics.drawStage(layers.scene, presentation());
+    assert(stagePixel() === '0,128,0,255', 'crossfade did not start from the presented frame');
+    transitionTween.tick(102);
+    graphics.drawStage(layers.scene, presentation());
+    const half = stagePixel().split(',').map(Number);
+    assert(Math.abs(half[1] - 64) <= 1 && half[3] === 255, 'crossfade midpoint mismatch');
+    graphics.drawCommitted(layers.scene);
+    assert(stagePixel() === '0,128,0,255', 'transition committed pending edits before completion');
+    transitionTween.tick(104);
+    graphics.drawStage(layers.scene, presentation());
+    assert(stagePixel() === '0,0,0,255', 'crossfade did not end at the new frame');
+    assert(transitionMode === 0, 'completed crossfade did not release the run mode');
+
+    await layers.dispatch(command('lyprop', {id: '2', visible: '1'}));
+    await transition.dispatch(command('trans', {type: '2', time: '4', vague: '128', rule: 'gray'}));
+    transitionTween.tick(200);
+    graphics.drawStage(layers.scene, presentation());
+    assert(stagePixel() === '0,0,0,255', 'rule transition did not start from the previous frame');
+    transitionTween.tick(202);
+    graphics.drawStage(layers.scene, presentation());
+    const ruleHalf = stagePixel().split(',').map(Number);
+    assert(
+      Math.abs(ruleHalf[1] - 64) <= 1 && ruleHalf[3] === 255,
+      'rule transition midpoint mismatch',
+    );
+    transitionTween.tick(204);
+    graphics.drawStage(layers.scene, presentation());
+    assert(stagePixel() === '0,128,0,255', 'rule transition did not commit its new scene');
+    assert(
+      transitionMode === 0 && ruleImage === null,
+      'rule transition did not release its owners',
+    );
+    await layers.dispatch(command('lyprop', {id: '2', visible: '0'}));
+    stage.dispatch(command('flip'));
+    graphics.drawCommitted(layers.scene);
+    assert(
+      [...tracked].every((texture) => !deleted.includes(texture)),
+      'hidden actor texture evicted',
+    );
+    // The cursor stays live above both transitions; neither saved stage image may
+    // contain it. Use a configured name unrelated to the real game's name.
+    lua.vm.execute(new TextEncoder().encode('csv={mw={cursor={id="pointer"}}}'));
+    const cursorID = artemisCursorLayer(lua.vm);
+    assert(cursorID === 'pointer', 'configured cursor layer was not resolved');
+    await layers.dispatch(
+      command('lyc', {id: cursorID, width: '1', height: '1', color: 'ffff0000'}),
+    );
+    await layers.dispatch(command('lyprop', {id: cursorID, left: '0', top: '1'}));
+    stage.dispatch(command('flip'));
+    const pixel = (x, y) => [...canvas.getContext('2d').getImageData(x, y, 1, 1).data];
+    for (const type of ['1', '2']) {
+      await layers.dispatch(command('lyprop', {id: cursorID, left: '0', visible: '1'}));
+      await layers.dispatch(command('lyprop', {id: '2', visible: '1'}));
+      stage.dispatch(command('flip'));
+      graphics.drawStage(layers.scene, presentation(), cursorID);
+      assert(pixel(0, 1).join() === '255,0,0,255', 'live cursor missing before transition');
+      await layers.dispatch(command('lyprop', {id: '2', visible: '0'}));
+      await transition.dispatch(command('trans', {type, time: '4', vague: '128', rule: 'gray'}));
+      transitionTween.tick(300);
+      await layers.dispatch(command('lyprop', {id: cursorID, left: '3'}));
+      transitionTween.tick(302);
+      graphics.drawStage(layers.scene, presentation(), cursorID);
+      assert(
+        pixel(0, 1).join() === '0,0,0,255',
+        'old cursor position survived in transition frame',
+      );
+      assert(pixel(3, 1).join() === '255,0,0,255', 'current cursor faded with the scene');
+      await layers.dispatch(command('lyprop', {id: cursorID, visible: '0'}));
+      graphics.drawStage(layers.scene, presentation(), cursorID);
+      assert(pixel(3, 1).join() === '0,0,0,255', 'hidden cursor survived until scene commit');
+      transitionTween.tick(304);
+      graphics.drawStage(layers.scene, presentation(), cursorID);
+    }
+    await layers.dispatch(command('lydel', {id: cursorID}));
+    stage.dispatch(command('flip'));
+    lua.vm.execute(new TextEncoder().encode('csv.mw.cursor=nil'));
+    assert(artemisCursorLayer(lua.vm) === null, 'missing cursor config did not clear the overlay');
+    // A nested or missing configured ID never stops the frame; layers draw in place.
+    await layers.dispatch(
+      command('lyc', {id: 'moving', width: '1', height: '1', color: 'ffff0000'}),
+    );
+    await layers.dispatch(command('lyprop', {id: 'moving', left: '0', top: '1'}));
+    stage.dispatch(command('flip'));
+    for (const id of ['moving.inner', 'absent', '']) {
+      try {
+        graphics.drawStage(layers.scene, presentation(), id);
+      } catch (error) {
+        throw Error(`live ID "${id}" stopped the frame: ${error.message}`);
+      }
+      assert(pixel(0, 1).join() === '255,0,0,255', `layer vanished with live ID "${id}"`);
+    }
+    await layers.dispatch(command('lydel', {id: 'moving'}));
+    stage.dispatch(command('flip'));
+    const afterCursor = {created: created.length, deleted: deleted.length};
+    let refused = false;
+    try {
+      target.prepareImage({
+        width: context.getParameter(context.MAX_TEXTURE_SIZE) + 1,
+        height: 0,
+        pixels: new Uint8Array(),
+      });
+    } catch (error) {
+      refused = error.message.includes('Texture upload failed');
+    }
+    assert(
+      commandRegistry
+        .commands('2')
+        .map((tag) => `${tag.name}:${tag.args.get('visible') ?? ''}`)
+        .join() === 'lyc:,lyprop:0',
+      'property command registry was not updated',
+    );
+    assert(refused, 'oversized texture was accepted');
+    assert(
+      created.length - deleted.length === afterCursor.created - afterCursor.deleted,
+      'failed upload leaked its texture',
+    );
+    await layers.dispatch(command('lydel', {id: '2'}));
+    stage.dispatch(command('flip'));
+    graphics.drawCommitted(layers.scene);
+    assert(
+      [...tracked].every((texture) => !deleted.includes(texture)),
+      'idle cached surface lost its GPU binding',
+    );
+    assert(cache.bytesUsed === 8n, 'idle surface accounting lost');
+    await layers.dispatch(command('lyc', {id: '3', file: 'synthetic'}));
+    stage.dispatch(command('flip'));
+    graphics.drawCommitted(layers.scene);
+    assert(uploads === 1 && surfacePrepares === 1, 'idle promotion decoded or uploaded again');
+    assert(
+      [...canvas.getContext('2d').getImageData(1, 0, 1, 1).data].join(',') === '0,128,0,255',
+      'promoted cached surface did not render',
+    );
+    cache.close(); // Active layer must survive shutdown until its own release.
+    assert(
+      [...tracked].every((texture) => !deleted.includes(texture)),
+      'active loan invalidated on close',
+    );
+    graphics.drawCommitted(layers.scene);
+    await layers.dispatch(command('lydel', {id: '3'}));
+    stage.dispatch(command('flip'));
+    assert(
+      [...tracked].every((texture) => deleted.filter((item) => item === texture).length === 1),
+      'last actor did not release its texture once',
+    );
+    assert(cache.bytesUsed === 0n, 'closed cache retained released loan');
+    assert(commandRegistry.commands('2') === undefined, 'deleted layer commands retained');
+    assert(context.getError() === context.NO_ERROR, 'remaining WebGL error');
+    // The remaining solid fallback checks use a fresh ordinary loader after cache shutdown.
+    layers.close();
+    layers = new ArtemisLayers(
+      revision,
+      createArtemisImageLoader(revision, async () => null),
+      graphics,
+    );
+    await layers.dispatch(
+      command('lyc', {id: '-1', file: 'missing', width: '4', height: '2', color: 'ff0000'}),
+    );
+    await layers.dispatch(
+      command('lyc', {id: '0', file: 'missing', width: '4', height: '2', color: '00ff00'}),
+    );
+    stage.dispatch(command('flip'));
+    graphics.drawCommitted(layers.scene);
+    const drawOrderPixel = [...canvas.getContext('2d').getImageData(0, 0, 1, 1).data];
+    assert(
+      drawOrderPixel.join(',') === '0,255,0,255',
+      'native ascending GPU preparation order mismatch',
+    );
+    // takess renders the committed scene offscreen; savess reads it back top row first.
+    assert(graphics.readScreenshot(4, 2) === null, 'screenshot existed before takess');
+    await layers.dispatch(
+      command('lyc', {id: '1', file: 'missing', width: '4', height: '1', color: '0000ff'}),
+    );
+    await layers.dispatch(command('lyprop', {id: '1', top: '1'}));
+    stage.dispatch(command('flip'));
+    graphics.takeScreenshot(layers.scene);
+    assert(
+      [...canvas.getContext('2d').getImageData(0, 1, 1, 1).data].join(',') === '0,255,0,255',
+      'takess changed the presented frame',
+    );
+    const shot = graphics.readScreenshot(4, 2);
+    assert(
+      [...shot.subarray(0, 4)].join(',') === '0,255,0,255' &&
+        [...shot.subarray(16, 20)].join(',') === '0,0,255,255',
+      'screenshot rows are not top first',
+    );
+    assert(graphics.readScreenshot(2, 1).length === 8, 'scaled screenshot size mismatch');
+    layers.close();
+    // Format-2 intermediate shaders replace straight RGBA using a GPU background snapshot.
+    let nativeCapturedCases = 0;
+    const captureTarget = new CanvasDrawTarget(document.createElement('canvas'), 2, 2);
+    try {
+      const capture = new GpuRenderSurface(2, 2),
+        background = new GpuRenderSurface(2, 2),
+        foreground = {width: 1, height: 1, pixels: new Uint8Array([128, 64, 192, 128])},
+        images = [foreground, capture, background],
+        raster = createArtemisOrdinaryGpuRaster(revision),
+        coords = [
+          [0, 0],
+          [1, 0],
+          [0, 1],
+          [1, 1],
+        ],
+        replace = {
+          color: {source: 'one', destination: 'zero', operation: 'add'},
+          alpha: {source: 'one', destination: 'zero', operation: 'add'},
+        };
+      captureTarget.prepareRenderSurface(capture);
+      captureTarget.prepareRenderSurface(background);
+      captureTarget.prepareImage(foreground);
+      for (const mode of ['normal', 'add', 'screen', 'multiply'])
+        for (let bits = 0; bits < 8; bits++) {
+          const state = {
+              negative: !!(bits & 4),
+              grayscale: !!(bits & 2),
+              colorMultiply: bits & 1 ? 0x4080c0 : 0xffffff,
+            },
+            color = bits & 1 ? [64 / 255, 128 / 255, 192 / 255] : [1, 1, 1],
+            shader = raster.captured(mode, state);
+          captureTarget.draw(
+            {
+              sprites: [],
+              clearColor: [0, 0, 0, 0],
+              commands: [
+                {
+                  kind: 'gpu-target',
+                  surface: capture,
+                  clearColor: [51 / 255, 102 / 255, 153 / 255, 64 / 255],
+                },
+                {kind: 'gpu-copy', source: capture, destination: background},
+                {
+                  kind: 'triangles',
+                  texture: 0,
+                  topology: 'triangle-strip',
+                  normalizedUV: true,
+                  vertices: new Float32Array(
+                    coords.flatMap(([x, y]) => [x * 2, y * 2, 0, ...color, 0.75, x, y]),
+                  ),
+                  blendState: shader.blend,
+                  fragment: shader.fragment,
+                  additionalTextures: [
+                    {texture: 2, uv: new Float32Array(coords.flat()), filter: 'linear'},
+                  ],
+                },
+                {kind: 'gpu-target', surface: null},
+                {
+                  texture: 1,
+                  source: {x: 0, y: 0, width: 2, height: 2},
+                  destination: {x: 0, y: 0, width: 2, height: 2},
+                  color: 0xffffff,
+                  alpha: 255,
+                  blendState: replace,
+                },
+              ],
+            },
+            (id) => images[id],
+          );
+          const actual = new Uint8Array(4),
+            gl = captureTarget.gl;
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, actual);
+          const ba = 64 / 255,
+            fa = (128 / 255) * 0.75,
+            alpha = ba * (1 - fa) + fa,
+            back = [51 / 255, 102 / 255, 153 / 255];
+          let fore = [128 / 255, 64 / 255, 192 / 255];
+          if (state.negative) fore = fore.map((v) => 1 - v);
+          if (state.grayscale)
+            fore = Array(3).fill(fore[0] * 0.298912 + fore[1] * 0.586611 + fore[2] * 0.114478);
+          fore = fore.map((v, i) => v * color[i]);
+          const expected = [
+            ...fore.map((v, i) => {
+              if (mode === 'normal') return (back[i] * ba * (1 - fa) + v * fa) / alpha;
+              const overlap =
+                mode === 'add'
+                  ? Math.min(1, back[i] + v)
+                  : mode === 'screen'
+                    ? 1 - (1 - back[i]) * (1 - v)
+                    : back[i] * v;
+              return (overlap * ba * fa + back[i] * ba * (1 - fa) + v * fa * (1 - ba)) / alpha;
+            }),
+            alpha,
+          ].map((v) => Math.round(v * 255));
+          assert(
+            actual.every((v, i) => Math.abs(v - expected[i]) <= 1),
+            `captured ${mode}/${bits}: ${actual} != ${expected}`,
+          );
+          assert(gl.getError() === gl.NO_ERROR, 'captured shader GL error');
+          nativeCapturedCases++;
+        }
+    } finally {
+      captureTarget.dispose();
+    }
+    const nativeGraphics = new ArtemisImageGraphics(
+      revision,
+      target,
+      {
+        creationMode: () => 0,
+        clearLayerCommands: (ids) => commandRegistry.clear(ids),
+        resetLayerCommands: (id, tag) => commandRegistry.reset(id, tag),
+        recordLayerProperties: (tag) => commandRegistry.record(tag),
+        imageLoadFailed: () => {
+          throw new Error('synthetic native image missing');
+        },
+        layerNotFound: () => {
+          throw new Error('synthetic native layer missing');
+        },
+      },
+      createArtemisOrdinaryGpuRaster(revision),
+    );
+    layers = new ArtemisLayers(
+      revision,
+      createArtemisImageLoader(revision, async (path) => (path === 'synthetic.png' ? png : null)),
+      nativeGraphics,
+    );
+    await layers.dispatch(
+      command('lyc', {id: '-10', file: 'missing', width: '4', height: '2', color: '40ff0000'}),
+    );
+    await layers.dispatch(command('lyc', {id: '1', file: 'synthetic'}));
+    await layers.dispatch(command('lyprop', {id: '1', left: '1', xscale: '200'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    const nativeFramebuffer = new Uint8Array(16);
+    context.readPixels(0, 1, 4, 1, context.RGBA, context.UNSIGNED_BYTE, nativeFramebuffer);
+    const expected = [64, 0, 0, 16, 80, 8, 0, 20, 64, 72, 0, 52, 32, 128, 0, 80];
+    assert(
+      nativeFramebuffer.every((value, i) => Math.abs(value - expected[i]) <= 1),
+      `native linear/blend/transparent write mismatch: ${nativeFramebuffer}`,
+    );
+    const nativeModePixels = {};
+    for (const [mode, expectedMode] of Object.entries({
+      add: [64, 0, 0, 16, 88, 8, 0, 20, 88, 72, 0, 52, 64, 128, 0, 80],
+      screen: [64, 0, 0, 16, 82, 8, 0, 16, 82, 72, 0, 16, 64, 128, 0, 16],
+      multiply: [64, 0, 0, 255, 62, 0, 0, 255, 46, 0, 0, 255, 32, 0, 0, 255],
+    })) {
+      await layers.dispatch(command('lyprop', {id: '1', layermode: mode}));
+      stage.dispatch(command('flip'));
+      nativeGraphics.drawCommitted(layers.scene);
+      const modePixels = new Uint8Array(16);
+      context.readPixels(0, 1, 4, 1, context.RGBA, context.UNSIGNED_BYTE, modePixels);
+      assert(
+        modePixels.every((value, i) => Math.abs(value - expectedMode[i]) <= 1),
+        `native ${mode} shader/blend mismatch: ${modePixels}`,
+      );
+      nativeModePixels[mode] = [...modePixels];
+    }
+    let nativeEffectsCases = 0;
+    for (const mode of ['normal', 'add', 'screen', 'multiply'])
+      for (let bits = 0; bits < 8; bits++) {
+        await layers.dispatch(
+          command('lyprop', {
+            id: '1',
+            layermode: mode,
+            negative: bits & 4 ? '1' : '0',
+            grayscale: bits & 2 ? '1' : '0',
+            colormultiply: bits & 1 ? 'ff4080c0' : 'ffffff',
+          }),
+        );
+        stage.dispatch(command('flip'));
+        nativeGraphics.drawCommitted(layers.scene);
+        const actual = new Uint8Array(16);
+        context.readPixels(0, 1, 4, 1, context.RGBA, context.UNSIGNED_BYTE, actual);
+        const expectedEffects = [];
+        for (const green of [0, 0.25, 0.75, 1]) {
+          let rgb = [1 - green, green, 0];
+          const alpha = (green * 128) / 255;
+          if (bits & 4) rgb = rgb.map((value) => 1 - value);
+          if (bits & 2) {
+            const gray = rgb[0] * 0.298912 + rgb[1] * 0.586611 + rgb[2] * 0.114478;
+            rgb = [gray, gray, gray];
+          }
+          if (bits & 1) rgb = rgb.map((value, i) => (value * [64, 128, 192][i]) / 255);
+          let out;
+          const back = [64 / 255, 0, 0],
+            backAlpha = 16 / 255;
+          if (mode === 'normal')
+            out = [
+              ...rgb.map((value, i) => value * alpha + back[i] * (1 - alpha)),
+              alpha * alpha + backAlpha,
+            ];
+          if (mode === 'add')
+            out = [...rgb.map((value, i) => value * alpha + back[i]), alpha * alpha + backAlpha];
+          if (mode === 'screen')
+            out = [...rgb.map((value, i) => value * alpha * (1 - back[i]) + back[i]), backAlpha];
+          if (mode === 'multiply')
+            out = [...rgb.map((value, i) => (value + (1 - value) * (1 - alpha)) * back[i]), 1];
+          expectedEffects.push(
+            ...out.map((value) => Math.round(Math.max(0, Math.min(1, value)) * 255)),
+          );
+        }
+        assert(
+          actual.every((value, i) => Math.abs(value - expectedEffects[i]) <= 1),
+          `native effects ${mode}/${bits} mismatch: ${actual}, expected: ${expectedEffects}`,
+        );
+        nativeEffectsCases++;
+      }
+    await layers.dispatch(
+      command('lyprop', {
+        id: '1',
+        layermode: 'normal',
+        negative: '0',
+        grayscale: '0',
+        colormultiply: 'ffffff',
+        clip: '0,0,1,1',
+      }),
+    );
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    const initialClipPixels = new Uint8Array(16);
+    context.readPixels(0, 1, 4, 1, context.RGBA, context.UNSIGNED_BYTE, initialClipPixels);
+    assert(
+      initialClipPixels.every((value, i) => Math.abs(value - expected[i]) <= 1),
+      'default clip endpoints must preserve disabled initial rectangle',
+    );
+    await layers.dispatch(command('lyprop', {id: '1', clip: '1,0,1,1'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    const nativeClipPixels = new Uint8Array(16);
+    context.readPixels(0, 1, 4, 1, context.RGBA, context.UNSIGNED_BYTE, nativeClipPixels);
+    const expectedClip = [64, 72, 0, 52, 32, 128, 0, 80, 64, 0, 0, 16, 64, 0, 0, 16];
+    assert(
+      nativeClipPixels.every((value, i) => Math.abs(value - expectedClip[i]) <= 1),
+      `native rebased clip/linear sampling mismatch: ${nativeClipPixels}`,
+    );
+    const nativeEmpty = new Uint8Array(4);
+    await layers.dispatch(command('lydel', {id: '-10'}));
+    await layers.dispatch(command('lydel', {id: '1'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    context.readPixels(0, 0, 1, 1, context.RGBA, context.UNSIGNED_BYTE, nativeEmpty);
+    assert(
+      nativeEmpty.every((value) => value === 0),
+      'native transparent black clear mismatch',
+    );
+    await layers.dispatch(
+      command('lyc', {
+        id: 'g.sub.1',
+        file: 'missing-solid',
+        width: '1',
+        height: '1',
+        color: 'ff0000',
+      }),
+    );
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    const readGroupPixel = (x, y) => {
+      const pixel = new Uint8Array(4);
+      context.readPixels(x, 1 - y, 1, 1, context.RGBA, context.UNSIGNED_BYTE, pixel);
+      return [...pixel];
+    };
+    const expectGroupPixel = (x, y, expected) => {
+      const actual = readGroupPixel(x, y);
+      assert(
+        actual.every((value, i) => Math.abs(value - expected[i]) <= 1),
+        `group pixel ${x},${y}: ${actual} != ${expected}`,
+      );
+    };
+    expectGroupPixel(0, 0, [255, 0, 0, 255]);
+    await layers.dispatch(command('lyprop', {id: 'g', left: '1', xscale: '200', alpha: '128'}));
+    await layers.dispatch(command('lyprop', {id: 'g.sub', top: '1', alpha: '128'}));
+    nativeGraphics.drawCommitted(layers.scene);
+    expectGroupPixel(0, 0, [255, 0, 0, 255]);
+    expectGroupPixel(1, 1, [0, 0, 0, 0]);
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    const nativeGroupPixel = readGroupPixel(1, 1);
+    expectGroupPixel(1, 1, [64, 0, 0, 16]);
+    expectGroupPixel(2, 1, [64, 0, 0, 16]);
+    expectGroupPixel(0, 1, [0, 0, 0, 0]);
+    expectGroupPixel(1, 0, [0, 0, 0, 0]);
+    await layers.dispatch(command('lyprop', {id: 'g', visible: '0'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    expectGroupPixel(1, 1, [0, 0, 0, 0]);
+    await layers.dispatch(command('lyprop', {id: 'g', visible: '1', reversex: '1', anchorx: '1'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    expectGroupPixel(1, 1, [0, 0, 0, 0]);
+    expectGroupPixel(2, 1, [64, 0, 0, 16]);
+    expectGroupPixel(3, 1, [64, 0, 0, 16]);
+    await layers.dispatch(command('lydel', {id: 'g'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    expectGroupPixel(2, 1, [0, 0, 0, 0]);
+    await layers.dispatch(
+      command('lyc', {
+        id: 'capture.1',
+        file: 'missing-solid',
+        width: '2',
+        height: '2',
+        color: '80ff0000',
+      }),
+    );
+    await layers.dispatch(
+      command('lyprop', {
+        id: 'capture',
+        clip: '0,0,2,2',
+        intermediate_render: '1',
+        left: '1',
+        alpha: '128',
+      }),
+    );
+    stage.dispatch(command('flip'));
+    let captureList = nativeGraphics.drawCommitted(layers.scene);
+    expectGroupPixel(1, 0, [64, 0, 0, 16]);
+    expectGroupPixel(1, 1, [64, 0, 0, 16]);
+    expectGroupPixel(0, 0, [0, 0, 0, 0]);
+    assert(
+      captureList.commands.some((c) => c.kind === 'gpu-copy'),
+      'format2 capture did not snapshot',
+    );
+    captureList = nativeGraphics.drawCommitted(layers.scene);
+    assert(captureList.commands.length === 1, 'unchanged intermediate group was redrawn');
+    expectGroupPixel(1, 0, [64, 0, 0, 16]);
+    await layers.dispatch(command('lyprop', {id: 'capture', intermediate_render: '2'}));
+    stage.dispatch(command('flip'));
+    captureList = nativeGraphics.drawCommitted(layers.scene);
+    assert(
+      captureList.commands.some((c) => c.kind === 'gpu-copy'),
+      'format changed without native resize',
+    );
+    expectGroupPixel(1, 0, [64, 0, 0, 16]);
+    await layers.dispatch(command('lyprop', {id: 'capture', clip: '0,0,3,2'}));
+    stage.dispatch(command('flip'));
+    captureList = nativeGraphics.drawCommitted(layers.scene);
+    assert(
+      !captureList.commands.some((c) => c.kind === 'gpu-copy'),
+      'format1 resize still sampled background',
+    );
+    expectGroupPixel(1, 0, [16, 0, 0, 4]);
+    // Disabling then re-enabling selects fresh format2 storage, before holder commit.
+    await layers.dispatch(command('lyprop', {id: 'capture', intermediate_render: '0'}));
+    await layers.dispatch(command('lyprop', {id: 'capture', intermediate_render: '1'}));
+    stage.dispatch(command('flip'));
+    await layers.dispatch(
+      command('lyc', {
+        id: 'capture.nested.1',
+        file: 'missing-solid',
+        width: '2',
+        height: '2',
+        color: '800000ff',
+      }),
+    );
+    await layers.dispatch(
+      command('lyprop', {id: 'capture.nested', clip: '0,0,2,2', intermediate_render: '1'}),
+    );
+    stage.dispatch(command('flip'));
+    captureList = nativeGraphics.drawCommitted(layers.scene);
+    expectGroupPixel(1, 0, [32, 0, 64, 36]);
+    expectGroupPixel(1, 1, [32, 0, 64, 36]);
+    assert(
+      captureList.commands.filter((c) => c.kind === 'gpu-copy').length === 3,
+      'nested background snapshots missing',
+    );
+    await layers.dispatch(command('lyprop', {id: 'capture.nested', visible: '0'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    expectGroupPixel(1, 0, [64, 0, 0, 16]);
+    await layers.dispatch(
+      command('lyprop', {id: 'capture', negative: '1', grayscale: '1', colormultiply: '4080c0'}),
+    );
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    // Gray of inverted red is 0.701088, then multiply and final effective alpha.
+    expectGroupPixel(1, 0, [11, 23, 34, 16]);
+    await layers.dispatch(command('lydel', {id: 'capture.1'}));
+    await layers.dispatch(command('lydel', {id: 'capture.nested'}));
+    await layers.dispatch(command('lyprop', {id: 'capture', clip: '0,0,0,0'}));
+    stage.dispatch(command('flip'));
+    captureList = nativeGraphics.drawCommitted(layers.scene);
+    assert(!captureList.commands.some((c) => c.clearColor), 'empty capture eagerly cleared');
+    expectGroupPixel(1, 0, [11, 23, 34, 16]);
+    await layers.dispatch(command('lydel', {id: 'capture'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    expectGroupPixel(1, 0, [0, 0, 0, 0]);
+    assert(context.getError() === context.NO_ERROR, 'intermediate rendering left a GL error');
+    // Merged PSD decoding runs in the same worker and preserves native recovered straight alpha.
+    layers.close();
+    const psdBytes = new Uint8Array(44),
+      psdView = new DataView(psdBytes.buffer);
+    psdBytes.set([56, 66, 80, 83]);
+    psdView.setUint16(4, 1);
+    psdView.setUint16(12, 4);
+    psdView.setUint32(14, 1);
+    psdView.setUint32(18, 1);
+    psdView.setUint16(22, 8);
+    psdView.setUint16(24, 3);
+    psdBytes.set([255, 191, 127, 128], 40);
+    const psdSnapshot = psdBytes.slice();
+    layers = new ArtemisLayers(
+      revision,
+      createArtemisImageLoader(revision, async (path) => (path === 'merged.PSD' ? psdBytes : null)),
+      nativeGraphics,
+    );
+    await layers.dispatch(command('lyc', {id: 'psd', file: 'merged'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    expectGroupPixel(0, 0, [128, 64, 0, 64]);
+    assert(
+      psdBytes.every((v, i) => v === psdSnapshot[i]),
+      'PSD worker detached or changed archive bytes',
+    );
+    await layers.dispatch(command('lydel', {id: 'psd'}));
+    stage.dispatch(command('flip'));
+    // JPEG uses the real browser worker codec and ignores EXIF orientation like CJpg.
+    layers.close();
+    const jpegCanvas = new OffscreenCanvas(2, 3),
+      jpegContext = jpegCanvas.getContext('2d');
+    jpegContext.fillStyle = 'rgb(200,50,25)';
+    jpegContext.fillRect(0, 0, 2, 3);
+    const encodedJpeg = new Uint8Array(
+      await (await jpegCanvas.convertToBlob({type: 'image/jpeg', quality: 1})).arrayBuffer(),
+    );
+    const exif = new Uint8Array(36),
+      exifView = new DataView(exif.buffer);
+    exif.set([255, 225, 0, 34, 69, 120, 105, 102, 0, 0, 73, 73, 42, 0]);
+    exifView.setUint32(14, 8, true);
+    exifView.setUint16(18, 1, true);
+    exifView.setUint16(20, 0x112, true);
+    exifView.setUint16(22, 3, true);
+    exifView.setUint32(24, 1, true);
+    exifView.setUint16(28, 6, true);
+    const jpegBytes = new Uint8Array(encodedJpeg.length + exif.length);
+    jpegBytes.set(encodedJpeg.subarray(0, 2));
+    jpegBytes.set(exif, 2);
+    jpegBytes.set(encodedJpeg.subarray(2), 2 + exif.length);
+    const orientedBitmap = await createImageBitmap(new Blob([jpegBytes], {type: 'image/jpeg'}));
+    assert(
+      orientedBitmap.width === 3 && orientedBitmap.height === 2,
+      'synthetic EXIF orientation fixture is ineffective',
+    );
+    orientedBitmap.close();
+    const jpegSnapshot = jpegBytes.slice(),
+      jpegLoader = createArtemisBrowserImageLoader(revision, async (path) =>
+        path === 'synthetic.JPG' ? jpegBytes : null,
+      ),
+      decodedJpeg = await jpegLoader.load('synthetic');
+    assert(
+      decodedJpeg.image.width === 2 && decodedJpeg.image.height === 3,
+      'JPEG unexpectedly applied EXIF orientation',
+    );
+    assert(
+      decodedJpeg.image.pixels.every((v, i) => i % 4 !== 3 || v === 255),
+      'JPEG opaque alpha lost',
+    );
+    assert(
+      jpegBytes.every((v, i) => v === jpegSnapshot[i]),
+      'JPEG worker changed archive bytes',
+    );
+    layers = new ArtemisLayers(revision, jpegLoader, nativeGraphics);
+    await layers.dispatch(command('lyc', {id: 'jpeg', file: 'synthetic'}));
+    stage.dispatch(command('flip'));
+    nativeGraphics.drawCommitted(layers.scene);
+    const jpegPixel = readGroupPixel(0, 0);
+    assert(
+      jpegPixel.every((v, i) => Math.abs(v - [200, 50, 25, 255][i]) <= 3),
+      `JPEG GPU pixel mismatch: ${jpegPixel}`,
+    );
+    const fontWorker = new FreeTypeWorker();
+    let fontTarget;
+    const glyphPainter = new ArtemisGlyphPainter(revision);
+    try {
+      const font = await fontWorker.open(rectangleFont());
+      await font.requestSize(3, 0, 32 * 64);
+      const glyph = await font.rasterize(65);
+      assert(glyph.width === 8 && glyph.height === 16, 'FreeType worker glyph metrics');
+      assert(
+        glyph.pixels.every((value) => value === 255),
+        'FreeType worker rectangle coverage',
+      );
+      const fontCanvas = document.createElement('canvas');
+      fontTarget = new CanvasDrawTarget(fontCanvas, 16, 32);
+      const surface = await glyphPainter.paint(
+        {
+          width: glyph.width,
+          height: glyph.height,
+          left: glyph.left,
+          top: 32 - glyph.top,
+          advance: glyph.advanceX >> 6,
+          pixels: glyph.pixels,
+        },
+        {color: 0x00b4ff, outlineColor: 0xff0000, shadowColor: 0, outline: 1, shadow: 0},
+      );
+      assert(
+        surface.advance === 26 && surface.image.width === 10 && surface.image.height === 18,
+        'native glyph padded metrics',
+      );
+      fontTarget.draw(
+        {
+          sprites: [
+            {
+              texture: 0,
+              source: {x: 0, y: 0, width: 10, height: 18},
+              destination: {x: 4, y: 4, width: 10, height: 18},
+              color: 0xffffff,
+              alpha: 255,
+              filter: 'nearest',
+            },
+          ],
+        },
+        () => surface.image,
+      );
+      const pixel = [...fontCanvas.getContext('2d').getImageData(8, 8, 1, 1).data];
+      assert(
+        pixel.every((v, i) => v === [0, 180, 255, 255][i]),
+        'FreeType worker to GPU pixel ' + pixel,
+      );
+      const edgePixel = [...fontCanvas.getContext('2d').getImageData(4, 4, 1, 1).data];
+      assert(
+        edgePixel.every((v, i) => v === [255, 0, 0, 255][i]),
+        'native glyph outline GPU pixel ' + edgePixel,
+      );
+      await font.close();
+      const fileFonts = new ArtemisFileFonts(revision, {
+        readFontFile: async () => rectangleFont(),
+        hasSystemFontFamily: async () => false,
+        openFontFace: (bytes) => fontWorker.open(bytes),
+      });
+      const textGlyphs = new ArtemisTextGlyphs(revision, fileFonts, glyphPainter);
+      let blockTarget;
+      try {
+        const glyphStyle = {
+          face: 'synthetic.ttf',
+          rubyface: 'synthetic.ttf',
+          size: 32,
+          rubysize: 16,
+          shadow: 0,
+          outline: 1,
+          rubyshadow: 0,
+          rubyoutline: 1,
+          spacetop: 0,
+          spacemiddle: 0,
+          spacebottom: 0,
+          kerning: 0,
+          rubykerning: 0,
+          color: 0x00b4ff,
+          outlinecolor: 0xff0000,
+          shadowcolor: 0,
+          styleBits: 0,
+        };
+        const block = await textGlyphs.load('AA', 'A', glyphStyle);
+        assert(block.width === 52 && block.height === 52, 'native glyph block dimensions');
+        assert(block.main[0].glyph === block.main[1].glyph, 'glyph cache identity');
+        const placed = [...block.main, ...block.ruby],
+          blockCanvas = document.createElement('canvas');
+        blockTarget = new CanvasDrawTarget(blockCanvas, 64, 64);
+        blockTarget.draw(
+          {
+            sprites: placed
+              .filter((g) => g.glyph.surface.image)
+              .map((g, index) => {
+                const surface = g.glyph.surface,
+                  image = surface.image;
+                return {
+                  texture: index,
+                  source: {x: 0, y: 0, width: image.width, height: image.height},
+                  destination: {
+                    x: g.x + surface.left,
+                    y: g.y + surface.top,
+                    width: image.width,
+                    height: image.height,
+                  },
+                  color: 0xffffff,
+                  alpha: 255,
+                  filter: 'nearest',
+                };
+              }),
+          },
+          (index) => placed[index].glyph.surface.image,
+        );
+        const mainEdge = [...blockCanvas.getContext('2d').getImageData(0, 18, 1, 1).data],
+          rubyEdge = [...blockCanvas.getContext('2d').getImageData(19, 0, 1, 1).data];
+        assert(
+          mainEdge.every((v, i) => v === [255, 0, 0, 255][i]),
+          'main glyph block GPU placement',
+        );
+        assert(
+          rubyEdge.every((v, i) => v === [255, 0, 0, 255][i]),
+          'ruby glyph block GPU placement',
+        );
+        const insertionCanvas = document.createElement('canvas'),
+          insertionTarget = new CanvasDrawTarget(insertionCanvas, 64, 128);
+        let published;
+        const insertion = new ArtemisTextInsertion(
+          revision,
+          {...glyphStyle, width: 64, height: 104, align: 'left', hung: false, vertical: false},
+          {
+            loadBlock: (...args) => textGlyphs.load(...args),
+            publishFrame: async (frame) => {
+              published = frame;
+              const textures = [],
+                sprites = [];
+              for (const line of frame.lines)
+                for (const positioned of line.geometry.blocks)
+                  for (const glyph of [...positioned.block.main, ...positioned.block.ruby]) {
+                    const surface = glyph.glyph.surface,
+                      image = surface.image;
+                    if (!image) continue;
+                    const texture = textures.length;
+                    textures.push(image);
+                    sprites.push({
+                      texture,
+                      source: {x: 0, y: 0, width: image.width, height: image.height},
+                      destination: {
+                        x: positioned.x + glyph.x + surface.left,
+                        y: line.y + positioned.y + glyph.y + surface.top,
+                        width: image.width,
+                        height: image.height,
+                      },
+                      color: 0xffffff,
+                      alpha: 255,
+                      filter: 'nearest',
+                    });
+                  }
+              insertionTarget.draw({sprites}, (id) => textures[id]);
+            },
+          },
+        );
+        try {
+          const result = await insertion.insert(new TextEncoder().encode('A\nA\nA'));
+          assert(
+            result.result === -2 && result.consumedBytes === 4,
+            'native insertion overflow cursor',
+          );
+          await insertion.prepareFrame();
+          assert(
+            published.glyphCount === 2 && published.lines.length === 3,
+            'native insertion frame counts',
+          );
+          for (const y of [18, 70]) {
+            const pixel = [...insertionCanvas.getContext('2d').getImageData(0, y, 1, 1).data];
+            assert(
+              pixel.every((v, i) => v === [255, 0, 0, 255][i]),
+              'native insertion published GPU row ' + y,
+            );
+          }
+          insertion.close();
+          assert(
+            published.lines[0].geometry.blocks[0].block.main[0].glyph.surface.image.pixels
+              .byteLength > 0,
+            'insertion closed retained frame pixels',
+          );
+        } finally {
+          insertion.close();
+          insertionTarget.dispose();
+        }
+        await textGlyphs.close();
+        assert(
+          block.main[0].glyph.surface.image.pixels.byteLength > 0,
+          'closed cache destroyed frame glyph',
+        );
+      } finally {
+        blockTarget?.dispose();
+        await textGlyphs.close();
+        await fileFonts.close();
+      }
+    } finally {
+      fontWorker.close();
+      glyphPainter.close();
+      fontTarget?.dispose();
+    }
+    // Real WebAudio processing, with an offline destination: no audible output.
+    const audioContext = new OfflineAudioContext(2, 32, 48000);
+    const audioFiles = [],
+      audioDecodes = [];
+    const soundLoader = new ArtemisSoundLoader(
+      async (path) => {
+        audioFiles.push(path);
+        return path === 'synthetic PCM.testpcm' ? new Uint8Array([42]) : null;
+      },
+      [
+        {
+          extensions: ['testpcm'],
+          decode: async (bytes, mode) => {
+            audioDecodes.push(mode);
+            assert(bytes[0] === 42, 'archive sound bytes reached codec');
+            return {
+              sampleRate: 48000,
+              sampleCount: 32,
+              channels: [new Float32Array(32).fill(0.8), new Float32Array(32).fill(0.4)],
+            };
+          },
+        },
+      ],
+    );
+    const audioOwner = createArtemisBrowserEffectVoices(
+      revision,
+      async (file, mode) => (await soundLoader.load(file, mode))?.sound ?? null,
+      audioContext,
+    );
+    try {
+      const sound = await audioOwner.effects.prepareEffect('synthetic PCM', 0);
+      assert(
+        audioFiles.join('|') === 'synthetic PCM|synthetic PCM.testpcm',
+        'sound suffix lookup reached actual voice',
+      );
+      assert(audioDecodes.length === 1 && audioDecodes[0] === 0, 'sound buffer mode reached codec');
+      audioOwner.effects.setEffectGain(sound, 0, 500);
+      audioOwner.effects.setEffectGain(sound, 1, 800);
+      audioOwner.effects.setEffectPan(sound, 500, 0);
+      audioOwner.effects.startEffect(sound, 0, false);
+      const rendered = await audioContext.startRendering(),
+        left = rendered.getChannelData(0)[0],
+        right = rendered.getChannelData(1)[0];
+      assert(
+        Math.abs(left - 0.8 * 10 ** (-796 / 2000) * 10 ** (-602 / 2000)) < 0.00001,
+        'native offline left attenuation',
+      );
+      assert(
+        Math.abs(right - 0.4 * 10 ** (-796 / 2000)) < 0.00001,
+        'native offline right no crossfeed',
+      );
+    } finally {
+      audioOwner.close();
+    }
+    const monoContext = new OfflineAudioContext(2, 16, 48000);
+    const monoOwner = createArtemisBrowserEffectVoices(
+      revision,
+      async () => ({
+        sampleRate: 48000,
+        sampleCount: 16,
+        channels: [new Float32Array(16).fill(0.75)],
+      }),
+      monoContext,
+    );
+    try {
+      const sound = await monoOwner.effects.prepareEffect('synthetic mono PCM', 0);
+      monoOwner.effects.setEffectPan(sound, 0, 0);
+      monoOwner.effects.startEffect(sound, 0, false);
+      const rendered = await monoContext.startRendering();
+      for (let channel = 0; channel < 2; channel++)
+        assert(
+          Math.abs(rendered.getChannelData(channel)[0] - 0.75) < 0.00001,
+          'mono duplication without equal-power attenuation',
+        );
+    } finally {
+      monoOwner.close();
+    }
+    // Actual native WAVE byte owner feeding a synthetic16-bit mono decoder.
+    const wav = (values) =>
+      encodeWav({
+        sampleRate: 48000,
+        sampleCount: values.length,
+        channels: [Float32Array.from(values)],
+      });
+    const waveFiles = new Map([
+      ['intro_a.wav', wav([0.25, 0.5])],
+      ['intro_b.wav', wav([-0.25, -0.5])],
+    ]);
+    const waveContext = new OfflineAudioContext(1, 8, 48000);
+    const waveOwner = createArtemisBrowserEffectVoices(
+      revision,
+      async (path) => {
+        const source = await ArtemisWaveSource.load(
+          revision,
+          path,
+          async (file) => waveFiles.get(file) ?? null,
+        );
+        if (!source) return null;
+        const bytes = source.read(8),
+          view = new DataView(bytes.buffer),
+          plane = Float32Array.from({length: 4}, (_, i) => view.getInt16(i * 2, true) / 32768);
+        return {
+          sampleRate: source.format.sampleRate,
+          sampleCount: 4,
+          channels: [plane],
+          loop: {start: 2, end: 4},
+        };
+      },
+      waveContext,
+    );
+    try {
+      const sound = await waveOwner.effects.prepareEffect('intro_a.wav', 0);
+      waveOwner.effects.startEffect(sound, 0, true);
+      const rendered = await waveContext.startRendering(),
+        plane = rendered.getChannelData(0);
+      const expected = [0.25, 0.5, -0.25, -0.5, -0.25, -0.5, -0.25, -0.5];
+      for (let i = 0; i < expected.length; i++)
+        assert(Math.abs(plane[i] - expected[i]) < 0.00001, 'WAVE intro then B-only loop ' + i);
+    } finally {
+      waveOwner.close();
+    }
+    const cachedDecoder = createArtemisBufferedSoundDecoder(
+      revision,
+      async (path) => waveFiles.get(path) ?? null,
+      'nearest-even',
+    );
+    const cachedContext = new OfflineAudioContext(1, 8, 48000);
+    const cachedOwner = createArtemisBrowserEffectVoices(
+      revision,
+      (file, buffer) => cachedDecoder.decode(file, buffer),
+      cachedContext,
+    );
+    try {
+      const sound = await cachedOwner.effects.prepareEffect('intro_a', -1);
+      cachedOwner.effects.startEffect(sound, 0, true);
+      const rendered = await cachedContext.startRendering(),
+        plane = rendered.getChannelData(0);
+      const expected = [0.25, 0.5, -0.25, -0.5, 0.25, 0.5, -0.25, -0.5];
+      for (let i = 0; i < expected.length; i++)
+        assert(Math.abs(plane[i] - expected[i]) < 0.00001, 'cached full A+B hardware repeat ' + i);
+    } finally {
+      cachedOwner.close();
+      cachedDecoder.close();
+    }
+    const rollingSource = await ArtemisWaveSource.load(
+      revision,
+      'intro_a.wav',
+      async (file) => waveFiles.get(file) ?? null,
+    );
+    const rollingContext = new OfflineAudioContext(2, 384, 48000);
+    const rollingVoice = await createArtemisRollingVoice(rollingContext, {
+      hash: revision,
+      resource: rollingSource.snapshot(),
+      bufferMode: 4,
+    });
+    try {
+      rollingVoice.volume(0.5);
+      rollingVoice.stereoBalance(0.5, 1);
+      rollingVoice.setLoop(false);
+      rollingVoice.pause(false);
+      await rollingVoice.synchronize();
+      const pausedAt = rollingContext.suspend(256 / 48000);
+      const rendering = rollingContext.startRendering();
+      await pausedAt;
+      rollingVoice.pump();
+      await rollingVoice.synchronize();
+      assert(rollingVoice.ended(), 'native rolling trailing-half completion');
+      await rollingContext.resume();
+      const rendered = await rendering;
+      for (let channel = 0; channel < 2; channel++) {
+        const expected = [0.25, 0.5, -0.25, -0.5],
+          plane = rendered.getChannelData(channel);
+        for (let i = 0; i < expected.length; i++)
+          assert(
+            Math.abs(plane[i] - expected[i] * (channel === 0 ? 0.25 : 0.5)) < 0.00001,
+            'actual worklet rolling PCM/gain/balance ' + channel + ':' + i,
+          );
+        assert(
+          plane.slice(4).every((sample) => Math.abs(sample) < 0.00001),
+          'native EOF trailing silence',
+        );
+      }
+    } finally {
+      rollingVoice.dispose();
+    }
+    const customCanvas = document.createElement('canvas');
+    customCanvas.width = customCanvas.height = 4;
+    const customGl = customCanvas.getContext('webgl2', {
+      alpha: true,
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: true,
+    });
+    assert(customGl, 'custom raster shader GPU context');
+    const customShader = new ArtemisBrowserRasterShader(revision, customGl),
+      customPixels = new Uint8Array(4 * 4 * 4);
+    for (let y = 0; y < 4; y++)
+      for (let x = 0; x < 4; x++) customPixels.set([x * 40, y * 40, 0, 200], (y * 4 + x) * 4);
+    try {
+      const image = {width: 4, height: 4, pixels: customPixels};
+      for (const shifted of [false, true]) {
+        customShader.draw(
+          image,
+          4,
+          4,
+          {alpha: 0.5, angle: shifted ? 90 : 0, inter: 0, size: shifted ? 0.25 : 0},
+          {filter: 'nearest', address: 'clamp'},
+        );
+        const actual = new Uint8Array(64);
+        customGl.readPixels(0, 0, 4, 4, customGl.RGBA, customGl.UNSIGNED_BYTE, actual);
+        for (let y = 0; y < 4; y++)
+          for (let x = 0; x < 4; x++) {
+            const sourceX = shifted ? Math.max(0, x - 1) : x,
+              expected = [sourceX * 40, (3 - y) * 40, 0, 100];
+            for (let channel = 0; channel < 4; channel++)
+              assert(
+                Math.abs(actual[(y * 4 + x) * 4 + channel] - expected[channel]) <= 1,
+                'actual custom raster GPU ' + shifted + ':' + x + ':' + y + ':' + channel,
+              );
+          }
+      }
+    } finally {
+      customShader.dispose();
+    }
+    const screenShader = new ArtemisBrowserRasterShader(revision, customGl, 'screen');
+    try {
+      screenShader.draw(
+        {width: 4, height: 4, pixels: customPixels},
+        4,
+        4,
+        {alpha: 0.5},
+        {filter: 'nearest', address: 'clamp'},
+        {width: 1, height: 1, pixels: new Uint8Array([128, 64, 0, 128])},
+      );
+      const actual = new Uint8Array(64);
+      customGl.readPixels(0, 0, 4, 4, customGl.RGBA, customGl.UNSIGNED_BYTE, actual);
+      for (let y = 0; y < 4; y++)
+        for (let x = 0; x < 4; x++) {
+          const fore = [x * 40, (3 - y) * 40, 0],
+            user = [128, 64, 0];
+          for (let channel = 0; channel < 3; channel++) {
+            const expected = Math.round(
+              255 * (1 - (1 - fore[channel] / 255) * (1 - (user[channel] / 255) * (128 / 255))),
+            );
+            assert(
+              Math.abs(actual[(y * 4 + x) * 4 + channel] - expected) <= 1,
+              'screen user-alpha RGB ' + x + ':' + y + ':' + channel,
+            );
+          }
+          assert(actual[(y * 4 + x) * 4 + 3] === 100, 'screen foreground alpha');
+        }
+    } finally {
+      screenShader.dispose();
+    }
+    for (const kind of ['blur_h', 'blur_v']) {
+      const shader = new ArtemisBrowserRasterShader(revision, customGl, kind);
+      try {
+        shader.draw(
+          {width: 4, height: 4, pixels: customPixels},
+          4,
+          4,
+          {alpha: 0.5, step: 0.25, weights: [0.5, 0.25, 0, 0, 0, 0, 0, 0]},
+          {filter: 'nearest', address: 'clamp'},
+        );
+        const actual = new Uint8Array(64);
+        customGl.readPixels(0, 0, 4, 4, customGl.RGBA, customGl.UNSIGNED_BYTE, actual);
+        for (let y = 0; y < 4; y++)
+          for (let x = 0; x < 4; x++) {
+            const blur = (n) =>
+              (0.5 * n + 0.25 * Math.max(0, n - 1) + 0.25 * Math.min(3, n + 1)) * 40;
+            const expected = [
+              kind === 'blur_h' ? blur(x) : x * 40,
+              kind === 'blur_v' ? blur(3 - y) : (3 - y) * 40,
+              0,
+              100,
+            ];
+            for (let c = 0; c < 4; c++)
+              assert(
+                Math.abs(actual[(y * 4 + x) * 4 + c] - expected[c]) <= 1,
+                'blur GPU ' + kind + ':' + x + ':' + y + ':' + c,
+              );
+          }
+      } finally {
+        shader.dispose();
+      }
+    }
+    for (const kind of ['add', 'mul', 'compbr', 'compbrc', 'compdk', 'compdkc']) {
+      const shader = new ArtemisBrowserRasterShader(revision, customGl, kind);
+      try {
+        for (const param of [0, 0.75, 1]) {
+          shader.draw(
+            {width: 4, height: 4, pixels: customPixels},
+            4,
+            4,
+            {alpha: 0.5, param},
+            {filter: 'nearest', address: 'clamp'},
+            {width: 1, height: 1, pixels: new Uint8Array([128, 64, 192, 128])},
+          );
+          const actual = new Uint8Array(64);
+          customGl.readPixels(0, 0, 4, 4, customGl.RGBA, customGl.UNSIGNED_BYTE, actual);
+          for (let y = 0; y < 4; y++)
+            for (let x = 0; x < 4; x++) {
+              const a = [(x * 40) / 255, ((3 - y) * 40) / 255, 0, 200 / 255],
+                b = [128 / 255, 64 / 255, 192 / 255, 128 / 255];
+              for (let c = 0; c < 3; c++) {
+                const combined = a[3] * (1 - b[3]) + b[3],
+                  selected =
+                    kind === 'mul'
+                      ? b[c]
+                      : kind.startsWith('compbr')
+                        ? Math.max(a[c], b[c])
+                        : Math.min(a[c], b[c]);
+                const blend = (a[c] * a[3] * (1 - b[3]) + selected * b[3]) / combined;
+                const value =
+                  kind === 'add'
+                    ? a[c] + b[3] * b[c] * param
+                    : kind === 'mul'
+                      ? a[c] * (blend + 1 - param)
+                      : blend * param;
+                assert(
+                  Math.abs(
+                    actual[(y * 4 + x) * 4 + c] - Math.round(Math.max(0, Math.min(1, value)) * 255),
+                  ) <= 1,
+                  'composite GPU ' + kind + ':' + param + ':' + x + ':' + y + ':' + c,
+                );
+              }
+              assert(actual[(y * 4 + x) * 4 + 3] === 100, 'composite foreground alpha');
+            }
+        }
+      } finally {
+        shader.dispose();
+      }
+    }
+    const mosaic = new ArtemisBrowserRasterShader(revision, customGl, 'mosaic');
+    try {
+      mosaic.draw(
+        {width: 4, height: 4, pixels: customPixels},
+        4,
+        4,
+        {alpha: 0.5, size: 2, ratio: 1},
+        {filter: 'nearest', address: 'clamp'},
+      );
+      const actual = new Uint8Array(64);
+      customGl.readPixels(0, 0, 4, 4, customGl.RGBA, customGl.UNSIGNED_BYTE, actual);
+      for (let y = 0; y < 4; y++)
+        for (let x = 0; x < 4; x++)
+          for (let c = 0; c < 4; c++)
+            assert(
+              Math.abs(
+                actual[(y * 4 + x) * 4 + c] -
+                  [Math.floor(x / 2) * 80, Math.floor((3 - y) / 2) * 80, 0, 100][c],
+              ) <= 1,
+              'mosaic GPU',
+            );
+    } finally {
+      mosaic.dispose();
+    }
+    const radialShader = new ArtemisBrowserRasterShader(revision, customGl, 'radial');
+    try {
+      for (const fade of [0, 1]) {
+        radialShader.draw(
+          {width: 4, height: 4, pixels: customPixels},
+          4,
+          4,
+          {alpha: 0.5, ax: 0.5, ay: 0.5, size: 0, fade},
+          {filter: 'nearest', address: 'clamp'},
+        );
+        const actual = new Uint8Array(64);
+        customGl.readPixels(0, 0, 4, 4, customGl.RGBA, customGl.UNSIGNED_BYTE, actual);
+        for (let y = 0; y < 4; y++)
+          for (let x = 0; x < 4; x++)
+            for (let c = 0; c < 4; c++)
+              assert(
+                Math.abs(actual[(y * 4 + x) * 4 + c] - [x * 40, (3 - y) * 40, 0, 100][c]) <= 1,
+                'radial zero-size GPU',
+              );
+      }
+      const p = {alpha: 0.5, ax: 0.5, ay: 0.5, size: 1, fade: 1};
+      radialShader.draw({width: 4, height: 4, pixels: customPixels}, 4, 4, p, {
+        filter: 'nearest',
+        address: 'clamp',
+      });
+      const actual = new Uint8Array(64);
+      customGl.readPixels(0, 0, 4, 4, customGl.RGBA, customGl.UNSIGNED_BYTE, actual);
+      const sample = (u, v) => {
+        const x = Math.min(3, Math.max(0, Math.floor(u * 4))),
+          y = Math.min(3, Math.max(0, Math.floor(v * 4)));
+        return [(x * 40) / 255, (y * 40) / 255, 0, 200 / 255];
+      };
+      for (let y = 0; y < 4; y++)
+        for (let x = 0; x < 4; x++) {
+          const expected = artemisRadialShade(sample, (x + 0.5) / 4, (3 - y + 0.5) / 4, p);
+          for (let c = 0; c < 4; c++)
+            assert(
+              Math.abs(actual[(y * 4 + x) * 4 + c] - Math.round(expected[c] * 255)) <= 1,
+              'radial nonzero GPU',
+            );
+        }
+    } finally {
+      radialShader.dispose();
+    }
+    for (const kind of ['gray', 'sepia', 'sepia2', 'nega', 'rgb', 'cadd', 'cmul', 'reset']) {
+      const shader = new ArtemisBrowserRasterShader(revision, customGl, kind);
+      try {
+        shader.draw(
+          {width: 1, height: 1, pixels: new Uint8Array([51, 102, 153, 204])},
+          4,
+          4,
+          {alpha: 0.5, red: 0.1, green: 0.8, blue: 0.6},
+          {filter: 'nearest', address: 'clamp'},
+        );
+        const actual = new Uint8Array(64);
+        customGl.readPixels(0, 0, 4, 4, customGl.RGBA, customGl.UNSIGNED_BYTE, actual);
+        const g = 0.2 * 0.298912 + 0.4 * 0.586611 + 0.6 * 0.114478;
+        const rgb =
+          kind === 'reset'
+            ? [0.2, 0.4, 0.6]
+            : kind === 'cadd'
+              ? [0.3, 1.2, 1.2]
+              : kind === 'cmul'
+                ? [0.02, 0.32, 0.36]
+                : kind === 'nega'
+                  ? [0.8, 0.6, 0.4]
+                  : kind === 'rgb'
+                    ? [0.3, 1.2, 1.2]
+                    : kind === 'gray'
+                      ? [g, g, g]
+                      : [kind === 'sepia2' ? g + 0.1 : g * 0.1, g * 0.8, g * 0.6];
+        const expected = [...rgb.map((x) => Math.round(Math.min(1, Math.max(0, x)) * 255)), 102];
+        for (let i = 0; i < 64; i++)
+          assert(Math.abs(actual[i] - expected[i % 4]) <= 1, 'color GPU ' + kind + ':' + i);
+      } finally {
+        shader.dispose();
+      }
+    }
+    const drawCanvas = document.createElement('canvas'),
+      drawTarget = new CanvasDrawTarget(drawCanvas, 4, 4);
+    const drawFore = {width: 4, height: 4, pixels: customPixels},
+      drawUser = {width: 1, height: 1, pixels: new Uint8Array([128, 64, 192, 128])};
+    const drawVertices = new Float32Array([
+      -1, 1, 0, 0.01, 0.02, 0.03, 0.5, 0, 0, 1, 1, 0, 0.01, 0.02, 0.03, 0.5, 1, 0, -1, -1, 0, 0.01,
+      0.02, 0.03, 0.5, 0, 1, 1, -1, 0, 0.01, 0.02, 0.03, 0.5, 1, 1,
+    ]);
+    const replaceBlend = {
+      color: {source: 'one', destination: 'zero', operation: 'add'},
+      alpha: {source: 'one', destination: 'zero', operation: 'add'},
+    };
+    let dx9GpuCases = 0;
+    try {
+      for (const kind of [
+        'add',
+        'blur_h',
+        'blur_v',
+        'cadd',
+        'cmul',
+        'compbr',
+        'compbrc',
+        'compdk',
+        'compdkc',
+        'dimhole',
+        'dimring',
+        'gray',
+        'mosaic',
+        'mul',
+        'nega',
+        'radial',
+        'raster',
+        'reset',
+        'rgb',
+        'screen',
+        'sepia',
+        'sepia2',
+      ]) {
+        const p = {
+          alpha: 0.5,
+          red: 0.1,
+          green: 0.8,
+          blue: 0.6,
+          param: 0.75,
+          angle: 90,
+          inter: 0,
+          size: kind === 'mosaic' ? 2 : kind === 'radial' ? 0.8 : 0.25,
+          ratio: 1,
+          centerX: 0.5,
+          centerY: 0.5,
+          radius: 0.2,
+          thick: 0.1,
+          step: 0.25,
+          weights: [0.5, 0.25, 0, 0, 0, 0, 0, 0],
+          ax: 0.5,
+          ay: 0.5,
+          fade: 1,
+        };
+        const adapter = createArtemisDrawShaderPreset(revision, kind);
+        const constants = new Map(
+          adapter.fields.map((field) => [
+            field.name,
+            field.name === 'weights'
+              ? p.weights
+              : [field.name === 'width' || field.name === 'height' ? p.step : p[field.name]],
+          ]),
+        );
+        const reference = new ArtemisBrowserRasterShader(revision, customGl, kind);
+        try {
+          reference.draw(drawFore, 4, 4, p, {filter: 'nearest', address: 'clamp'}, drawUser);
+          const expected = new Uint8Array(64);
+          customGl.readPixels(0, 0, 4, 4, customGl.RGBA, customGl.UNSIGNED_BYTE, expected);
+          drawTarget.draw(
+            {
+              sprites: [],
+              commands: [
+                {
+                  kind: 'triangles',
+                  texture: 1,
+                  vertices: drawVertices,
+                  topology: 'triangle-strip',
+                  normalizedUV: true,
+                  transform: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
+                  filter: 'nearest',
+                  blendState: replaceBlend,
+                  fragment: adapter.fragment,
+                  // Compare full shader RGBA under replacement blending, including
+                  // RGB beneath dimhole's zero alpha. Normal scene draws discard it.
+                  discardTransparent: false,
+                  parameters: adapter.bufferParameters(
+                    new ArtemisShaderConstantStorage(revision).update(
+                      [...constants.values()].map((values, i) => ({name: 'ignored' + i, values})),
+                    ),
+                  ),
+                  additionalTextures: adapter.needsUserTexture
+                    ? [
+                        {
+                          texture: 2,
+                          uv: new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]),
+                          filter: 'nearest',
+                        },
+                      ]
+                    : undefined,
+                },
+              ],
+            },
+            (id) => (id === 1 ? drawFore : drawUser),
+          );
+          const gl = drawTarget.gl,
+            actual = new Uint8Array(64);
+          gl.readPixels(0, 0, 4, 4, gl.RGBA, gl.UNSIGNED_BYTE, actual);
+          for (let i = 0; i < 64; i++)
+            assert(
+              Math.abs(actual[i] - expected[i]) <= 1,
+              'shared draw shader ' + kind + ':' + i + ':' + actual[i] + '/' + expected[i],
+            );
+        } finally {
+          reference.dispose();
+        }
+      }
+      // Every DX9 preset, ordinary/captured and bound/null mask, through the shared GPU target.
+      // These are generated calibration pixels; no installed game images are read.
+      const dxFore = {width: 4, height: 4, pixels: new Uint8Array(64)};
+      const dxMask = {width: 4, height: 4, pixels: new Uint8Array(64)};
+      for (let i = 0; i < 16; i++) {
+        dxFore.pixels.set([32, 128, 192, 160], i * 4);
+        dxMask.pixels.set([255 - i * 17, 0, 0, i * 17], i * 4);
+      }
+      const identityTransform = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+      const uv = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
+      const base = {
+        kind: 'triangles',
+        texture: 1,
+        vertices: drawVertices,
+        topology: 'triangle-strip',
+        normalizedUV: true,
+        transform: identityTransform,
+        filter: 'linear',
+        blendState: replaceBlend,
+        discardTransparent: false,
+      };
+      drawTarget.draw(
+        {
+          sprites: [],
+          commands: [{...base, texture: 2, fragment: 'vec4 shade(vec4 c,vec4 tint){return c;}'}],
+        },
+        (id) => (id === 1 ? dxFore : dxMask),
+      );
+      const sampledMask = new Uint8Array(64);
+      drawTarget.gl.readPixels(
+        0,
+        0,
+        4,
+        4,
+        drawTarget.gl.RGBA,
+        drawTarget.gl.UNSIGNED_BYTE,
+        sampledMask,
+      );
+      for (const kind of Object.values(artemisDx9ShaderSources))
+        for (const captured of [false, true])
+          for (const bound of [false, true]) {
+            if (kind.endsWith('_aa') && !captured) continue; // Background owner is mandatory for AA.
+            const adapter = createArtemisDrawShaderPreset(
+              kind === 'mul_lerp' ? ARTEMIS_2908_EXECUTABLE_SHA256 : ARTEMIS_2898_EXECUTABLE_SHA256,
+              kind,
+              captured ? 1 : 0,
+              false,
+              bound ? (captured ? 1 : 0) : undefined,
+            );
+            const p = {
+              alpha: 0.75,
+              angle: 90,
+              inter: 0,
+              size: kind === 'mosaic' ? 2 : 0.25,
+              ratio: 1,
+              param: 0.75,
+              red: 0.1,
+              green: 0.8,
+              blue: 0.6,
+              step: 0.25,
+              weights: [0.5, 0.25, 0, 0, 0, 0, 0, 0],
+            };
+            const constants = new Map(
+              adapter.fields.map((field) => [
+                field.name,
+                field.name === 'weights'
+                  ? p.weights
+                  : [field.name === 'width' || field.name === 'height' ? p.step : p[field.name]],
+              ]),
+            );
+            constants.set('alpha', [p.alpha]);
+            const extras = [];
+            if (captured) extras.push({texture: 1, uv, filter: 'linear'});
+            if (bound) extras.push({texture: 2, uv, filter: 'linear'});
+            drawTarget.draw(
+              {
+                sprites: [],
+                commands: [
+                  {
+                    ...base,
+                    fragment: adapter.fragment,
+                    parameters: adapter.parameters(constants),
+                    additionalTextures: extras,
+                  },
+                ],
+              },
+              (id) => (id === 1 ? dxFore : dxMask),
+            );
+            const actual = new Uint8Array(64);
+            drawTarget.gl.readPixels(
+              0,
+              0,
+              4,
+              4,
+              drawTarget.gl.RGBA,
+              drawTarget.gl.UNSIGNED_BYTE,
+              actual,
+            );
+            for (let i = 0; i < 16; i++) {
+              const expected = artemisDx9ShaderShade(
+                kind,
+                () => [32 / 255, 128 / 255, 192 / 255, 160 / 255],
+                0.5,
+                0.5,
+                {
+                  ...p,
+                  mask: bound ? () => [0, 0, 0, sampledMask[i * 4 + 3] / 255] : undefined,
+                  back: () => [32 / 255, 128 / 255, 192 / 255, 160 / 255],
+                },
+              );
+              for (let c = 0; c < 4; c++)
+                assert(
+                  Math.abs(
+                    actual[i * 4 + c] - Math.round(Math.max(0, Math.min(1, expected[c])) * 255),
+                  ) <= 2,
+                  'DX9 GPU ' +
+                    kind +
+                    ':' +
+                    captured +
+                    ':' +
+                    bound +
+                    ':' +
+                    i +
+                    ':' +
+                    c +
+                    ':' +
+                    actual[i * 4 + c] +
+                    '/' +
+                    Math.round(Math.max(0, Math.min(1, expected[c])) * 255),
+                );
+            }
+            assert(drawTarget.gl.getError() === drawTarget.gl.NO_ERROR, 'DX9 GPU error');
+            dx9GpuCases++;
+          }
+    } finally {
+      drawTarget.dispose();
+    }
+    // Calibration compiler selects reconstructed programs; real-source SHA selection
+    // is checked separately by the nonvisual installation probe, without game pixels.
+    const actorCanvas = document.createElement('canvas'),
+      actorTarget = new CanvasDrawTarget(actorCanvas, 4, 4);
+    let selectedProgram = 'raster';
+    const library = new ArtemisShaderLibrary(
+      revision,
+      async () => new Uint8Array([1]),
+      {
+        compile: async () => ({
+          shader: new ArtemisDrawShaderResource(revision, selectedProgram, (fragment, count) =>
+            actorTarget.prepareTriangleShader(fragment, count),
+          ),
+        }),
+        dispose: (shader) => shader.dispose(),
+      },
+      () => {
+        throw Error('calibration shader compile failure');
+      },
+    );
+    const ctag = (name, args) => ({name, args: new Map(Object.entries(args))});
+    await library.dispatch(ctag('lyshader', {id: 'warp', file: 'calibration'}));
+    selectedProgram = 'screen';
+    await library.dispatch(ctag('lyshader', {id: 'user', file: 'calibration'}));
+    const released = [];
+    const actorGraphics = new ArtemisImageGraphics(
+      revision,
+      actorTarget,
+      {
+        creationMode: () => 0,
+        clearLayerCommands: () => {},
+        resetLayerCommands: () => {},
+        recordLayerProperties: () => {},
+        imageLoadFailed: () => {
+          throw Error('actor image missing');
+        },
+        layerNotFound: () => {
+          throw Error('actor missing');
+        },
+      },
+      createArtemisOrdinaryGpuRaster(revision),
+      library,
+    );
+    const actorLayers = new ArtemisLayers(
+      revision,
+      {
+        load: async (path) => {
+          const image = path === 'fore' ? drawFore : path === 'user' ? drawUser : null;
+          if (!image) return null;
+          let live = true;
+          return {
+            path,
+            image,
+            surfaceFormat: 2,
+            lease: {
+              release: () => {
+                assert(live, 'actor resource double release');
+                live = false;
+                released.push(path);
+              },
+            },
+          };
+        },
+      },
+      actorGraphics,
+    );
+    const actorPixels = () => {
+      actorGraphics.drawCommitted(actorLayers.scene);
+      const gl = actorTarget.gl,
+        out = new Uint8Array(64);
+      gl.readPixels(0, 0, 4, 4, gl.RGBA, gl.UNSIGNED_BYTE, out);
+      return out;
+    };
+    const assertActor = (actual, expected, label) => {
+      for (let y = 0; y < 4; y++)
+        for (let x = 0; x < 4; x++)
+          for (let ch = 0; ch < 4; ch++)
+            assert(
+              Math.abs(
+                actual[(y * 4 + x) * 4 + ch] -
+                  Math.round(
+                    ((ch === 3 ? expected(x, y)[3] : expected(x, y)[ch]) * expected(x, y)[3]) / 255,
+                  ),
+              ) <= 1,
+              label + ':' + x + ':' + y + ':' + ch,
+            );
+    };
+    try {
+      await actorLayers.dispatch(ctag('lyc', {id: '1', file: 'fore'}));
+      await actorLayers.dispatch(
+        ctag('lyprop', {
+          id: '1',
+          alpha: '127.5',
+          shader: 'warp',
+          shaderconstant: 'a,b',
+          a: '90,0',
+          b: '.25',
+        }),
+      );
+      actorLayers.commit();
+      assertActor(
+        actorPixels(),
+        (x, y) => [Math.max(0, x - 1) * 40, (3 - y) * 40, 0, 100],
+        'actual scene raster',
+      );
+      await actorLayers.dispatch(
+        ctag('lyprop', {id: '1', shaderconstant: 'notHlslNames', notHlslNames: '0,0,0'}),
+      );
+      assertActor(
+        actorPixels(),
+        (x, y) => [Math.max(0, x - 1) * 40, (3 - y) * 40, 0, 100],
+        'retained shader frame',
+      );
+      actorLayers.commit();
+      assertActor(
+        actorPixels(),
+        (x, y) => [x * 40, (3 - y) * 40, 0, 100],
+        'committed shader constants',
+      );
+      await actorLayers.dispatch(
+        ctag('lyprop', {
+          id: '1',
+          shader: 'user',
+          shadertexture: 'renamed,missing',
+          renamed: 'user',
+          missing: 'absent',
+        }),
+      );
+      actorLayers.commit();
+      assertActor(
+        actorPixels(),
+        (x, y) => {
+          const fore = [x * 40, (3 - y) * 40, 0],
+            user = [128, 64, 192];
+          return [
+            ...fore.map((f, c) =>
+              Math.round(255 * (1 - (1 - f / 255) * (1 - ((user[c] / 255) * 128) / 255))),
+            ),
+            100,
+          ];
+        },
+        'ordered shader texture binding',
+      );
+      await actorLayers.dispatch(ctag('lyprop', {id: '1', shadertexture: ''}));
+      actorLayers.commit();
+      assertActor(actorPixels(), (x, y) => [x * 40, (3 - y) * 40, 0, 100], 'null D3D user texture');
+      selectedProgram = 'reset';
+      await library.dispatch(ctag('lyshader', {id: 'user', file: 'calibration'}));
+      assertActor(
+        actorPixels(),
+        (x, y) => [x * 40, (3 - y) * 40, 0, 100],
+        'named program replacement',
+      );
+      await actorLayers.dispatch(ctag('lyprop', {id: '1', shader: 'missing-program'}));
+      actorLayers.commit();
+      const missing = actorPixels();
+      for (let i = 0; i < 64; i++)
+        if (i % 4 !== 3) assert(missing[i] === 0, 'null pixel shader no color');
+      await actorLayers.dispatch(ctag('lydel', {id: '1'}));
+      actorLayers.commit();
+      selectedProgram = 'screen';
+      await library.dispatch(ctag('lyshader', {id: 'captured-user', file: 'calibration'}));
+      await actorLayers.dispatch(ctag('lyc', {id: 'g.1', file: 'fore'}));
+      await actorLayers.dispatch(
+        ctag('lyprop', {
+          id: 'g.1',
+          alpha: '127.5',
+          shader: 'captured-user',
+          shadertexture: 'first',
+          first: 'user',
+        }),
+      );
+      await actorLayers.dispatch(ctag('lyprop', {id: 'g', intermediate_render: '1'}));
+      actorLayers.commit();
+      assertActor(
+        actorPixels(),
+        (x, y) => {
+          const fore = [x * 40, (3 - y) * 40, 0],
+            user = [128, 64, 192];
+          return [
+            ...fore.map((f, c) =>
+              Math.round(255 * (1 - (1 - f / 255) * (1 - ((user[c] / 255) * 128) / 255))),
+            ),
+            100,
+          ];
+        },
+        'captured custom shader and user slot',
+      );
+    } finally {
+      actorLayers.close();
+      library.close();
+      actorTarget.dispose();
+    }
+    assert(
+      released.filter((path) => path === 'fore').length === 2 &&
+        released.filter((path) => path === 'user').length === 2,
+      'actor texture resources released',
+    );
+    window.result = {
+      passed: true,
+      nativeFontWorker: true,
+      nativeGlyphPainter: true,
+      nativeTextGlyphBlocks: true,
+      nativeTextInsertionFrame: true,
+      nativeOfflineAudioVoices: true,
+      nativeSoundFilenameVoiceIntegration: true,
+      nativePairedWaveVoiceIntegration: true,
+      nativeBufferedSoundDecoderIntegration: true,
+      nativeRollingAudioWorklet: true,
+      nativeCustomRasterShader: true,
+      nativeAllCustomDrawShaders: true,
+      nativeDx9DrawShaderCases: dx9GpuCases,
+      nativeSceneCustomShaders: true,
+      nativeCustomScreenShader: true,
+      nativeStereoAttenuation: true,
+      audioDeviceOutput: false,
+      nativeFontVersion: [2, 4, 8],
+      syntheticOnly: true,
+      pixels,
+      uploads,
+      preparedRetention: true,
+      failedUploadReleased: true,
+      luaResumed: true,
+      nativeFlip: stageState.dirty,
+      nativeCommandRegistry: true,
+      surfaceCacheIdleGpuRetention: true,
+      surfaceCachePromotionNoDecodeOrUpload: true,
+      surfaceCacheActiveCloseDeferred: true,
+      nativeLinearAlphaFramebuffer: [...nativeFramebuffer],
+      nativeTransparentClear: true,
+      nativeModePixels,
+      nativeEffectsCases,
+      nativeCapturedCases,
+      nativeIntermediateGroups: true,
+      nativePsdWorker: true,
+      nativeJpegWorker: true,
+      nativeJpegExifIgnored: true,
+      nativeClipPixels: [...nativeClipPixels],
+      nativeOrdinaryGroups: true,
+      nativeGroupPixel,
+      serviceEffects: effects,
+      drawOrderPixel,
+    };
+  } catch (error) {
+    window.result = {passed: false, error: String(error), stack: error.stack};
+  } finally {
+    lua?.close();
+    layers?.close();
+    cache?.close();
+    target?.dispose();
+    prototype.texImage2D = originalUpload;
+    prototype.createTexture = originalCreate;
+    prototype.deleteTexture = originalDelete;
+  }
+  document.querySelector('#result').textContent = JSON.stringify(window.result);
+  document.title = window.result.passed
+    ? 'Artemis synthetic checks passed'
+    : 'Artemis synthetic checks failed';
+</script>

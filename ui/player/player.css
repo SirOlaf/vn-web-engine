@@ -297,7 +297,8 @@ a {
 }
 
 #noah-surface,
-#rscript-surface {
+#rscript-surface,
+#artemis-surface {
   position: absolute;
   inset: 0;
   min-width: 0;

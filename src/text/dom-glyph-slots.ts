@@ -7,6 +7,8 @@ import {
   replacesDomTextFamily,
 } from './dom-text-style.js';
 let nextTint = 0;
+/** CSS pixels kept around unclipped text for the border of a selection or lookup highlight. */
+const HIGHLIGHT_ROOM = 2;
 let nextInk = 0;
 interface InkHighlights {
   style: HTMLStyleElement;
@@ -367,7 +369,26 @@ export class DomGlyphSlots {
       return [`${x}px ${line * lineHeight}px`, `${x}px ${(line + 1) * lineHeight}px`];
     });
     const shape = `polygon(${wrapWidth}px 0,${edge.join(',')},${wrapWidth}px ${lines * lineHeight}px)`;
-    box.style.cssText = `position:absolute;left:${clip.x}px;top:${clip.y}px;width:${clip.width}px;height:${clip.height}px;overflow:${natural ? 'visible' : 'hidden'};pointer-events:none;z-index:${z}`;
+    // Selections and dictionary highlights paint the line boxes, and the font's ascent and
+    // descent where they exceed the line height; both pass the glyph cells. Text without a
+    // native clip keeps them inside its box, with room for a highlight border.
+    const lineTop = slot.vertical ? bounds.y : bounds.y - (lineHeight - size) / 2,
+      textBottom = slot.vertical ? bounds.y + bounds.height : lineTop + lines * lineHeight,
+      textRight = slot.vertical ? bounds.x + bounds.width : origin + wrapWidth * scale;
+    const metrics = this.measure.measureText('国'),
+      area = (metrics.fontBoundingBoxAscent || 0) + (metrics.fontBoundingBoxDescent || 0),
+      overhang = (slot.vertical ? 0 : Math.max(0, (area - lineHeight) / 2)) + HIGHLIGHT_ROOM;
+    const left = Math.min(clip.x, Math.min(origin, bounds.x) - HIGHLIGHT_ROOM),
+      top = Math.min(clip.y, lineTop - overhang);
+    const frame = content.clipped
+      ? clip
+      : {
+          x: left,
+          y: top,
+          width: Math.max(clip.x + clip.width, textRight + HIGHLIGHT_ROOM) - left,
+          height: Math.max(clip.y + clip.height, textBottom + overhang) - top,
+        };
+    box.style.cssText = `position:absolute;left:${frame.x}px;top:${frame.y}px;width:${frame.width}px;height:${frame.height}px;overflow:${natural ? 'visible' : 'hidden'};pointer-events:none;z-index:${z}`;
     let filter = '';
     const outline = content.outline;
     if (!overlay && ((family && atlasTint) || content.shadows.length || outline)) {
@@ -499,7 +520,7 @@ export class DomGlyphSlots {
       }
       filter = `filter:url(#${nodes.tint.id});`;
     }
-    text.style.cssText = `position:absolute;display:block;left:${origin - clip.x}px;top:${bounds.y - clip.y - (lineHeight - size) / 2}px;width:${wrapWidth}px;text-indent:${indent}px;--text-wrap-height:${lines * lineHeight}px;--text-wrap-shape:${shape};white-space:${newlines ? 'pre' : 'break-spaces'};word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;letter-spacing:${spacing}px;${filter}line-height:${lineHeight}px;color:${overlay ? 'transparent' : `#${(content.color & 0xffffff).toString(16).padStart(6, '0')}`};opacity:${filter || overlay ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
+    text.style.cssText = `position:absolute;display:block;left:${origin - frame.x}px;top:${lineTop - frame.y}px;width:${wrapWidth}px;text-indent:${indent}px;--text-wrap-height:${lines * lineHeight}px;--text-wrap-shape:${shape};white-space:${newlines ? 'pre' : 'break-spaces'};word-break:break-all;line-break:anywhere;hyphens:none;font:${font};font-kerning:none;font-variant-ligatures:none;letter-spacing:${spacing}px;${filter}line-height:${lineHeight}px;color:${overlay ? 'transparent' : `#${(content.color & 0xffffff).toString(16).padStart(6, '0')}`};opacity:${filter || overlay ? 1 : Math.min(255, content.alpha) / 255};transform:scaleX(${scale});transform-origin:0 0;user-select:${interactive ? 'text' : 'none'};-webkit-user-select:${interactive ? 'text' : 'none'};pointer-events:${interactive ? 'auto' : 'none'};cursor:${interactive ? 'text' : 'default'};outline:none`;
     // Reveal alpha and glyph colours belong to glyphs, not paragraph identity. Custom
     // highlight ranges preserve them without fragmenting text or changing wrapping.
     if (nodes.ink) this.clearInk(nodes.ink);
@@ -547,7 +568,7 @@ export class DomGlyphSlots {
       text.style.whiteSpace = 'pre';
       text.style.width = `${bounds.width}px`;
       text.style.height = `${Math.max(bounds.height, measured)}px`;
-      text.style.top = `${bounds.y - clip.y}px`;
+      text.style.top = `${bounds.y - frame.y}px`;
       text.style.lineHeight = `${bounds.width}px`;
       text.style.transform = `scaleY(${Math.min(1, bounds.height / measured)})`;
       text.style.filter = '';

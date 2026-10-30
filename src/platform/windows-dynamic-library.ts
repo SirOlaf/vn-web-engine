@@ -30,6 +30,10 @@ export interface WindowsDynamicLibraryHost {
     procedure: WindowsDynamicProcedure,
     arguments_: readonly WindowsDynamicArgument[],
   ): bigint | void;
+  /** Copy a native NUL-terminated byte string, excluding its terminator.
+   * The pointer remains owned by the native export until its release operation.
+   */
+  readCString?(pointer: bigint): Uint8Array;
   freeLibrary(library: WindowsDynamicLibrary): void;
   /** Resolve the selected native HWND associated with the actual window owner. */
   mainWindowHandle(windowIdentity: object): WindowsNativeWindowHandle | null;
@@ -37,15 +41,23 @@ export interface WindowsDynamicLibraryHost {
 
 /** Browsers cannot load or call native DLL exports. Win32 load/query returns failure. */
 export class BrowserWindowsDynamicLibraryHost implements WindowsDynamicLibraryHost {
-  loadLibraryA(_path: Uint8Array): WindowsDynamicLibrary | null { return null; }
+  loadLibraryA(_path: Uint8Array): WindowsDynamicLibrary | null {
+    return null;
+  }
   getProcAddress(
     _library: WindowsDynamicLibrary,
     _exportName: string,
-  ): WindowsDynamicProcedure | null { return null; }
+  ): WindowsDynamicProcedure | null {
+    return null;
+  }
   invoke(
     _procedure: WindowsDynamicProcedure,
     _arguments: readonly WindowsDynamicArgument[],
-  ): bigint | void { return undefined; }
+  ): bigint | void {
+    return undefined;
+  }
   freeLibrary(_library: WindowsDynamicLibrary): void {}
-  mainWindowHandle(_windowIdentity: object): WindowsNativeWindowHandle | null { return null; }
+  mainWindowHandle(_windowIdentity: object): WindowsNativeWindowHandle | null {
+    return null;
+  }
 }

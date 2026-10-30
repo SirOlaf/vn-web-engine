@@ -7,8 +7,7 @@ import {
 } from '../../../input/touch-mouse.js';
 import {watchBrowserWindowActivation} from '../../../platform/browser-window-activation.js';
 import {BrowserWindowsMessageBoxHost} from '../../../platform/windows-message-box.js';
-import {HttpSource, sourceBlob, type ByteSource} from '../../../core/source.js';
-import type {WorkerSource} from '../../../core/worker-source.js';
+import {workerSourceOf} from '../../../core/worker-source.js';
 import type {YuvFrame} from '../../../video/frame.js';
 import {StreamMovieVoice} from '../../../video/stream-voice.js';
 import {YuvRenderer} from '../../../video/renderer.js';
@@ -46,15 +45,6 @@ function createAudioContext(): AudioContext {
   } catch {
     return new AudioContext();
   }
-}
-
-async function workerSource(source: ByteSource): Promise<WorkerSource> {
-  const blob = sourceBlob(source);
-  if (blob) return {kind: 'blob', blob};
-  if (source instanceof HttpSource)
-    return {kind: 'http', url: source.url, size: source.size, offset: 0, length: source.size};
-  const bytes = await source.read(0, source.size);
-  return {kind: 'blob', blob: new Blob([bytes.slice().buffer])};
 }
 
 /**
@@ -400,7 +390,7 @@ export class RScriptBrowserPlayer {
       this.options.diagnostic(`Missing movie ${path}`);
       return;
     }
-    const voice = new StreamMovieVoice(this.audio, await workerSource(source));
+    const voice = new StreamMovieVoice(this.audio, await workerSourceOf(source));
     try {
       voice.pause(false);
       await new Promise<void>((resolve, reject) => {

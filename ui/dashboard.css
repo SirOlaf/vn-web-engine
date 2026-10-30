@@ -137,6 +137,9 @@ input:focus-visible {
 .app-shell[data-accent='rscript'] {
   --accent: #6d6a9c;
 }
+.app-shell[data-accent='artemis'] {
+  --accent: #5f8a7c;
+}
 .systembar .bar-link {
   justify-self: end;
 }
@@ -289,6 +292,9 @@ input:focus-visible {
 }
 .tile[data-accent='rscript'] {
   --tile-accent: #6d6a9c;
+}
+.tile[data-accent='artemis'] {
+  --tile-accent: #5f8a7c;
 }
 
 /* Emblems: flat tinted squares with a ringed monogram; the selection is larger. */

@@ -69,6 +69,8 @@ export interface SlotText {
   visualText: string;
   bounds: Rect;
   clip: Rect;
+  /** Some glyph carries a native clip; otherwise `clip` is only the drawn extent. */
+  clipped: boolean;
   size: number;
   color: number;
   alpha: number;
@@ -136,6 +138,7 @@ export function slotText(slot: GlyphSlot): SlotText | undefined {
     visualText: lines.slice(0, visible.at(-1)!.line - firstLine + 1).join('\n'),
     bounds: {x: left, y: top, width: right - left, height: bottom - top},
     clip,
+    clipped: clipped.length > 0,
     size,
     color: visible[0]!.color,
     alpha: Math.max(...visible.map((g) => g.alpha)),

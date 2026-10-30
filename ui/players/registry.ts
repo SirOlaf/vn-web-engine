@@ -3,9 +3,10 @@ import type {InstallationRecognizer} from '../../src/platform/installation-detec
 import {isBurikoInstallation} from '../../src/engines/buriko/installation-markers.js';
 import {isMagesInstallation} from '../../src/engines/mages/installation-markers.js';
 import {isRScriptInstallation} from '../../src/engines/rscript/installation-markers.js';
+import {isArtemisInstallation} from '../../src/engines/artemis/installation-markers.js';
 
 /** Players the library offers: an engine for all of its titles, or one title. */
-export type PlayerId = 'buriko' | 'chaos-head-noah' | 'rscript';
+export type PlayerId = 'buriko' | 'chaos-head-noah' | 'rscript' | 'artemis';
 
 export interface PlayerEntry {
   readonly id: PlayerId;
@@ -72,6 +73,20 @@ export const PLAYERS: readonly PlayerEntry[] = [
     installationFiles: 'game files',
     recognize: isRScriptInstallation,
     saveFiles: () => import('./rscript/SaveFiles.svelte'),
+  },
+  {
+    id: 'artemis',
+    title: 'Artemis',
+    engine: 'ARTEMIS',
+    summary: '初雪桜 (Hatsuyuki Sakura)',
+    engineName: 'Artemis',
+    initials: 'AR',
+    route: './artemis.html',
+    explorerRoute: null,
+    installationKey: 'artemis',
+    installationFiles: 'game archives',
+    recognize: isArtemisInstallation,
+    saveFiles: () => import('./artemis/SaveFiles.svelte'),
   },
 ];
 

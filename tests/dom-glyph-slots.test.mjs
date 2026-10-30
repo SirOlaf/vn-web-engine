@@ -510,6 +510,45 @@ test('overlay slots stay transparent without effects until a reader style shows 
     );
     assert.match(shown.style.cssText, /filter:url/);
     assert.doesNotMatch(shown.style.cssText, /color:transparent/);
+    // Selection highlights paint whole line boxes: an unclipped box holds them and a 2 px
+    // border; the rows here are 30 px glyphs 40 px apart, so 5 px of leading on each side.
+    const px = (css, name) => Number(new RegExp(`(?:^|;)${name}:(-?[0-9.]+)px`).exec(css)[1]);
+    const rows = new DomGlyphSlots(new Node(), {overlay: true});
+    rows.show(
+      {id: 'rows', glyphs: [glyph('日', 0, 0, 0), glyph('本', 1, 0, 40)]},
+      1,
+      'serif',
+      false,
+    );
+    const box = rows.element.children[0];
+    assert.equal(px(box.style.cssText, 'top'), -7);
+    assert.equal(px(box.style.cssText, 'height'), 84);
+    assert.equal(px(box.children[0].style.cssText, 'top'), 2);
+    assert.match(box.style.cssText, /overflow:hidden/);
+    // A font whose ascent and descent exceed the line height widens the box by the excess.
+    const tall = new DomGlyphSlots(new Node(), {overlay: true});
+    tall.measure.measureText = (text) => ({
+      width: [...text].length * 20,
+      fontBoundingBoxAscent: 40,
+      fontBoundingBoxDescent: 12,
+    });
+    tall.show(
+      {id: 'tall', glyphs: [glyph('日', 0, 0, 0), glyph('本', 1, 0, 40)]},
+      1,
+      'serif',
+      false,
+    );
+    const tallBox = tall.element.children[0];
+    assert.deepEqual(
+      [px(tallBox.style.cssText, 'top'), px(tallBox.style.cssText, 'height')],
+      [-13, 96],
+    );
+    // A native clip still bounds the box.
+    const clip = {x: 0, y: 0, width: 100, height: 30};
+    const clipped = new DomGlyphSlots(new Node(), {overlay: true});
+    clipped.show({id: 'c', glyphs: [{...glyph('日', 0, 0, 0), clip}]}, 1, 'serif', false);
+    const cut = clipped.element.children[0];
+    assert.deepEqual([px(cut.style.cssText, 'top'), px(cut.style.cssText, 'height')], [0, 30]);
   } finally {
     globalThis.document = original;
   }
