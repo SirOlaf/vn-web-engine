@@ -130,7 +130,7 @@ export class D3d11ContextState
   }
   private buffer(value: ID3D11Buffer | null, bindFlag: number): D3d11Buffer | null {
     const buffer = this.object(value, D3d11Buffer);
-    if (buffer && !(buffer.getDesc().bindFlags & bindFlag))
+    if (buffer && !(buffer.bindFlags & bindFlag))
       throw new Error('Invalid D3D11 buffer binding');
     return buffer;
   }
@@ -161,6 +161,10 @@ export class D3d11ContextState
     start: number,
     values: readonly (T | null)[],
   ): void {
+    // Rebinding the same (already validated) objects would retain and release each once.
+    let same = true;
+    for (let i = 0; i < values.length && same; i++) same = target[start + i] === values[i];
+    if (same) return;
     for (const value of values) value?.retainBinding();
     const old = target.slice(start, start + values.length);
     for (let i = 0; i < values.length; i++) target[start + i] = values[i]!;
@@ -231,6 +235,7 @@ export class D3d11ContextState
     if (instances.length) throw new Error('SM4 shaders do not accept class instances');
     const next = this.child(value, IIDS.vertexShader),
       old = this.vertexShader;
+    if (next === old) return;
     next?.retainBinding();
     this.vertexShader = next;
     old?.releaseBinding();
@@ -240,6 +245,7 @@ export class D3d11ContextState
     if (instances.length) throw new Error('SM4 shaders do not accept class instances');
     const next = this.child(value, IIDS.pixelShader),
       old = this.pixelShader;
+    if (next === old) return;
     next?.retainBinding();
     this.pixelShader = next;
     old?.releaseBinding();
@@ -262,6 +268,7 @@ export class D3d11ContextState
     this.checkLive();
     const next = this.child(value, IIDS.layout),
       old = this.inputLayout;
+    if (next === old) return;
     next?.retainBinding();
     this.inputLayout = next;
     old?.releaseBinding();
