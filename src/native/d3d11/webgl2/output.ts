@@ -39,6 +39,16 @@ interface OutputConfiguration {
   readonly depth: Attachment | null;
 }
 const MAX_COMPLETE_CONFIGURATIONS = 64;
+/** Independently cached GL output state groups. */
+const RASTER = 1,
+  DEPTH = 2,
+  BLEND = 4,
+  ALL = 7;
+const store = (values: Float64Array, i: number, value: number): number => {
+  if (Object.is(values[i], value)) return 0;
+  values[i] = value;
+  return 1;
+};
 const sameAttachment = (a: Attachment | null, b: Attachment | null) =>
   a?.texture === b?.texture && a?.mip === b?.mip && a?.format === b?.format;
 const DEFAULT_BLEND: D3d11RenderTargetBlendDesc = {
@@ -82,13 +92,15 @@ const DEFAULT_RASTER: D3d11RasterizerDesc = {
 
 /** Context-owned framebuffer and native raster/output state. Context bindings retain the views. */
 export class D3d11GpuOutput {
-  private fixedState:
-    | (Pick<D3d11DrawOutputState, 'blend' | 'depth' | 'raster' | 'depthTarget'> & {
-        revision: number;
-      })
-    | null = null;
-  private readonly fixedValues = new Float64Array(20);
-  private readonly nextValues = new Float64Array(20);
+  /** Groups whose GL state matches the cached keys below. */
+  private applied = 0;
+  private appliedRaster: D3d11RasterizerDesc | null = null;
+  private appliedDepth: D3d11DepthStencilDesc | null = null;
+  private appliedDepthTarget: Dsv | null = null;
+  private appliedBlend: D3d11BlendDesc | null = null;
+  private readonly rasterValues = new Float64Array(13);
+  private readonly depthValues = new Float64Array(1);
+  private readonly blendValues = new Float64Array(6);
   private framebuffer: WebGLFramebuffer | null = null;
   private framebufferComplete = false;
   private readonly completeConfigurations: OutputConfiguration[] = [];
@@ -241,8 +253,24 @@ export class D3d11GpuOutput {
     if (!viewport || viewport.width === 0 || viewport.height === 0 || !(state.sampleMask & 1))
       return false;
     if (!this.attach(state)) return false;
-    if (this.cacheFixedState && this.sameFixedState(state)) return true;
-    this.invalidateState();
+    this.applied &= ~this.textures.takeOutputGroups();
+    const groups = this.cacheFixedState ? this.staleGroups(state) : ALL;
+    // A failed write (unsupported factor) leaves no group marked as applied.
+    this.applied = 0;
+    if (groups & RASTER) this.rasterState(state, raster, viewport);
+    if (groups & DEPTH) this.depthStencil(state);
+    if (groups & BLEND) this.blendStates(state);
+    if (this.cacheFixedState) this.applied = ALL;
+    // The draw context checks GL errors after submitting the complete draw,
+    // including these state writes. Avoid a second synchronous query per draw.
+    return true;
+  }
+
+  private rasterState(
+    state: D3d11DrawOutputState,
+    raster: D3d11RasterizerDesc,
+    viewport: D3d11Viewport,
+  ): void {
     const gl = this.gl;
     gl.disable(gl.RASTERIZER_DISCARD);
     gl.disable(gl.DITHER);
@@ -282,7 +310,10 @@ export class D3d11GpuOutput {
         gl.scissor(left, this.height - bottom, right - left, bottom - top);
       } else gl.scissor(0, 0, 0, 0);
     } else gl.disable(gl.SCISSOR_TEST);
-    this.depthStencil(state);
+  }
+
+  private blendStates(state: D3d11DrawOutputState): void {
+    const gl = this.gl;
     gl.blendColor(...state.blendFactor);
     gl.disable(gl.BLEND);
     for (let i = 0; i < this.colors.length; i++) {
@@ -330,67 +361,57 @@ export class D3d11GpuOutput {
         }
       }
     }
-    if (this.cacheFixedState) {
-      this.fixedValues.set(this.nextValues);
-      this.fixedState = {
-        blend: state.blend,
-        depth: state.depth,
-        raster: state.raster,
-        depthTarget: state.depthTarget,
-        revision: this.textures.outputStateRevision,
-      };
-    }
-    // The draw context checks GL errors after submitting the complete draw,
-    // including these state writes. Avoid a second synchronous query per draw.
-    return true;
   }
 
   /** Drop borrowed immutable state descriptions before external GL use. */
   invalidateState(): void {
-    this.fixedState = null;
+    this.applied = 0;
+    this.appliedRaster = this.appliedDepth = this.appliedBlend = null;
+    this.appliedDepthTarget = null;
   }
 
-  /** Enabled only for a Native-owned command batch with immutable descriptions. */
-  private sameFixedState(state: D3d11DrawOutputState): boolean {
-    const values = this.nextValues,
-      viewport = state.viewports[0]!,
-      rect = state.scissors[0];
+  /** Enabled only for a Native-owned command batch with immutable descriptions. Records the
+   * keys of the state about to be applied and returns the groups that differ from GL. */
+  private staleGroups(state: D3d11DrawOutputState): number {
+    const viewport = state.viewports[0]!,
+      rect = state.scissors[0],
+      r = this.rasterValues,
+      b = this.blendValues;
+    let stale = ALL & ~this.applied,
+      changed = this.appliedRaster !== state.raster ? 1 : 0;
+    this.appliedRaster = state.raster;
+    changed |= store(r, 0, this.width);
+    changed |= store(r, 1, this.height);
+    changed |= store(r, 2, viewport.topLeftX);
+    changed |= store(r, 3, viewport.topLeftY);
+    changed |= store(r, 4, viewport.width);
+    changed |= store(r, 5, viewport.height);
+    changed |= store(r, 6, viewport.minDepth);
+    changed |= store(r, 7, viewport.maxDepth);
+    changed |= store(r, 8, rect ? 1 : 0);
+    changed |= store(r, 9, rect?.left ?? 0);
+    changed |= store(r, 10, rect?.top ?? 0);
+    changed |= store(r, 11, rect?.right ?? 0);
+    changed |= store(r, 12, rect?.bottom ?? 0);
+    if (changed) stale |= RASTER;
+    changed = this.appliedDepth !== state.depth || this.appliedDepthTarget !== state.depthTarget ? 1 : 0;
+    this.appliedDepth = state.depth;
+    this.appliedDepthTarget = state.depthTarget;
+    changed |= store(this.depthValues, 0, state.stencilRef & 255);
+    if (changed) stale |= DEPTH;
     let targets = 0,
       alpha = 0;
     for (let i = 0; i < this.colors.length; i++) {
       if (this.colors[i]) targets |= 1 << i;
       if (this.colors[i]?.format === 65) alpha |= 1 << i;
     }
-    values[0] = this.width;
-    values[1] = this.height;
-    values[2] = targets;
-    values[3] = alpha;
-    values[4] = viewport.topLeftX;
-    values[5] = viewport.topLeftY;
-    values[6] = viewport.width;
-    values[7] = viewport.height;
-    values[8] = viewport.minDepth;
-    values[9] = viewport.maxDepth;
-    values[10] = rect ? 1 : 0;
-    values[11] = rect?.left ?? 0;
-    values[12] = rect?.top ?? 0;
-    values[13] = rect?.right ?? 0;
-    values[14] = rect?.bottom ?? 0;
-    for (let i = 0; i < 4; i++) values[15 + i] = state.blendFactor[i]!;
-    values[19] = state.stencilRef & 255;
-    const cached = this.fixedState;
-    if (
-      !cached ||
-      cached.revision !== this.textures.outputStateRevision ||
-      cached.blend !== state.blend ||
-      cached.depth !== state.depth ||
-      cached.raster !== state.raster ||
-      cached.depthTarget !== state.depthTarget
-    )
-      return false;
-    for (let i = 0; i < values.length; i++)
-      if (!Object.is(values[i], this.fixedValues[i])) return false;
-    return true;
+    changed = this.appliedBlend !== state.blend ? 1 : 0;
+    this.appliedBlend = state.blend;
+    changed |= store(b, 0, targets);
+    changed |= store(b, 1, alpha);
+    for (let i = 0; i < 4; i++) changed |= store(b, 2 + i, state.blendFactor[i]!);
+    if (changed) stale |= BLEND;
+    return stale;
   }
 
   /** Called only after an actual draw, while the same native bindings are still retained. */

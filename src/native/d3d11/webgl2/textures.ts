@@ -64,15 +64,19 @@ interface Texture {
  * The resource owner routes synchronization and final-resource callbacks here.
  */
 export class D3d11GpuTextures {
-  private outputRevision = 0;
-  /** Changes only when a private texture operation can disturb raster/output state. */
-  get outputStateRevision(): number {
-    return this.outputRevision;
+  /** Output state groups (raster 1, depth/stencil 2, blend 4) a private operation rewrote. */
+  private outputGroups = 0;
+  takeOutputGroups(): number {
+    const groups = this.outputGroups;
+    this.outputGroups = 0;
+    return groups;
   }
   private readonly textures = new Map<D3d11Texture2D, Texture>();
   private readonly aliases = new Map<Alias, Alias>();
   private readonly aliasImages = new Map<WebGLTexture, Alias>();
   private readonly pendingAliases = new Set<Alias>();
+  /** Zero-created storage whose allocation is checked with the pending batch. */
+  private readonly pendingAllocations = new Set<D3d11Texture2D>();
   private pendingCommands = false;
   private readonly decoders = new Map<GpuTextureFormat, WebGLProgram>();
   private aliasFramebuffer: WebGLFramebuffer | null = null;
@@ -238,7 +242,6 @@ export class D3d11GpuTextures {
       this.aliasBytes += bytes;
     }
     if (alias.revision !== entry.revision) {
-      this.outputRevision++;
       const gl = this.gl;
       for (let i = 0; i < alias.count; i++) {
         const mip = alias.first + i,
@@ -273,7 +276,7 @@ export class D3d11GpuTextures {
                 throw new D3d11TextureError('Incomplete D3D11 shader view framebuffer');
               alias.completeLevels.add(i);
             }
-            this.outputRevision++;
+            this.outputGroups |= 1;
             gl.disable(gl.SCISSOR_TEST);
             gl.blitFramebuffer(
               0,
@@ -333,7 +336,7 @@ export class D3d11GpuTextures {
     const entry = this.get(view.resource),
       gl = this.gl;
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebufferFor(entry, view.firstMip));
-    this.outputRevision++;
+    this.outputGroups |= 5;
     gl.disable(gl.SCISSOR_TEST);
     gl.disable(gl.DITHER);
     gl.colorMask(true, true, true, true);
@@ -370,7 +373,7 @@ export class D3d11GpuTextures {
     if (flags === 0) return;
     const gl = this.gl;
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebufferFor(entry, view.firstMip));
-    this.outputRevision++;
+    this.outputGroups |= 3;
     gl.disable(gl.SCISSOR_TEST);
     gl.depthMask(true);
     gl.stencilMask(255);
@@ -503,7 +506,7 @@ export class D3d11GpuTextures {
     const gl = this.gl;
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, from);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, to);
-    this.outputRevision++;
+    this.outputGroups |= 1;
     gl.disable(gl.SCISSOR_TEST);
     const mask = destination.layout.depth
       ? gl.DEPTH_BUFFER_BIT | (destination.getDesc().format === 45 ? gl.STENCIL_BUFFER_BIT : 0)
@@ -524,7 +527,9 @@ export class D3d11GpuTextures {
       mask,
       gl.NEAREST,
     );
-    this.checkError('resource copy');
+    // Like clears, copies are checked at the submission boundary or the next
+    // allocation, transfer or readback query, in GL command order.
+    this.pendingCommands = true;
   }
 
   /** The caller has written this attachment using its native draw/copy operation. */
@@ -651,6 +656,7 @@ export class D3d11GpuTextures {
     if (!(resource instanceof D3d11Texture2D)) return;
     const entry = this.textures.get(resource);
     if (!entry) return;
+    this.pendingAllocations.delete(resource);
     this.textures.delete(resource);
     this.bytes -= entry.bytes;
     const actions: (() => void)[] = [];
@@ -684,6 +690,7 @@ export class D3d11GpuTextures {
       this.disposeAll(actions);
     } finally {
       this.pendingAliases.clear();
+      this.pendingAllocations.clear();
       this.pendingCommands = false;
       this.decoders.clear();
       this.aliasFramebuffer = null;
@@ -737,12 +744,13 @@ export class D3d11GpuTextures {
       this.bytes += bytes;
       try {
         this.allocate(texture, format, desc.mipLevels, desc.width, desc.height);
-        this.checkError('texture allocation');
         // WebGL zero-initializes new storage; zero creation bytes need no upload.
+        // The batch check removes the entry again if its allocation failed.
         if (resource.zeroCreated && resource.revision === 0 && !format.decode) {
-          this.outputRevision++;
           entry.revision = 0;
-        } else this.upload(entry);
+          this.pendingAllocations.add(resource);
+          this.pendingCommands = true;
+        } else this.upload(entry); // the upload query also checks the allocation
       } catch (error) {
         this.bytes -= bytes;
         for (const framebuffer of entry.framebuffers.values())
@@ -776,7 +784,6 @@ export class D3d11GpuTextures {
   }
 
   private upload(entry: Texture): void {
-    this.outputRevision++;
     const gl = this.gl;
     gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
     for (const [name, value] of [
@@ -906,6 +913,7 @@ export class D3d11GpuTextures {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const program = this.decoder(format);
+    this.outputGroups |= 7;
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebufferFor(entry, mip));
     gl.useProgram(program);
     gl.uniform1i(gl.getUniformLocation(program, 'atlas'), 0);
@@ -1092,9 +1100,10 @@ export class D3d11GpuTextures {
       throw new D3d11TextureError('D3D11 device removed', 0x887a0005 | 0);
   }
   private checkError(operation: string): void {
-    let complete = false;
+    let complete = false,
+      error = 0;
     try {
-      const error = this.gl.getError();
+      error = this.gl.getError();
       if (error !== this.gl.NO_ERROR)
         throw new D3d11TextureError(
           `D3D11 ${operation}: WebGL error${error}`,
@@ -1106,7 +1115,17 @@ export class D3d11GpuTextures {
       // revision. Allocation, transfer and readback queries also check the batch.
       if (!complete) for (const alias of this.pendingAliases) alias.revision = -1;
       this.pendingAliases.clear();
+      const allocations = [...this.pendingAllocations];
+      this.pendingAllocations.clear();
       this.pendingCommands = false;
+      // Validated immutable storage can fail only for memory. Then unchecked storage
+      // is dropped as a failed synchronous allocation would be, and the next use
+      // allocates again; other batch errors belong to other commands.
+      if (!complete && error === this.gl.OUT_OF_MEMORY)
+        for (const resource of allocations)
+          try {
+            this.destroy(resource);
+          } catch {}
     }
   }
   private disposeAll(actions: readonly (() => void)[]): void {
