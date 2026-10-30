@@ -78,6 +78,10 @@ export class D3d11GpuTextures {
   /** Zero-created storage whose allocation is checked with the pending batch. */
   private readonly pendingAllocations = new Set<D3d11Texture2D>();
   private pendingCommands = false;
+  /** Color clears not yet issued to GL, per mip. The next use of the texture issues them, so a
+   * cleared target that is drawn after other targets starts its pass with a clear instead of
+   * storing the cleared pass and loading it again. */
+  private readonly pendingClears = new Map<Texture, Map<number, Float32Array>>();
   private readonly decoders = new Map<GpuTextureFormat, WebGLProgram>();
   private aliasFramebuffer: WebGLFramebuffer | null = null;
   private scratch: WebGLTexture | null = null;
@@ -317,6 +321,8 @@ export class D3d11GpuTextures {
   /** True when this query also checked preceding draw commands in the stream. */
   checkSubmission(): boolean {
     this.checkLive();
+    // A submission boundary issues every recorded clear before checking the batch.
+    for (const entry of [...this.pendingClears.keys()]) this.issueClears(entry);
     if (!this.pendingCommands) return false;
     this.checkError('texture submission');
     return true;
@@ -333,20 +339,34 @@ export class D3d11GpuTextures {
   ): void {
     if (!view.live || view.kind !== 'render-target')
       throw new D3d11TextureError('Invalid render target view');
-    const entry = this.get(view.resource),
-      gl = this.gl;
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebufferFor(entry, view.firstMip));
-    this.outputGroups |= 5;
-    gl.disable(gl.SCISSOR_TEST);
-    gl.disable(gl.DITHER);
-    gl.colorMask(true, true, true, true);
-    gl.clearBufferfv(
-      gl.COLOR,
-      0,
+    // A clear replaces the whole view mip, so an earlier pending clear of it is dropped.
+    const known = this.textures.get(view.resource);
+    if (known) this.pendingClears.get(known)?.delete(view.firstMip);
+    const entry = this.get(view.resource);
+    this.markWritten(view.resource, view.firstMip);
+    let clears = this.pendingClears.get(entry);
+    if (!clears) this.pendingClears.set(entry, (clears = new Map()));
+    clears.set(
+      view.firstMip,
       new Float32Array(view.resource.format === 65 ? [color[3], 0, 0, 0] : color),
     );
     this.pendingCommands = true;
-    this.markWritten(view.resource, view.firstMip);
+  }
+
+  private issueClears(entry: Texture): void {
+    const clears = this.pendingClears.get(entry);
+    if (!clears) return;
+    this.pendingClears.delete(entry);
+    const gl = this.gl;
+    for (const [mip, color] of clears) {
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebufferFor(entry, mip));
+      this.outputGroups |= 5;
+      gl.disable(gl.SCISSOR_TEST);
+      gl.disable(gl.DITHER);
+      gl.colorMask(true, true, true, true);
+      gl.clearBufferfv(gl.COLOR, 0, color);
+    }
+    this.pendingCommands = true;
   }
 
   clearDepthStencil(
@@ -556,6 +576,7 @@ export class D3d11GpuTextures {
     const entry = this.textures.get(resource);
     if (!entry || !entry.dirty.size || entry.revision !== resource.revision) return true;
     this.checkLive();
+    this.issueClears(entry);
     const gl = this.gl;
     if (!entry.fence) {
       entry.fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -583,6 +604,7 @@ export class D3d11GpuTextures {
       return;
     }
     if (!entry.dirty.size) return;
+    this.issueClears(entry);
     if (resource.layout.depth)
       throw new D3d11TextureError(
         'Depth/stencil CPU readback is outside this resource subset',
@@ -657,6 +679,7 @@ export class D3d11GpuTextures {
     const entry = this.textures.get(resource);
     if (!entry) return;
     this.pendingAllocations.delete(resource);
+    this.pendingClears.delete(entry);
     this.textures.delete(resource);
     this.bytes -= entry.bytes;
     const actions: (() => void)[] = [];
@@ -691,6 +714,7 @@ export class D3d11GpuTextures {
     } finally {
       this.pendingAliases.clear();
       this.pendingAllocations.clear();
+      this.pendingClears.clear();
       this.pendingCommands = false;
       this.decoders.clear();
       this.aliasFramebuffer = null;
@@ -760,8 +784,9 @@ export class D3d11GpuTextures {
       }
       this.textures.set(resource, entry);
     } else if (entry.revision !== resource.revision) {
+      this.pendingClears.delete(entry);
       this.upload(entry);
-    }
+    } else if (this.pendingClears.size) this.issueClears(entry);
     return entry;
   }
 
