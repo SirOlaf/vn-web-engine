@@ -46,6 +46,9 @@ export class D3d11Lifetime {
   }
 }
 
+/** Interface sets are immutable and shared by every object of the same interface list. */
+const interfaceSets = new Map<string, ReadonlySet<string>>();
+
 /** Private implementation handle. Public clients reach only its IUnknown interface. */
 export class D3d11Object implements IUnknown {
   private externalReferences = 1;
@@ -60,7 +63,14 @@ export class D3d11Object implements IUnknown {
     /** Device/context wrappers can be reacquired from another live child interface. */
     private readonly root = false,
   ) {
-    this.interfaces = new Set([IID_IUNKNOWN, ...interfaces.map((iid) => iid.toLowerCase())]);
+    const key = interfaces.join();
+    let set = interfaceSets.get(key);
+    if (!set)
+      interfaceSets.set(
+        key,
+        (set = new Set([IID_IUNKNOWN, ...interfaces.map((iid) => iid.toLowerCase())])),
+      );
+    this.interfaces = set;
     lifetime.acquireExternal();
     if (root) lifetime.registerRoot(() => this.destroy());
   }
@@ -73,7 +83,7 @@ export class D3d11Object implements IUnknown {
 
   /** Internal identity check without borrowing an extra public reference. */
   supportsInterface(iid: string): boolean {
-    return this.live && this.interfaces.has(iid.toLowerCase());
+    return this.live && (this.interfaces.has(iid) || this.interfaces.has(iid.toLowerCase()));
   }
 
   /** Internal validity check; released interfaces are never accepted by device factories. */
