@@ -19,6 +19,7 @@ export interface EmoteD3d11Texture {
 
 interface Entry {
   readonly value: EmoteD3d11Texture;
+  readonly source: EmoteTexture;
   readonly spec: string;
   references: number;
 }
@@ -55,11 +56,14 @@ function formatOf(type: string, spec: string): number {
  * 80d28bd088dda8e97c7c47a9c664e55159f70505b0f9fde3158d8ce2a3e1e051.
  * The x64 path uses the source width/height, one mip and direct initial data; it
  * does not inherit the x86 truncated-dimension or optional-mip upload behavior.
- * Entries retain only live owners. The last release immediately retires both
- * native handles; separately retained context bindings follow COM ownership.
+ * Entries retain live owners. After the last release an atlas stays idle, keyed by its
+ * immutable parsed pixel resource, until the next draw, a texture miss or disposal, so
+ * a same-file player re-created between frames reuses the GPU image. Otherwise both
+ * native handles retire exactly as before; context bindings follow COM ownership.
  */
 export class EmoteD3d11Textures {
   private readonly entries = new Map<EmoteTexture, Entry>();
+  private readonly idle = new Map<EmoteTexture['pixel'], Entry>();
   private disposed = false;
 
   constructor(private readonly device: ID3D11Device) {}
@@ -72,6 +76,19 @@ export class EmoteD3d11Textures {
       cached.references++;
       return cached.value;
     }
+    const idle = this.idle.get(source.pixel);
+    if (
+      idle &&
+      idle.spec === spec &&
+      idle.source.type === source.type &&
+      idle.source.width === source.width &&
+      idle.source.height === source.height
+    ) {
+      this.idle.delete(source.pixel);
+      this.entries.set(source, {value: idle.value, source, spec, references: 1});
+      return idle.value;
+    }
+    this.retireIdle();
     const format = formatOf(source.type, spec),
       layout = dxgiLayout(format)!,
       {width, height} = source,
@@ -124,7 +141,7 @@ export class EmoteD3d11Textures {
       height,
       kind: format === 65 ? 2 : format === 61 ? 3 : format === 49 ? 4 : 1,
     };
-    this.entries.set(source, {value, spec, references: 1});
+    this.entries.set(source, {value, source, spec, references: 1});
     return value;
   }
 
@@ -133,6 +150,26 @@ export class EmoteD3d11Textures {
     if (!entry) throw new Error('Releasing an unowned E-mote texture');
     if (--entry.references !== 0) return;
     this.entries.delete(source);
+    const replaced = this.idle.get(source.pixel);
+    this.idle.set(source.pixel, entry);
+    if (replaced) this.retire(replaced);
+  }
+
+  /** Draws and misses retire idle atlases, so GPU memory then matches immediate release. */
+  retireIdle(): void {
+    if (!this.idle.size) return;
+    const errors: unknown[] = [];
+    for (const entry of [...this.idle.values()])
+      try {
+        this.retire(entry);
+      } catch (error) {
+        errors.push(error);
+      }
+    this.idle.clear();
+    if (errors.length) throw new AggregateError(errors, 'E-mote texture retirement failed');
+  }
+
+  private retire(entry: Entry): void {
     try {
       entry.value.view.release();
     } finally {
@@ -144,7 +181,7 @@ export class EmoteD3d11Textures {
     if (this.disposed) return;
     this.disposed = true;
     const errors: unknown[] = [];
-    for (const {value} of this.entries.values())
+    for (const {value} of [...this.entries.values(), ...this.idle.values()])
       for (const object of [value.view, value.texture])
         try {
           object.release();
@@ -152,6 +189,7 @@ export class EmoteD3d11Textures {
           errors.push(error);
         }
     this.entries.clear();
+    this.idle.clear();
     if (errors.length) throw new AggregateError(errors, 'E-mote texture retirement failed');
   }
 }

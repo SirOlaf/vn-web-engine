@@ -209,7 +209,8 @@ test('x64 cached public creation preserves separate resources, variables and see
         b = device.createPlayers([bytes, bytes.slice()]),
         c = device.createPlayer(imageFile({variableFrame: 14}));
       assert.equal(seeds, 4);
-      assert.equal(host.created.filter((r) => r.kind === 'texture').length, 5);
+      // The released warm atlas is reused by the next same-file player before any draw.
+      assert.equal(host.created.filter((r) => r.kind === 'texture').length, 4);
       a.setVariable('head_LR', 4, 0, 0);
       b.setVariable('head_LR', 8, 0, 0);
       a.progress(1);
@@ -292,6 +293,44 @@ test('x64 native exports retain independent player cores and shared clone resour
     host.context.release();
     host.device.release();
   }
+});
+
+test('x64 released atlases stay reusable until the next draw or texture miss', () => {
+  const host = nativeHost(),
+    loaded = load(false),
+    device = loaded.exports.emoteCreate(host),
+    atlases = () => host.created.filter((r) => r.kind === 'texture');
+  const target = host.device.createTexture2D({width: 32, height: 24}, null).value,
+    view = host.device.createRenderTargetView(target, null).value;
+  device.setRenderTarget(view, null);
+  const first = device.createPlayer(imageFile()),
+    [atlas] = atlases().slice(-1);
+  assert.equal(first.release(), 0);
+  assert.ok(atlas.references > 0);
+  const again = device.createPlayer(imageFile());
+  assert.equal(atlases().at(-1), atlas);
+  assert.equal(again.release(), 0);
+  const other = device.createPlayer(imageFile({variableFrame: 14}));
+  assert.equal(atlas.references, 0);
+  const [otherAtlas] = atlases().slice(-1);
+  assert.notEqual(otherAtlas, atlas);
+  const idle = device.createPlayer(imageFile()),
+    [idleAtlas] = atlases().slice(-1);
+  assert.equal(idle.release(), 0);
+  assert.ok(idleAtlas.references > 0);
+  other.progress(0);
+  other.render();
+  assert.equal(idleAtlas.references, 0);
+  assert.ok(otherAtlas.references > 0);
+  assert.equal(other.release(), 0);
+  assert.equal(device.release(), 0);
+  host.context.clearState();
+  view.release();
+  target.release();
+  assert.ok(host.created.slice(2).every((r) => r.references === 0));
+  loaded.loader.dispose();
+  host.context.release();
+  host.device.release();
 });
 
 test('x64 public Render uses the selected evaluated clip and caller target without advancing clocks', () => {
