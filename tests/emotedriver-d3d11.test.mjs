@@ -4,7 +4,11 @@ import {NativeLibraryLoader} from '../dist/platform/native-libraries.js';
 import {EMOTE_DRIVER, EMOTE_DRIVER_D3D11} from '../dist/native/emotedriver/contract.js';
 import {emoteDriverD3d11Library} from '../dist/native/emotedriver/library.js';
 import {createEmoteMeshKernel} from '../dist/native/emotedriver/runtime/mesh/index.js';
-import {EmoteModelCache, sameModelBytes} from '../dist/native/emotedriver/runtime/model-cache.js';
+import {
+  EmoteModelCache,
+  retainModelBytes,
+  sameModelBytes,
+} from '../dist/native/emotedriver/runtime/model-cache.js';
 import {buildPsb, emoteWinTree, resource} from './kirikiri-psb-fixtures.mjs';
 
 import {nativeHost, shaderStandins} from './emotedriver-d3d11-fixture.mjs';
@@ -168,6 +172,30 @@ test('x64 model cache byte equality detects every changed bit at aligned and una
         }
       if (length) assert.equal(sameModelBytes(a, b.subarray(0, length - 1)), false);
     }
+  }
+});
+
+test('x64 retained model bytes compare exactly through the SIMD staging path', () => {
+  for (const length of [0, 1, 63, 64, 65, 16383, 16384, 16448, 16449, 40000]) {
+    const source = new Uint8Array(new ArrayBuffer(length + 1), 1);
+    for (let i = 0; i < length; i++) source[i] = (i * 37 + 11) & 255;
+    const retained = retainModelBytes(source, true),
+      other = source.slice();
+    assert.deepEqual(retained.bytes, source);
+    source.fill(0);
+    assert.equal(retained.equal(other), true);
+    const positions = new Set([0, 15, 16, 63, 64, 16383, 16384, 16447, 16448, length - 1]);
+    for (let i = 0; i < length; i += 97) positions.add(i);
+    for (const i of positions)
+      if (i >= 0 && i < length)
+        for (const bit of [1, 128]) {
+          other[i] ^= bit;
+          assert.equal(retained.equal(other), false, `length ${length} byte ${i} bit ${bit}`);
+          other[i] ^= bit;
+        }
+    assert.equal(retained.equal(other), true);
+    if (length) assert.equal(retained.equal(other.subarray(0, length - 1)), false);
+    assert.equal(retainModelBytes(other, false).equal(other.slice()), true);
   }
 });
 
