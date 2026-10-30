@@ -15,6 +15,9 @@ const uint = (n: number) => Number.isInteger(n) && n >= 0 && n <= 0xffffffff;
 type Mutable<T> = {-readonly [P in keyof T]: T[P]};
 
 /** Native immediate context over shared owned bindings, transfers and GPU execution. */
+/** GL POINTS, LINES, LINE_STRIP, TRIANGLES, TRIANGLE_STRIP for D3D11 topologies 1–5. */
+const DRAW_MODES: readonly number[] = [0x0000, 0x0001, 0x0003, 0x0004, 0x0005];
+
 export class D3d11DrawContext extends D3d11TransferContext implements ID3D11DeviceContext {
   private vertices = new Float32Array(0);
   /** Per-slot vertex scratch of the staged draw. */
@@ -140,9 +143,7 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
     if (this.gl.isContextLost())
       throw new D3d11TextureError('D3D11 device removed', 0x887a0005 | 0);
     const gl = this.gl,
-      mode = [gl.POINTS, gl.LINES, gl.LINE_STRIP, gl.TRIANGLES, gl.TRIANGLE_STRIP][
-        this.topology - 1
-      ];
+      mode = DRAW_MODES[this.topology - 1];
     if (mode === undefined)
       throw new D3d11TextureError('Unsupported D3D11 primitive topology', 0x80004001 | 0);
     if (!(this.vertexShader instanceof D3d11Shader) || !(this.pixelShader instanceof D3d11Shader))

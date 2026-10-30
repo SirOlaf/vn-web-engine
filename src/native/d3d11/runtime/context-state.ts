@@ -286,14 +286,13 @@ export class D3d11ContextState
   ): void {
     this.checkLive();
     slots(start, values.length, 32);
-    if (
-      strides.length !== values.length ||
-      offsets.length !== values.length ||
-      !strides.every((n) => uint(n) && n <= 2048) ||
-      !offsets.every(uint)
-    )
+    if (strides.length !== values.length || offsets.length !== values.length)
       throw new Error('Invalid D3D11 vertex-buffer layout');
-    const buffers = values.map((v) => this.buffer(v, 1));
+    for (let i = 0; i < values.length; i++)
+      if (!uint(strides[i]!) || strides[i]! > 2048 || !uint(offsets[i]!))
+        throw new Error('Invalid D3D11 vertex-buffer layout');
+    const buffers: (D3d11Buffer | null)[] = [];
+    for (let i = 0; i < values.length; i++) buffers.push(this.buffer(values[i]!, 1));
     for (let i = 0; i < values.length; i++) {
       this.vertexStrides[start + i] = strides[i]!;
       this.vertexOffsets[start + i] = offsets[i]!;

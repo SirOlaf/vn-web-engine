@@ -47,7 +47,8 @@ export class D3d11Lifetime {
 }
 
 /** Interface sets are immutable and shared by every object of the same interface list. */
-const interfaceSets = new Map<string, ReadonlySet<string>>();
+const interfaceSets = new Map<string, ReadonlySet<string>>(),
+  interfaceLists = new WeakMap<readonly string[], ReadonlySet<string>>();
 
 /** Private implementation handle. Public clients reach only its IUnknown interface. */
 export class D3d11Object implements IUnknown {
@@ -63,13 +64,18 @@ export class D3d11Object implements IUnknown {
     /** Device/context wrappers can be reacquired from another live child interface. */
     private readonly root = false,
   ) {
-    const key = interfaces.join();
-    let set = interfaceSets.get(key);
-    if (!set)
-      interfaceSets.set(
-        key,
-        (set = new Set([IID_IUNKNOWN, ...interfaces.map((iid) => iid.toLowerCase())])),
-      );
+    // Frozen lists (shared per resource kind) skip building the key string.
+    let set = interfaceLists.get(interfaces);
+    if (!set) {
+      const key = interfaces.join();
+      set = interfaceSets.get(key);
+      if (!set)
+        interfaceSets.set(
+          key,
+          (set = new Set([IID_IUNKNOWN, ...interfaces.map((iid) => iid.toLowerCase())])),
+        );
+      if (Object.isFrozen(interfaces)) interfaceLists.set(interfaces, set);
+    }
     this.interfaces = set;
     lifetime.acquireExternal();
     if (root) lifetime.registerRoot(() => this.destroy());

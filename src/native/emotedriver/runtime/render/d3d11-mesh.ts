@@ -124,6 +124,9 @@ export function packEmoteD3d11Mesh(
   return {vertices, vertexCount, topology: 4};
 }
 
+const STRIDES: readonly number[] = Object.freeze([20]),
+  OFFSETS: readonly number[] = Object.freeze([0]);
+
 /** Native default vertex-buffer creation, binding and Draw; shader/output state is caller-owned. */
 export function drawEmoteD3d11Mesh(
   device: ID3D11Device,
@@ -146,7 +149,7 @@ export function drawEmoteD3d11Mesh(
     throw new Error(`E-mote vertex buffer creation failed: ${result.hr}`);
   const buffer = result.value;
   try {
-    context.iaSetVertexBuffers(0, [buffer], [20], [0]);
+    context.iaSetVertexBuffers(0, [buffer], STRIDES, OFFSETS);
     context.iaSetPrimitiveTopology(mesh.topology);
     context.draw(mesh.vertexCount, 0);
   } finally {

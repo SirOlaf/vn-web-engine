@@ -93,6 +93,13 @@ function copyRows(level: Level, source: D3d11SubresourceData): void {
     );
 }
 
+const storageInterfaces = new Map<string, readonly string[]>();
+function storageInterfacesOf(iid: string): readonly string[] {
+  let list = storageInterfaces.get(iid);
+  if (!list) storageInterfaces.set(iid, (list = Object.freeze([CHILD_IID, RESOURCE_IID, iid])));
+  return list;
+}
+
 /** CPU storage and ownership shared by device resources. Never exposed across the contract. */
 export abstract class D3d11ResourceStorage extends D3d11Object implements ID3D11Resource {
   revision = 0;
@@ -110,7 +117,7 @@ export abstract class D3d11ResourceStorage extends D3d11Object implements ID3D11
     readonly levels: Level[],
     iid: string,
   ) {
-    super(owner.lifetime, [CHILD_IID, RESOURCE_IID, iid], () => {
+    super(owner.lifetime, storageInterfacesOf(iid), () => {
       this.disposed = true;
       for (const level of levels) {
         level.bytes = new Uint8Array(0);
