@@ -93,6 +93,34 @@ function copyRows(level: Level, source: D3d11SubresourceData): void {
     );
 }
 
+/**
+ * Storage of released GPU-only vertex/index buffers, by exact size, for the next initialized
+ * buffer of that size. Such storage is never mapped and is read only during a call, so no
+ * view of it outlives its resource; reusing it skips one allocation per created buffer.
+ */
+const BUFFER_SPARES = 2,
+  SPARE_BUFFER_BYTES = 64 * 1024;
+const spareBuffers = new WeakMap<D3d11ResourceOwner, Map<number, ArrayBuffer[]>>();
+function spareBufferOf(owner: D3d11ResourceOwner, byteLength: number): ArrayBuffer | null {
+  return spareBuffers.get(owner)?.get(byteLength)?.pop() ?? null;
+}
+function keepSpareBuffer(owner: D3d11ResourceOwner, bytes: Uint8Array): void {
+  const buffer = bytes.buffer;
+  if (
+    !(buffer instanceof ArrayBuffer) ||
+    bytes.byteOffset !== 0 ||
+    bytes.byteLength !== buffer.byteLength ||
+    buffer.byteLength > SPARE_BUFFER_BYTES ||
+    owner.lifetime.closed
+  )
+    return;
+  let sizes = spareBuffers.get(owner);
+  if (!sizes) spareBuffers.set(owner, (sizes = new Map()));
+  const list = sizes.get(buffer.byteLength);
+  if (!list) sizes.set(buffer.byteLength, [buffer]);
+  else if (list.length < BUFFER_SPARES) list.push(buffer);
+}
+
 const storageInterfaces = new Map<string, readonly string[]>();
 function storageInterfacesOf(iid: string): readonly string[] {
   let list = storageInterfaces.get(iid);
@@ -119,6 +147,13 @@ export abstract class D3d11ResourceStorage extends D3d11Object implements ID3D11
   ) {
     super(owner.lifetime, storageInterfacesOf(iid), () => {
       this.disposed = true;
+      if (
+        dimension === 1 &&
+        access.usage === 0 &&
+        access.cpuAccessFlags === 0 &&
+        (access.bindFlags & ~3) === 0
+      )
+        keepSpareBuffer(owner, levels[0]!.bytes);
       for (const level of levels) {
         level.bytes = new Uint8Array(0);
         level.mapped = null;
@@ -441,9 +476,14 @@ export function createBufferStorage(
   let bytes: Uint8Array;
   try {
     // Copying straight from the initial data skips zero-filling a buffer that is overwritten.
-    bytes = initial
-      ? Uint8Array.prototype.slice.call(initial.data, 0, desc.byteWidth)
-      : new Uint8Array(desc.byteWidth);
+    const spare = initial ? spareBufferOf(owner, desc.byteWidth) : null;
+    if (spare) {
+      bytes = new Uint8Array(spare);
+      bytes.set(initial!.data.subarray(0, desc.byteWidth));
+    } else
+      bytes = initial
+        ? Uint8Array.prototype.slice.call(initial.data, 0, desc.byteWidth)
+        : new Uint8Array(desc.byteWidth);
   } catch (error) {
     if (error instanceof RangeError) return {hr: OUT_OF_MEMORY, value: null};
     throw error;
