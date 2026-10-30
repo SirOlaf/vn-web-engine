@@ -16,7 +16,11 @@ import type {
 } from '../../../d3d11/contract.js';
 import type {EmoteScalarDrawItem, EmoteScalarVertexGrid} from '../interfaces.js';
 import {EmoteUnsupportedError} from '../errors.js';
-import {packEmoteD3d11Mesh, drawEmoteD3d11Mesh} from './d3d11-mesh.js';
+import {
+  packEmoteD3d11Mesh,
+  drawEmoteD3d11Mesh,
+  type EmoteD3d11MeshScratch,
+} from './d3d11-mesh.js';
 import {
   EmoteD3d11Shaders,
   emoteD3d11BasicShader,
@@ -75,6 +79,10 @@ function flagFloat(word: number): number {
   flagBits.setUint32(0, word >>> 0, true);
   return flagBits.getFloat32(0, true);
 }
+/** Items the draw pass never submits. */
+function skipped(item: EmoteScalarDrawItem): boolean {
+  return item.blank || item.opa === 0 || (item.bm & 0xff0f) === 6;
+}
 function uintOf(value: number): number {
   const n = Math.trunc(value);
   return (Number.isFinite(n) && n >= -0x80000000 && n <= 0x7fffffff ? n : -0x80000000) >>> 0;
@@ -96,6 +104,8 @@ function boundsOf(grid: EmoteScalarVertexGrid): Float32Array {
   return Float32Array.of(x0, y0, x1, y1);
 }
 
+const COPY_SPARES = 4;
+
 function releaseOwnedTarget(target: OwnedTarget): void {
   const errors: unknown[] = [];
   for (const object of [target.shaderView, target.view, target.texture])
@@ -108,30 +118,46 @@ function releaseOwnedTarget(target: OwnedTarget): void {
 }
 
 /**
- * Device-owned slot for one released mask pair. Mask passes clear a target before
- * drawing into or sampling it, so the next renderer of the same output size can take
- * the pair instead of creating two full-output targets.
+ * Device-owned slot for one released set of mask targets. Mask passes clear a target
+ * before drawing into or sampling it, so the next renderer of the same output size can
+ * take the set instead of creating full-output targets.
  */
 export class EmoteD3d11MaskPool {
-  private idle: [OwnedTarget, OwnedTarget] | null = null;
+  private idle: OwnedTarget[] | null = null;
+  /** Retired destination-copy targets. A taken target has exactly the size the native
+   * policy asked for, so its first copy overwrites all of it, as with a fresh one. */
+  private readonly copies: OwnedTarget[] = [];
 
-  take(width: number, height: number): [OwnedTarget, OwnedTarget] | null {
-    const pair = this.idle;
-    if (!pair || pair[0].width !== width || pair[0].height !== height) return null;
+  take(width: number, height: number): OwnedTarget[] | null {
+    const set = this.idle;
+    if (!set || set[0]!.width !== width || set[0]!.height !== height) return null;
     this.idle = null;
-    return pair;
+    return set;
   }
 
-  keep(pair: [OwnedTarget, OwnedTarget]): void {
+  keep(set: OwnedTarget[]): void {
     const old = this.idle;
-    this.idle = pair;
+    this.idle = set;
     if (old) this.release(old);
+  }
+
+  takeCopy(width: number, height: number, format: number): OwnedTarget | null {
+    const i = this.copies.findIndex(
+      (t) => t.width === width && t.height === height && t.texture.getDesc().format === format,
+    );
+    return i < 0 ? null : this.copies.splice(i, 1)[0]!;
+  }
+
+  keepCopy(target: OwnedTarget): void {
+    this.copies.push(target);
+    if (this.copies.length > COPY_SPARES) releaseOwnedTarget(this.copies.shift()!);
   }
 
   dispose(): void {
     const old = this.idle;
     this.idle = null;
     if (old) this.release(old);
+    this.release(this.copies.splice(0));
   }
 
   private release(pair: readonly OwnedTarget[]): void {
@@ -167,7 +193,10 @@ export class EmoteD3d11Renderer {
   private readonly bounds = Float32Array.of(MAX, MAX, -MAX, -MAX);
   private readonly corners = new Uint32Array(4);
   private readonly filterColor = new Float32Array(4);
-  private masks: [OwnedTarget, OwnedTarget] | null = null;
+  private readonly packed: EmoteD3d11MeshScratch = {bytes: new Uint8Array(0)};
+  private masks: OwnedTarget[] = [];
+  /** Alpha masks of this frame's stencil chains, built before the output pass. */
+  private readonly built = new Map<EmoteScalarDrawItem, OwnedTarget>();
   private copy: OwnedTarget | null = null;
   private output: EmoteD3d11RenderTarget | null = null;
   private target: EmoteD3d11RenderTarget | null = null;
@@ -330,13 +359,18 @@ export class EmoteD3d11Renderer {
           flagFloat(a.item.clipFlags) - flagFloat(b.item.clipFlags) ||
           a.index - b.index,
       );
+      if (this.maskMode === 1) this.buildMasks(order);
       this.bind(output);
       let group: EmoteScalarDrawItem | null = null;
       for (const {item} of order) {
-        if (item.blank || item.opa === 0 || (item.bm & 0xff0f) === 6) continue;
+        if (skipped(item)) continue;
         if (item.stencilParent !== group) {
           group = item.stencilParent;
-          if (group) this.buildMask(group);
+          const built = group && this.built.get(group);
+          if (built) {
+            this.mask = built;
+            this.pass = 6;
+          } else if (group) this.buildMask(group);
           else {
             if (this.stencilActive) this.setStencil(0, null);
             this.mask = null;
@@ -350,6 +384,7 @@ export class EmoteD3d11Renderer {
         if (this.stencilActive) this.setStencil(0, null);
       } finally {
         // Texture references retained by native context bindings are independent of ours.
+        this.built.clear();
         this.pass = 0;
         this.mask = null;
         this.stencilActive = false;
@@ -372,14 +407,14 @@ export class EmoteD3d11Renderer {
         errors.push(error);
       }
     this.used.clear();
-    if (this.masks && this.maskPool)
+    if (this.masks.length && this.maskPool)
       try {
         this.maskPool.keep(this.masks);
       } catch (error) {
         errors.push(error);
       }
     else
-      for (const target of this.masks ?? [])
+      for (const target of this.masks)
         try {
           this.releaseTarget(target);
         } catch (error) {
@@ -387,11 +422,12 @@ export class EmoteD3d11Renderer {
         }
     if (this.copy)
       try {
-        this.releaseTarget(this.copy);
+        this.retireCopy(this.copy);
       } catch (error) {
         errors.push(error);
       }
-    this.masks = this.copy = null;
+    this.masks = [];
+    this.copy = null;
     for (const object of this.owned.splice(0).reverse())
       try {
         object.release();
@@ -496,24 +532,56 @@ export class EmoteD3d11Renderer {
     releaseOwnedTarget(target);
   }
 
-  private maskTargets(): [OwnedTarget, OwnedTarget] {
+  private retireCopy(target: OwnedTarget): void {
+    if (this.maskPool) this.maskPool.keepCopy(target);
+    else releaseOwnedTarget(target);
+  }
+
+  /** At least `count` output-sized A8 targets; the first two are the sequential pair. */
+  private maskTargets(count: number): OwnedTarget[] {
     const {width, height} = this.output!;
-    if (this.masks && (this.masks[0].width !== width || this.masks[0].height !== height)) {
+    if (this.masks.length && (this.masks[0]!.width !== width || this.masks[0]!.height !== height)) {
       const old = this.masks;
-      this.masks = null;
+      this.masks = [];
       for (const target of old) this.releaseTarget(target);
     }
-    if (!this.masks) this.masks = this.maskPool?.take(width, height) ?? null;
-    if (!this.masks) {
-      const first = this.makeTarget(width, height, 65);
-      try {
-        this.masks = [first, this.makeTarget(width, height, 65)];
-      } catch (error) {
-        this.releaseTarget(first);
-        throw error;
-      }
-    }
+    if (!this.masks.length) this.masks = this.maskPool?.take(width, height) ?? [];
+    while (this.masks.length < count) this.masks.push(this.makeTarget(width, height, 65));
     return this.masks;
+  }
+
+  /**
+   * A chain's alpha mask depends only on its own items, never on the output, so each
+   * distinct chain of the frame is built once before the output is bound. The output is
+   * then drawn in one pass instead of being rebound after every chain. A chain without
+   * intersection or subtraction items samples whatever the pair last held; such frames
+   * keep the sequential passes.
+   */
+  private buildMasks(order: readonly {item: EmoteScalarDrawItem}[]): void {
+    const chains: EmoteScalarDrawItem[] = [],
+      seen = new Set<EmoteScalarDrawItem>();
+    let group: EmoteScalarDrawItem | null = null;
+    for (const {item} of order) {
+      if (skipped(item) || item.stencilParent === group) continue;
+      group = item.stencilParent;
+      if (!group || seen.has(group)) continue;
+      let drawn = false;
+      for (let node: EmoteScalarDrawItem | null = group; node; node = node.stencilParent)
+        if ((node.stencilType & 3) === 1 || (node.stencilType & 3) === 2) drawn = true;
+      if (!drawn) return;
+      seen.add(group);
+      chains.push(group);
+    }
+    if (!chains.length) return;
+    const free = [...this.maskTargets(chains.length + 1)];
+    for (const chain of chains) {
+      const pair = [free.pop()!, free.pop()!];
+      this.drawMask(chain, pair);
+      this.built.set(chain, pair[0]!);
+      free.push(pair[1]!);
+    }
+    this.pass = 0;
+    this.mask = null;
   }
 
   private buildMask(parent: EmoteScalarDrawItem): void {
@@ -522,7 +590,14 @@ export class EmoteD3d11Renderer {
       return;
     }
     if (this.maskMode !== 1) throw new EmoteUnsupportedError(`mask mode ${this.maskMode}`);
-    const masks = this.maskTargets();
+    this.drawMask(parent, this.maskTargets(2));
+    this.bind(this.output!);
+    this.mask = this.masks[0]!;
+    this.pass = 6;
+  }
+
+  /** Intersections, then subtractions; the result is left in `masks[0]`. */
+  private drawMask(parent: EmoteScalarDrawItem, masks: OwnedTarget[]): void {
     this.pass = 1;
     this.mask = null;
     for (const role of [1, 2])
@@ -535,14 +610,14 @@ export class EmoteD3d11Renderer {
           if (this.pass === 1) this.pass = 3;
           else {
             this.pass = 4;
-            masks.reverse();
+            [masks[0], masks[1]] = [masks[1]!, masks[0]!];
             this.mask = masks[1];
           }
-          this.bind(masks[0], ZERO);
+          this.bind(masks[0]!, ZERO);
         } else {
           this.alphaAdd = f(f(1 - item.alphaScale) - item.alphaOffset);
           this.mask = null;
-          if (this.pass === 1) this.bind(masks[0], [1, 1, 1, 1]);
+          if (this.pass === 1) this.bind(masks[0]!, [1, 1, 1, 1]);
           this.pass = 5;
         }
         if (item.stencilType & 4) {
@@ -550,9 +625,6 @@ export class EmoteD3d11Renderer {
             if (!child.blank) this.draw(this.mesh(child), WHITE, 4, 0, 0);
         } else if (!item.blank) this.draw(this.mesh(item), WHITE, 4, 0, 0);
       }
-    this.bind(this.output!);
-    this.mask = masks[0];
-    this.pass = 6;
   }
 
   /** Native060a20/060920: preserve depth fields, replace only the stencil description. */
@@ -753,6 +825,7 @@ export class EmoteD3d11Renderer {
         mesh.height,
         mesh.texture?.width ?? 1,
         mesh.texture?.height ?? 1,
+        this.packed,
       ),
     );
   }
@@ -838,16 +911,14 @@ export class EmoteD3d11Renderer {
     const cw = this.copy?.width ?? 0,
       ch = this.copy?.height ?? 0;
     if (width < cw * 0.5 || height < ch * 0.5 || width > cw || height > ch) {
-      const format = target.texture.getDesc().format;
-      // Native copies use a typed color view of the two supported typeless bases.
-      const replacement = this.makeTarget(
-        width,
-        height,
-        format === 27 ? 28 : format === 90 ? 87 : format,
-      );
+      const base = target.texture.getDesc().format,
+        // Native copies use a typed color view of the two supported typeless bases.
+        format = base === 27 ? 28 : base === 90 ? 87 : base;
+      const replacement =
+        this.maskPool?.takeCopy(width, height, format) ?? this.makeTarget(width, height, format);
       const old = this.copy;
       this.copy = replacement;
-      if (old) this.releaseTarget(old);
+      if (old) this.retireCopy(old);
     }
     const copy = this.copy!,
       ctx = this.context;
