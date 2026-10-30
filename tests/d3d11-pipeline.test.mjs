@@ -1002,6 +1002,7 @@ test('native Draw and DrawIndexed preserve planar inputs, base vertices, strip c
       {register: 0, location: 0},
       {register: 1, location: 1},
     ],
+    registers: Object.freeze([0, 1]),
     samples: [],
   };
   ctx = new D3d11DrawContext(

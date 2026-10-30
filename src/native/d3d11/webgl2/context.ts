@@ -155,12 +155,12 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
       alphaSamples = 0,
       reflectedSamples = 0;
     for (let i = 0; i < this.renderTargets.length; i++)
-      if (this.renderTargets[i]?.resource.getDesc().format === 65) alphaTargets |= 1 << i;
+      if (this.renderTargets[i]?.resource.format === 65) alphaTargets |= 1 << i;
     const samples = this.pixelShader.shader.code.samples;
     for (let i = 0; i < samples.length; i++) {
       const view = this.psResources[samples[i]!.resource],
         sampler = this.psSamplers[samples[i]!.sampler]?.description;
-      if (view?.resource.getDesc().format === 65) alphaSamples |= 1 << i;
+      if (view?.resource.format === 65) alphaSamples |= 1 << i;
       // Point/clamp rows of a reflected view are selected in the shader, which
       // avoids refreshing a row-reflected copy after every target revision.
       if (
@@ -179,7 +179,7 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
         alphaSamples,
         reflectedSamples,
       ),
-      registers = program.attributes.map((a) => a.register),
+      registers = program.registers,
       floats = count * registers.length * 4;
     if (count > MAX_VERTICES || floats > MAX_FLOATS)
       throw new D3d11TextureError('D3D11 draw exceeds bounded vertex staging', 0x8007000e | 0);

@@ -16,6 +16,71 @@ interface Element {
   readonly instance: boolean;
 }
 
+/** Validated register-to-staging offsets of frozen register lists (linked programs). */
+const frozenTargets = new WeakMap<readonly number[], ReadonlyMap<number, number>>();
+
+function registerTargets(registers: readonly number[]): ReadonlyMap<number, number> | null {
+  const frozen = Object.isFrozen(registers),
+    known = frozen ? frozenTargets.get(registers) : undefined;
+  if (known) return known;
+  if (
+    registers.length > 16 ||
+    new Set(registers).size !== registers.length ||
+    registers.some((r) => !uint(r) || r >= 32)
+  )
+    return null;
+  const targets = new Map(registers.map((r, i) => [r, i * 4]));
+  if (frozen) frozenTargets.set(registers, targets);
+  return targets;
+}
+
+/** Per-layout elements read for one frozen register list; streams are bound per draw. */
+interface Template {
+  readonly elements: readonly {
+    readonly format: number;
+    readonly bytes: number;
+    readonly target: number;
+    readonly slot: number;
+    readonly relative: number;
+    readonly instance: boolean;
+  }[];
+  readonly missing: boolean;
+}
+const layoutTemplates = new WeakMap<
+  readonly number[],
+  WeakMap<D3d11InputLayout, Template>
+>();
+
+function templateOf(
+  layout: D3d11InputLayout,
+  registers: readonly number[],
+  targets: ReadonlyMap<number, number>,
+): Template {
+  const frozen = Object.isFrozen(registers),
+    templates = frozen ? layoutTemplates.get(registers) : undefined,
+    known = templates?.get(layout);
+  if (known) return known;
+  const template: Template = {
+    elements: layout.elements
+      .filter((e) => e.register !== null && targets.has(e.register))
+      .map((e) => ({
+        format: e.format,
+        bytes: dxgiVertexFormat(e.format)?.bytes ?? 0,
+        target: targets.get(e.register!)!,
+        slot: e.inputSlot,
+        relative: e.offset,
+        instance: e.inputSlotClass === 1,
+      })),
+    missing: registers.some((r) => !layout.elements.some((e) => e.register === r)),
+  };
+  if (frozen)
+    (templates ?? layoutTemplates.set(registers, new WeakMap()).get(registers)!).set(
+      layout,
+      template,
+    );
+  return template;
+}
+
 /** A borrowed draw-time view. The immediate context retains its buffers for the whole draw. */
 export class D3d11VertexReader {
   private readonly elements: readonly Element[];
@@ -29,22 +94,16 @@ export class D3d11VertexReader {
     strides: readonly number[],
     offsets: readonly number[],
   ) {
-    if (
-      !layout.live ||
-      layout.lifetime !== owner.lifetime ||
-      registers.length > 16 ||
-      new Set(registers).size !== registers.length ||
-      registers.some((r) => !uint(r) || r >= 32)
-    )
+    const targets = registerTargets(registers);
+    if (!layout.live || layout.lifetime !== owner.lifetime || !targets)
       throw new Error('Invalid D3D11 input assembler layout');
-    const targets = new Map(registers.map((r, i) => [r, i * 4])),
-      views = new Map<number, DataView>();
+    const views = new Map<number, DataView>(),
+      template = templateOf(layout, registers, targets);
     const elements: Element[] = [];
-    for (const e of layout.elements) {
-      if (e.register === null || !targets.has(e.register)) continue;
-      const buffer = buffers[e.inputSlot] ?? null,
-        stride = strides[e.inputSlot],
-        offset = offsets[e.inputSlot];
+    for (const e of template.elements) {
+      const buffer = buffers[e.slot] ?? null,
+        stride = strides[e.slot],
+        offset = offsets[e.slot];
       if (!uint(stride!) || stride! > 2048 || !uint(offset!))
         throw new Error('Invalid D3D11 vertex stream bounds');
       if (!buffer)
@@ -52,31 +111,27 @@ export class D3d11VertexReader {
       if (
         !buffer.live ||
         buffer.lifetime !== owner.lifetime ||
-        !(buffer.getDesc().bindFlags & 1) ||
+        !(buffer.bindFlags & 1) ||
         buffer.levels[0]!.mapped
       )
         throw new Error('Invalid D3D11 vertex stream');
-      let data = views.get(e.inputSlot);
+      let data = views.get(e.slot);
       if (!data) {
         const bytes = buffer.levels[0]!.bytes;
-        views.set(
-          e.inputSlot,
-          (data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)),
-        );
+        views.set(e.slot, (data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)));
       }
       elements.push({
         format: e.format,
-        bytes: dxgiVertexFormat(e.format)?.bytes ?? 0,
-        target: targets.get(e.register)!,
+        bytes: e.bytes,
+        target: e.target,
         data,
         offset: offset!,
         stride: stride!,
-        relative: e.offset,
-        instance: e.inputSlotClass === 1,
+        relative: e.relative,
+        instance: e.instance,
       });
     }
-    if (registers.some((r) => !layout.elements.some((e) => e.register === r)))
-      throw new Error('Missing D3D11 vertex input');
+    if (template.missing) throw new Error('Missing D3D11 vertex input');
     this.elements = elements;
     this.floatsPerVertex = registers.length * 4;
   }
@@ -165,6 +220,33 @@ export class D3d11VertexReader {
         relative = e.relative,
         bgra = e.format === 87,
         z = e.format === 6;
+      if (((data.byteOffset | first | stride | relative) & 3) === 0) {
+        // Word-aligned streams: the same little-endian words through typed views.
+        const floats = new Float32Array(data.buffer, data.byteOffset, data.byteLength >>> 2),
+          words = new Uint32Array(data.buffer, data.byteOffset, data.byteLength >>> 2);
+        for (let i = 0, at = (e.target / 4) * registerStride; i < count; i++, at += 4) {
+          const vertex = slots[i]!;
+          if (vertex < 0) continue;
+          const address = (first + Math.imul(stride, vertex) + relative) >>> 0;
+          if (address < first || address > last) {
+            output[at] = output[at + 1] = output[at + 2] = 0;
+            output[at + 3] = bgra ? 0 : 1;
+          } else if (bgra) {
+            const color = words[address >>> 2]!;
+            output[at] = ((color >>> 16) & 255) / 255;
+            output[at + 1] = ((color >>> 8) & 255) / 255;
+            output[at + 2] = (color & 255) / 255;
+            output[at + 3] = (color >>> 24) / 255;
+          } else {
+            const w = address >>> 2;
+            output[at] = floats[w]!;
+            output[at + 1] = floats[w + 1]!;
+            output[at + 2] = z ? floats[w + 2]! : 0;
+            output[at + 3] = 1;
+          }
+        }
+        continue;
+      }
       for (let i = 0, at = (e.target / 4) * registerStride; i < count; i++, at += 4) {
         const vertex = slots[i]!;
         if (vertex < 0) continue;
@@ -202,7 +284,7 @@ export class D3d11IndexReader {
     if (
       !buffer.live ||
       buffer.lifetime !== owner.lifetime ||
-      !(buffer.getDesc().bindFlags & 2) ||
+      !(buffer.bindFlags & 2) ||
       buffer.levels[0]!.mapped ||
       ![42, 57].includes(format) ||
       !uint(offset) ||

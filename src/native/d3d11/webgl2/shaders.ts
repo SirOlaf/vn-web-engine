@@ -11,6 +11,8 @@ export interface D3d11ProgramSample {
 export interface D3d11LinkedProgram {
   readonly program: WebGLProgram;
   readonly attributes: Sm4GlslPipeline['attributes'];
+  /** Input registers in attribute order. */
+  readonly registers: readonly number[];
   readonly samples: readonly D3d11ProgramSample[];
   readonly targetHeight: WebGLUniformLocation | null;
 }
@@ -119,7 +121,7 @@ export class D3d11ProgramCache {
         buffer &&
         (!buffer.live ||
           buffer.lifetime !== this.owner.lifetime ||
-          !(buffer.getDesc().bindFlags & 4) ||
+          !(buffer.bindFlags & 4) ||
           buffer.levels[0]!.mapped)
       )
         throw new Error('Invalid D3D11 constant buffer');
@@ -271,6 +273,7 @@ export class D3d11ProgramCache {
       return {
         program,
         attributes: sources.attributes,
+        registers: Object.freeze(sources.attributes.map((a) => a.register)),
         samples: bindings,
         targetHeight: gl.getUniformLocation(program, 'sm4_targetHeight'),
         vertex,
