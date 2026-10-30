@@ -9,6 +9,11 @@ export interface EmoteD3d11Mesh {
   readonly topology: 4 | 5;
 }
 
+/** Reusable packing storage. Draw creation copies the vertices into its own buffer. */
+export interface EmoteD3d11MeshScratch {
+  bytes: Uint8Array;
+}
+
 const f32 = Math.fround;
 const MAX_MESH_BYTES = 64 * 1024 * 1024;
 
@@ -28,6 +33,7 @@ export function packEmoteD3d11Mesh(
   height: number,
   textureWidth: number,
   textureHeight: number,
+  scratch?: EmoteD3d11MeshScratch,
 ): EmoteD3d11Mesh {
   const {cols, rows, points} = grid;
   const across = cols + 1,
@@ -51,7 +57,13 @@ export function packEmoteD3d11Mesh(
     byteLength + (quad || vertexCount === 0 ? 0 : (pointCount + across + down) * 4) > MAX_MESH_BYTES
   )
     throw new RangeError('E-mote mesh exceeds 64 MiB allocation limit');
-  const vertices = new Uint8Array(byteLength);
+  // Every packed byte is written below, so reused storage needs no clearing.
+  let vertices: Uint8Array;
+  if (scratch) {
+    if (scratch.bytes.byteLength < byteLength)
+      scratch.bytes = new Uint8Array(Math.max(byteLength, scratch.bytes.byteLength * 2));
+    vertices = scratch.bytes.subarray(0, byteLength);
+  } else vertices = new Uint8Array(byteLength);
   if (vertexCount === 0) return {vertices, vertexCount, topology: 4};
   left = f32(left);
   top = f32(top);
@@ -59,17 +71,19 @@ export function packEmoteD3d11Mesh(
   height = f32(height);
   textureWidth = f32(textureWidth);
   textureHeight = f32(textureHeight);
-  const out = new DataView(vertices.buffer),
+  // Five words per vertex, in the platform order of the position view below.
+  const words = new Uint32Array(vertices.buffer, 0, vertexCount * 5),
+    floats = new Float32Array(vertices.buffer, 0, vertexCount * 5),
     positions = new Uint32Array(points.buffer, points.byteOffset, points.length);
   let offset = 0;
   const put = (point: number, color: number, u: number, v: number): void => {
     // MOV32 preserves source position bits, including negative zero and NaN payloads.
-    out.setUint32(offset, positions[point * 2]!, true);
-    out.setUint32(offset + 4, positions[point * 2 + 1]!, true);
-    out.setUint32(offset + 8, color, true);
-    out.setFloat32(offset + 12, u, true);
-    out.setFloat32(offset + 16, v, true);
-    offset += 20;
+    words[offset] = positions[point * 2]!;
+    words[offset + 1] = positions[point * 2 + 1]!;
+    words[offset + 2] = color;
+    floats[offset + 3] = u;
+    floats[offset + 4] = v;
+    offset += 5;
   };
   if (quad) {
     const u0 = f32(left / textureWidth),
