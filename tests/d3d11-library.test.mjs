@@ -827,6 +827,8 @@ test('E-mote native atlas ownership preserves direct source bytes, DXGI formats 
     ctx.psSetShaderResources(0, [entry.view]);
     cache.release(source);
     cache.release(source);
+    // The released atlas stays idle for a same-file player until the next draw.
+    cache.retireIdle();
     const retained = ctx.psGetShaderResources(0, 1)[0];
     assert.equal(retained, entry.view);
     assert.equal(retained.getDesc().format, format);

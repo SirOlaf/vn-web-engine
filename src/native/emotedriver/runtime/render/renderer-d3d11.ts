@@ -268,7 +268,8 @@ export class EmoteD3d11Renderer {
     this.pass = 0;
     this.mask = null;
     try {
-      this.textures.retireIdle();
+      // An empty frame draws nothing and leaves idle atlases for the next draw.
+      if (items.length) this.textures.retireIdle();
       const order = items.map((item, index) => ({item, index})),
         seen = new Set<EmoteScalarDrawItem>();
       for (const {item} of order) this.prepare(item, seen);
