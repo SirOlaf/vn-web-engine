@@ -16,11 +16,7 @@ import type {
 } from '../../../d3d11/contract.js';
 import type {EmoteScalarDrawItem, EmoteScalarVertexGrid} from '../interfaces.js';
 import {EmoteUnsupportedError} from '../errors.js';
-import {
-  packEmoteD3d11Mesh,
-  drawEmoteD3d11Mesh,
-  type EmoteD3d11MeshScratch,
-} from './d3d11-mesh.js';
+import {packEmoteD3d11Mesh, drawEmoteD3d11Mesh, type EmoteD3d11MeshScratch} from './d3d11-mesh.js';
 import {
   EmoteD3d11Shaders,
   emoteD3d11BasicShader,
@@ -42,6 +38,18 @@ export interface EmoteD3d11RenderTarget {
 }
 interface OwnedTarget extends EmoteD3d11RenderTarget {
   readonly shaderView: ID3D11ShaderResourceView;
+}
+/** Every input of one stencil chain's mask passes: numbers, then the atlas of each draw. */
+interface MaskKey {
+  readonly numbers: Float64Array;
+  readonly textures: readonly (EmoteD3d11Texture | null)[];
+}
+function sameMaskKey(a: MaskKey | undefined, b: MaskKey): boolean {
+  if (!a || a.numbers.length !== b.numbers.length || a.textures.length !== b.textures.length)
+    return false;
+  for (let i = 0; i < b.numbers.length; i++) if (a.numbers[i] !== b.numbers[i]) return false;
+  for (let i = 0; i < b.textures.length; i++) if (a.textures[i] !== b.textures[i]) return false;
+  return true;
 }
 interface Mesh {
   readonly grid: EmoteScalarVertexGrid;
@@ -195,6 +203,8 @@ export class EmoteD3d11Renderer {
   private readonly filterColor = new Float32Array(4);
   private readonly packed: EmoteD3d11MeshScratch = {bytes: new Uint8Array(0)};
   private masks: OwnedTarget[] = [];
+  /** Inputs of the chain whose finished mask a target holds; drawing into it forgets them. */
+  private readonly maskKeys = new WeakMap<OwnedTarget, MaskKey>();
   /** Alpha masks of this frame's stencil chains, built before the output pass. */
   private readonly built = new Map<EmoteScalarDrawItem, OwnedTarget>();
   private copy: OwnedTarget | null = null;
@@ -573,15 +583,57 @@ export class EmoteD3d11Renderer {
       chains.push(group);
     }
     if (!chains.length) return;
-    const free = [...this.maskTargets(chains.length + 1)];
-    for (const chain of chains) {
+    const targets = this.maskTargets(chains.length + 1),
+      keys = chains.map((chain) => this.maskKey(chain)),
+      held = new Set<OwnedTarget>();
+    // A target still holding a chain's finished mask from identical inputs is reused as is.
+    for (let i = 0; i < chains.length; i++) {
+      const hit = targets.find((t) => !held.has(t) && sameMaskKey(this.maskKeys.get(t), keys[i]!));
+      if (!hit) continue;
+      held.add(hit);
+      this.built.set(chains[i]!, hit);
+    }
+    const free = targets.filter((t) => !held.has(t));
+    for (let i = 0; i < chains.length; i++) {
+      const chain = chains[i]!;
+      if (this.built.has(chain)) continue;
       const pair = [free.pop()!, free.pop()!];
       this.drawMask(chain, pair);
+      this.maskKeys.set(pair[0]!, keys[i]!);
       this.built.set(chain, pair[0]!);
       free.push(pair[1]!);
     }
     this.pass = 0;
     this.mask = null;
+  }
+  /** What `drawMask` reads: frame constants, then each submitted draw in pass order. */
+  private maskKey(parent: EmoteScalarDrawItem): MaskKey {
+    const numbers: number[] = [this.smoothing ? 1 : 0, this.output!.width, this.output!.height],
+      textures: (EmoteD3d11Texture | null)[] = [];
+    for (let i = 0; i < 16; i++) numbers.push(this.matrix![i]!);
+    const mesh = (item: EmoteScalarDrawItem): void => {
+      const {grid, texture, left, top, width, height} = this.mesh(item),
+        n = (grid.cols + 1) * (grid.rows + 1) * 2;
+      textures.push(texture);
+      numbers.push(-1, left, top, width, height, grid.cols, grid.rows);
+      for (let i = 0; i < n; i++) numbers.push(grid.points[i]!);
+    };
+    for (const role of [1, 2])
+      for (let item: EmoteScalarDrawItem | null = parent; item; item = item.stencilParent) {
+        if ((item.stencilType & 3) !== role) continue;
+        numbers.push(
+          -2,
+          role,
+          item.stencilType,
+          item.alphaTest ? 1 : 0,
+          item.alphaScale,
+          item.alphaOffset,
+        );
+        if (item.stencilType & 4) {
+          for (const child of item.composite) if (!child.blank) mesh(child);
+        } else if (!item.blank) mesh(item);
+      }
+    return {numbers: Float64Array.from(numbers), textures};
   }
 
   private buildMask(parent: EmoteScalarDrawItem): void {
@@ -598,6 +650,8 @@ export class EmoteD3d11Renderer {
 
   /** Intersections, then subtractions; the result is left in `masks[0]`. */
   private drawMask(parent: EmoteScalarDrawItem, masks: OwnedTarget[]): void {
+    this.maskKeys.delete(masks[0]!);
+    this.maskKeys.delete(masks[1]!);
     this.pass = 1;
     this.mask = null;
     for (const role of [1, 2])
