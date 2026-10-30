@@ -96,6 +96,56 @@ function boundsOf(grid: EmoteScalarVertexGrid): Float32Array {
   return Float32Array.of(x0, y0, x1, y1);
 }
 
+function releaseOwnedTarget(target: OwnedTarget): void {
+  const errors: unknown[] = [];
+  for (const object of [target.shaderView, target.view, target.texture])
+    try {
+      object.release();
+    } catch (error) {
+      errors.push(error);
+    }
+  if (errors.length) throw new AggregateError(errors, 'E-mote target retirement failed');
+}
+
+/**
+ * Device-owned slot for one released mask pair. Mask passes clear a target before
+ * drawing into or sampling it, so the next renderer of the same output size can take
+ * the pair instead of creating two full-output targets.
+ */
+export class EmoteD3d11MaskPool {
+  private idle: [OwnedTarget, OwnedTarget] | null = null;
+
+  take(width: number, height: number): [OwnedTarget, OwnedTarget] | null {
+    const pair = this.idle;
+    if (!pair || pair[0].width !== width || pair[0].height !== height) return null;
+    this.idle = null;
+    return pair;
+  }
+
+  keep(pair: [OwnedTarget, OwnedTarget]): void {
+    const old = this.idle;
+    this.idle = pair;
+    if (old) this.release(old);
+  }
+
+  dispose(): void {
+    const old = this.idle;
+    this.idle = null;
+    if (old) this.release(old);
+  }
+
+  private release(pair: readonly OwnedTarget[]): void {
+    const errors: unknown[] = [];
+    for (const target of pair)
+      try {
+        releaseOwnedTarget(target);
+      } catch (error) {
+        errors.push(error);
+      }
+    if (errors.length) throw new AggregateError(errors, 'E-mote mask retirement failed');
+  }
+}
+
 /**
  * The x64 scalar draw pass (0x180006430/0x1800069a0) over native D3D11 resources.
  * Exact image: 80d28bd088dda8e97c7c47a9c664e55159f70505b0f9fde3158d8ce2a3e1e051.
@@ -140,6 +190,7 @@ export class EmoteD3d11Renderer {
     private readonly context: ID3D11DeviceContext,
     private readonly shaders: EmoteD3d11Shaders,
     private readonly textures: EmoteD3d11Textures,
+    private readonly maskPool: EmoteD3d11MaskPool | null = null,
   ) {
     try {
       for (const [
@@ -321,9 +372,22 @@ export class EmoteD3d11Renderer {
         errors.push(error);
       }
     this.used.clear();
-    for (const target of [...(this.masks ?? []), ...(this.copy ? [this.copy] : [])])
+    if (this.masks && this.maskPool)
       try {
-        this.releaseTarget(target);
+        this.maskPool.keep(this.masks);
+      } catch (error) {
+        errors.push(error);
+      }
+    else
+      for (const target of this.masks ?? [])
+        try {
+          this.releaseTarget(target);
+        } catch (error) {
+          errors.push(error);
+        }
+    if (this.copy)
+      try {
+        this.releaseTarget(this.copy);
       } catch (error) {
         errors.push(error);
       }
@@ -429,14 +493,7 @@ export class EmoteD3d11Renderer {
   }
 
   private releaseTarget(target: OwnedTarget): void {
-    const errors: unknown[] = [];
-    for (const object of [target.shaderView, target.view, target.texture])
-      try {
-        object.release();
-      } catch (error) {
-        errors.push(error);
-      }
-    if (errors.length) throw new AggregateError(errors, 'E-mote target retirement failed');
+    releaseOwnedTarget(target);
   }
 
   private maskTargets(): [OwnedTarget, OwnedTarget] {
@@ -446,6 +503,7 @@ export class EmoteD3d11Renderer {
       this.masks = null;
       for (const target of old) this.releaseTarget(target);
     }
+    if (!this.masks) this.masks = this.maskPool?.take(width, height) ?? null;
     if (!this.masks) {
       const first = this.makeTarget(width, height, 65);
       try {

@@ -20,7 +20,7 @@ import {EmoteD3d11Screen} from './runtime/render/d3d11-screen.js';
 import {EmoteD3d11Shaders} from './runtime/render/d3d11-shaders.js';
 import {EmoteD3d11Target} from './runtime/render/d3d11-target.js';
 import {EmoteD3d11Textures} from './runtime/render/d3d11-textures.js';
-import {EmoteD3d11Renderer} from './runtime/render/renderer-d3d11.js';
+import {EmoteD3d11MaskPool, EmoteD3d11Renderer} from './runtime/render/renderer-d3d11.js';
 import type {EmoteX64ShaderBlobs} from './runtime/render/shaders.js';
 
 /** Resource+renderer+file references retained by each PEmotePlayer, including clones. */
@@ -89,6 +89,7 @@ export class PEmoteD3d11Device implements IEmoteD3d11Device {
   private references = 1;
   private shaders: EmoteD3d11Shaders | null = null;
   private textures: EmoteD3d11Textures | null = null;
+  private masks: EmoteD3d11MaskPool | null = new EmoteD3d11MaskPool();
   private target: EmoteD3d11Target | null = null;
   private readonly screen = new EmoteD3d11Screen();
   private readonly matrices = new EmoteD3d11Matrices();
@@ -155,6 +156,7 @@ export class PEmoteD3d11Device implements IEmoteD3d11Device {
         this.param.context,
         this.shaders!,
         this.textures!,
+        this.masks,
       );
     try {
       const models = images.map((image) => {
@@ -229,13 +231,13 @@ export class PEmoteD3d11Device implements IEmoteD3d11Device {
   private dispose(): void {
     this.models.clear();
     const errors: unknown[] = [];
-    for (const object of [this.target, this.textures, this.shaders])
+    for (const object of [this.target, this.masks, this.textures, this.shaders])
       try {
         object?.dispose();
       } catch (error) {
         errors.push(error);
       }
-    this.target = this.textures = this.shaders = null;
+    this.target = this.masks = this.textures = this.shaders = null;
     for (const object of [this.param.context, this.param.device])
       try {
         object.release();

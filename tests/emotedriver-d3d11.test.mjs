@@ -528,3 +528,32 @@ test('public stencil masks clear and count through the native depth-stencil and 
     host.device.release();
   }
 });
+
+test('x64 mask pool hands one released pair to the next renderer of the same output size', async () => {
+  const {EmoteD3d11MaskPool} =
+    await import('../dist/native/emotedriver/runtime/render/renderer-d3d11.js');
+  const released = [],
+    object = (name) => ({release: () => released.push(name)}),
+    target = (name, width, height) => ({
+      texture: object(name + '.texture'),
+      view: object(name + '.view'),
+      shaderView: object(name + '.srv'),
+      width,
+      height,
+      subresource: 0,
+      depth: null,
+    }),
+    pool = new EmoteD3d11MaskPool(),
+    first = [target('a', 4, 3), target('b', 4, 3)];
+  pool.keep(first);
+  assert.equal(pool.take(4, 4), null);
+  assert.equal(pool.take(4, 3), first);
+  assert.equal(pool.take(4, 3), null);
+  assert.deepEqual(released, []);
+  pool.keep(first);
+  pool.keep([target('c', 2, 2), target('d', 2, 2)]);
+  assert.deepEqual(released, ['a.srv', 'a.view', 'a.texture', 'b.srv', 'b.view', 'b.texture']);
+  pool.dispose();
+  pool.dispose();
+  assert.equal(released.length, 12);
+});
