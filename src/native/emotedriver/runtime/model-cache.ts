@@ -8,7 +8,8 @@ interface Entry {
   readonly model: EmoteX64Model;
 }
 
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+/** Exact byte equality; aligned views compare eight 32-bit words per branch. */
+export function sameModelBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   const words = Math.floor(a.length / 4);
   if ((a.byteOffset | b.byteOffset) & 3) {
@@ -17,9 +18,24 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
     for (let i = 0; i < words * 4; i += 4)
       if (av.getUint32(i, true) !== bv.getUint32(i, true)) return false;
   } else {
-    const av = new Uint32Array(a.buffer, a.byteOffset, words),
-      bv = new Uint32Array(b.buffer, b.byteOffset, words);
-    for (let i = 0; i < words; i++) if (av[i] !== bv[i]) return false;
+    const av = new Int32Array(a.buffer, a.byteOffset, words),
+      bv = new Int32Array(b.buffer, b.byteOffset, words),
+      blocks = words - (words % 8);
+    let i = 0;
+    for (; i < blocks; i += 8)
+      if (
+        ((av[i]! ^ bv[i]!) |
+          (av[i + 1]! ^ bv[i + 1]!) |
+          (av[i + 2]! ^ bv[i + 2]!) |
+          (av[i + 3]! ^ bv[i + 3]!) |
+          (av[i + 4]! ^ bv[i + 4]!) |
+          (av[i + 5]! ^ bv[i + 5]!) |
+          (av[i + 6]! ^ bv[i + 6]!) |
+          (av[i + 7]! ^ bv[i + 7]!)) !==
+        0
+      )
+        return false;
+    for (; i < words; i++) if (av[i] !== bv[i]) return false;
   }
   for (let i = words * 4; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
@@ -66,7 +82,7 @@ export class EmoteModelCache {
   }
 
   read(bytes: Uint8Array): EmoteX64Model {
-    const index = this.entries.findIndex((entry) => sameBytes(entry.bytes, bytes));
+    const index = this.entries.findIndex((entry) => sameModelBytes(entry.bytes, bytes));
     if (index >= 0) {
       const entry = this.entries.splice(index, 1)[0]!;
       this.entries.push(entry);

@@ -4,7 +4,7 @@ import {NativeLibraryLoader} from '../dist/platform/native-libraries.js';
 import {EMOTE_DRIVER, EMOTE_DRIVER_D3D11} from '../dist/native/emotedriver/contract.js';
 import {emoteDriverD3d11Library} from '../dist/native/emotedriver/library.js';
 import {createEmoteMeshKernel} from '../dist/native/emotedriver/runtime/mesh/index.js';
-import {EmoteModelCache} from '../dist/native/emotedriver/runtime/model-cache.js';
+import {EmoteModelCache, sameModelBytes} from '../dist/native/emotedriver/runtime/model-cache.js';
 import {buildPsb, emoteWinTree, resource} from './kirikiri-psb-fixtures.mjs';
 
 import {nativeHost, shaderStandins} from './emotedriver-d3d11-fixture.mjs';
@@ -143,6 +143,32 @@ test('x64 parsed definitions reuse exact bytes while preserving file, motion and
   const paddedModel = bufferCache.read(padded);
   padded[padded.length - 1] = 1;
   assert.notEqual(motion(bufferCache.read(padded)).layers, motion(paddedModel).layers);
+});
+
+test('x64 model cache byte equality detects every changed bit at aligned and unaligned offsets', () => {
+  for (const length of [0, 1, 3, 4, 7, 31, 32, 33, 63, 64, 65, 97]) {
+    const store = new Uint8Array(new ArrayBuffer(length + 8)),
+      other = new Uint8Array(new ArrayBuffer(length + 8));
+    for (const [left, right] of [
+      [0, 0],
+      [4, 0],
+      [1, 0],
+      [0, 3],
+      [2, 2],
+    ]) {
+      const a = store.subarray(left, left + length),
+        b = other.subarray(right, right + length);
+      for (let i = 0; i < length; i++) a[i] = b[i] = (i * 37 + 11) & 255;
+      assert.equal(sameModelBytes(a, b), true);
+      for (let i = 0; i < length; i++)
+        for (const bit of [1, 128]) {
+          b[i] ^= bit;
+          assert.equal(sameModelBytes(a, b), false, `length ${length} byte ${i} bit ${bit}`);
+          b[i] ^= bit;
+        }
+      if (length) assert.equal(sameModelBytes(a, b.subarray(0, length - 1)), false);
+    }
+  }
 });
 
 test('x64 parsed model cache evicts by recency and source bytes without invalidating live definitions', () => {
