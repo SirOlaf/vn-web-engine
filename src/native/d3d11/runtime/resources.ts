@@ -97,6 +97,10 @@ function copyRows(level: Level, source: D3d11SubresourceData): void {
 export abstract class D3d11ResourceStorage extends D3d11Object implements ID3D11Resource {
   revision = 0;
   private disposed = false;
+  /** Descriptor bind flags without the defensive `getDesc()` copy. */
+  get bindFlags(): number {
+    return this.access.bindFlags;
+  }
 
   protected constructor(
     readonly owner: D3d11ResourceOwner,
@@ -393,6 +397,10 @@ export class D3d11Texture2D extends D3d11ResourceStorage implements ID3D11Textur
   ) {
     super(owner, desc, layout, 3, levels, '6f15aaf2-d208-4e89-9ab4-489535d34f9c');
   }
+  /** Descriptor format without the defensive `getDesc()` copy. */
+  get format(): number {
+    return this.desc.format;
+  }
   getDesc(): D3d11Texture2DDesc {
     return {...this.desc, sampleDesc: {...this.desc.sampleDesc}};
   }
@@ -425,12 +433,14 @@ export function createBufferStorage(
   if (validateOnly) return {hr: 1, value: null};
   let bytes: Uint8Array;
   try {
-    bytes = new Uint8Array(desc.byteWidth);
+    // Copying straight from the initial data skips zero-filling a buffer that is overwritten.
+    bytes = initial
+      ? Uint8Array.prototype.slice.call(initial.data, 0, desc.byteWidth)
+      : new Uint8Array(desc.byteWidth);
   } catch (error) {
     if (error instanceof RangeError) return {hr: OUT_OF_MEMORY, value: null};
     throw error;
   }
-  if (initial) bytes.set(initial.data.subarray(0, desc.byteWidth));
   return {
     hr: 0,
     value: new D3d11Buffer(

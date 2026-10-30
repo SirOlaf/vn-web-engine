@@ -429,7 +429,7 @@ export class D3d11GpuOutput {
     for (let i = 0; i < state.targets.length; i++) {
       const target = state.targets[i],
         mask = this.blend(state, i).renderTargetWriteMask;
-      if (target && (target.resource.getDesc().format === 65 ? mask & 8 : mask))
+      if (target && (target.resource.format === 65 ? mask & 8 : mask))
         this.textures.markWritten(target.resource, target.firstMip);
     }
     const depth = state.depth ?? DEFAULT_DEPTH,
@@ -439,7 +439,7 @@ export class D3d11GpuOutput {
       ((depth.depthEnable && depth.depthWriteMask && !(view.getDesc().flags & 1)) ||
         (depth.stencilEnable &&
           depth.stencilWriteMask &&
-          view.resource.getDesc().format === 45 &&
+          view.resource.format === 45 &&
           !(view.getDesc().flags & 2)))
     )
       this.textures.markWritten(view.resource, view.firstMip);
@@ -580,7 +580,7 @@ export class D3d11GpuOutput {
       if (depth)
         gl.framebufferTexture2D(
           gl.DRAW_FRAMEBUFFER,
-          depth.resource.getDesc().format === 45
+          depth.resource.format === 45
             ? gl.DEPTH_STENCIL_ATTACHMENT
             : gl.DEPTH_ATTACHMENT,
           gl.TEXTURE_2D,
@@ -628,7 +628,7 @@ export class D3d11GpuOutput {
           resource: view.resource,
           texture,
           mip: view.firstMip,
-          format: view.resource.getDesc().format,
+          format: view.resource.format,
         };
   }
 
@@ -642,7 +642,7 @@ export class D3d11GpuOutput {
       gl.depthFunc(this.compare(depth.depthFunc));
     } else gl.disable(gl.DEPTH_TEST);
     gl.depthMask(!!view && depth.depthEnable && !!depth.depthWriteMask && !(flags & 1));
-    if (view?.resource.getDesc().format === 45 && depth.stencilEnable) {
+    if (view?.resource.format === 45 && depth.stencilEnable) {
       gl.enable(gl.STENCIL_TEST);
       gl.stencilMask(flags & 2 ? 0 : depth.stencilWriteMask);
       for (const [side, face] of [

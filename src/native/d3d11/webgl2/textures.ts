@@ -107,7 +107,7 @@ export class D3d11GpuTextures {
 
   /** Canonical image storage origin; shader-view aliases use native row order. */
   flipped(resource: D3d11Texture2D): boolean {
-    return !!(resource.getDesc().bindFlags & 0x60);
+    return !!(resource.bindFlags & 0x60);
   }
 
   /** Whether a view is one complete level of row-reflected storage. */
@@ -343,7 +343,7 @@ export class D3d11GpuTextures {
     gl.clearBufferfv(
       gl.COLOR,
       0,
-      new Float32Array(view.resource.getDesc().format === 65 ? [color[3], 0, 0, 0] : color),
+      new Float32Array(view.resource.format === 65 ? [color[3], 0, 0, 0] : color),
     );
     this.pendingCommands = true;
     this.markWritten(view.resource, view.firstMip);
@@ -366,7 +366,7 @@ export class D3d11GpuTextures {
       stencil < 0 ||
       stencil > 255 ||
       (flags & view.getDesc().flags) !== 0 ||
-      ((flags & 2) !== 0 && view.resource.getDesc().format !== 45)
+      ((flags & 2) !== 0 && view.resource.format !== 45)
     )
       throw new D3d11TextureError('Invalid or unsupported depth/stencil clear');
     const entry = this.get(view.resource);
@@ -509,7 +509,7 @@ export class D3d11GpuTextures {
     this.outputGroups |= 1;
     gl.disable(gl.SCISSOR_TEST);
     const mask = destination.layout.depth
-      ? gl.DEPTH_BUFFER_BIT | (destination.getDesc().format === 45 ? gl.STENCIL_BUFFER_BIT : 0)
+      ? gl.DEPTH_BUFFER_BIT | (destination.format === 45 ? gl.STENCIL_BUFFER_BIT : 0)
       : gl.COLOR_BUFFER_BIT;
     const sourceY = (y: number) =>
         this.flipped(source) ? source.levels[sourceMip]!.height - y : y,
@@ -538,7 +538,7 @@ export class D3d11GpuTextures {
     if (
       !Number.isInteger(mip) ||
       !entry.resource.levels[mip] ||
-      (entry.format.decode && resource.getDesc().format !== 87)
+      (entry.format.decode && resource.format !== 87)
     )
       throw new D3d11TextureError('Invalid D3D11 GPU write');
     resource.revision++;
@@ -589,7 +589,7 @@ export class D3d11GpuTextures {
         0x80004001 | 0,
       );
     const gl = this.gl,
-      format = resource.getDesc().format;
+      format = resource.format;
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
     gl.pixelStorei(gl.PACK_ROW_LENGTH, 0);
@@ -803,9 +803,9 @@ export class D3d11GpuTextures {
         continue;
       }
       let data: Uint8Array<ArrayBufferLike> | Uint32Array | Float32Array = level.bytes;
-      if (entry.resource.getDesc().format === 40)
+      if (entry.resource.format === 40)
         data = new Float32Array(level.bytes.buffer, level.bytes.byteOffset, level.bytes.length / 4);
-      else if (entry.resource.getDesc().format === 45) {
+      else if (entry.resource.format === 45) {
         data = new Uint32Array(level.bytes.length / 4);
         const view = new DataView(level.bytes.buffer, level.bytes.byteOffset, level.bytes.length);
         for (let i = 0; i < data.length; i++) {
@@ -951,7 +951,7 @@ export class D3d11GpuTextures {
     gl.framebufferTexture2D(
       gl.FRAMEBUFFER,
       entry.resource.layout.depth
-        ? entry.resource.getDesc().format === 45
+        ? entry.resource.format === 45
           ? gl.DEPTH_STENCIL_ATTACHMENT
           : gl.DEPTH_ATTACHMENT
         : gl.COLOR_ATTACHMENT0,
