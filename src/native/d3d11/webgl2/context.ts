@@ -185,6 +185,11 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
         alphaTargets,
         alphaSamples,
         reflectedSamples,
+        this.output.unclippedDepth(
+          this.rasterState?.description ?? null,
+          this.depthState?.description ?? null,
+          this.depthTarget,
+        ),
       ),
       registers = program.registers,
       floats = count * registers.length * 4;

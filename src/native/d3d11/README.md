@@ -285,7 +285,10 @@ empty output sets and a zero single-sample mask emit no geometry. Scissors inter
 the target extent before their dimensions are passed to GL.
 
 Depth clipping disabled uses `EXT_depth_clamp`; it preserves clipping of X/Y and W
-without changing vertex depths. Optional wireframe fill uses `WEBGL_polygon_mode`.
+without changing vertex depths. Without the extension (Mali through ANGLE, for example),
+draws that neither test nor write depth link a program variant whose GL position depth
+is 0, so no primitive is clipped by depth while X/Y/W clipping and interpolation are
+unchanged; a pixel shader reading position depth, or depth testing, remains unsupported. Optional wireframe fill uses `WEBGL_polygon_mode`.
 Indexed blend/mask state uses `OES_draw_buffers_indexed` for multiple outputs. A8
 attachments force RGB write masks off while retaining their native alpha mask.
 Ordinary blend factors, separate color/alpha equations, all depth comparisons and

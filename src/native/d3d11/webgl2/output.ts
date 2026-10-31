@@ -126,6 +126,22 @@ export class D3d11GpuOutput {
   private readonly comparisons: readonly number[];
   private readonly stencilOps: readonly number[];
 
+  /**
+   * Without `EXT_depth_clamp`, disabled depth clipping is exact only while depth is
+   * neither tested nor written; such draws use an unclipped-depth program.
+   */
+  unclippedDepth(
+    raster: D3d11RasterizerDesc | null,
+    depth: D3d11DepthStencilDesc | null,
+    view: Dsv | null,
+  ): boolean {
+    return (
+      !this.clamp &&
+      !(raster ?? DEFAULT_RASTER).depthClipEnable &&
+      !(view && (depth ?? DEFAULT_DEPTH).depthEnable)
+    );
+  }
+
   /** Current attachment height for native top-left SV_Position coordinates. */
   get targetHeight(): number {
     return this.height;
@@ -223,7 +239,13 @@ export class D3d11GpuOutput {
       viewport = state.viewports[0];
     if (raster.depthBias || raster.depthBiasClamp || raster.slopeScaledDepthBias)
       this.unsupported('depth bias');
-    if (!raster.depthClipEnable && !this.clamp) this.unsupported('depth clipping disabled');
+    if (
+      !raster.depthClipEnable &&
+      !this.clamp &&
+      state.depthTarget &&
+      (state.depth ?? DEFAULT_DEPTH).depthEnable
+    )
+      this.unsupported('depth clipping disabled with depth testing');
     if (raster.fillMode === 2 && !this.polygon) this.unsupported('wireframe fill');
     if (state.blend?.alphaToCoverageEnable) this.unsupported('alpha to coverage');
     let bound = 0;
@@ -580,9 +602,7 @@ export class D3d11GpuOutput {
       if (depth)
         gl.framebufferTexture2D(
           gl.DRAW_FRAMEBUFFER,
-          depth.resource.format === 45
-            ? gl.DEPTH_STENCIL_ATTACHMENT
-            : gl.DEPTH_ATTACHMENT,
+          depth.resource.format === 45 ? gl.DEPTH_STENCIL_ATTACHMENT : gl.DEPTH_ATTACHMENT,
           gl.TEXTURE_2D,
           depth.texture,
           depth.mip,

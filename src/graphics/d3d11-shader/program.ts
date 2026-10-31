@@ -93,8 +93,11 @@ export interface Sm4GlslPipeline {
  * storage and presentation account for their own logical row origins. Alpha-only
  * targets and pixel samples (bit masks by register and sample index) use red
  * storage. Reflected samples read point/clamp views of GL-row-ordered storage at
- * the center of the native texel row instead of a row-reflected copy. Other
- * programs preprocess to the unchanged token stream.
+ * the center of the native texel row instead of a row-reflected copy. Unclipped
+ * depth replaces the position depth with 0, inside every clip volume, for draws
+ * whose depth is never tested or written: X/Y/W clipping and interpolation keep
+ * their native values, which matches disabled depth clipping without
+ * `EXT_depth_clamp`. Other programs preprocess to the unchanged token stream.
  */
 export function linkSm4GlslPrograms(
   vertex: Sm4GlslShader,
@@ -102,6 +105,7 @@ export function linkSm4GlslPrograms(
   alphaTargets = 0,
   alphaSamples = 0,
   reflectedSamples = 0,
+  unclippedDepth = false,
 ): Sm4GlslPipeline {
   if (vertex.code.stage !== 'vertex' || pixel.code.stage !== 'pixel') invalid('pipeline stages');
   const positions = vertex.code.outputs.filter((p) => p.systemValue === 1);
@@ -166,7 +170,11 @@ export function linkSm4GlslPrograms(
   }
   vertexBody.push(`${vertex.code.entry}(inputs,outputs);`);
   vertexBody.push(`vec4 position=uintBitsToFloat(outputs[${positions[0]!.register}]);`);
-  vertexBody.push('gl_Position=vec4(position.xy,2.0*position.z-position.w,position.w);');
+  vertexBody.push(
+    unclippedDepth
+      ? 'gl_Position=vec4(position.xy,0.0,position.w);'
+      : 'gl_Position=vec4(position.xy,2.0*position.z-position.w,position.w);',
+  );
   vertexBody.push('gl_PointSize=1.0;');
   if (pixel.code.inputs.some((p) => p.systemValue === 1))
     ps.push('uniform highp float sm4_targetHeight;');
@@ -174,6 +182,7 @@ export function linkSm4GlslPrograms(
     const swizzle = components(p.mask);
     if (p.systemValue === 1) {
       if (![4, 5].includes(p.interpolation)) unsupported('position interpolation');
+      if (unclippedDepth && p.mask & 4) unsupported('pixel depth with unclipped depth');
       pixelBody.push(
         `inputs[${p.register}].${swizzle}=floatBitsToUint(vec4(gl_FragCoord.x,sm4_targetHeight-gl_FragCoord.y,gl_FragCoord.zw).${swizzle});`,
       );

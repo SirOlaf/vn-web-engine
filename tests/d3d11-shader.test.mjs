@@ -370,6 +370,34 @@ test('SM4 stage interfaces own input bytes and link packed components at their n
   assert.throws(() => linkSm4GlslPrograms(pixel, vertex), /pipeline stages/);
 });
 
+test('SM4 unclipped-depth programs replace only the GL position depth', () => {
+  const fixture = sm4SyntheticPipeline(true);
+  const vertex = parseSm4GlslShader(fixture.vertex, 'vertex');
+  const depthReader = parseSm4GlslShader(fixture.pixel, 'pixel');
+  assert.throws(
+    () => linkSm4GlslPrograms(vertex, depthReader, 0, 0, 0, true),
+    /pixel depth with unclipped depth/,
+  );
+  // E-mote pixel shaders read SV_Position.xy only.
+  const pixel = {
+    ...depthReader,
+    code: {
+      ...depthReader.code,
+      inputs: depthReader.code.inputs.map((p) => (p.systemValue === 1 ? {...p, mask: 3} : p)),
+    },
+  };
+  const native = linkSm4GlslPrograms(vertex, pixel),
+    unclipped = linkSm4GlslPrograms(vertex, pixel, 0, 0, 0, true),
+    clipped = 'gl_Position=vec4(position.xy,2.0*position.z-position.w,position.w);';
+  assert.ok(native.vertex.includes(clipped));
+  assert.equal(
+    unclipped.vertex,
+    native.vertex.replace(clipped, 'gl_Position=vec4(position.xy,0.0,position.w);'),
+  );
+  assert.equal(unclipped.fragment, native.fragment);
+  assert.deepEqual(unclipped.attributes, native.attributes);
+});
+
 test('SM4 executable creation rejects wrong stages, duplicate interface parts and signature/declaration disagreement', () => {
   const fixture = sm4SyntheticPipeline();
   assert.throws(() => parseSm4GlslShader(fixture.vertex, 'pixel'), /stage mismatch/);
