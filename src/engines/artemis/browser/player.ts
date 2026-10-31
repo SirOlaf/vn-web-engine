@@ -306,7 +306,7 @@ export class ArtemisBrowserPlayer {
       createLayers: (host) => {
         if (this.closed) throw new Error('Artemis player closed during initialization');
         const {width, height} = host.stageSize();
-        this.target = new WebGLDrawTarget(this.canvas, width, height);
+        this.target = new WebGLDrawTarget(this.canvas, width, height, {direct: true});
         this.nativeGraphics = this.nativeGraphicsFactory?.(this.target) ?? null;
         const {owner, graphics} = createArtemisBrowserLayers({
           executableSha256: hash,

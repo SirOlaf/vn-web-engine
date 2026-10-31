@@ -42,24 +42,30 @@ export class WebGLDrawTarget implements DrawListTarget {
     height: 1,
     pixels: new Uint8Array([255, 255, 255, 255]),
   };
-  private readonly context: CanvasRenderingContext2D;
+  /** Null when `canvas` itself holds the WebGL context. */
+  private readonly context: CanvasRenderingContext2D | null;
+  /** `direct` renders into `canvas` with WebGL, which then has no 2D context. Otherwise each
+   * frame is copied into its 2D context; on Android that copy waits for the GPU (~140 ms). */
   constructor(
     readonly canvas: HTMLCanvasElement,
     readonly width: number,
     readonly height: number,
-    readonly options: {batchMasks?: boolean; transparent?: boolean} = {},
+    readonly options: {batchMasks?: boolean; transparent?: boolean; direct?: boolean} = {},
   ) {
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1)
       throw new Error('Invalid target dimensions');
     canvas.width = width;
     canvas.height = height;
-    const c = canvas.getContext('2d');
-    if (!c) throw new Error('Canvas presentation unavailable');
-    this.context = c;
+    if (options.direct) this.context = null;
+    else {
+      const c = canvas.getContext('2d');
+      if (!c) throw new Error('Canvas presentation unavailable');
+      this.context = c;
+    }
   }
   private initialize(): WebGL2RenderingContext {
     if (this.gl) return this.gl;
-    const canvas = document.createElement('canvas');
+    const canvas = this.context ? document.createElement('canvas') : this.canvas;
     canvas.width = this.width;
     canvas.height = this.height;
     const gl = canvas.getContext('webgl2', {
@@ -868,9 +874,11 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
         gl.COLOR_BUFFER_BIT,
         gl.NEAREST,
       );
-      this.context.globalAlpha = 1;
-      this.context.globalCompositeOperation = 'copy';
-      this.context.drawImage(this.surface!, 0, 0);
+      if (this.context) {
+        this.context.globalAlpha = 1;
+        this.context.globalCompositeOperation = 'copy';
+        this.context.drawImage(this.surface!, 0, 0);
+      }
       for (const [image, t] of this.images)
         if (!used.has(image) && !this.preparedImages.has(image)) {
           gl.deleteTexture(t);

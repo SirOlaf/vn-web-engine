@@ -434,7 +434,8 @@ Functional route validation and the full native-reference audit have separate
 scope: the latter remains deferred, with unresolved mappings explicitly retained.
 
 `browser/player.ts` (`ArtemisBrowserPlayer`) composes the runtime for a page: the stage
-canvas (`WebGLDrawTarget` sized from system.ini), the surface manager over the PNG, JPEG
+canvas (`WebGLDrawTarget` sized from system.ini, drawing with WebGL directly into the
+canvas: copying each frame into a 2D context waited ~140 ms for the GPU on Android), the surface manager over the PNG, JPEG
 and merged PSD decoders (decoded off the main thread), FreeType glyph rasterization and
 painting in workers, Web Audio voices (`browser-sound-voices.ts`), the fullscreen movie
 player, text dialogs, the window, caption and cursor hosts, and the shader library
