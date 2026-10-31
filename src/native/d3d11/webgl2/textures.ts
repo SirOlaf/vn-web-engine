@@ -1,4 +1,5 @@
 import {
+  gpuTextureByteLength,
   gpuTextureDecodeFragment,
   packedGpuTexture,
   type GpuTextureFormat,
@@ -32,6 +33,8 @@ interface Format {
   readonly type: number;
   readonly bytes: number;
   readonly decode: GpuTextureFormat | null;
+  /** Block storage in GL's own compressed format: level bytes are uploaded unchanged. */
+  readonly compressed?: true;
 }
 interface Alias {
   readonly owner: Texture;
@@ -95,6 +98,7 @@ export class D3d11GpuTextures {
   private disposed = false;
   private readonly maxSize: number;
   private readonly polygon;
+  private readonly bptc;
 
   constructor(
     private readonly owner: D3d11DeviceOwner,
@@ -102,6 +106,7 @@ export class D3d11GpuTextures {
   ) {
     this.maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     this.polygon = gl.getExtension('WEBGL_polygon_mode');
+    this.bptc = gl.getExtension('EXT_texture_compression_bptc');
   }
 
   /** Allocate or refresh the canonical complete mip chain. No native reference is acquired. */
@@ -560,7 +565,7 @@ export class D3d11GpuTextures {
     if (
       !Number.isInteger(mip) ||
       !entry.resource.levels[mip] ||
-      (entry.format.decode && resource.format !== 87)
+      ((entry.format.decode || entry.format.compressed) && resource.format !== 87)
     )
       throw new D3d11TextureError('Invalid D3D11 GPU write');
     resource.revision++;
@@ -750,7 +755,7 @@ export class D3d11GpuTextures {
         );
       if (desc.width > this.maxSize || desc.height > this.maxSize)
         throw new D3d11TextureError('Texture exceeds GPU dimension limit', 0x8007000e | 0);
-      const format = this.format(desc.format),
+      const format = this.format(desc.format, desc),
         bytes = resource.levels.reduce((n, l) => n + l.width * l.height * format.bytes, 0);
       this.budget(bytes);
       const texture = this.gl.createTexture();
@@ -772,7 +777,12 @@ export class D3d11GpuTextures {
         this.allocate(texture, format, desc.mipLevels, desc.width, desc.height);
         // WebGL zero-initializes new storage; zero creation bytes need no upload.
         // The batch check removes the entry again if its allocation failed.
-        if (resource.zeroCreated && resource.revision === 0 && !format.decode) {
+        if (
+          resource.zeroCreated &&
+          resource.revision === 0 &&
+          !format.decode &&
+          !format.compressed
+        ) {
           entry.revision = 0;
           this.pendingAllocations.add(resource);
           this.pendingCommands = true;
@@ -827,6 +837,21 @@ export class D3d11GpuTextures {
       const level = resourceLevel(entry, mip);
       if (entry.format.decode) {
         this.decode(entry, mip, entry.format.decode);
+        continue;
+      }
+      if (entry.format.compressed) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, entry.texture);
+        gl.compressedTexSubImage2D(
+          gl.TEXTURE_2D,
+          mip,
+          0,
+          0,
+          level.width,
+          level.height,
+          entry.format.internal,
+          level.bytes.subarray(0, gpuTextureByteLength('bc7', level.width, level.height)),
+        );
         continue;
       }
       let data: Uint8Array<ArrayBufferLike> | Uint32Array | Float32Array = level.bytes;
@@ -1041,8 +1066,29 @@ export class D3d11GpuTextures {
     }
   }
 
-  private format(format: number): Format {
+  private format(
+    format: number,
+    desc?: {readonly width: number; readonly height: number; readonly mipLevels: number},
+  ): Format {
     const gl = this.gl;
+    // BPTC decoding is exact, so GL block storage samples the texels of the RGBA8 decode
+    // with a quarter of its storage and fetch bandwidth. Single whole-block levels only:
+    // they never need a framebuffer for aliases, copies or readback.
+    if (
+      format === 98 &&
+      this.bptc &&
+      desc?.mipLevels === 1 &&
+      desc.width % 4 === 0 &&
+      desc.height % 4 === 0
+    )
+      return {
+        internal: this.bptc.COMPRESSED_RGBA_BPTC_UNORM_EXT,
+        format: gl.RGBA,
+        type: gl.UNSIGNED_BYTE,
+        bytes: 1,
+        decode: null,
+        compressed: true,
+      };
     // A8 keeps its single channel in red storage. Programs read it as alpha and
     // alpha-only targets blend it with the native alpha equation.
     if (format === 61 || format === 65)
