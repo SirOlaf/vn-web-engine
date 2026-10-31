@@ -116,7 +116,10 @@ export class WebGl2D3d11Device
     return this.create(() => {
       if (desc.width > this.maxTextureSize || desc.height > this.maxTextureSize)
         return {hr: 0x80070057 | 0, value: null};
-      return createTexture2DStorage(this.owner, desc, initial, validateOnly);
+      const result = createTexture2DStorage(this.owner, desc, initial, validateOnly);
+      if (result.value && initial && desc.usage <= 1 && (desc.bindFlags & 0x68) === 8)
+        this.textures.preload(result.value);
+      return result;
     });
   }
   createShaderResourceView(

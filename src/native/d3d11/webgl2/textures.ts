@@ -114,6 +114,19 @@ export class D3d11GpuTextures {
     return this.get(resource).texture;
   }
 
+  /**
+   * Upload shader-only creation data now, while the model loads, rather than in the first
+   * frame that samples it. On failure the texture stays on the lazy path, which reports it.
+   */
+  preload(resource: D3d11Texture2D): void {
+    if (this.textures.has(resource)) return;
+    try {
+      this.get(resource);
+    } catch {
+      // The first use repeats the allocation and raises its error there.
+    }
+  }
+
   /** Canonical image storage origin; shader-view aliases use native row order. */
   flipped(resource: D3d11Texture2D): boolean {
     return !!(resource.bindFlags & 0x60);
