@@ -46,10 +46,7 @@ interface Template {
   }[];
   readonly missing: boolean;
 }
-const layoutTemplates = new WeakMap<
-  readonly number[],
-  WeakMap<D3d11InputLayout, Template>
->();
+const layoutTemplates = new WeakMap<readonly number[], WeakMap<D3d11InputLayout, Template>>();
 
 function templateOf(
   layout: D3d11InputLayout,
@@ -196,18 +193,12 @@ export class D3d11VertexReader {
     )
       throw new RangeError('Invalid D3D11 vertex read');
     let drawn = false;
-    for (let i = 0; i < count; i++) {
-      let vertex = (start + i) >>> 0;
-      if (indices) {
-        vertex = indices.read(vertex);
-        if (vertex === cut) {
-          slots[i] = -1;
-          continue;
-        }
+    if (indices) drawn = indices.readSlots(slots, count, start, base, cut);
+    else
+      for (let i = 0; i < count; i++) {
+        slots[i] = (((start + i) >>> 0) + base) >>> 0;
+        drawn = true;
       }
-      slots[i] = (vertex + base) >>> 0;
-      drawn = true;
-    }
     if (!drawn) return;
     // Element-major fetchDxgiVertexElement; the bound check above covers every slot.
     const registerStride = count * 4;
@@ -275,6 +266,7 @@ export class D3d11VertexReader {
 export class D3d11IndexReader {
   private readonly data: DataView;
   private readonly width: number;
+  private readonly words: Uint16Array | Uint32Array | undefined;
   constructor(
     owner: D3d11DeviceOwner,
     buffer: D3d11Buffer,
@@ -294,6 +286,44 @@ export class D3d11IndexReader {
     const bytes = buffer.levels[0]!.bytes;
     this.data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     this.width = format === 42 ? 4 : 2;
+    if (bytes.byteOffset % this.width === 0)
+      this.words =
+        this.width === 4
+          ? new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >>> 2)
+          : new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >>> 1);
+  }
+
+  /** `read` of indices `start + i` into `slots[i]` as `(index + base)`, or -1 for `cut`.
+   * Returns whether any slot is drawn. */
+  readSlots(slots: Float64Array, count: number, start: number, base: number, cut: number): boolean {
+    const words = this.words;
+    let drawn = false;
+    if (!words) {
+      for (let i = 0; i < count; i++) {
+        const vertex = this.read((start + i) >>> 0);
+        if (vertex === cut) slots[i] = -1;
+        else {
+          slots[i] = (vertex + base) >>> 0;
+          drawn = true;
+        }
+      }
+      return drawn;
+    }
+    // Aligned storage: the same little-endian values through a typed view.
+    const offset = this.offset,
+      width = this.width,
+      last = this.data.byteLength - width,
+      shift = width === 4 ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      const address = (offset + Math.imul((start + i) >>> 0, width)) >>> 0,
+        vertex = address < offset || address > last ? 0 : words[address >>> shift]!;
+      if (vertex === cut) slots[i] = -1;
+      else {
+        slots[i] = (vertex + base) >>> 0;
+        drawn = true;
+      }
+    }
+    return drawn;
   }
   read(index: number): number {
     if (!uint(index)) throw new RangeError('Invalid D3D11 index read');

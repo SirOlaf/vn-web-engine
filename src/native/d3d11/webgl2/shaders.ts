@@ -133,9 +133,14 @@ export class D3d11ProgramCache {
       c.words.fill(0);
       if (buffer) {
         const bytes = buffer.levels[0]!.bytes,
-          count = Math.min(c.words.length, Math.floor(bytes.length / 4)),
-          view = new DataView(bytes.buffer, bytes.byteOffset, count * 4);
-        for (let i = 0; i < count; i++) c.words[i] = view.getUint32(i * 4, true);
+          count = Math.min(c.words.length, Math.floor(bytes.length / 4));
+        // Aligned storage: the same little-endian words through a typed view.
+        if ((bytes.byteOffset & 3) === 0)
+          c.words.set(new Uint32Array(bytes.buffer, bytes.byteOffset, count));
+        else {
+          const view = new DataView(bytes.buffer, bytes.byteOffset, count * 4);
+          for (let i = 0; i < count; i++) c.words[i] = view.getUint32(i * 4, true);
+        }
       }
       this.gl.uniform4uiv(c.location, c.words);
       c.buffer = buffer;
