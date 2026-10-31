@@ -31,6 +31,9 @@ export class WebGLDrawTarget implements DrawListTarget {
   private readonly samplers = new Map<string, WebGLSampler>();
   private readonly images = new Map<object, WebGLTexture>();
   private readonly externalImages = new Set<GpuTextureImage>();
+  /** Shared textures this target has validated. WebGL objects never change context, so a
+   * texture reattached by its owner skips the synchronous `isTexture` query. */
+  private readonly sharedTextures = new WeakSet<WebGLTexture>();
   private readonly renderSurfaces = new Map<GpuRenderSurface, WebGLFramebuffer>();
   private activeRenderSurface: GpuRenderSurface | null = null;
   private readonly preparedImages = new Set<object>();
@@ -118,11 +121,12 @@ export class WebGLDrawTarget implements DrawListTarget {
     texture: WebGLTexture,
   ): void {
     const gl = this.initialize();
-    if (context !== gl || !gl.isTexture(texture))
+    if (context !== gl || (!this.sharedTextures.has(texture) && !gl.isTexture(texture)))
       throw new Error('Shared image belongs to another GPU context');
     if (image instanceof GpuRenderSurface || this.images.has(image))
       throw new Error('GPU image is already prepared');
     this.images.set(image, texture);
+    this.sharedTextures.add(texture);
     this.externalImages.add(image);
     this.preparedImages.add(image);
   }
