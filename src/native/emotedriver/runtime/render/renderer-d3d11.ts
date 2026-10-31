@@ -132,6 +132,9 @@ function releaseOwnedTarget(target: OwnedTarget): void {
  */
 export class EmoteD3d11MaskPool {
   private idle: OwnedTarget[] | null = null;
+  /** Inputs of the finished mask each target holds, shared by the renderers that take it.
+   * Keys compare atlases by identity, so only a still-live reused atlas can match. */
+  readonly keys = new WeakMap<OwnedTarget, MaskKey>();
   /** Retired destination-copy targets. A taken target has exactly the size the native
    * policy asked for, so its first copy overwrites all of it, as with a fresh one. */
   private readonly copies: OwnedTarget[] = [];
@@ -203,8 +206,9 @@ export class EmoteD3d11Renderer {
   private readonly filterColor = new Float32Array(4);
   private readonly packed: EmoteD3d11MeshScratch = {bytes: new Uint8Array(0)};
   private masks: OwnedTarget[] = [];
-  /** Inputs of the chain whose finished mask a target holds; drawing into it forgets them. */
-  private readonly maskKeys = new WeakMap<OwnedTarget, MaskKey>();
+  /** Inputs of the chain whose finished mask a target holds; drawing into it forgets them.
+   * Pooled targets keep them, so the next renderer of a same-file player can reuse a mask. */
+  private readonly maskKeys: WeakMap<OwnedTarget, MaskKey>;
   /** Alpha masks of this frame's stencil chains, built before the output pass. */
   private readonly built = new Map<EmoteScalarDrawItem, OwnedTarget>();
   private copy: OwnedTarget | null = null;
@@ -231,6 +235,7 @@ export class EmoteD3d11Renderer {
     private readonly textures: EmoteD3d11Textures,
     private readonly maskPool: EmoteD3d11MaskPool | null = null,
   ) {
+    this.maskKeys = maskPool?.keys ?? new WeakMap();
     try {
       for (const [
         i,
