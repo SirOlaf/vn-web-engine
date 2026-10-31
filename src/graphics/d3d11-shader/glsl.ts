@@ -77,7 +77,9 @@ interface GlslHelper {
 }
 function makeHelpers(prefix: string) {
   const helpers = [
-    `uvec4 ${prefix}_select(uvec4 a, uvec4 b, bvec4 takeB) { uvec4 bits = uvec4(takeB) * 0xffffffffu; return (a & ~bits) | (b & bits); }`,
+    // Per-component choice: Mali compilers (ANGLE on GLES) miscompile the bit mask
+    // `(a & ~bits) | (b & bits)` with `bits = uvec4(takeB) * 0xffffffffu` inside callers.
+    `uvec4 ${prefix}_select(uvec4 a, uvec4 b, bvec4 takeB) { return uvec4(takeB.x ? b.x : a.x, takeB.y ? b.y : a.y, takeB.z ? b.z : a.z, takeB.w ? b.w : a.w); }`,
     `uvec4 ${prefix}_flush(uvec4 a) { return ${prefix}_select(a, a & uvec4(0x80000000u), lessThan(a & uvec4(0x7fffffffu), uvec4(0x00800000u))); }`,
     `vec4 ${prefix}_float(uvec4 a) { return uintBitsToFloat(${prefix}_flush(a)); }`,
     `uvec4 ${prefix}_store(vec4 a) { return ${prefix}_flush(floatBitsToUint(a)); }`,
