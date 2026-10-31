@@ -17,6 +17,9 @@ type Mutable<T> = {-readonly [P in keyof T]: T[P]};
 /** Native immediate context over shared owned bindings, transfers and GPU execution. */
 /** GL POINTS, LINES, LINE_STRIP, TRIANGLES, TRIANGLE_STRIP for D3D11 topologies 1–5. */
 const DRAW_MODES: readonly number[] = [0x0000, 0x0001, 0x0003, 0x0004, 0x0005];
+/** Native draws recorded before the batch is submitted; the GPU then starts while the CPU
+ * still records instead of waiting for the next readback. */
+const SUBMIT_DRAWS = 8;
 
 export class D3d11DrawContext extends D3d11TransferContext implements ID3D11DeviceContext {
   private vertices = new Float32Array(0);
@@ -31,6 +34,7 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
   private readonly attributeOffsets: number[] = [];
   private gpuDisposed = false;
   private pendingDraw = false;
+  private unsubmittedDraws = 0;
   private readonly outputState: Mutable<D3d11DrawOutputState>;
 
   constructor(
@@ -264,6 +268,10 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
         // Flush and shared-image publication check the submitted batch.
         this.pendingDraw = true;
         this.output.written(state);
+        if (++this.unsubmittedDraws === SUBMIT_DRAWS) {
+          this.unsubmittedDraws = 0;
+          gl.flush();
+        }
       }
     } finally {
       resources.release();
