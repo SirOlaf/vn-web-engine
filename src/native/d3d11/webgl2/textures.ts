@@ -56,6 +56,8 @@ interface Texture {
   readonly framebuffers: Map<number, WebGLFramebuffer>;
   readonly aliases: Map<string, Alias>;
   readonly dirty: Set<number>;
+  /** Mips whose GL storage still holds WebGL's zero initialization, matching zero CPU bytes. */
+  readonly blank: Set<number>;
   fence: WebGLSync | null;
   revision: number;
 }
@@ -360,16 +362,21 @@ export class D3d11GpuTextures {
     if (!view.live || view.kind !== 'render-target')
       throw new D3d11TextureError('Invalid render target view');
     // A clear replaces the whole view mip, so an earlier pending clear of it is dropped.
-    const known = this.textures.get(view.resource);
+    const known = this.textures.get(view.resource),
+      value = new Float32Array(view.resource.format === 65 ? [color[3], 0, 0, 0] : color);
+    // Clearing never-written zero storage to +0 changes neither GL nor CPU bytes.
+    if (
+      known?.revision === view.resource.revision &&
+      known.blank.has(view.firstMip) &&
+      value.every((v) => Object.is(v, 0))
+    )
+      return;
     if (known) this.pendingClears.get(known)?.delete(view.firstMip);
     const entry = this.get(view.resource);
     this.markWritten(view.resource, view.firstMip);
     let clears = this.pendingClears.get(entry);
     if (!clears) this.pendingClears.set(entry, (clears = new Map()));
-    clears.set(
-      view.firstMip,
-      new Float32Array(view.resource.format === 65 ? [color[3], 0, 0, 0] : color),
-    );
+    clears.set(view.firstMip, value);
     this.pendingCommands = true;
   }
 
@@ -584,6 +591,7 @@ export class D3d11GpuTextures {
     resource.revision++;
     entry.revision = resource.revision;
     entry.dirty.add(mip);
+    entry.blank.delete(mip);
     if (entry.fence) {
       this.gl.deleteSync(entry.fence);
       entry.fence = null;
@@ -783,6 +791,7 @@ export class D3d11GpuTextures {
         framebuffers: new Map(),
         aliases: new Map(),
         dirty: new Set(),
+        blank: new Set(),
         fence: null,
       };
       this.bytes += bytes;
@@ -797,6 +806,7 @@ export class D3d11GpuTextures {
           !format.compressed
         ) {
           entry.revision = 0;
+          for (let mip = 0; mip < desc.mipLevels; mip++) entry.blank.add(mip);
           this.pendingAllocations.add(resource);
           this.pendingCommands = true;
         } else this.upload(entry); // the upload query also checks the allocation
@@ -810,6 +820,7 @@ export class D3d11GpuTextures {
       this.textures.set(resource, entry);
     } else if (entry.revision !== resource.revision) {
       this.pendingClears.delete(entry);
+      entry.blank.clear();
       this.upload(entry);
     } else if (this.pendingClears.size) this.issueClears(entry);
     return entry;
