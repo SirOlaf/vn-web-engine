@@ -22,6 +22,8 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
   private vertices = new Float32Array(0);
   /** Per-slot vertex scratch of the staged draw. */
   private slots = new Float64Array(0);
+  /** Per-draw shader resource view scratch; textures only read it during acquisition. */
+  private readonly sampleViews = this.psResources.slice(0, 0);
   private vertexArray: WebGLVertexArrayObject | null = null;
   private vertexBuffer: WebGLBuffer | null = null;
   private enabledAttributes = 0;
@@ -223,10 +225,11 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
       indices && strip ? cut : -1,
       this.slots,
     );
-    const resources = this.textures.acquireShaderResources(
-      program.samples.map((s) => this.psResources[s.resource] ?? null),
-      reflectedSamples,
-    );
+    const views = this.sampleViews;
+    views.length = program.samples.length;
+    for (let i = 0; i < views.length; i++)
+      views[i] = this.psResources[program.samples[i]!.resource] ?? null;
+    const resources = this.textures.acquireShaderResources(views, reflectedSamples);
     try {
       const state = this.snapshot();
       if (!this.output.use(state)) return;

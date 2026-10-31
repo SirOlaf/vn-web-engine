@@ -135,12 +135,14 @@ export class D3d11GpuTextures {
     release(): void;
   } {
     this.checkLive();
-    const held = new Set<Alias>(),
-      images: WebGLTexture[] = [];
+    // Most draws bind no alias; the pin set is created on the first one.
+    let held: Set<Alias> | null = null;
+    const images: WebGLTexture[] = [];
     let released = false;
     const release = () => {
       if (released) return;
       released = true;
+      if (!held) return;
       for (const alias of held) alias.pins--;
       for (const alias of held) {
         const entry = alias.owner;
@@ -162,9 +164,9 @@ export class D3d11GpuTextures {
                 ? this.reflectedResource(view)
                 : this.shaderResource(view),
           alias = this.aliasImages.get(image);
-        if (alias && !held.has(alias)) {
+        if (alias && !held?.has(alias)) {
           alias.pins++;
-          held.add(alias);
+          (held ??= new Set()).add(alias);
         }
         images.push(image);
       }
@@ -735,7 +737,7 @@ export class D3d11GpuTextures {
       !(resource instanceof D3d11Texture2D) ||
       !resource.live ||
       resource.lifetime !== this.owner.lifetime ||
-      resource.levels.some((l) => l.mapped)
+      anyMapped(resource.levels)
     )
       throw new D3d11TextureError('Invalid, foreign or mapped D3D11 texture');
     let entry = this.textures.get(resource);
@@ -1167,4 +1169,10 @@ export class D3d11GpuTextures {
 
 function resourceLevel(entry: Texture, mip: number) {
   return entry.resource.levels[mip]!;
+}
+
+/** `levels.some((l) => l.mapped)` without a per-call closure on the draw path. */
+function anyMapped(levels: readonly {readonly mapped: unknown}[]): boolean {
+  for (let i = 0; i < levels.length; i++) if (levels[i]!.mapped) return true;
+  return false;
 }
