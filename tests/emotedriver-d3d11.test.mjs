@@ -16,7 +16,7 @@ import {nativeHost, shaderStandins} from './emotedriver-d3d11-fixture.mjs';
 const SHA = '80d28bd088dda8e97c7c47a9c664e55159f70505b0f9fde3158d8ce2a3e1e051';
 
 /** A synthetic PSB with one image and a real scalar stereo parameter. */
-function imageFile({variableFrame = -30, maskType = 0} = {}) {
+function imageFile({variableFrame = -30, maskType = 0, fill = 255} = {}) {
   const tree = emoteWinTree(),
     motion = tree.object.all_parts.motion.base;
   const layer = structuredClone(motion.layer[0]);
@@ -57,7 +57,7 @@ function imageFile({variableFrame = -30, maskType = 0} = {}) {
     type: 'RGBA8',
     width: 4,
     height: 4,
-    pixel: resource(new Uint8Array(64).fill(255)),
+    pixel: resource(new Uint8Array(64).fill(fill)),
   });
   delete tree.source.tex.texture.mipMap;
   delete tree.source.tex.texture.mipMapLevel;
@@ -323,6 +323,26 @@ test('x64 native exports retain independent player cores and shared clone resour
   }
 });
 
+test('x64 released atlases are reused by another file with identical atlas bytes', () => {
+  const host = nativeHost(),
+    loaded = load(false),
+    device = loaded.exports.emoteCreate(host),
+    atlases = () => host.created.filter((r) => r.kind === 'texture');
+  const first = device.createPlayer(imageFile()),
+    [atlas] = atlases().slice(-1),
+    count = atlases().length;
+  assert.equal(first.release(), 0);
+  const same = device.createPlayer(imageFile({variableFrame: 14}));
+  assert.equal(atlases().length, count);
+  assert.ok(atlas.references > 0);
+  assert.equal(same.release(), 0);
+  assert.equal(device.release(), 0);
+  assert.ok(host.created.slice(2).every((r) => r.references === 0));
+  loaded.loader.dispose();
+  host.context.release();
+  host.device.release();
+});
+
 test('x64 released atlases stay reusable until the next draw or texture miss', () => {
   const host = nativeHost(),
     loaded = load(false),
@@ -338,7 +358,7 @@ test('x64 released atlases stay reusable until the next draw or texture miss', (
   const again = device.createPlayer(imageFile());
   assert.equal(atlases().at(-1), atlas);
   assert.equal(again.release(), 0);
-  const other = device.createPlayer(imageFile({variableFrame: 14}));
+  const other = device.createPlayer(imageFile({variableFrame: 14, fill: 254}));
   assert.equal(atlas.references, 0);
   const [otherAtlas] = atlases().slice(-1);
   assert.notEqual(otherAtlas, atlas);

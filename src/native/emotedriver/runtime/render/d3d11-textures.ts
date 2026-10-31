@@ -6,6 +6,7 @@ import type {
   ID3D11Texture2D,
 } from '../../../d3d11/contract.js';
 import {EmoteUnsupportedError} from '../errors.js';
+import {sameModelBytes} from '../model-cache.js';
 import type {EmoteD3d11TextureKind} from './d3d11-shaders.js';
 
 /** Native atlas resource; borrowed while the corresponding cache reference is held. */
@@ -58,7 +59,8 @@ function formatOf(type: string, spec: string): number {
  * does not inherit the x86 truncated-dimension or optional-mip upload behavior.
  * Entries retain live owners. After the last release an atlas stays idle, keyed by its
  * immutable parsed pixel resource, until the next draw, a texture miss or disposal, so
- * a same-file player re-created between frames reuses the GPU image. Otherwise both
+ * a same-file player re-created between frames reuses the GPU image; a miss first looks
+ * for an idle atlas with identical source bytes. Otherwise both
  * native handles retire exactly as before; context bindings follow COM ownership.
  */
 export class EmoteD3d11Textures {
@@ -88,24 +90,38 @@ export class EmoteD3d11Textures {
       this.entries.set(source, {value: idle.value, source, spec, references: 1});
       return idle.value;
     }
-    this.retireIdle();
     const format = formatOf(source.type, spec),
       layout = dxgiLayout(format)!,
       {width, height} = source,
       rowPitch = Math.ceil(width / layout.blockWidth) * layout.blockBytes,
       rows = Math.ceil(height / layout.blockHeight),
-      bytes = rowPitch * rows;
-    if (
-      !Number.isInteger(width) ||
-      !Number.isInteger(height) ||
-      width < 1 ||
-      height < 1 ||
-      width > 0xffffffff ||
-      height > 0xffffffff ||
-      !Number.isSafeInteger(bytes) ||
-      source.pixel.bytes.byteLength < bytes
-    )
-      throw new Error(`Invalid E-mote texture data: ${source.type} ${width}x${height}`);
+      bytes = rowPitch * rows,
+      valid =
+        Number.isInteger(width) &&
+        Number.isInteger(height) &&
+        width >= 1 &&
+        height >= 1 &&
+        width <= 0xffffffff &&
+        height <= 0xffffffff &&
+        Number.isSafeInteger(bytes) &&
+        source.pixel.bytes.byteLength >= bytes;
+    // A model over the parse-cache limit is re-read with fresh pixel resources; an idle
+    // atlas whose uploaded bytes are identical is the same GPU image.
+    if (valid)
+      for (const [pixel, entry] of this.idle)
+        if (
+          entry.spec === spec &&
+          entry.source.type === source.type &&
+          entry.source.width === width &&
+          entry.source.height === height &&
+          sameModelBytes(pixel.bytes.subarray(0, bytes), source.pixel.bytes.subarray(0, bytes))
+        ) {
+          this.idle.delete(pixel);
+          this.entries.set(source, {value: entry.value, source, spec, references: 1});
+          return entry.value;
+        }
+    this.retireIdle();
+    if (!valid) throw new Error(`Invalid E-mote texture data: ${source.type} ${width}x${height}`);
     const created = this.device.createTexture2D(
       {
         width,
