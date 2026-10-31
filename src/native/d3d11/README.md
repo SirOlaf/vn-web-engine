@@ -145,6 +145,9 @@ Failed compilation or linkage releases every partially created GPU object.
 Active uniform reflection bounds raw constant uploads to the array size retained by
 the driver. Short and unbound buffers are zero-filled; unchanged buffer identities
 and revisions avoid repeated uploads. Texture/sampler pairs receive independent units.
+Configured GPU samplers are cached per native sampler description (64, least recently
+used first), so a draw rebinds a sampler instead of resetting its parameters and
+waiting on a synchronous error query.
 The synthetic shader probe exercises this cache, native buffer updates, unbinding,
 eviction and disposal with raw float readback. The immediate context binds
 textures, input assembly, targets and raster/output state through this implementation.

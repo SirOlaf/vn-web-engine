@@ -16,21 +16,24 @@ const DEFAULT: D3d11SamplerDesc = Object.freeze({
   minLod: -MAX_FLOAT,
   maxLod: MAX_FLOAT,
 });
-interface Sampler {
-  readonly sampler: WebGLSampler;
-  desc: D3d11SamplerDesc | null;
-}
+/** Configured GPU samplers kept for this many native descriptions, least recently used first. */
+const CACHED_SAMPLERS = 64;
 
-/** One GPU sampler per pixel texture unit; native state remains owned by context bindings. */
+/**
+ * One configured GPU sampler per native description; native state remains owned by context
+ * bindings. Draws alternate descriptions on a unit, and reconfiguring a sampler costs its
+ * parameters plus a synchronous error query on every draw.
+ */
 export class D3d11GpuSamplers {
-  private readonly units: (Sampler | undefined)[];
+  private readonly units: number;
+  private readonly samplers = new Map<D3d11SamplerDesc, WebGLSampler>();
   private disposed = false;
 
   constructor(
     private readonly owner: D3d11DeviceOwner,
     private readonly gl: WebGL2RenderingContext,
   ) {
-    this.units = Array(gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS));
+    this.units = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS);
   }
 
   bind(unit: number, state: D3d11State<D3d11SamplerDesc> | null): void {
@@ -38,7 +41,7 @@ export class D3d11GpuSamplers {
       throw new D3d11TextureError('Using disposed D3D11 samplers');
     if (this.gl.isContextLost())
       throw new D3d11TextureError('D3D11 device removed', 0x887a0005 | 0);
-    if (!Number.isInteger(unit) || unit < 0 || unit >= this.units.length)
+    if (!Number.isInteger(unit) || unit < 0 || unit >= this.units)
       throw new D3d11TextureError('D3D11 sampler unit exceeds pixel texture limit');
     if (
       state !== null &&
@@ -59,48 +62,55 @@ export class D3d11GpuSamplers {
     )
       throw new D3d11TextureError('Unsupported D3D11 sampler mode', 0x80004001 | 0);
     const gl = this.gl;
-    let entry = this.units[unit];
-    if (!entry) {
-      const sampler = gl.createSampler();
-      if (!sampler) throw new D3d11TextureError('D3D11 sampler allocation failed', 0x8007000e | 0);
-      entry = {sampler, desc: null};
-      this.units[unit] = entry;
-    }
-    if (entry.desc !== desc) {
-      entry.desc = null;
-      const min =
-        desc.filter & 0x10
-          ? desc.filter & 1
-            ? gl.LINEAR_MIPMAP_LINEAR
-            : gl.LINEAR_MIPMAP_NEAREST
-          : desc.filter & 1
-            ? gl.NEAREST_MIPMAP_LINEAR
-            : gl.NEAREST_MIPMAP_NEAREST;
-      const address = (mode: number) =>
-        mode === 1 ? gl.REPEAT : mode === 2 ? gl.MIRRORED_REPEAT : gl.CLAMP_TO_EDGE;
-      for (const [parameter, value] of [
-        [gl.TEXTURE_WRAP_S, address(desc.addressU)],
-        [gl.TEXTURE_WRAP_T, address(desc.addressV)],
-        [gl.TEXTURE_MAG_FILTER, desc.filter & 4 ? gl.LINEAR : gl.NEAREST],
-        [gl.TEXTURE_MIN_FILTER, min],
-        [gl.TEXTURE_COMPARE_MODE, gl.NONE],
-      ] as const)
-        gl.samplerParameteri(entry.sampler, parameter, value);
-      gl.samplerParameterf(entry.sampler, gl.TEXTURE_MIN_LOD, desc.minLod);
-      gl.samplerParameterf(entry.sampler, gl.TEXTURE_MAX_LOD, desc.maxLod);
-      const error = gl.getError();
-      if (error !== gl.NO_ERROR)
-        throw new D3d11TextureError('D3D11 sampler configuration failed: ' + error);
-      entry.desc = desc;
+    let sampler = this.samplers.get(desc);
+    if (sampler) this.samplers.delete(desc);
+    else sampler = this.create(desc);
+    this.samplers.set(desc, sampler);
+    if (this.samplers.size > CACHED_SAMPLERS) {
+      const [oldest, evicted] = this.samplers.entries().next().value!;
+      this.samplers.delete(oldest);
+      gl.deleteSampler(evicted);
     }
     // Texture uploads and other private operations may have changed this binding.
-    gl.bindSampler(unit, entry.sampler);
+    gl.bindSampler(unit, sampler);
+  }
+
+  private create(desc: D3d11SamplerDesc): WebGLSampler {
+    const gl = this.gl;
+    const sampler = gl.createSampler();
+    if (!sampler) throw new D3d11TextureError('D3D11 sampler allocation failed', 0x8007000e | 0);
+    const min =
+      desc.filter & 0x10
+        ? desc.filter & 1
+          ? gl.LINEAR_MIPMAP_LINEAR
+          : gl.LINEAR_MIPMAP_NEAREST
+        : desc.filter & 1
+          ? gl.NEAREST_MIPMAP_LINEAR
+          : gl.NEAREST_MIPMAP_NEAREST;
+    const address = (mode: number) =>
+      mode === 1 ? gl.REPEAT : mode === 2 ? gl.MIRRORED_REPEAT : gl.CLAMP_TO_EDGE;
+    for (const [parameter, value] of [
+      [gl.TEXTURE_WRAP_S, address(desc.addressU)],
+      [gl.TEXTURE_WRAP_T, address(desc.addressV)],
+      [gl.TEXTURE_MAG_FILTER, desc.filter & 4 ? gl.LINEAR : gl.NEAREST],
+      [gl.TEXTURE_MIN_FILTER, min],
+      [gl.TEXTURE_COMPARE_MODE, gl.NONE],
+    ] as const)
+      gl.samplerParameteri(sampler, parameter, value);
+    gl.samplerParameterf(sampler, gl.TEXTURE_MIN_LOD, desc.minLod);
+    gl.samplerParameterf(sampler, gl.TEXTURE_MAX_LOD, desc.maxLod);
+    const error = gl.getError();
+    if (error !== gl.NO_ERROR) {
+      gl.deleteSampler(sampler);
+      throw new D3d11TextureError('D3D11 sampler configuration failed: ' + error);
+    }
+    return sampler;
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    for (const entry of this.units) if (entry) this.gl.deleteSampler(entry.sampler);
-    this.units.fill(undefined);
+    for (const sampler of this.samplers.values()) this.gl.deleteSampler(sampler);
+    this.samplers.clear();
   }
 }
