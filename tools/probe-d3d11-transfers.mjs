@@ -379,6 +379,19 @@ async function pageMain() {
           ((y + 4) * 8 + 3) * bppMixed,
         );
       await color(format + '-mixed-origin-region', mixedTarget, 0, mixedExpected);
+      // Two shader-resource images share their row origin; the region keeps native rows.
+      const sourceOrigin = texture(format, 8, 8, 1, null, {bindFlags: 8});
+      transfer(() =>
+        context.copySubresourceRegion(sourceOrigin, 0, 3, 4, 0, mixedSource, 0, {
+          left: 1,
+          top: 2,
+          front: 0,
+          right: 4,
+          bottom: 4,
+          back: 1,
+        }),
+      );
+      await color(format + '-source-origin-region', sourceOrigin, 0, mixedExpected);
       const revision = destination.revision;
       let rejected = false;
       try {

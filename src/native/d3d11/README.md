@@ -219,7 +219,9 @@ device removal after context loss. Texture2D updates ignore the unused slice pit
 Copies share `runtime/resources.ts` validation with the CPU storage path. Whole copies
 validate every subresource before changing any destination. Ordinary single-array
 typed color and depth/stencil copies use GPU blits; scissor and component/depth/stencil
-write masks do not restrict them. Copies between different mips of one texture are
+write masks do not restrict them. RGBA8 copies between storage of the same row origin
+use `copyTexSubImage2D` from the source attachment, so a new destination needs no
+framebuffer completeness check. Copies between different mips of one texture are
 supported. Buffer, compressed and CPU array copies preserve canonical native bytes.
 
 GenerateMips requires render-target/shader-resource binding and GENERATE_MIPS at

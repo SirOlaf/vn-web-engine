@@ -451,7 +451,34 @@ export class D3d11GpuTextures {
       return;
     }
     const from = this.framebuffer(source, sourceSubresource),
-      to = this.framebuffer(destination, subresource);
+      into = this.get(destination),
+      read = this.get(source);
+    // Equal RGBA8 storage copies texels through the complete source attachment alone:
+    // a new destination, such as an E-mote blend copy, needs no checked framebuffer.
+    if (
+      into.format.internal === this.gl.RGBA8 &&
+      read.format.internal === this.gl.RGBA8 &&
+      !into.format.decode &&
+      !read.format.decode &&
+      into.flipped === read.flipped
+    ) {
+      const gl = this.gl,
+        width = plan.from.width,
+        height = plan.from.height,
+        sx = box?.left ?? 0,
+        sy = box?.top ?? 0,
+        // Flipped storage keeps native rows bottom-up in GL coordinates.
+        glSy = read.flipped ? source.levels[sourceSubresource]!.height - sy - height : sy,
+        glDy = into.flipped ? destination.levels[subresource]!.height - y - height : y;
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, from);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, into.texture);
+      gl.copyTexSubImage2D(gl.TEXTURE_2D, subresource, x, glDy, sx, glSy, width, height);
+      this.pendingCommands = true;
+      this.markWritten(destination, subresource);
+      return;
+    }
+    const to = this.framebuffer(destination, subresource);
     this.blit(
       destination,
       subresource,
