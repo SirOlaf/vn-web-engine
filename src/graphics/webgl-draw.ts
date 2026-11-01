@@ -8,12 +8,32 @@ const flipImage = (image: TriangleImage | undefined): number =>
   (image instanceof GpuTextureImage && image.rowOrigin === 'bottom')
     ? 1
     : 0;
+const ZERO_PARAMETERS = new Float32Array(32);
 interface DrawProgram {
   program: WebGLProgram;
   uniforms: Map<string, WebGLUniformLocation | null>;
   attributes: Map<string, number>;
   layouts: Map<string, WebGLVertexArrayObject>;
+  /** Values last uploaded to each uniform of this program. */
+  values: Map<string, Float64Array>;
 }
+/** `location` when `values` differ from those the program last received, else null. */
+const changedUniform = (
+  p: DrawProgram,
+  name: string,
+  values: ArrayLike<number>,
+): WebGLUniformLocation | null => {
+  const location = p.uniforms.get(name) ?? null;
+  if (location === null) return null;
+  let last = p.values.get(name);
+  if (last?.length === values.length) {
+    let same = true;
+    for (let i = 0; same && i < values.length; i++) same = Object.is(last[i], values[i]);
+    if (same) return null;
+  } else p.values.set(name, (last = new Float64Array(values.length)));
+  last.set(values);
+  return location;
+};
 /** Straight RGBA rendering, with independent color/alpha blending and explicit copies.
  * Pixel ownership stays with the caller; presentation is opaque. */
 export class WebGLDrawTarget implements DrawListTarget {
@@ -188,6 +208,7 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
       uniforms: new Map(),
       attributes: new Map(),
       layouts: new Map(),
+      values: new Map(),
     };
     for (const name of [
       'depthClip',
@@ -422,66 +443,66 @@ void main(){vec4 sampled=texture(atlas,tex);if(maskMode.w!=0.)sampled.rgb=vec3(1
       }
       p.layouts.set(layoutKey, layout);
     } else gl.bindVertexArray(layout);
-    const uniform = (name: string) => p.uniforms.get(name) ?? null;
-    gl.uniform1i(uniform('depthClip'), draw.depthClip === false ? 0 : 1);
-    gl.uniformMatrix4fv(
-      uniform('transform'),
-      false,
+    const set1i = (name: string, x: number) => {
+        const l = changedUniform(p, name, [x]);
+        if (l) gl.uniform1i(l, x);
+      },
+      set2f = (name: string, x: number, y: number) => {
+        const l = changedUniform(p, name, [x, y]);
+        if (l) gl.uniform2f(l, x, y);
+      },
+      set4f = (name: string, x: number, y: number, z: number, w: number) => {
+        const l = changedUniform(p, name, [x, y, z, w]);
+        if (l) gl.uniform4f(l, x, y, z, w);
+      };
+    set1i('depthClip', draw.depthClip === false ? 0 : 1);
+    const transform =
       draw.transform ??
-        new Float32Array([
-          2 / this.activeWidth,
-          0,
-          0,
-          0,
-          0,
-          -2 / this.activeHeight,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          -1,
-          1,
-          0,
-          1,
-        ]),
-    );
+      new Float32Array([
+        2 / this.activeWidth,
+        0,
+        0,
+        0,
+        0,
+        -2 / this.activeHeight,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -1,
+        1,
+        0,
+        1,
+      ]);
+    const transformLocation = changedUniform(p, 'transform', transform);
+    if (transformLocation) gl.uniformMatrix4fv(transformLocation, false, transform);
     this.bind(image, 0, draw.filter, draw.wrapS, draw.wrapT);
-    gl.uniform1i(uniform('atlas'), 0);
-    gl.uniform1i(uniform('flipAtlas'), flipImage(image));
-    gl.uniform1i(uniform('flipMask'), flipImage(mask?.image));
-    gl.uniform2f(
-      uniform('textureSize'),
-      draw.normalizedUV ? 1 : image.width,
-      draw.normalizedUV ? 1 : image.height,
-    );
+    set1i('atlas', 0);
+    set1i('flipAtlas', flipImage(image));
+    set1i('flipMask', flipImage(mask?.image));
+    set2f('textureSize', draw.normalizedUV ? 1 : image.width, draw.normalizedUV ? 1 : image.height);
     if (mask) {
       const m = mask.settings;
       this.bind(mask.image, 1, m.filter, m.wrapS, m.wrapT);
-      gl.uniform1i(uniform('maskAtlas'), 1);
-      gl.uniform4f(
-        uniform('maskMode'),
-        1,
-        m.channel === 'red' ? 1 : 0,
-        m.invert ? 1 : 0,
-        m.alphaOnly ? 1 : 0,
-      );
-      gl.uniform2f(uniform('threshold'), m.scale, m.bias);
+      set1i('maskAtlas', 1);
+      set4f('maskMode', 1, m.channel === 'red' ? 1 : 0, m.invert ? 1 : 0, m.alphaOnly ? 1 : 0);
+      set2f('threshold', m.scale, m.bias);
     } else {
-      gl.uniform4f(uniform('maskMode'), 0, 0, 0, 0);
-      gl.uniform1i(uniform('maskAtlas'), 0);
+      set4f('maskMode', 0, 0, 0, 0);
+      set1i('maskAtlas', 0);
     }
-    const parameters = draw.parameters ?? new Float32Array(32);
+    const parameters = draw.parameters ?? ZERO_PARAMETERS;
     if (parameters.length % 4 || parameters.length > 32)
       throw new Error('Invalid shader parameters');
-    gl.uniform4fv(uniform('parameters[0]'), parameters);
-    for (let i = 0; i < extraCount; i++)
-      gl.uniform1i(uniform(`flipAdditional${i}`), flipImage(additional[i]));
+    const parameterLocation = changedUniform(p, 'parameters[0]', parameters);
+    if (parameterLocation) gl.uniform4fv(parameterLocation, parameters);
+    for (let i = 0; i < extraCount; i++) set1i(`flipAdditional${i}`, flipImage(additional[i]));
     for (let i = 0; i < extras.length; i++) {
       const t = extras[i]!;
       this.bind(additional[i]!, 2 + i, t.filter, t.wrapS, t.wrapT);
-      gl.uniform1i(uniform(`additionalAtlas${i}`), 2 + i);
+      set1i(`additionalAtlas${i}`, 2 + i);
     }
     this.blend(draw.blendState, draw.blend === 'add');
     const topology = draw.topology ?? 'triangles';

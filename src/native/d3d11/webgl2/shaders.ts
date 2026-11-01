@@ -20,7 +20,9 @@ interface ConstantUpload {
   readonly stage: 'vertex' | 'pixel';
   readonly slot: number;
   readonly location: WebGLUniformLocation;
-  readonly words: Uint32Array;
+  /** Words the program holds once `buffer` is set; `staged` is scratch of the same size. */
+  words: Uint32Array;
+  staged: Uint32Array;
   buffer: D3d11Buffer | null | undefined;
   revision: number;
 }
@@ -136,19 +138,27 @@ export class D3d11ProgramCache {
     for (const c of entry.constants) {
       const buffer = (c.stage === 'vertex' ? vertex : pixel)[c.slot] ?? null;
       if (c.buffer === buffer && c.revision === (buffer?.revision ?? 0)) continue;
-      c.words.fill(0);
+      const words = c.staged;
+      words.fill(0);
       if (buffer) {
         const bytes = buffer.levels[0]!.bytes,
-          count = Math.min(c.words.length, Math.floor(bytes.length / 4));
+          count = Math.min(words.length, Math.floor(bytes.length / 4));
         // Aligned storage: the same little-endian words through a typed view.
         if ((bytes.byteOffset & 3) === 0)
-          c.words.set(new Uint32Array(bytes.buffer, bytes.byteOffset, count));
+          words.set(new Uint32Array(bytes.buffer, bytes.byteOffset, count));
         else {
           const view = new DataView(bytes.buffer, bytes.byteOffset, count * 4);
-          for (let i = 0; i < count; i++) c.words[i] = view.getUint32(i * 4, true);
+          for (let i = 0; i < count; i++) words[i] = view.getUint32(i * 4, true);
         }
       }
-      this.gl.uniform4uiv(c.location, c.words);
+      // A rewritten buffer often holds the words the program already has.
+      let same = c.buffer !== undefined;
+      for (let i = 0; same && i < words.length; i++) same = words[i] === c.words[i];
+      if (!same) {
+        this.gl.uniform4uiv(c.location, words);
+        c.staged = c.words;
+        c.words = words;
+      }
       c.buffer = buffer;
       c.revision = buffer?.revision ?? 0;
     }
@@ -269,6 +279,7 @@ export class D3d11ProgramCache {
             slot: c.slot,
             location,
             words: new Uint32Array(vectors * 4),
+            staged: new Uint32Array(vectors * 4),
             buffer: undefined,
             revision: -1,
           });
