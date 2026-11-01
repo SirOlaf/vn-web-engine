@@ -343,6 +343,16 @@ stride limit. Staging is reusable and bounded to64MiB, with a corresponding stre
 GPU vertex buffer. Device teardown frees both the vertex array and buffer. Instance
 streams use instance0 for these non-instanced draws.
 
+Non-indexed draws whose every fetch is in bounds read the native bytes on the GPU
+instead: each slot uploads the window from the draw's first vertex, and attributes use
+the native strides and offsets in a second vertex array. B8G8R8A8 colors arrive as
+unsigned bytes, and a program variant selects the float bits that the CPU path stores
+for `byte / 255`, which GLSL division and normalized fetches do not guarantee.
+Instanced, shared-register or unsupported elements, zero, float-misaligned or wider
+than 255-byte strides, colors in registers from 8, and wrapped or out-of-bounds
+addresses keep the planar staging. E-mote meshes take the GPU path, which cut a heavy
+Android scene from 21.7 to 17.0 ms per frame.
+
 Points, line lists/strips and triangle lists/strips are supported. Indexed strips
 consume cut words before adding signed BaseVertexLocation, reset strip parity after
 each cut and preserve unsigned address wrapping/OOB defaults. All-ones list indices

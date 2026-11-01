@@ -398,6 +398,34 @@ test('SM4 unclipped-depth programs replace only the GL position depth', () => {
   assert.deepEqual(unclipped.attributes, native.attributes);
 });
 
+test('SM4 unorm registers read raw B8G8R8A8 bytes as the float bits JavaScript stores for byte / 255', () => {
+  const fixture = sm4SyntheticPipeline(true);
+  const vertex = parseSm4GlslShader(fixture.vertex, 'vertex');
+  const pixel = parseSm4GlslShader(fixture.pixel, 'pixel');
+  const native = linkSm4GlslPrograms(vertex, pixel),
+    unorm = linkSm4GlslPrograms(vertex, pixel, 0, 0, 0, false, 0b10);
+  assert.equal(linkSm4GlslPrograms(vertex, pixel, 0, 0, 0, false, 0b100).vertex, native.vertex);
+  assert.equal(unorm.fragment, native.fragment);
+  assert.deepEqual(unorm.attributes, native.attributes);
+  const table = /const uint sm4_unorm8\[256\]=uint\[256\]\(([^)]*)\);/.exec(unorm.vertex);
+  assert.ok(table);
+  const bits = new Uint32Array(Float32Array.from({length: 256}, (_, i) => i / 255).buffer);
+  assert.deepEqual(
+    table[1].split(',').map((b) => Number.parseInt(b, 16)),
+    [...bits],
+  );
+  const c = (i) => `sm4_unorm8[int(sm4_a1.${i})]`;
+  assert.equal(
+    unorm.vertex.replace(table[0] + '\n', ''),
+    native.vertex
+      .replace('in highp vec4 sm4_a1;', 'in highp uvec4 sm4_a1;')
+      .replace(
+        'inputs[1]=floatBitsToUint(sm4_a1);',
+        `inputs[1]=uvec4(${c('z')},${c('y')},${c('x')},${c('w')});`,
+      ),
+  );
+});
+
 test('SM4 executable creation rejects wrong stages, duplicate interface parts and signature/declaration disagreement', () => {
   const fixture = sm4SyntheticPipeline();
   assert.throws(() => parseSm4GlslShader(fixture.vertex, 'pixel'), /stage mismatch/);

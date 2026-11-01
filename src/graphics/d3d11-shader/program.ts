@@ -77,6 +77,23 @@ export function parseSm4GlslShader(bytes: Uint8Array, stage: 'vertex' | 'pixel')
   return Object.freeze({code: Object.freeze(code), inputs, outputs});
 }
 
+const UNORM8_BITS = Array.from({length: 256}, (_, i) => {
+  const bits = new Uint32Array(Float32Array.of(i / 255).buffer)[0]!;
+  return `0x${bits.toString(16)}u`;
+}).join(',');
+const vertexRegisters = new WeakMap<Sm4GlslShader, readonly number[]>();
+
+/** Vertex input registers in linked attribute order: attribute `i` is at location `i`. */
+export function sm4VertexRegisters(vertex: Sm4GlslShader): readonly number[] {
+  let registers = vertexRegisters.get(vertex);
+  if (!registers)
+    vertexRegisters.set(
+      vertex,
+      (registers = Object.freeze([...new Set(vertex.code.inputs.map((p) => p.register))])),
+    );
+  return registers;
+}
+
 export interface Sm4GlslPipeline {
   readonly vertex: string;
   readonly fragment: string;
@@ -97,7 +114,10 @@ export interface Sm4GlslPipeline {
  * depth replaces the position depth with 0, inside every clip volume, for draws
  * whose depth is never tested or written: X/Y/W clipping and interpolation keep
  * their native values, which matches disabled depth clipping without
- * `EXT_depth_clamp`. Other programs preprocess to the unchanged token stream.
+ * `EXT_depth_clamp`. Unorm registers (a bit mask by input register) read raw
+ * B8G8R8A8 bytes as unsigned attributes and select the float bits of `byte / 255`
+ * as JavaScript rounds them, which GLSL division and normalized fetches do not
+ * guarantee. Other programs preprocess to the unchanged token stream.
  */
 export function linkSm4GlslPrograms(
   vertex: Sm4GlslShader,
@@ -106,6 +126,7 @@ export function linkSm4GlslPrograms(
   alphaSamples = 0,
   reflectedSamples = 0,
   unclippedDepth = false,
+  unormRegisters = 0,
 ): Sm4GlslPipeline {
   if (vertex.code.stage !== 'vertex' || pixel.code.stage !== 'pixel') invalid('pipeline stages');
   const positions = vertex.code.outputs.filter((p) => p.systemValue === 1);
@@ -157,14 +178,23 @@ export function linkSm4GlslPrograms(
   ];
   const vertexBody = body(vertex.code),
     pixelBody = body(pixel.code);
-  const registers = [...new Set(vertex.code.inputs.map((p) => p.register))];
+  const registers = sm4VertexRegisters(vertex);
   if (registers.length > 16) unsupported('more than16vertex attributes');
   const attributes = registers.map((register, location) => ({
     name: `sm4_a${register}`,
     register,
     location,
   }));
+  if (attributes.some((a) => (unormRegisters >>> a.register) & 1))
+    vs.push(`const uint sm4_unorm8[256]=uint[256](${UNORM8_BITS});`);
   for (const a of attributes) {
+    if ((unormRegisters >>> a.register) & 1) {
+      // Memory order B, G, R, A.
+      vs.push(`layout(location=${a.location}) in highp uvec4 ${a.name};`);
+      const c = (i: string) => `sm4_unorm8[int(${a.name}.${i})]`;
+      vertexBody.push(`inputs[${a.register}]=uvec4(${c('z')},${c('y')},${c('x')},${c('w')});`);
+      continue;
+    }
     vs.push(`layout(location=${a.location}) in highp vec4 ${a.name};`);
     vertexBody.push(`inputs[${a.register}]=floatBitsToUint(${a.name});`);
   }

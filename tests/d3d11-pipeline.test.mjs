@@ -937,7 +937,7 @@ test('native vertex registers can be staged in separate float4 planes without a2
   host.device.release();
 });
 
-test('native Draw and DrawIndexed preserve planar inputs, base vertices, strip cuts and borrowed resource leases', () => {
+test('native Draw streams and DrawIndexed planar inputs preserve base vertices, strip cuts and borrowed resource leases', () => {
   // This command sink proves CPU assembly and coordination only. It supplies no
   // GPU rendering evidence for the complete draw path.
   let ctx,
@@ -950,7 +950,8 @@ test('native Draw and DrawIndexed preserve planar inputs, base vertices, strip c
     gpuError = 0,
     errorQueries = 0;
   const calls = [],
-    pointers = [];
+    pointers = [],
+    uses = [];
   const host = owner(() => {
     ctx.disposeBindings();
     ctx.disposeGpu();
@@ -965,6 +966,7 @@ test('native Draw and DrawIndexed preserve planar inputs, base vertices, strip c
     ARRAY_BUFFER: 0x8892,
     STREAM_DRAW: 0x88e0,
     FLOAT: 0x1406,
+    UNSIGNED_BYTE: 0x1401,
     TEXTURE0: 0x84c0,
     TEXTURE_2D: 0x0de1,
     NO_ERROR: 0,
@@ -974,12 +976,13 @@ test('native Draw and DrawIndexed preserve planar inputs, base vertices, strip c
     bindVertexArray: () => {},
     bindBuffer: () => {},
     bufferData: (_target, data) => {
-      uploaded = new Float32Array(data);
+      uploaded = data instanceof Float32Array ? new Float32Array(data) : new Uint8Array(data);
     },
     enableVertexAttribArray: () => {},
     disableVertexAttribArray: () => {},
     vertexAttribDivisor: () => {},
     vertexAttribPointer: (...args) => pointers.push(args),
+    vertexAttribIPointer: (...args) => pointers.push(['I', ...args]),
     activeTexture: () => {},
     bindTexture: () => {},
     drawArrays: (...args) => calls.push(args),
@@ -1030,7 +1033,10 @@ test('native Draw and DrawIndexed preserve planar inputs, base vertices, strip c
       },
     },
     {
-      use: () => program,
+      use: (...args) => {
+        uses.push(args);
+        return program;
+      },
       uploadConstants: () => {},
       uploadOutputRanges: (selected, mask) => {
         assert.equal(selected, program);
@@ -1069,23 +1075,31 @@ test('native Draw and DrawIndexed preserve planar inputs, base vertices, strip c
   ctx.iaSetInputLayout(layout);
   ctx.iaSetVertexBuffers(0, [source], [16], [0]);
   ctx.iaSetPrimitiveTopology(4);
+  // In-bounds Draw: the native bytes from the first vertex, with raw B8G8R8A8 colors.
   ctx.draw(3, 1);
+  assert.deepEqual(uploaded, bytes.subarray(16));
+  assert.deepEqual(calls, [[4, 0, 3]]);
+  assert.deepEqual(pointers, [
+    [0, 3, gl.FLOAT, false, 16, 0],
+    ['I', 1, 4, gl.UNSIGNED_BYTE, 16, 12],
+  ]);
+  assert.equal(uses.at(-1)[6], 0b10);
+  // An out-of-bounds vertex keeps CPU assembly: zero elements, opaque only for floats.
+  calls.length = pointers.length = 0;
+  ctx.draw(2, 3);
   const expected = Float32Array.from(
-    [1, 2, 3]
-      .flatMap((i) => [i + 1, i * 2, i * 0.25, 1])
-      .concat(
-        [1, 2, 3].flatMap((i) => [(i * 50) / 255, (i * 30) / 255, (i * 10) / 255, 128 / 255]),
-      ),
+    [4, 6, 0.75, 1, 0, 0, 0, 1].concat([150 / 255, 90 / 255, 30 / 255, 128 / 255, 0, 0, 0, 0]),
   );
   assert.deepEqual(new Uint32Array(uploaded.buffer), new Uint32Array(expected.buffer));
-  assert.deepEqual(calls, [[4, 0, 3]]);
+  assert.deepEqual(calls, [[4, 0, 2]]);
   assert.deepEqual(
-    pointers.map((p) => [p[0], p[4], p[5]]),
+    pointers.map((p) => [p[0], p[1], p[4], p[5]]),
     [
-      [0, 0, 0],
-      [1, 0, 48],
+      [0, 4, 0, 0],
+      [1, 4, 0, 32],
     ],
   );
+  assert.equal(uses.at(-1)[6], 0);
   for (const [format, values] of [
     [57, new Uint16Array([99, 1, 2, 3, 0xffff, 2, 3, 4])],
     [42, new Uint32Array([99, 1, 2, 3, 0xffffffff, 2, 3, 4])],
@@ -1142,7 +1156,7 @@ test('native Draw and DrawIndexed preserve planar inputs, base vertices, strip c
   ctx.iaSetIndexBuffer(null, 0, 0);
   ctx.drawIndexed(0, 0, 0);
   assert.throws(() => ctx.drawIndexed(1, 0, 0), /Unbound/);
-  assert.equal(written, 5);
+  assert.equal(written, 6);
   assert.equal(acquired, released);
   assert.equal(errorQueries, 0, 'Adjacent draws must not synchronously query GPU errors');
   ctx.flush();
@@ -1167,7 +1181,7 @@ test('native Draw and DrawIndexed preserve planar inputs, base vertices, strip c
   ctx.release();
   host.device.release();
   assert.equal(host.lifetime.closed, true);
-  assert.equal(deleted, 2);
+  assert.equal(deleted, 4);
   ctx.disposeGpu();
-  assert.equal(deleted, 2);
+  assert.equal(deleted, 4);
 });

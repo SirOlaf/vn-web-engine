@@ -14,6 +14,23 @@ interface Element {
   readonly stride: number;
   readonly relative: number;
   readonly instance: boolean;
+  readonly slot: number;
+}
+
+/** GL attribute streams that fetch exactly the native vertices of one non-indexed draw.
+ * Window `w` holds the bytes from the draw's first vertex in its slot; each attribute
+ * reads `format` at `relative` plus `stride` per vertex from its window. */
+export interface D3d11GpuStreams {
+  readonly windows: readonly Uint8Array[];
+  readonly attributes: readonly {
+    readonly location: number;
+    readonly window: number;
+    readonly format: number;
+    readonly stride: number;
+    readonly relative: number;
+  }[];
+  /** Input registers fed by B8G8R8A8 elements. */
+  readonly unormRegisters: number;
 }
 
 /** Validated register-to-staging offsets of frozen register lists (linked programs). */
@@ -82,6 +99,7 @@ function templateOf(
 export class D3d11VertexReader {
   private readonly elements: readonly Element[];
   readonly floatsPerVertex: number;
+  private readonly registers: readonly number[];
 
   constructor(
     owner: D3d11DeviceOwner,
@@ -126,11 +144,65 @@ export class D3d11VertexReader {
         stride: stride!,
         relative: e.relative,
         instance: e.instance,
+        slot: e.slot,
       });
     }
     if (template.missing) throw new Error('Missing D3D11 vertex input');
     this.elements = elements;
     this.floatsPerVertex = registers.length * 4;
+    this.registers = registers;
+  }
+
+  /** Streams for the `count` vertices from `start + base`, or null when a native fetch
+   * needs CPU assembly: an instanced, shared-register or unsupported element, a zero,
+   * wide (over the 255-byte WebGL limit) or float-misaligned stride, a B8G8R8A8 register
+   * from 8, or a wrapped or out-of-bounds address. In-bounds fetches read the same bytes. */
+  gpuStreams(count: number, start: number, base: number): D3d11GpuStreams | null {
+    const first = start + base,
+      last = first + count - 1;
+    if (count === 0 || ![count, start, start + count - 1, first, last].every(uint)) return null;
+    const windows: Uint8Array[] = [],
+      slots: number[] = [],
+      ends: number[] = [],
+      attributes: D3d11GpuStreams['attributes'][number][] = [];
+    let targets = 0,
+      unormRegisters = 0;
+    for (const e of this.elements) {
+      const register = this.registers[e.target / 4]!,
+        bgra = e.format === 87;
+      if (
+        !e.bytes ||
+        e.instance ||
+        (targets >>> (e.target / 4)) & 1 ||
+        e.stride === 0 ||
+        e.stride > 255 ||
+        (!bgra && (e.stride | e.relative) & 3) ||
+        (bgra && register >= 8)
+      )
+        return null;
+      targets |= 1 << (e.target / 4);
+      if (bgra) unormRegisters |= 1 << register;
+      const end = e.offset + last * e.stride + e.relative + e.bytes;
+      if (end > e.data.byteLength) return null;
+      let window = slots.indexOf(e.slot);
+      if (window < 0) {
+        window = slots.push(e.slot) - 1;
+        ends.push(end);
+      } else ends[window] = Math.max(ends[window]!, end);
+      attributes.push({
+        location: e.target / 4,
+        window,
+        format: e.format,
+        stride: e.stride,
+        relative: e.relative,
+      });
+    }
+    for (let w = 0; w < slots.length; w++) {
+      const e = this.elements.find((x) => x.slot === slots[w])!,
+        from = e.offset + first * e.stride;
+      windows.push(new Uint8Array(e.data.buffer, e.data.byteOffset + from, ends[w]! - from));
+    }
+    return {windows, attributes, unormRegisters};
   }
 
   /** Instance0 input registers receive float4 values at a caller-selected float stride. */

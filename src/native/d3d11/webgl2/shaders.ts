@@ -55,7 +55,8 @@ export class D3d11ProgramCache {
    * Select an owned VS/PS pair and make its GPU program current. Alpha-only target
    * registers and pixel sample indices select a red-storage program variant;
    * reflected sample indices select row-reflected point views; unclipped depth
-   * selects a constant position depth.
+   * selects a constant position depth; unorm registers below 8 read raw B8G8R8A8
+   * attributes.
    */
   use(
     vertex: D3d11Shader,
@@ -64,6 +65,7 @@ export class D3d11ProgramCache {
     alphaSamples = 0,
     reflectedSamples = 0,
     unclippedDepth = false,
+    unormRegisters = 0,
   ): D3d11LinkedProgram {
     this.checkLive();
     for (const [shader, stage] of [
@@ -82,7 +84,8 @@ export class D3d11ProgramCache {
         (alphaTargets & outputs) +
         (alphaSamples & samples) * 2 ** 8 +
         (reflectedSamples & samples) * 2 ** 24 +
-        (unclippedDepth ? 2 ** 40 : 0);
+        (unclippedDepth ? 2 ** 40 : 0) +
+        (unormRegisters & 0xff) * 2 ** 41;
     const found = this.pairs.get(vertex)?.get(pixel)?.get(variant);
     if (found) {
       this.entries.delete(found);
@@ -218,7 +221,8 @@ export class D3d11ProgramCache {
         variant % 2 ** 8,
         Math.floor(variant / 2 ** 8) % 2 ** 16,
         Math.floor(variant / 2 ** 24) % 2 ** 16,
-        variant >= 2 ** 40,
+        Math.floor(variant / 2 ** 40) % 2 === 1,
+        Math.floor(variant / 2 ** 41),
       );
     const samples = pixel.shader.code.samples;
     if (

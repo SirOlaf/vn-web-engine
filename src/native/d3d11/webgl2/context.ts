@@ -1,6 +1,11 @@
 import type {ID3D11DeviceContext} from '../contract.js';
 import type {D3d11DeviceOwner} from '../runtime/com.js';
-import {D3d11IndexReader, D3d11VertexReader} from '../runtime/input-assembly.js';
+import {sm4VertexRegisters} from '../../../graphics/d3d11-shader/program.js';
+import {
+  D3d11IndexReader,
+  D3d11VertexReader,
+  type D3d11GpuStreams,
+} from '../runtime/input-assembly.js';
 import {D3d11InputLayout} from '../runtime/input-layout.js';
 import {D3d11Shader} from '../runtime/shaders.js';
 import {D3d11GpuOutput, type D3d11DrawOutputState} from './output.js';
@@ -32,6 +37,11 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
   private enabledAttributes = 0;
   /** Vertex array pointer offsets by location; the array never sets a divisor. */
   private readonly attributeOffsets: number[] = [];
+  /** Vertex array, window buffers and pointer keys by location of native streams. */
+  private streamArray: WebGLVertexArrayObject | null = null;
+  private readonly streamBuffers: WebGLBuffer[] = [];
+  private streamAttributes = 0;
+  private readonly streamPointers: string[] = [];
   private gpuDisposed = false;
   private pendingDraw = false;
   private unsubmittedDraws = 0;
@@ -124,6 +134,8 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
     for (const action of [
       () => this.gl.deleteVertexArray(this.vertexArray),
       () => this.gl.deleteBuffer(this.vertexBuffer),
+      () => this.streamArray && this.gl.deleteVertexArray(this.streamArray),
+      ...this.streamBuffers.map((buffer) => () => this.gl.deleteBuffer(buffer)),
     ])
       try {
         action();
@@ -134,6 +146,10 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
     this.vertexBuffer = null;
     this.enabledAttributes = 0;
     this.attributeOffsets.length = 0;
+    this.streamArray = null;
+    this.streamBuffers.length = 0;
+    this.streamAttributes = 0;
+    this.streamPointers.length = 0;
     this.vertices = new Float32Array(0);
     this.slots = new Float64Array(0);
     if (errors.length) throw new AggregateError(errors, 'D3D11 draw storage disposal failed');
@@ -179,23 +195,12 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
       )
         reflectedSamples |= 1 << i;
     }
-    const program = this.programs.use(
-        this.vertexShader,
-        this.pixelShader,
-        alphaTargets,
-        alphaSamples,
-        reflectedSamples,
-        this.output.unclippedDepth(
-          this.rasterState?.description ?? null,
-          this.depthState?.description ?? null,
-          this.depthTarget,
-        ),
-      ),
-      registers = program.registers,
+    const registers = sm4VertexRegisters(this.vertexShader.shader),
       floats = count * registers.length * 4;
     if (count > MAX_VERTICES || floats > MAX_FLOATS)
       throw new D3d11TextureError('D3D11 draw exceeds bounded vertex staging', 0x8007000e | 0);
-    let vertices: D3d11VertexReader | null = null;
+    let vertices: D3d11VertexReader | null = null,
+      streams: D3d11GpuStreams | null = null;
     if (registers.length) {
       if (!(this.inputLayout instanceof D3d11InputLayout))
         throw new D3d11TextureError('Unbound D3D11 input layout');
@@ -207,6 +212,23 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
         this.vertexStrides,
         this.vertexOffsets,
       );
+      // Non-indexed in-bounds draws fetch the native bytes on the GPU.
+      if (!indices) streams = vertices.gpuStreams(count, start, base);
+    }
+    const program = this.programs.use(
+      this.vertexShader,
+      this.pixelShader,
+      alphaTargets,
+      alphaSamples,
+      reflectedSamples,
+      this.output.unclippedDepth(
+        this.rasterState?.description ?? null,
+        this.depthState?.description ?? null,
+        this.depthTarget,
+      ),
+      streams?.unormRegisters ?? 0,
+    );
+    if (vertices && !streams) {
       try {
         if (this.vertices.length < floats)
           this.vertices = new Float32Array(
@@ -225,15 +247,16 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
     const strip = this.topology === 3 || this.topology === 5,
       cut = this.indexFormat === 57 ? 0xffff : 0xffffffff;
     // Planar float4 attributes avoid WebGL's255-byte interleaved-stride limit.
-    vertices?.readDraw(
-      this.vertices,
-      count,
-      start,
-      base,
-      indices,
-      indices && strip ? cut : -1,
-      this.slots,
-    );
+    if (!streams)
+      vertices?.readDraw(
+        this.vertices,
+        count,
+        start,
+        base,
+        indices,
+        indices && strip ? cut : -1,
+        this.slots,
+      );
     const views = this.sampleViews;
     views.length = program.samples.length;
     for (let i = 0; i < views.length; i++)
@@ -242,7 +265,8 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
     try {
       const state = this.snapshot();
       if (!this.output.use(state)) return;
-      this.bindVertices(program, count, floats);
+      if (streams) this.bindStreams(program, streams);
+      else this.bindVertices(program, count, floats);
       // Texture/target preparation may have selected decoder programs or VAOs.
       this.programs.uploadConstants(program, this.vsBuffers, this.psBuffers);
       this.programs.uploadOutputRanges(program, this.output.normalizedTargetMask);
@@ -308,6 +332,47 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
     for (let i = program.attributes.length; i < this.enabledAttributes; i++)
       gl.disableVertexAttribArray(i);
     this.enabledAttributes = program.attributes.length;
+  }
+
+  private bindStreams(program: D3d11LinkedProgram, streams: D3d11GpuStreams): void {
+    const gl = this.gl;
+    if (!this.streamArray) this.streamArray = gl.createVertexArray();
+    if (!this.streamArray)
+      throw new D3d11TextureError('D3D11 vertex array allocation failed', 0x8007000e | 0);
+    gl.bindVertexArray(this.streamArray);
+    for (let w = 0; w < streams.windows.length; w++) {
+      let buffer = this.streamBuffers[w];
+      if (!buffer) {
+        const created = gl.createBuffer();
+        if (!created)
+          throw new D3d11TextureError('D3D11 vertex buffer allocation failed', 0x8007000e | 0);
+        this.streamBuffers[w] = buffer = created;
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, streams.windows[w]!, gl.STREAM_DRAW);
+    }
+    // Window buffers keep their identity, so unchanged pointers stay valid.
+    for (const a of streams.attributes) {
+      const key = `${a.window}:${a.format}:${a.stride}:${a.relative}`;
+      if (a.location >= this.streamAttributes) gl.enableVertexAttribArray(a.location);
+      if (this.streamPointers[a.location] === key) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.streamBuffers[a.window]!);
+      if (a.format === 87)
+        gl.vertexAttribIPointer(a.location, 4, gl.UNSIGNED_BYTE, a.stride, a.relative);
+      else
+        gl.vertexAttribPointer(
+          a.location,
+          a.format === 6 ? 3 : 2,
+          gl.FLOAT,
+          false,
+          a.stride,
+          a.relative,
+        );
+      this.streamPointers[a.location] = key;
+    }
+    for (let i = program.attributes.length; i < this.streamAttributes; i++)
+      gl.disableVertexAttribArray(i);
+    this.streamAttributes = program.attributes.length;
   }
 
   private snapshot(): D3d11DrawOutputState {
