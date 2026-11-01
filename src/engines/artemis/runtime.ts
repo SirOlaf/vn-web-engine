@@ -136,6 +136,8 @@ export interface ArtemisRuntimeFiles {
   read(path: string): Promise<Uint8Array | null>;
   /** Windows-text CFile read used by luaL_loadfile. */
   readPlain(path: string): Promise<Uint8Array | null>;
+  /** `read` of every path, in that order; reads may overlap. */
+  readAll?(paths: readonly string[]): Promise<(Uint8Array | null)[]>;
   resolvePath(path: string): string;
   setMagicPath(name: string, root: string): void;
   /** Every archive and loose file name ('/'-separated). */
@@ -439,20 +441,23 @@ export class ArtemisRuntime {
       bytes += length;
       if (bytes > MEMORY_BUDGET) throw new Error('Script corpus exceeds memory budget');
     };
-    for (const path of files.paths)
-      if (/\.(lua|lub|ast|iet|ipt|asb|tbl|csv|ini|sli)$/.test(path)) {
-        const data = await files.read(path);
-        if (data === null) throw new Error(`Missing inventoried source ${path}`);
-        budget(data.length);
-        prepared.set(path, data);
-        if (/\.(lua|lub|ast)$/.test(path)) {
-          const text = await files.readPlain(path);
-          if (text !== null) {
-            plain.set(path, text);
-            budget(text.length);
-          }
+    const corpus = [...files.paths].filter((path) =>
+        /\.(lua|lub|ast|iet|ipt|asb|tbl|csv|ini|sli)$/.test(path),
+      ),
+      read = files.readAll ? await files.readAll(corpus) : null;
+    for (const [index, path] of corpus.entries()) {
+      const data = read ? (read[index] ?? null) : await files.read(path);
+      if (data === null) throw new Error(`Missing inventoried source ${path}`);
+      budget(data.length);
+      prepared.set(path, data);
+      if (/\.(lua|lub|ast)$/.test(path)) {
+        const text = await files.readPlain(path);
+        if (text !== null) {
+          plain.set(path, text);
+          budget(text.length);
         }
       }
+    }
     const saves = await ArtemisSaveDirectory.open(services.storage);
     // The executable imports emotedriver.dll; its exact build selects the driver profile.
     let emoteDriver: string | null = null;

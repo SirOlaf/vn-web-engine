@@ -18,6 +18,7 @@ interface ReadAheadWindow {
   readonly offset: number;
   readonly end: number;
   readonly bytes: Promise<Uint8Array>;
+  settled: boolean;
 }
 /** Shared by every source of this realm, most recently used last. */
 const windows: ReadAheadWindow[] = [];
@@ -48,13 +49,22 @@ export class BlobSource implements ByteSource {
           offset,
           end,
           bytes: this.readBlob(offset, end - offset),
+          settled: false,
         };
       // A failed window is not reused; its readers still receive the failure.
-      created.bytes.catch(() => {
-        const index = windows.indexOf(created);
-        if (index >= 0) windows.splice(index, 1);
-      });
-      if (windows.length >= READ_AHEAD_WINDOWS) windows.shift();
+      created.bytes.then(
+        () => void (created.settled = true),
+        () => {
+          const index = windows.indexOf(created);
+          if (index >= 0) windows.splice(index, 1);
+        },
+      );
+      // Windows still being read stay: their next readers would read them again.
+      while (windows.length >= READ_AHEAD_WINDOWS) {
+        const index = windows.findIndex((entry) => entry.settled);
+        if (index < 0) break;
+        windows.splice(index, 1);
+      }
       window = created;
     }
     windows.push(window);

@@ -300,6 +300,8 @@ export class ArtemisBrowserPlayer {
       files: {
         read,
         readPlain: (path) => files.readPlain(path),
+        // Only `open` reads with it, before the runtime has a save directory.
+        readAll: (paths) => files.readAll(paths),
         resolvePath: (path) => files.resolvePath(path),
         setMagicPath: (name, root) => files.setMagicPath(name, root),
         paths: options.paths,

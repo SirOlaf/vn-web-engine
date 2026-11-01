@@ -38,6 +38,10 @@ export interface ArtemisReadAheadName {
 const READ_AHEAD_FILE_BYTES = 16 * 1024 * 1024;
 const READ_AHEAD_TOTAL_BYTES = 96 * 1024 * 1024;
 const READ_AHEAD_MATCHES = 4;
+/** `readAll` limits: archive bytes one task covers (a device read-ahead window), and
+ * tasks in flight. */
+const READ_ALL_TASK_BYTES = 8 << 20;
+const READ_ALL_TASKS = 8;
 
 /** Loose-first resolution, numeric overlays and installation-relative native magic paths. */
 export class ArtemisFiles {
@@ -197,5 +201,64 @@ export class ArtemisFiles {
   async read(path: string): Promise<Uint8Array | null> {
     const source = await this.open(path);
     return source ? source.read(0, source.size) : null;
+  }
+
+  /**
+   * `read` of every path. Archive entries are read in offset order, those of up to eight
+   * 8 MiB archive spans at once: a span is one device read-ahead window, and device reads
+   * are latency-bound and overlap (Android content URIs: eight 8 MiB reads took 0.17 s at
+   * once and 0.93 s one after another). Entries are rarely adjacent, so each is its own
+   * read: spanning the gaps would read several times the corpus.
+   */
+  async readAll(paths: readonly string[]): Promise<(Uint8Array | null)[]> {
+    const results = new Array<Uint8Array | null>(paths.length).fill(null),
+      tasks: (() => Promise<void>)[] = [],
+      packed: {archive: number; entry: PfsEntry; index: number}[] = [];
+    for (const [index, path] of paths.entries()) {
+      let key: string | undefined;
+      try {
+        key = this.resolvePath(path);
+      } catch {
+        key = undefined;
+      }
+      const found = key === undefined ? undefined : this.entries.get(key);
+      if (
+        key === undefined ||
+        !found ||
+        this.ahead.has(key) ||
+        (await this.lookup(segments(key))) !== undefined
+      )
+        tasks.push(async () => void (results[index] = await this.read(path)));
+      else
+        packed.push({
+          archive: this.archives.findIndex(({archive}) => archive === found.archive),
+          entry: found.entry,
+          index,
+        });
+    }
+    packed.sort((a, b) => a.archive - b.archive || a.entry.offset - b.entry.offset);
+    for (let first = 0; first < packed.length; ) {
+      const {archive, entry} = packed[first]!;
+      let last = first + 1;
+      while (
+        last < packed.length &&
+        packed[last]!.archive === archive &&
+        packed[last]!.entry.offset + packed[last]!.entry.size - entry.offset <= READ_ALL_TASK_BYTES
+      )
+        last++;
+      const task = packed.slice(first, last),
+        pfs = this.archives[archive]!.archive;
+      tasks.push(async () => {
+        for (const {entry, index} of task) results[index] = await pfs.read(entry);
+      });
+      first = last;
+    }
+    let next = 0;
+    await Promise.all(
+      Array.from({length: Math.min(READ_ALL_TASKS, tasks.length)}, async () => {
+        while (next < tasks.length) await tasks[next++]!();
+      }),
+    );
+    return results;
   }
 }
