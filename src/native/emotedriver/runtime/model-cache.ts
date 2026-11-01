@@ -149,14 +149,18 @@ function instantiate(model: EmoteX64Model): EmoteX64Model {
   };
 }
 
-/** Device-local parsed definitions, bounded by entry count and retained source bytes. */
+/**
+ * Device-local parsed definitions, bounded by entry count and retained source bytes.
+ * Amakano 3 pose files are 10-42 MB (median 21 MB), and a scene moves a character between
+ * a few of them, so the default bound holds several.
+ */
 export class EmoteModelCache {
   private readonly entries: Entry[] = [];
   private bytes = 0;
 
   constructor(
-    private readonly capacity = 4,
-    private readonly byteLimit = 32 * 1024 * 1024,
+    private readonly capacity = 6,
+    private readonly byteLimit = 128 * 1024 * 1024,
   ) {
     if (
       !Number.isSafeInteger(capacity) ||
