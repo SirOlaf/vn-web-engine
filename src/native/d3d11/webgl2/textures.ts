@@ -966,7 +966,19 @@ export class D3d11GpuTextures {
         }
       }
     }
-    this.checkError('texture upload');
+    try {
+      // One query covers the level uploads and, for packed formats, their scratch uploads
+      // and decode draws.
+      this.checkError('texture upload');
+    } catch (error) {
+      if (entry.format.decode) {
+        // The scratch storage is unknown, and the failed upload's later errors are the
+        // failed batch's.
+        this.dropScratch();
+        for (let n = 0; n < 8 && gl.getError() !== gl.NO_ERROR; n++);
+      }
+      throw error;
+    }
     entry.revision = entry.resource.revision;
     entry.dirty.clear();
     if (entry.fence) {
@@ -1001,12 +1013,8 @@ export class D3d11GpuTextures {
         gl.UNSIGNED_BYTE,
         image.pixels,
       );
-      this.checkError('packed texture upload');
     } catch (error) {
-      gl.deleteTexture(this.scratch);
-      this.scratch = null;
-      this.bytes -= this.scratchBytes;
-      this.scratchBytes = 0;
+      this.dropScratch();
       throw error;
     }
     this.bytes += size - this.scratchBytes;
@@ -1017,7 +1025,9 @@ export class D3d11GpuTextures {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const program = this.decoder(format);
     this.outputGroups |= 7;
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebufferFor(entry, mip));
+    // Decoded images are immutable RGBA8 storage, so the level's colour attachment is
+    // complete; a failed allocation fails the draw, which the upload query reports.
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebufferFor(entry, mip, true));
     gl.useProgram(program);
     gl.uniform1i(gl.getUniformLocation(program, 'atlas'), 0);
     gl.uniform1f(gl.getUniformLocation(program, 'topHeight'), entry.flipped ? level.height : 0);
@@ -1041,7 +1051,7 @@ export class D3d11GpuTextures {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
-  private framebufferFor(entry: Texture, mip: number): WebGLFramebuffer {
+  private framebufferFor(entry: Texture, mip: number, complete = false): WebGLFramebuffer {
     if (!Number.isInteger(mip) || !entry.resource.levels[mip])
       throw new D3d11TextureError('Invalid D3D11 framebuffer mip');
     const found = entry.framebuffers.get(mip);
@@ -1064,7 +1074,7 @@ export class D3d11GpuTextures {
     );
     gl.drawBuffers([entry.resource.layout.depth ? gl.NONE : gl.COLOR_ATTACHMENT0]);
     gl.readBuffer(entry.resource.layout.depth ? gl.NONE : gl.COLOR_ATTACHMENT0);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+    if (!complete && gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
       gl.deleteFramebuffer(framebuffer);
       throw new D3d11TextureError('Incomplete D3D11 framebuffer');
     }
@@ -1196,6 +1206,13 @@ export class D3d11GpuTextures {
     this.bytes -= alias.bytes;
     this.aliasBytes -= alias.bytes;
     this.gl.deleteTexture(alias.texture);
+  }
+
+  private dropScratch(): void {
+    this.gl.deleteTexture(this.scratch);
+    this.scratch = null;
+    this.bytes -= this.scratchBytes;
+    this.scratchBytes = 0;
   }
 
   private zeroImage(): WebGLTexture {
