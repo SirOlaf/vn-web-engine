@@ -706,6 +706,43 @@ test('E-mote packed meshes retain raw position bits and reject invalid or oversi
   drawEmoteD3d11Mesh({}, {}, empty); // Empty draws issue no contract calls.
 });
 
+test('E-mote grid meshes give each cell vertex its interpolated colour, also from reused scratch storage', async () => {
+  const {packEmoteD3d11Mesh} =
+    await import('../dist/native/emotedriver/runtime/render/d3d11-mesh.js');
+  const {emoteGridColors} =
+    await import('../dist/native/emotedriver/runtime/render/vertex-colors.js');
+  const scratch = {bytes: new Uint8Array(0)};
+  for (const [cols, rows, corners] of [
+    [3, 2, Uint32Array.of(1, 2, 3, 4)],
+    [3, 2, Uint32Array.of(7, 7, 7, 7)],
+    [2, 1, Uint32Array.of(0x10203040, 0x50607080, 0x90a0b0c0, 0x10203040)],
+    [4, 3, Uint32Array.of(0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff)],
+  ]) {
+    const across = cols + 1,
+      points = Float32Array.from({length: across * (rows + 1) * 2}, (_, i) => i * 0.75 - 3),
+      grid = {cols, rows, points},
+      fresh = packEmoteD3d11Mesh(grid, corners, 1, 2, 30, 20, 64, 32),
+      reused = packEmoteD3d11Mesh(grid, corners, 1, 2, 30, 20, 64, 32, scratch);
+    assert.deepEqual(reused.vertices, fresh.vertices);
+    const words = new Uint32Array(fresh.vertices.buffer, 0, fresh.vertexCount * 5),
+      positions = new Uint32Array(points.buffer),
+      colors = emoteGridColors(corners, cols, rows);
+    let vertex = 0;
+    for (let j = 0; j < rows; j++)
+      for (let i = 0; i < cols; i++) {
+        const a = j * across + i,
+          b = a + across;
+        for (const point of [a, b, a + 1, a + 1, b, b + 1]) {
+          assert.equal(words[vertex * 5], positions[point * 2]);
+          assert.equal(words[vertex * 5 + 1], positions[point * 2 + 1]);
+          assert.equal(words[vertex * 5 + 2], colors[point]);
+          vertex++;
+        }
+      }
+    assert.equal(vertex, fresh.vertexCount);
+  }
+});
+
 test('E-mote mesh submission releases its buffer reference after a failed draw while context bindings remain owned', async () => {
   const {packEmoteD3d11Mesh, drawEmoteD3d11Mesh} =
     await import('../dist/native/emotedriver/runtime/render/d3d11-mesh.js');

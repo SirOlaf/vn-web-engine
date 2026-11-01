@@ -167,6 +167,23 @@ test('shared native colour interpolation preserves the fixed-point grid', () => 
   );
 });
 
+test('shared colour interpolation writes every entry of reused storage', () => {
+  const corners = Uint32Array.of(0x000000ff, 0xff0000ff, 0x00ff00ff, 0xffffffff);
+  for (const [columns, rows] of [
+    [1, 1],
+    [2, 2],
+    [4, 1],
+    [1, 5],
+  ]) {
+    const storage = new Uint32Array(40).fill(0xdeadbeef),
+      reused = emoteGridColors(corners, columns, rows, storage);
+    assert.equal(reused.buffer, storage.buffer);
+    assert.deepEqual([...reused], [...emoteGridColors(corners, columns, rows)]);
+  }
+  // Too-small storage is not used.
+  assert.equal(emoteGridColors(corners, 2, 2, new Uint32Array(8)).length, 9);
+});
+
 test('native alpha masks draw the parent before the masked group and clear the following binding', (t) => {
   const h = setup(t),
     file = model(texture('A8'), texture()),

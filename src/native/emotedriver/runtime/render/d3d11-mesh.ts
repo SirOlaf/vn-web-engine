@@ -12,6 +12,9 @@ export interface EmoteD3d11Mesh {
 /** Reusable packing storage. Draw creation copies the vertices into its own buffer. */
 export interface EmoteD3d11MeshScratch {
   bytes: Uint8Array;
+  colors?: Uint32Array;
+  us?: Float32Array;
+  vs?: Float32Array;
 }
 
 const f32 = Math.fround;
@@ -75,36 +78,46 @@ export function packEmoteD3d11Mesh(
   const words = new Uint32Array(vertices.buffer, 0, vertexCount * 5),
     floats = new Float32Array(vertices.buffer, 0, vertexCount * 5),
     positions = new Uint32Array(points.buffer, points.byteOffset, points.length);
-  let offset = 0;
-  const put = (point: number, color: number, u: number, v: number): void => {
+  const put = (offset: number, point: number, color: number, u: number, v: number): void => {
     // MOV32 preserves source position bits, including negative zero and NaN payloads.
     words[offset] = positions[point * 2]!;
     words[offset + 1] = positions[point * 2 + 1]!;
     words[offset + 2] = color;
     floats[offset + 3] = u;
     floats[offset + 4] = v;
-    offset += 5;
   };
   if (quad) {
     const u0 = f32(left / textureWidth),
       u1 = f32(f32(left + width) / textureWidth),
       v0 = f32(top / textureHeight),
       v1 = f32(f32(top + height) / textureHeight);
-    put(0, corners[0]!, u0, v0);
-    put(2, corners[2]!, u0, v1);
-    put(1, corners[1]!, u1, v0);
-    put(3, corners[3]!, u1, v1);
+    put(0, 0, corners[0]!, u0, v0);
+    put(5, 2, corners[2]!, u0, v1);
+    put(10, 1, corners[1]!, u1, v0);
+    put(15, 3, corners[3]!, u1, v1);
     return {vertices, vertexCount, topology: 5};
   }
-  const colors = emoteGridColors(corners, cols, rows),
-    us = new Float32Array(across),
-    vs = new Float32Array(down),
+  const c0 = corners[0]!,
+    // Equal corners give every vertex that color.
+    colors =
+      corners[1] === c0 && corners[2] === c0 && corners[3] === c0
+        ? null
+        : scratch
+          ? (scratch.colors = emoteGridColors(corners, cols, rows, scratch.colors))
+          : emoteGridColors(corners, cols, rows),
+    us = scratch?.us && scratch.us.length >= across ? scratch.us : new Float32Array(across),
+    vs = scratch?.vs && scratch.vs.length >= down ? scratch.vs : new Float32Array(down),
     su = f32(1 / textureWidth),
     sv = f32(1 / textureHeight),
     fc = f32(cols),
     fr = f32(rows);
+  if (scratch) {
+    scratch.us = us;
+    scratch.vs = vs;
+  }
   for (let i = 0; i < across; i++) us[i] = f32(f32(f32(f32(f32(i) * width) / fc) + left) * su);
   for (let j = 0; j < down; j++) vs[j] = f32(f32(f32(f32(f32(j) * height) / fr) + top) * sv);
+  let offset = 0;
   for (let j = 0; j < rows; j++) {
     const v0 = vs[j]!,
       v1 = vs[j + 1]!;
@@ -112,13 +125,17 @@ export function packEmoteD3d11Mesh(
       const a = j * across + i,
         b = a + across,
         u0 = us[i]!,
-        u1 = us[i + 1]!;
-      put(a, colors[a]!, u0, v0);
-      put(b, colors[b]!, u0, v1);
-      put(a + 1, colors[a + 1]!, u1, v0);
-      put(a + 1, colors[a + 1]!, u1, v0);
-      put(b, colors[b]!, u0, v1);
-      put(b + 1, colors[b + 1]!, u1, v1);
+        u1 = us[i + 1]!,
+        ca = colors ? colors[a]! : c0,
+        cb = colors ? colors[b]! : c0,
+        cn = colors ? colors[a + 1]! : c0;
+      put(offset, a, ca, u0, v0);
+      put(offset + 5, b, cb, u0, v1);
+      put(offset + 10, a + 1, cn, u1, v0);
+      put(offset + 15, a + 1, cn, u1, v0);
+      put(offset + 20, b, cb, u0, v1);
+      put(offset + 25, b + 1, colors ? colors[b + 1]! : c0, u1, v1);
+      offset += 30;
     }
   }
   return {vertices, vertexCount, topology: 4};

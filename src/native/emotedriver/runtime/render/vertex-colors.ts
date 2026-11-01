@@ -30,10 +30,19 @@ function lerpLine(colors: Uint32Array, start: number, count: number, stride: num
  * Per-vertex colours of a (columns + 1) × (rows + 1) grid from four corners
  * [top-left, top-right, bottom-left, bottom-right] (x86 0x1002dc40, x64 0x180032250).
  */
-export function emoteGridColors(corners: Uint32Array, columns: number, rows: number): Uint32Array {
+export function emoteGridColors(
+  corners: Uint32Array,
+  columns: number,
+  rows: number,
+  storage?: Uint32Array,
+): Uint32Array {
   const across = columns + 1,
     down = rows + 1,
-    out = new Uint32Array(across * down);
+    // Every entry is written below, so reused storage needs no clearing.
+    out =
+      storage && storage.length >= across * down
+        ? storage.subarray(0, across * down)
+        : new Uint32Array(across * down);
   const c0 = corners[0]!;
   if (corners[1] === c0 && corners[2] === c0 && corners[3] === c0) {
     out.fill(c0);
