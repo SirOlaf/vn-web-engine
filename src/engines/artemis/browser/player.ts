@@ -105,6 +105,8 @@ export interface ArtemisBrowserPlayerOptions {
 
 // Mouse buttons 0..2 as virtual keys; the wheel notches are keys 136 (up) and 137 (down).
 const VK_BUTTONS = [1, 4, 2] as const;
+/** Frames a touch press waits at its point before the button goes down. */
+const TOUCH_HOVER_FRAMES = 2;
 /** Events whose registered callbacks make a hit layer the hovered one. */
 const HOVER_EVENTS = ['click', 'rollover', 'rollout'] as const;
 /** The browser's float trigonometry for layer rotation; the native engine uses the CRT
@@ -161,6 +163,10 @@ export class ArtemisBrowserPlayer {
   private readonly keys = new VirtualKeyState();
   private wheel: (136 | 137)[] = [];
   private pointerInside = false;
+  /** A touch press that has moved the pointer and waits before its button goes down. A
+   * Windows tap also moves the cursor first: the game's rollover handlers then make the
+   * touched button current before its click, which acts on the current button only. */
+  private touchPress: {key: number; frames: number; released: boolean} | null = null;
   /** The page is visible and focused: the game window is the foreground window. */
   private foreground = false;
   private readonly abort = new AbortController();
@@ -580,6 +586,13 @@ export class ArtemisBrowserPlayer {
             ? this.graphics.hitTest(this.layers.layers.scene, pointer.x, pointer.y)
             : [];
         this.hover(hits);
+        const touch = this.touchPress;
+        if (touch && --touch.frames < 0) {
+          this.touchPress = null;
+          this.keys.press(touch.key);
+          // A tap already lifted is still sampled down once.
+          if (touch.released) this.keys.release(touch.key);
+        }
         const input: ArtemisFrameInput = {
           sample: {
             down: this.keys.sample(),
@@ -725,8 +738,10 @@ export class ArtemisBrowserPlayer {
     // The canvas is the client area of the key 1 and 2 queries.
     canvas.addEventListener(
       'pointerleave',
-      () => {
-        this.pointerInside = false;
+      (event) => {
+        // A lifted touch leaves at once, before its delayed press is sampled; a Windows
+        // tap leaves the cursor where it touched.
+        if (event.pointerType !== 'touch') this.pointerInside = false;
       },
       {signal},
     );
@@ -743,7 +758,10 @@ export class ArtemisBrowserPlayer {
         this.pointerInside = true;
         canvas.focus({preventScroll: true});
         const key = VK_BUTTONS[event.button as 0 | 1 | 2];
-        if (key !== undefined) this.keys.press(key);
+        if (key === undefined) return;
+        if (event.pointerType === 'touch')
+          this.touchPress = {key, frames: TOUCH_HOVER_FRAMES, released: false};
+        else this.keys.press(key);
       },
       {signal},
     );
@@ -763,7 +781,13 @@ export class ArtemisBrowserPlayer {
               this.click(1, event);
           }
           const key = VK_BUTTONS[event.button as 0 | 1 | 2];
-          if (key !== undefined) this.keys.release(key);
+          if (key === undefined) return;
+          const touch = this.touchPress;
+          if (touch?.key === key) {
+            // A cancelled touch never presses.
+            if (type === 'pointercancel') this.touchPress = null;
+            else touch.released = true;
+          } else this.keys.release(key);
         },
         {signal},
       );
