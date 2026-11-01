@@ -52,6 +52,9 @@ export function prepareArtemisNativeGraphics(
         emote,
         d3d11WebGl2Library(() => target.sharedContext(), {
           deviceCreated: (device, service) => sharing.set(device, service),
+          // A presented canvas is submitted at the end of the task: early submission only
+          // adds calls. Copies and readbacks keep it so the GPU overlaps recording.
+          submitDraws: target.presented ? 0 : undefined,
         }),
       ],
       {

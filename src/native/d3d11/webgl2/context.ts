@@ -54,6 +54,8 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
     private readonly output: D3d11GpuOutput,
     private readonly programs: D3d11ProgramCache,
     private readonly samplers: D3d11GpuSamplers,
+    /** 0 leaves submission to the next synchronous call or the end of the browser task. */
+    private readonly submitDraws = SUBMIT_DRAWS,
   ) {
     super(drawOwner, gl, textures);
     this.outputState = {
@@ -297,7 +299,7 @@ export class D3d11DrawContext extends D3d11TransferContext implements ID3D11Devi
         // Flush and shared-image publication check the submitted batch.
         this.pendingDraw = true;
         this.output.written(state);
-        if (++this.unsubmittedDraws === SUBMIT_DRAWS) {
+        if (this.submitDraws && ++this.unsubmittedDraws >= this.submitDraws) {
           this.unsubmittedDraws = 0;
           gl.flush();
         }

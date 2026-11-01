@@ -83,6 +83,9 @@ export class WebGLDrawTarget implements DrawListTarget {
       this.context = c;
     }
   }
+  get presented(): boolean {
+    return this.context === null;
+  }
   private initialize(): WebGL2RenderingContext {
     if (this.gl) return this.gl;
     const canvas = this.context ? document.createElement('canvas') : this.canvas;

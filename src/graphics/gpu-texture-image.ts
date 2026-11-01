@@ -2,6 +2,9 @@ import type {TriangleImage} from './triangle-draw.js';
 
 /** Shared GPU registration at the UI boundary; drawing still uses DrawListTarget. */
 export interface SharedGpuImageTarget {
+  /** True when the browser presents the shared context's canvas itself, with no copy or
+   * readback waiting for recorded GPU commands. */
+  readonly presented?: boolean;
   sharedContext(): WebGL2RenderingContext;
   attachSharedImage(
     image: GpuTextureImage,

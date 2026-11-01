@@ -9,6 +9,9 @@ export type {D3d11WebGl2TextureSharing, D3d11WebGl2TextureLease} from './webgl2/
 export interface D3d11WebGl2LibraryOptions {
   /** UI wiring receives borrowed interfaces and the backend's texture-sharing service. */
   readonly deviceCreated?: (device: ID3D11Device, sharing: D3d11WebGl2TextureSharing) => void;
+  /** Native draws per GPU submission while a frame is recorded (default 8); 0 when the
+   * browser presents the context itself at the end of the task, so nothing waits earlier. */
+  readonly submitDraws?: number;
 }
 
 /** UI wiring supplies a prepared GL context; native exports keep their SDK arguments. */
@@ -60,7 +63,7 @@ export function d3d11WebGl2Library(
             const gl = createContext();
             if (!gl) return fail(0x887a0004 | 0);
             if (gl.isContextLost()) return fail(0x887a0005 | 0);
-            const device = new WebGl2D3d11Device(gl, flags, level);
+            const device = new WebGl2D3d11Device(gl, flags, level, options.submitDraws);
             try {
               options.deviceCreated?.(device, device);
             } catch (error) {

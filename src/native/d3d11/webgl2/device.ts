@@ -68,6 +68,7 @@ export class WebGl2D3d11Device
     private readonly gl: WebGL2RenderingContext,
     private readonly flags: number,
     private readonly featureLevel: number,
+    submitDraws?: number,
   ) {
     let cleanup = () => {};
     const lifetime = new D3d11Lifetime(() => cleanup());
@@ -93,6 +94,7 @@ export class WebGl2D3d11Device
       this.output,
       this.programs,
       this.samplers,
+      submitDraws,
     );
     cleanup = () =>
       attemptAll([

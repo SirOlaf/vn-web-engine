@@ -948,7 +948,8 @@ test('native Draw streams and DrawIndexed planar inputs preserve base vertices, 
     visible = true,
     deleted = 0,
     gpuError = 0,
-    errorQueries = 0;
+    errorQueries = 0,
+    glFlushes = 0;
   const calls = [],
     pointers = [],
     uses = [];
@@ -992,7 +993,9 @@ test('native Draw streams and DrawIndexed planar inputs preserve base vertices, 
       gpuError = 0;
       return error;
     },
-    flush: () => {},
+    flush: () => {
+      glFlushes++;
+    },
     deleteVertexArray: () => {
       deleted++;
     },
@@ -1008,9 +1011,7 @@ test('native Draw streams and DrawIndexed planar inputs preserve base vertices, 
     registers: Object.freeze([0, 1]),
     samples: [],
   };
-  ctx = new D3d11DrawContext(
-    host,
-    gl,
+  const collaborators = [
     {
       checkSubmission: () => false,
       acquireShaderResources: () => {
@@ -1048,7 +1049,8 @@ test('native Draw streams and DrawIndexed planar inputs preserve base vertices, 
         throw Error('Unexpected sampler');
       },
     },
-  );
+  ];
+  ctx = new D3d11DrawContext(host, gl, ...collaborators);
   const fixture = sm4SyntheticPipeline(),
     vertex = createShaderStorage(host, 'vertex', fixture.vertex, null).value,
     pixel = createShaderStorage(host, 'pixel', fixture.pixel, null).value;
@@ -1174,6 +1176,21 @@ test('native Draw streams and DrawIndexed planar inputs preserve base vertices, 
   assert.throws(() => ctx.flush(), /D3D11 draw failed: 1285/);
   assert.equal(errorQueries, 3, 'A published batch keeps its error for the next flush');
   assert.equal(acquired, released);
+  // Recorded draws are submitted every eight unless the host presents the context itself.
+  const presented = new D3d11DrawContext(host, gl, ...collaborators, 0);
+  for (const context of [ctx, presented]) {
+    context.vsSetShader(vertex, []);
+    context.psSetShader(pixel, []);
+    context.iaSetInputLayout(layout);
+    context.iaSetVertexBuffers(0, [source], [16], [0]);
+    context.iaSetPrimitiveTopology(4);
+    context.flush();
+    glFlushes = 0;
+    for (let i = 0; i < 16; i++) context.draw(3, 0);
+    assert.equal(glFlushes, context === ctx ? 2 : 0);
+  }
+  presented.disposeBindings();
+  presented.release();
   source.release();
   layout.release();
   vertex.release();

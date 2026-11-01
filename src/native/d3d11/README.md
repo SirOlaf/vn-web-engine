@@ -326,7 +326,9 @@ preparation precedes reapplying raster state, vertex arrays, programs and consta
 View leases are released after draws, skipped output and errors.
 
 Draw calls validate native arguments and bindings synchronously, while GPU commands
-remain queued across adjacent draws. `flush` checks GPU submission errors before returning
+remain queued across adjacent draws. Every eighth draw is submitted so the GPU overlaps
+recording before a copy or readback; a host whose canvas the browser presents itself passes
+`submitDraws: 0` and leaves submission to the end of the task. `flush` checks GPU submission errors before returning
 to the host; shared-texture `prepare` checks device removal and invalidates cached state, and
 its queued errors surface at the next flush, allocation, transfer or readback. Resource allocation, uploads and
 readback retain their own error checks. The private output framebuffer caches its
