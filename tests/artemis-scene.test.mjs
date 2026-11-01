@@ -2023,6 +2023,33 @@ test('Artemis pointer updates raise rollover, rollout and click per layer, and a
   assert.deepEqual(delivered, ['3:delivered', '3:delivered', '2:delivered', '1:suppressed']);
 });
 
+test('Artemis firstEventLayer picks the first hit that eventLayers lists for any of the types', async () => {
+  const owner = await browserLayerOwner();
+  for (const id of ['1', '2', '3', '4', '4.1'])
+    await owner.layers.dispatch(command('lyc', {id, file: 'a.png'}));
+  await owner.dispatch(lyevent('1', 'rollover'));
+  await owner.dispatch(lyevent('2', 'click'));
+  await owner.dispatch(lyevent('4.1', 'rollout'));
+  await owner.layers.dispatch(command('lyprop', {id: '4', visible: '0'}));
+  const types = ['click', 'rollover', 'rollout'];
+  const listed = new Set(types.flatMap((type) => owner.eventLayers(type, true)));
+  for (const hits of [
+    [],
+    ['3'],
+    ['9', '3', '2', '1'],
+    ['1', '2'],
+    ['4.1', '3'],
+    ['4.1', '1'],
+    ['4', '2'],
+  ])
+    assert.equal(
+      owner.firstEventLayer(hits, types, true),
+      hits.find((id) => listed.has(id)) ?? null,
+      hits.join(','),
+    );
+  assert.equal(owner.firstEventLayer(['2', '1'], ['rollover'], true), '1');
+});
+
 test('Artemis cache loans belong to outer wrappers across current/retained actor copies and multiple layers', async () => {
   const {cache, layers, loaded, disposed} = await cachedLayerFixture();
   await layers.dispatch(command('lyc', {id: '1', file: 'a'}));

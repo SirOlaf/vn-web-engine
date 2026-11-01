@@ -423,6 +423,28 @@ export class ArtemisLayerOwner<
       })
       .map(({id}) => id);
   }
+  /** The first of `ids` that `eventLayers(type, registered)` lists for one of `types`,
+   * looking up only those layers instead of listing the scene. */
+  firstEventLayer(
+    ids: readonly string[],
+    types: readonly ArtemisLayerEventType[],
+    registered = false,
+  ): string | null {
+    for (const id of ids) {
+      const entry = this.layers.scene.entry(id),
+        slots =
+          entry?.id === id && entry.value !== undefined ? this.slots.get(entry.value) : undefined;
+      if (
+        slots &&
+        types.some(
+          (type) => slots.isEnabled(type) && (!registered || slots.callback(type) !== null),
+        ) &&
+        this.visible(id)
+      )
+        return id;
+    }
+    return null;
+  }
   /** The layer and its ancestors are visible. */
   private visible(id: string): boolean {
     const parts = id.split('.');

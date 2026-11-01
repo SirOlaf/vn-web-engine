@@ -105,6 +105,8 @@ export interface ArtemisBrowserPlayerOptions {
 
 // Mouse buttons 0..2 as virtual keys; the wheel notches are keys 136 (up) and 137 (down).
 const VK_BUTTONS = [1, 4, 2] as const;
+/** Events whose registered callbacks make a hit layer the hovered one. */
+const HOVER_EVENTS = ['click', 'rollover', 'rollout'] as const;
 /** The browser's float trigonometry for layer rotation; the native engine uses the CRT
  * sinf/cosf, which agree with correctly rounded results for ordinary angles. */
 const trig = (radians: number) => ({
@@ -686,12 +688,7 @@ export class ArtemisBrowserPlayer {
   private hover(hits: readonly string[]): void {
     const {layers, runtime} = this;
     if (!layers || !runtime?.acceptsInput) return;
-    const candidates = new Set([
-      ...layers.eventLayers('click', true),
-      ...layers.eventLayers('rollover', true),
-      ...layers.eventLayers('rollout', true),
-    ]);
-    this.hovered = hits.find((id) => candidates.has(id)) ?? null;
+    this.hovered = layers.firstEventLayer(hits, HOVER_EVENTS, true);
   }
   private point(event: MouseEvent): {x: number; y: number} {
     const {canvas} = this;
