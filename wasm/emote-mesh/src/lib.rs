@@ -134,7 +134,7 @@ pub unsafe extern "C" fn subdivide_quad(
 
 // X64 image 80d28bd0…1e051: double accumulation of each x/y pair. SIMD lanes
 // remain independent, preserving the native row/column accumulation order.
-use core::arch::wasm32::{f64x2, f64x2_add, f64x2_extract_lane, f64x2_mul, f64x2_splat};
+use core::arch::wasm32::{f64x2, f64x2_add, f64x2_extract_lane, f64x2_mul, f64x2_splat, v128};
 
 #[inline(always)]
 fn weights_x64(t: f64) -> [f64; 4] {
@@ -142,15 +142,24 @@ fn weights_x64(t: f64) -> [f64; 4] {
     [s * s * s, 3.0 * s * s * t, 3.0 * s * t * t, t * t * t]
 }
 
+/// Control points widened once per call. Widening is exact, and the local copy cannot
+/// alias points evaluated in place.
 #[inline(always)]
-unsafe fn point_x64(cp: *const f32, u: &[f64; 4], v: &[f64; 4], out: *mut f32) {
+unsafe fn widen_cp(cp: *const f32) -> [v128; 16] {
+    let mut out = [f64x2_splat(0.0); 16];
+    for (k, slot) in out.iter_mut().enumerate() {
+        *slot = f64x2(*cp.add(k * 2) as f64, *cp.add(k * 2 + 1) as f64);
+    }
+    out
+}
+
+#[inline(always)]
+unsafe fn point_x64(cp: &[v128; 16], u: &[f64; 4], v: &[f64; 4], out: *mut f32) {
     let mut xy = f64x2_splat(0.0);
     for r in 0..4usize {
         for c in 0..4usize {
-            let p = cp.add((r * 4 + c) * 2);
-            let point = f64x2(*p as f64, *p.add(1) as f64);
             let weight = f64x2_splat(u[c] * v[r]);
-            xy = f64x2_add(xy, f64x2_mul(point, weight));
+            xy = f64x2_add(xy, f64x2_mul(cp[r * 4 + c], weight));
         }
     }
     *out = f64x2_extract_lane::<0>(xy) as f32;
@@ -188,6 +197,7 @@ pub unsafe extern "C" fn evaluate_patch_x64(
     scratch: *mut f32,
     out: *mut f32,
 ) {
+    let wide = widen_cp(cp);
     let u = scratch;
     let v = scratch.add((columns as usize + 1) * 4);
     bernstein_table_x64(columns, u);
@@ -197,7 +207,7 @@ pub unsafe extern "C" fn evaluate_patch_x64(
         let vv = table_point(v.add(j * 4));
         for i in 0..=columns as usize {
             let uu = table_point(u.add(i * 4));
-            point_x64(cp, &uu, &vv, at);
+            point_x64(&wide, &uu, &vv, at);
             at = at.add(2);
         }
     }
@@ -228,11 +238,12 @@ pub unsafe extern "C" fn evaluate_transformed_patch_x64(
 /// 0x180058320: points already in unit patch coordinates, in place.
 #[no_mangle]
 pub unsafe extern "C" fn map_patch_points_x64(cp: *const f32, points: *mut f32, count: u32) {
+    let wide = widen_cp(cp);
     for i in 0..count as usize {
         let p = points.add(i * 2);
         let u = weights_x64(*p as f64);
         let v = weights_x64(*p.add(1) as f64);
-        point_x64(cp, &u, &v, p);
+        point_x64(&wide, &u, &v, p);
     }
 }
 
@@ -264,13 +275,20 @@ pub unsafe extern "C" fn deform_points_x64(
     points: *mut f32,
     count: u32,
 ) {
+    let wide = widen_cp(cp);
+    let (i0, i1, i2, i3) = (
+        *inverse as f64,
+        *inverse.add(1) as f64,
+        *inverse.add(2) as f64,
+        *inverse.add(3) as f64,
+    );
     for i in 0..count as usize {
         let p = points.add(i * 2);
         let px = *p as f64 + x;
         let py = *p.add(1) as f64 + y;
-        let a = (*inverse as f64 * px + *inverse.add(1) as f64 * py) as f32;
-        let b = (*inverse.add(2) as f64 * px + *inverse.add(3) as f64 * py) as f32;
-        point_x64(cp, &weights_x64(a as f64), &weights_x64(b as f64), p);
+        let a = (i0 * px + i1 * py) as f32;
+        let b = (i2 * px + i3 * py) as f32;
+        point_x64(&wide, &weights_x64(a as f64), &weights_x64(b as f64), p);
     }
 }
 
