@@ -19,6 +19,9 @@ import type {D3d11TextureView} from '../runtime/views.js';
 const MAX_GPU_BYTES = 2048 * 1024 * 1024;
 const MAX_AUXILIARY_BYTES = 64 * 1024 * 1024;
 const READBACK_BYTES = 1024 * 1024;
+/** GPU bytes of released shader images kept for a re-creation with identical bytes: an
+ * E-mote pose change releases one player's atlases and often creates a recent pose again. */
+const POOL_BYTES = 384 * 1024 * 1024;
 export class D3d11TextureError extends Error {
   constructor(
     message: string,
@@ -60,6 +63,19 @@ interface Texture {
   readonly blank: Set<number>;
   fence: WebGLSync | null;
   revision: number;
+  /** Creation bytes of a never-written shader image, uploaded as they are. */
+  creation: readonly Uint8Array[] | null;
+}
+/** A released shader image whose GL storage holds exactly the upload of `levels`. */
+interface Pooled {
+  readonly texture: WebGLTexture;
+  readonly format: Format;
+  readonly dxgi: number;
+  readonly width: number;
+  readonly height: number;
+  readonly flipped: boolean;
+  readonly bytes: number;
+  readonly levels: readonly Uint8Array[];
 }
 
 /**
@@ -88,6 +104,9 @@ export class D3d11GpuTextures {
    * storing the cleared pass and loading it again. */
   private readonly pendingClears = new Map<Texture, Map<number, Float32Array>>();
   private readonly decoders = new Map<GpuTextureFormat, WebGLProgram>();
+  /** Released images, oldest first; their bytes stay in `bytes`. */
+  private readonly pool: Pooled[] = [];
+  private poolBytes = 0;
   private aliasFramebuffer: WebGLFramebuffer | null = null;
   private scratch: WebGLTexture | null = null;
   private zero: WebGLTexture | null = null;
@@ -736,13 +755,36 @@ export class D3d11GpuTextures {
     this.pendingAllocations.delete(resource);
     this.pendingClears.delete(entry);
     this.textures.delete(resource);
-    this.bytes -= entry.bytes;
+    // The resource's own storage is already released; `creation` holds its unchanged bytes.
+    const pooled =
+      !this.disposed &&
+      entry.creation !== null &&
+      resource.revision === 0 &&
+      entry.revision === 0 &&
+      !entry.dirty.size;
+    if (!pooled) this.bytes -= entry.bytes;
     const actions: (() => void)[] = [];
     if (entry.fence) actions.push(() => this.gl.deleteSync(entry.fence));
     for (const alias of entry.aliases.values()) actions.push(() => this.deleteAlias(alias));
     for (const framebuffer of entry.framebuffers.values())
       actions.push(() => this.gl.deleteFramebuffer(framebuffer));
-    actions.push(() => this.gl.deleteTexture(entry.texture));
+    if (pooled) {
+      const level = resource.levels[0]!;
+      this.pool.push({
+        texture: entry.texture,
+        format: entry.format,
+        dxgi: resource.format,
+        width: level.width,
+        height: level.height,
+        flipped: entry.flipped,
+        bytes: entry.bytes,
+        levels: entry.creation!,
+      });
+      this.poolBytes += entry.bytes;
+      actions.push(() => {
+        while (this.poolBytes > POOL_BYTES) this.dropPooled();
+      });
+    } else actions.push(() => this.gl.deleteTexture(entry.texture));
     this.disposeAll(actions);
   }
 
@@ -756,6 +798,7 @@ export class D3d11GpuTextures {
       },
     ];
     for (const resource of this.textures.keys()) actions.push(() => this.destroy(resource));
+    for (const pooled of this.pool) actions.push(() => this.gl.deleteTexture(pooled.texture));
     for (const program of this.decoders.values())
       actions.push(() => this.gl.deleteProgram(program));
     actions.push(
@@ -771,6 +814,8 @@ export class D3d11GpuTextures {
       this.pendingAllocations.clear();
       this.pendingClears.clear();
       this.pendingCommands = false;
+      this.pool.length = 0;
+      this.poolBytes = 0;
       this.decoders.clear();
       this.aliasFramebuffer = null;
       this.scratch = null;
@@ -804,7 +849,27 @@ export class D3d11GpuTextures {
       if (desc.width > this.maxSize || desc.height > this.maxSize)
         throw new D3d11TextureError('Texture exceeds GPU dimension limit', 0x8007000e | 0);
       const format = this.format(desc.format, desc),
-        bytes = resource.levels.reduce((n, l) => n + l.width * l.height * format.bytes, 0);
+        bytes = resource.levels.reduce((n, l) => n + l.width * l.height * format.bytes, 0),
+        flipped = this.flipped(resource),
+        reused = this.reuse(resource, desc, format, flipped);
+      if (reused) {
+        entry = {
+          resource,
+          texture: reused.texture,
+          format,
+          bytes,
+          flipped,
+          revision: 0,
+          framebuffers: new Map(),
+          aliases: new Map(),
+          dirty: new Set(),
+          blank: new Set(),
+          fence: null,
+          creation: reused.levels,
+        };
+        this.textures.set(resource, entry);
+        return entry;
+      }
       this.budget(bytes);
       const texture = this.gl.createTexture();
       if (!texture) throw new D3d11TextureError('D3D11 texture allocation failed', 0x8007000e | 0);
@@ -813,13 +878,14 @@ export class D3d11GpuTextures {
         texture,
         format,
         bytes,
-        flipped: this.flipped(resource),
+        flipped,
         revision: -1,
         framebuffers: new Map(),
         aliases: new Map(),
         dirty: new Set(),
         blank: new Set(),
         fence: null,
+        creation: null,
       };
       this.bytes += bytes;
       try {
@@ -980,11 +1046,53 @@ export class D3d11GpuTextures {
       throw error;
     }
     entry.revision = entry.resource.revision;
+    // Unwritten shader-only storage keeps these arrays unchanged until its release.
+    entry.creation =
+      entry.revision === 0 && shaderImage(entry.resource)
+        ? entry.resource.levels.map((level) => level.bytes)
+        : null;
     entry.dirty.clear();
     if (entry.fence) {
       gl.deleteSync(entry.fence);
       entry.fence = null;
     }
+  }
+
+  /** A pooled image uploaded from bytes equal to this resource's creation bytes. */
+  private reuse(
+    resource: D3d11Texture2D,
+    desc: {readonly format: number; readonly width: number; readonly height: number},
+    format: Format,
+    flipped: boolean,
+  ): Pooled | null {
+    if (!this.pool.length || resource.revision !== 0 || !shaderImage(resource)) return null;
+    const levels = resource.levels;
+    for (let i = this.pool.length - 1; i >= 0; i--) {
+      const pooled = this.pool[i]!;
+      if (
+        pooled.dxgi !== desc.format ||
+        pooled.width !== desc.width ||
+        pooled.height !== desc.height ||
+        pooled.flipped !== flipped ||
+        pooled.format.internal !== format.internal ||
+        pooled.format.decode !== format.decode ||
+        pooled.format.compressed !== format.compressed ||
+        pooled.levels.length !== levels.length ||
+        !pooled.levels.every((bytes, mip) => sameBytes(bytes, levels[mip]!.bytes))
+      )
+        continue;
+      this.pool.splice(i, 1);
+      this.poolBytes -= pooled.bytes;
+      return pooled;
+    }
+    return null;
+  }
+
+  private dropPooled(): void {
+    const pooled = this.pool.shift()!;
+    this.poolBytes -= pooled.bytes;
+    this.bytes -= pooled.bytes;
+    this.gl.deleteTexture(pooled.texture);
   }
 
   private decode(entry: Texture, mip: number, format: GpuTextureFormat): void {
@@ -1190,6 +1298,7 @@ export class D3d11GpuTextures {
     };
   }
   private budget(additional: number): void {
+    while (this.bytes + additional > MAX_GPU_BYTES && this.pool.length) this.dropPooled();
     while (this.bytes + additional > MAX_GPU_BYTES && this.aliases.size) {
       const unused = [...this.aliases.values()].find((a) => a.pins === 0);
       if (!unused) break;
@@ -1279,6 +1388,48 @@ export class D3d11GpuTextures {
       }
     if (errors.length) throw new AggregateError(errors, 'D3D11 GPU texture disposal failed');
   }
+}
+
+/** Initialized, never-mapped single-level storage that only shaders read (E-mote atlases):
+ * GPU contents follow its bytes. */
+function shaderImage(resource: D3d11Texture2D): boolean {
+  const desc = resource.getDesc();
+  return (
+    !resource.zeroCreated &&
+    desc.mipLevels === 1 &&
+    desc.bindFlags === 8 &&
+    desc.usage <= 1 &&
+    desc.cpuAccessFlags === 0 &&
+    desc.miscFlags === 0
+  );
+}
+
+/** Exact byte equality; aligned views compare eight 32-bit words per branch. */
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  const words = (a.byteOffset | b.byteOffset) & 3 ? 0 : a.length >> 2;
+  if (words) {
+    const av = new Int32Array(a.buffer, a.byteOffset, words),
+      bv = new Int32Array(b.buffer, b.byteOffset, words),
+      blocks = words - (words % 8);
+    let i = 0;
+    for (; i < blocks; i += 8)
+      if (
+        ((av[i]! ^ bv[i]!) |
+          (av[i + 1]! ^ bv[i + 1]!) |
+          (av[i + 2]! ^ bv[i + 2]!) |
+          (av[i + 3]! ^ bv[i + 3]!) |
+          (av[i + 4]! ^ bv[i + 4]!) |
+          (av[i + 5]! ^ bv[i + 5]!) |
+          (av[i + 6]! ^ bv[i + 6]!) |
+          (av[i + 7]! ^ bv[i + 7]!)) !==
+        0
+      )
+        return false;
+    for (; i < words; i++) if (av[i] !== bv[i]) return false;
+  }
+  for (let i = words * 4; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 function resourceLevel(entry: Texture, mip: number) {
