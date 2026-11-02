@@ -5401,9 +5401,10 @@ test('Native effect voices drive the real shared transport through gain, loop, s
     assert.ok(Math.abs(gains[1].gain.value - 10 ** (-602 / 2000)) < 1e-12);
     assert.equal(gains[2].gain.value, 1); // Attenuation only, no stereo crossfeed.
     effects.startEffect(id, 100, true);
-    assert.equal(nodes[0].loop, true);
     effects.tick(1000);
+    assert.equal(nodes.length, 0); // A faded voice starts on its first audible fade step.
     effects.tick(1050);
+    assert.equal(nodes[0].loop, true);
     assert.ok(Math.abs(gains[0].gain.value - 10 ** (-1398 / 2000)) < 1e-12); // Fade factor500 → native gain200.
     effects.tick(1100);
     assert.ok(Math.abs(gains[0].gain.value - 10 ** (-796 / 2000)) < 1e-12);

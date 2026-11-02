@@ -13,6 +13,8 @@ interface Effect {
   readonly jobs: Map<number, ArtemisLinearIntegerTween>;
   pan: number;
   playing: boolean;
+  /** Started with a fade-in; the device voice starts once the fade turns audible (see startEffect). */
+  starting: boolean;
   startTick: number;
   onFinish?: () => void;
 }
@@ -107,6 +109,7 @@ export class ArtemisEffectVoices {
           jobs: new Map(),
           pan: 0,
           playing: false,
+          starting: false,
           startTick: 0,
         });
         return index;
@@ -195,9 +198,10 @@ export class ArtemisEffectVoices {
       this.assignGain(effect, -1, 0);
       effect.jobs.set(
         -1,
-        new ArtemisLinearIntegerTween(this.hash, 0, 1000, milliseconds, (value) =>
-          this.assignGain(effect, -1, value),
-        ),
+        new ArtemisLinearIntegerTween(this.hash, 0, 1000, milliseconds, (value) => {
+          this.assignGain(effect, -1, value);
+          if (value > 0 && effect.starting) this.begin(effect);
+        }),
       );
     }
     // Native164410 does nothing if its playing flag is already set. A stopped
@@ -205,10 +209,19 @@ export class ArtemisEffectVoices {
     if (!effect.playing) {
       if (effect.voice.ended()) effect.voice.stop!();
       effect.voice.setLoop!(loop);
-      effect.voice.pause(false);
+      effect.starting = true;
       effect.startTick = this.clock;
     }
+    // The fade-in only steps on ticks, which a browser resource load holds back
+    // (advanceTo) while the device voice would play on silently: its first step is
+    // 0, and the next may come a load later. A faded voice starts on its first
+    // audible step instead, about a frame later.
+    if (effect.starting && milliseconds === 0) this.begin(effect);
     effect.playing = true;
+  }
+  private begin(effect: Effect): void {
+    effect.starting = false;
+    effect.voice.pause(false);
   }
   stopEffect(index: number, milliseconds: number): void {
     this.open();
@@ -229,6 +242,7 @@ export class ArtemisEffectVoices {
           () => {
             effect.voice.stop!();
             effect.playing = false;
+            effect.starting = false;
             effect.startTick = 0;
           },
         ),
