@@ -35,8 +35,8 @@ export interface ArtemisReadAheadName {
   readonly name: string;
 }
 /** Read-ahead limits: whole archive entries up to `FILE_BYTES`, `TOTAL_BYTES` kept. */
-const READ_AHEAD_FILE_BYTES = 16 * 1024 * 1024;
-const READ_AHEAD_TOTAL_BYTES = 96 * 1024 * 1024;
+const READ_AHEAD_FILE_BYTES = 48 * 1024 * 1024;
+const READ_AHEAD_TOTAL_BYTES = 128 * 1024 * 1024;
 const READ_AHEAD_MATCHES = 4;
 /** `readAll` limits: archive bytes one task covers (a device read-ahead window), and
  * tasks in flight. */
