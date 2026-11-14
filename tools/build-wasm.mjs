@@ -5,16 +5,40 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+// `npm run build:wasm -- <crate>...` rebuilds only the named crates.
+const only = new Set(process.argv.slice(2));
 const target = await mkdtemp(join(tmpdir(), 'vn-web-wasm-'));
 try {
   const kernel = ['-C', 'target-feature=+simd128', '-C', 'link-arg=--export=__heap_base'];
   for (const [name, exported, destination, flags] of [
     ['linear-rgb', 'LINEAR_RGB_WASM_BINARY', 'src/graphics/linear-rgb-wasm-binary.ts', kernel],
     [
+      'outline-raster',
+      'OUTLINE_RASTER_WASM_BINARY',
+      'src/text/outline-font/raster-wasm-binary.ts',
+      kernel,
+    ],
+    [
       'mpeg1-video',
       'MPEG1_VIDEO_WASM_BINARY',
       'src/formats/mpeg1/wasm-binary.ts',
       ['-C', 'target-feature=+simd128'],
+    ],
+    ['vc1-video', 'VC1_VIDEO_WASM_BINARY', 'src/formats/vc1/wasm-binary.ts', kernel],
+    ['wma-audio', 'WMA_AUDIO_WASM_BINARY', 'src/formats/wma/wasm-binary.ts', kernel],
+    // Scalar: the DXT5 fallback must run where SIMD is unavailable.
+    [
+      's3tc',
+      'S3TC_WASM_BINARY',
+      'src/graphics/s3tc-wasm-binary.ts',
+      ['-C', 'link-arg=--export=__heap_base'],
+    ],
+    // The x64 paired-coordinate loops use SIMD; the TypeScript twin covers hosts without it.
+    [
+      'emote-mesh',
+      'EMOTE_MESH_WASM_BINARY',
+      'src/native/emotedriver/runtime/mesh/wasm-binary.ts',
+      kernel,
     ],
     [
       'aokana-bitmap',
@@ -38,6 +62,7 @@ try {
       ],
     ],
   ]) {
+    if (only.size && !only.has(name)) continue;
     const result = spawnSync(
       'cargo',
       [

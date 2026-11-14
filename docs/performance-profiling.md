@@ -12,6 +12,7 @@ The recorder lives in `src/platform/runtime-performance.ts`; instrumentation use
 
 | Category                                                             | What the duration includes                                                                                                                    |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `artemis.sound.prepare`                                              | Artemis sound file lookup, reading and decoding until its voice can start; `cached` marks `buffer=-1` clips, `found` a playable file          |
 | `buriko.frame` / `buriko.vm.scheduler`                               | Outer frame or native BP traversal, including waits and scheduling points                                                                     |
 | `buriko.vm.sync-slice`                                               | BP instructions between awaits or host yields, with an instruction count                                                                      |
 | `buriko.vm.shared-worker` / `buriko.vm.shared-slice`                 | Shared child lifetime, or work between explicit Promise/host waits; slices include numeric-await microtasks and report dispatch counts        |

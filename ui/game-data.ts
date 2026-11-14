@@ -4,6 +4,7 @@ import {windowsFileKey} from '../src/platform/windows-filesystem.js';
 import {burikoRegistryFold} from '../src/engines/buriko/native/registry-case.js';
 import {burikoSavedGames, loadBurikoSavedGames} from './player/buriko-library.js';
 import {knownRScriptGames, type RScriptActiveGame} from './player/rscript-library.js';
+import {knownArtemisGames, type ArtemisActiveGame} from './player/artemis-library.js';
 import type {PlayerId} from './players/registry.js';
 import {get} from 'svelte/store';
 
@@ -113,13 +114,23 @@ function storedGame(id: string, title: string, roots: readonly StoredRoot[]): Kn
   };
 }
 
-/** RScript titles keep their saves as flat records named like the files in the game folder. */
-function rscriptGame(id: string, title: string, namespace: readonly string[]): KnownGame {
-  const folder = 'C:\\GAME';
+/** A store of flat records named like the files of one folder: RScript saves in the game
+ * folder (names folded to upper case) and Artemis saves in its save directory (names kept as
+ * the game wrote them). */
+function flatGame(
+  id: string,
+  title: string,
+  namespace: readonly string[],
+  folder: string,
+  fold: (name: string) => string,
+): KnownGame {
   const name = (path: string): string => {
-    if (!path.toUpperCase().startsWith(folder.toUpperCase() + '\\') || path.includes('\\', 8))
+    if (
+      !path.toUpperCase().startsWith(folder.toUpperCase() + '\\') ||
+      path.includes('\\', folder.length + 1)
+    )
       throw new Error(`${path} is outside the game's data.`);
-    return path.slice(folder.length + 1).toUpperCase();
+    return fold(path.slice(folder.length + 1));
   };
   const withStore = async <T>(work: (store: IndexedDbStore) => Promise<T>): Promise<T> => {
     const store = await IndexedDbStore.open(namespace);
@@ -225,7 +236,30 @@ export async function knownGames(player: PlayerId): Promise<KnownGame[]> {
           games.push({title: namespace[1]!, savePrefix: namespace[1]!, namespace});
       return games
         .filter((game) => holds(game.namespace))
-        .map((game) => rscriptGame(game.namespace.join('/'), game.title, game.namespace));
+        .map((game) =>
+          flatGame(game.namespace.join('/'), game.title, game.namespace, 'C:\\GAME', (name) =>
+            name.toUpperCase(),
+          ),
+        );
+    }
+    case 'artemis': {
+      // Reading the library only where it exists keeps listing from creating it.
+      const games = holds(['library', 'artemis'])
+        ? await knownArtemisGames().catch((): ArtemisActiveGame[] => [])
+        : [];
+      // Each installation keeps its saves under its executable hash and base archive.
+      return (stored ?? [])
+        .filter((namespace) => namespace.length === 3 && namespace[0] === 'artemis')
+        .map((namespace) =>
+          flatGame(
+            namespace.join('/'),
+            games.find((game) => sameNamespace(game.namespace, namespace))?.title ??
+              `Artemis (${namespace[2]})`,
+            namespace,
+            'C:\\SAVEDATA',
+            (name) => name,
+          ),
+        );
     }
     case 'chaos-head-noah': {
       const namespace = ['chaos-head-noah-gog', 'default'];

@@ -308,7 +308,11 @@ export function captureStartupFrame(vm: Sc3Runtime, pass: number): CapturedDialo
     for (const command of draw.commands!)
       if (!(
         'kind' in command &&
-        (command.kind === 'capture' || command.kind === 'target' || command.kind === 'texture')
+        (command.kind === 'capture' ||
+          command.kind === 'target' ||
+          command.kind === 'gpu-target' ||
+          command.kind === 'gpu-copy' ||
+          command.kind === 'texture')
       ))
         command.blendState ??= nativeBlend(!('kind' in command) && command.blend === 'add' ? 2 : 0);
     const revealed = label.startsWith('Background')

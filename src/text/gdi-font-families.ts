@@ -97,3 +97,48 @@ export function enumerateGdiFontFamiliesA(
   }
   return [...families.values()];
 }
+
+/** One EnumFontFamiliesExW callback: a family under one character set. */
+export interface GdiEnumeratedFamily {
+  /** LOGFONTW::lfFaceName: at most 31 UTF-16 units. A leading `@` names the vertical face
+   * GDI adds for the East Asian character sets. */
+  readonly name: string;
+  /** LOGFONTW::lfCharSet. */
+  readonly charset: number;
+  /** FIXED_PITCH in LOGFONTW::lfPitchAndFamily. */
+  readonly fixedPitch: boolean;
+  /** The FontType argument; sfnt faces report TRUETYPE_FONTTYPE (4). */
+  readonly fontType: number;
+}
+
+/** LOGFONTW::lfFaceName holds 31 UTF-16 units and a terminator. */
+const WIDE_FACE_NAME_UNITS = 31;
+/** SHIFTJIS, HANGUL, JOHAB, GB2312 and CHINESEBIG5: the sets with `@` vertical faces. */
+const VERTICAL_CHARSETS = new Set([128, 129, 130, 134, 136]);
+
+/**
+ * EnumFontFamiliesExW with DEFAULT_CHARSET on Japanese Windows (`japanese`) or another
+ * locale: every family once per character set it supports, horizontal before vertical, in
+ * face order. Names come from `gdiFamilyName`, cut to the LOGFONTW face name size.
+ */
+export function enumerateGdiFontFamiliesW(
+  faces: readonly BrowserLocalFontMetadata[],
+  japanese: boolean,
+): GdiEnumeratedFamily[] {
+  const families = new Map<string, GdiEnumeratedFamily>();
+  const add = (name: string, charset: number, fixedPitch: boolean) => {
+    const key = `${charset}:${name}`;
+    if (!families.has(key)) families.set(key, {name, charset, fixedPitch, fontType: 4});
+  };
+  for (const face of faces) {
+    const name = gdiFamilyName(face.data, face.family, japanese).slice(0, WIDE_FACE_NAME_UNITS);
+    if (!name) continue;
+    for (const charset of CHARSET_BITS.keys()) {
+      if (!supportsGdiCharset(face.data, charset)) continue;
+      add(name, charset, face.data.fixedPitch);
+      if (VERTICAL_CHARSETS.has(charset))
+        add(`@${name}`.slice(0, WIDE_FACE_NAME_UNITS), charset, face.data.fixedPitch);
+    }
+  }
+  return [...families.values()];
+}

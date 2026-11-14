@@ -5,6 +5,23 @@ export interface ByteSource {
   readonly size: number;
   read(offset: number, length: number, signal?: AbortSignal): Promise<Uint8Array>;
 }
+/**
+ * Small reads from device files larger than one window fetch the whole window. Android
+ * content-URI file reads cost ~0.3 s each whatever their size, and archive loading issues
+ * hundreds of small sequential reads; of 64 KiB-32 MiB windows, 8 MiB was fastest on a
+ * replayed Amakano 3 startup on a phone (1120 reads: 315 s unwindowed, 6.4 s).
+ */
+const READ_AHEAD_BYTES = 8 << 20,
+  READ_AHEAD_WINDOWS = 4;
+interface ReadAheadWindow {
+  readonly blob: Blob;
+  readonly offset: number;
+  readonly end: number;
+  readonly bytes: Promise<Uint8Array>;
+  settled: boolean;
+}
+/** Shared by every source of this realm, most recently used last. */
+const windows: ReadAheadWindow[] = [];
 export class BlobSource implements ByteSource {
   readonly size: number;
   constructor(readonly blob: Blob) {
@@ -14,6 +31,52 @@ export class BlobSource implements ByteSource {
     checkRange(this.size, offset, length);
     signal?.throwIfAborted();
     if (!length) return new Uint8Array();
+    if (
+      length >= READ_AHEAD_BYTES ||
+      this.size <= READ_AHEAD_BYTES ||
+      typeof File === 'undefined' ||
+      !(this.blob instanceof File)
+    )
+      return this.readBlob(offset, length, signal);
+    let window = windows.find(
+      (entry) => entry.blob === this.blob && entry.offset <= offset && offset + length <= entry.end,
+    );
+    if (window) windows.splice(windows.indexOf(window), 1);
+    else {
+      const end = Math.min(this.size, offset + READ_AHEAD_BYTES),
+        created: ReadAheadWindow = {
+          blob: this.blob,
+          offset,
+          end,
+          bytes: this.readBlob(offset, end - offset),
+          settled: false,
+        };
+      // A failed window is not reused; its readers still receive the failure.
+      created.bytes.then(
+        () => void (created.settled = true),
+        () => {
+          const index = windows.indexOf(created);
+          if (index >= 0) windows.splice(index, 1);
+        },
+      );
+      // Windows still being read stay: their next readers would read them again.
+      while (windows.length >= READ_AHEAD_WINDOWS) {
+        const index = windows.findIndex((entry) => entry.settled);
+        if (index < 0) break;
+        windows.splice(index, 1);
+      }
+      window = created;
+    }
+    windows.push(window);
+    const bytes = await window.bytes;
+    signal?.throwIfAborted();
+    return bytes.slice(offset - window.offset, offset - window.offset + length);
+  }
+  private async readBlob(
+    offset: number,
+    length: number,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
     const finished = beginLocalRead();
     const finishTiming = beginRuntimeSpan('source.local-read');
     let received = 0,

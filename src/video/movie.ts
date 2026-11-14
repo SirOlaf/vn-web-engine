@@ -16,5 +16,8 @@ export async function openMovieStream(
     return new CriMovie(source);
   if (bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 1 && bytes[3] === 0xba)
     return MpegPsMovie.open(source, signal);
+  // ASF Header Object GUID prefix; the decoder module loads only for these movies.
+  if (bytes[0] === 0x30 && bytes[1] === 0x26 && bytes[2] === 0xb2 && bytes[3] === 0x75)
+    return (await import('../formats/asf/movie.js')).AsfMovie.open(source, signal);
   throw new Error('Unsupported movie container');
 }

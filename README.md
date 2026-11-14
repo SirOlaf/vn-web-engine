@@ -76,6 +76,8 @@ The included [GitHub Pages workflow](.github/workflows/pages.yml) builds and dep
 
 The website is an installable progressive web app. Use your browser's **Install app** command, or **Share → Add to Home Screen** on iPhone/iPad. After the first online visit finishes caching, the library, players, and tools can reopen offline. Game files still need to be selected locally or retained with **Keep game files in browser**. When a new version is published, open pages show an update notice; choose **Reload** to switch, or keep playing and the update applies once all app windows and tabs are closed.
 
+Artemis compatibility is under development. See [implementation status and validation boundaries](docs/artemis-status.md) for the text/font pipeline and remaining player integration.
+
 ## Development
 
 ```sh
@@ -94,3 +96,5 @@ The player's **Performance diagnostics** controls export bounded timing recordin
 This is an unofficial compatibility and preservation project, unaffiliated with the games' developers or publishers. Game files are not included and should not be redistributed with this source tree.
 The bundled Vorbis decoder's dependency attribution and notices are in [third_party/ogg-vorbis](third_party/ogg-vorbis/README.md); the build also distributes them with the decoder.
 The shared MPEG-1 Layer II decoder's source attribution and MIT license are in [src/formats/mp2](src/formats/mp2/README.md).
+
+Portions of this software are copyright © 2011 The FreeType Project (www.freetype.org). All rights reserved. The font rasterizer in [src/text/outline-font](src/text/outline-font/README.md) is derived from FreeType 2.4.8 and distributed under the FreeType License.

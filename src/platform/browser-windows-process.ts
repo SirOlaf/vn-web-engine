@@ -4,10 +4,13 @@ import type {
   WindowsProcessInformation,
   WindowsProcessRequest,
   WindowsShellExecuteHost,
+  WindowsCommandInterpreterHost,
 } from './windows-process.js';
 
 /** Browser process boundary: local Windows executables and kernel objects are unavailable. */
-export class BrowserWindowsProcessHost implements WindowsProcessHost, WindowsShellExecuteHost {
+export class BrowserWindowsProcessHost
+  implements WindowsProcessHost, WindowsShellExecuteHost, WindowsCommandInterpreterHost
+{
   isUserAdministrator(): boolean {
     return false;
   }
@@ -55,7 +58,9 @@ export class BrowserWindowsProcessHost implements WindowsProcessHost, WindowsShe
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, milliseconds)));
   }
   closeHandle(_handle: WindowsProcessHandle): void {}
-  impersonateLoggedOnUser(_token: WindowsProcessHandle): boolean { return false; }
+  impersonateLoggedOnUser(_token: WindowsProcessHandle): boolean {
+    return false;
+  }
   shellExecuteW(
     _parent: null,
     _operation: string,
@@ -63,6 +68,14 @@ export class BrowserWindowsProcessHost implements WindowsProcessHost, WindowsShe
     _parameters: string | null,
     _directory: string | null,
     _showCommand: number,
-  ): number { return 0; }
-  revertToSelf(): boolean { return true; }
+  ): number {
+    return 0;
+  }
+  revertToSelf(): boolean {
+    return true;
+  }
+  /** No command interpreter: `system(NULL)` is 0 and a command cannot run (-1). */
+  system(command: Uint8Array | null): number {
+    return command === null ? 0 : -1;
+  }
 }

@@ -1,0 +1,17 @@
+This implementation is derived from FFmpeg 7.1.1 libavcodec and libavutil.
+It is distributed under the GNU Lesser General Public License, version 2.1
+or (at your option) any later version. See LICENSE in this directory.
+
+VC-1 decoding, prediction, motion compensation, transforms, filters and tables:
+Copyright (c) 2011 Mashiat Sarker Shakkhar
+Copyright (c) 2006-2007 Konstantin Shishkov
+Partly based on vc9.c (c) 2005 Anonymous, Alex Beregszaszi, Michael Niedermayer
+
+VLC decoding, MPEG-derived tables, half-pel and chroma interpolation:
+Copyright (c) 2000, 2001 Fabrice Bellard
+Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
+Copyright (c) 2010 Loren Merritt
+
+Integer arithmetic helpers:
+Copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
+Copyright (c) 2010 Mans Rullgard <mans@mansr.com>

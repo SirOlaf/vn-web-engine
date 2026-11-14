@@ -10,6 +10,13 @@ export interface AudioVoice {
   ended(): boolean;
   pause(paused: boolean): void;
   volume(gain: number): void;
+  /** Optional reusable-source controls for engines that prepare before choosing loops. */
+  setLoop?(loop: boolean): void;
+  stop?(): void;
+  /** Scheduler-driven refill for device buffers; ordinary cached voices need no pump. */
+  pump?(): void;
+  /** Independent stereo attenuation, including mono duplication; no crossfeed/pan law. */
+  stereoBalance?(leftGain: number, rightGain: number): void;
   dispose(): void;
 }
 export interface AudioTransport {
@@ -18,20 +25,24 @@ export interface AudioTransport {
 
 /** A prepared voice starts paused; replacing or pausing it preserves sample position. */
 export class BrowserAudioTransport implements AudioTransport {
-  private readonly context: AudioContext;
+  private readonly context: AudioContext | OfflineAudioContext;
   private readonly contextHost: BrowserAudioContextHost | null;
   private readonly voices = new Set<AudioVoice>();
   private disposed = false;
   constructor(
     private readonly decode: (bank: number, id: number) => Promise<PcmClip>,
-    context?: AudioContext,
+    context?: AudioContext | OfflineAudioContext,
   ) {
     this.context = context ?? new AudioContext();
+    const graph = this.context;
     this.contextHost =
-      typeof document === 'undefined' ? null : new BrowserAudioContextHost(this.context, document);
+      typeof document === 'undefined' || 'startRendering' in graph
+        ? null
+        : new BrowserAudioContextHost(graph, document);
   }
   async unlock(): Promise<void> {
-    if (!this.disposed) await (this.contextHost?.resume() ?? this.context.resume());
+    if (!this.disposed && !('startRendering' in this.context))
+      await (this.contextHost?.resume() ?? this.context.resume());
   }
   async prepare(bank: number, id: number, loop: boolean): Promise<AudioVoice> {
     if (this.disposed) throw new Error('Audio transport is disposed');
@@ -67,6 +78,10 @@ export class BrowserAudioTransport implements AudioTransport {
       started = 0,
       finished = false,
       disposed = false;
+    let leftBalance: GainNode | undefined,
+      rightBalance: GainNode | undefined,
+      splitter: ChannelSplitterNode | undefined,
+      merger: ChannelMergerNode | undefined;
     const start = loopRange?.start ?? 0,
       end = loopRange?.end ?? sampleCount;
     const position = () => {
@@ -125,11 +140,53 @@ export class BrowserAudioTransport implements AudioTransport {
         if (!disposed)
           gain.gain.setValueAtTime(Math.max(0, Math.min(1, value)), context.currentTime);
       },
+      setLoop(value) {
+        if (typeof value !== 'boolean') throw Error('Invalid audio loop mode');
+        if (disposed) return;
+        loop = value;
+        if (node) node.loop = loop;
+      },
+      stop() {
+        if (disposed) return;
+        detach();
+        offset = 0;
+        finished = false;
+      },
+      stereoBalance(left, right) {
+        if (![left, right].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))
+          throw Error('Invalid stereo attenuation');
+        if (disposed) return;
+        if (
+          clip.channels.length > 2 ||
+          typeof context.createChannelSplitter !== 'function' ||
+          typeof context.createChannelMerger !== 'function'
+        )
+          throw Error('Stereo balance requires a mono/stereo audio graph');
+        if (!leftBalance) {
+          splitter = context.createChannelSplitter(clip.channels.length);
+          merger = context.createChannelMerger(2);
+          leftBalance = context.createGain();
+          rightBalance = context.createGain();
+          gain.disconnect();
+          gain.connect(splitter);
+          splitter.connect(leftBalance, 0);
+          splitter.connect(rightBalance, clip.channels.length === 1 ? 0 : 1);
+          leftBalance.connect(merger, 0, 0);
+          rightBalance.connect(merger, 0, 1);
+          merger.connect(context.destination);
+        }
+        leftBalance.gain.setValueAtTime(left, context.currentTime);
+        rightBalance!.gain.setValueAtTime(right, context.currentTime);
+      },
       dispose: () => {
         if (disposed) return;
         disposed = true;
         detach();
         gain.disconnect();
+        splitter?.disconnect();
+        merger?.disconnect();
+        leftBalance?.disconnect();
+        rightBalance?.disconnect();
         this.voices.delete(voice);
       },
     };
@@ -141,6 +198,6 @@ export class BrowserAudioTransport implements AudioTransport {
     this.disposed = true;
     for (const voice of this.voices) voice.dispose();
     this.contextHost?.dispose();
-    void this.context.close();
+    if ('close' in this.context) void this.context.close();
   }
 }

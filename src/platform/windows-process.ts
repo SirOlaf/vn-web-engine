@@ -158,6 +158,12 @@ export async function duplicateWindowsShellPrimaryToken(
  * complete impersonate, execute, revert and token close in one JS turn so an
  * awaited host continuation cannot run under the borrowed shell identity.
  */
+/** CRT `system`: with null, nonzero when a command interpreter exists (0 and ENOENT when
+ * none); with a command, the interpreter's exit status, or -1 when it cannot run. */
+export interface WindowsCommandInterpreterHost {
+  system(command: Uint8Array | null): number;
+}
+
 export interface WindowsShellExecuteHost extends WindowsProcessHost {
   impersonateLoggedOnUser(token: WindowsProcessHandle): boolean;
   shellExecuteW(

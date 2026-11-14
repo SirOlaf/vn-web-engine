@@ -1,4 +1,5 @@
 import {ascii, checkRange} from '../../core/binary.js';
+import {crc32} from '../../core/crc32.js';
 export interface DecodedPng {
   width: number;
   height: number;
@@ -8,16 +9,33 @@ export interface DecodedPng {
   /** Source palette indices, preserved before RGBA expansion for indexed images. */
   indices?: Uint8Array;
 }
+export interface PngDecodeOptions {
+  /** libpng consumers stop after IEND without requiring file EOF. Strict by default. */
+  readonly trailingBytes?: 'reject' | 'ignore';
+  /** A chunk whose CRC fails rejects the image ('reject', the default). 'discard' is libpng's
+   * default CRC action (png_crc_finish): an ancillary chunk with a failed CRC is dropped with a
+   * warning and decoding continues; a critical chunk still fails. */
+  readonly ancillaryCrcErrors?: 'reject' | 'discard';
+}
 const signature = [137, 80, 78, 71, 13, 10, 26, 10];
-const crcTable = Uint32Array.from({length: 256}, (_, i) => {
-  let c = i;
-  for (let n = 0; n < 8; n++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-export function pngCrc(bytes: Uint8Array): number {
-  let c = 0xffffffff;
-  for (let i = 0; i < bytes.length; i++) c = crcTable[(c ^ bytes[i]!) & 255]! ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
+/** The PNG chunk CRC is CRC-32. */
+export const pngCrc = crc32;
+/** The Paeth predictor of PNG 9.4: of a (left), b (up) and c (up-left), the one nearest
+ * a + b - c, preferring a, then b. */
+function paeth(a: number, b: number, c: number): number {
+  let pa = b - c,
+    pb = a - c,
+    pc = pa + pb;
+  // Branch-free: absolute values and selections by sign masks.
+  let m = pa >> 31;
+  pa = (pa ^ m) - m;
+  m = pb >> 31;
+  pb = (pb ^ m) - m;
+  m = pc >> 31;
+  pc = (pc ^ m) - m;
+  const notA = ((pb - pa) | (pc - pa)) >> 31,
+    cOverB = (pc - pb) >> 31;
+  return (a & ~notA) | (((b & ~cOverB) | (c & cOverB)) & notA);
 }
 /** Reverse one scanline filter into `row`; bytes left of the first pixel read as zero. */
 function unfilter(
@@ -55,9 +73,80 @@ function unfilter(
     }
   }
 }
+/** Whether a 32-bit word holds its bytes lowest first, so an RGBA pixel's alpha is the top byte. */
+const littleEndian = new Uint8Array(Uint32Array.of(1).buffer)[0] === 1;
+/** Bytewise sums of two packed words; no carry crosses a byte. */
+const add8 = (x: number, y: number) =>
+  (((x & 0x7f7f7f7f) + (y & 0x7f7f7f7f)) | 0) ^ ((x ^ y) & 0x80808080);
+/** Bytewise floor((x + y) / 2) of two packed words. */
+const average8 = (x: number, y: number) => ((x & y) + (((x ^ y) >>> 1) & 0x7f7f7f7f)) | 0;
+/**
+ * Reverses one non-interlaced 8-bit RGB (`channels` 3) or RGBA scanline straight into its
+ * row of RGBA `pixels`, which starts at pixel `out`; `up` is the row above, or -1 for the
+ * first row. The row is copied (RGB with opaque alpha) and unfiltered in place: Sub, Up and
+ * Average on whole pixels as packed little-endian words, Paeth per sample. An RGB alpha
+ * byte enters only its own byte of each sum and is forced back to opaque.
+ */
+function unfilterPixels(
+  filter: number,
+  raw: Uint8Array,
+  start: number,
+  channels: number,
+  pixels: Uint8Array,
+  words: Int32Array,
+  out: number,
+  up: number,
+  width: number,
+): void {
+  const opaque = channels === 3 ? 0xff000000 | 0 : 0,
+    end = out + width;
+  if (channels === 4) pixels.set(raw.subarray(start, start + width * 4), out * 4);
+  else
+    for (let w = out, s = start; w < end; w++, s += 3)
+      words[w] = raw[s]! | (raw[s + 1]! << 8) | (raw[s + 2]! << 16) | opaque;
+  if (filter === 4 && up < 0) filter = 1; // Paeth with b = c = 0 selects a.
+  if (filter === 1)
+    for (let w = out + 1; w < end; w++) words[w] = add8(words[w]!, words[w - 1]!) | opaque;
+  else if (filter === 2) {
+    if (up >= 0)
+      for (let w = out, u = up; w < end; w++, u++) words[w] = add8(words[w]!, words[u]!) | opaque;
+  } else if (filter === 3) {
+    let left = 0;
+    for (let w = out, u = up; w < end; w++, u++)
+      words[w] = left = add8(words[w]!, average8(left, up < 0 ? 0 : words[u]!)) | opaque;
+  } else if (filter === 4) {
+    let a0 = 0,
+      a1 = 0,
+      a2 = 0,
+      a3 = 0,
+      c0 = 0,
+      c1 = 0,
+      c2 = 0,
+      c3 = 0;
+    for (let i = out * 4, j = up * 4, n = end * 4; i < n; i += 4, j += 4) {
+      const b0 = pixels[j]!,
+        b1 = pixels[j + 1]!,
+        b2 = pixels[j + 2]!;
+      pixels[i] = a0 = (pixels[i]! + paeth(a0, b0, c0)) & 255;
+      pixels[i + 1] = a1 = (pixels[i + 1]! + paeth(a1, b1, c1)) & 255;
+      pixels[i + 2] = a2 = (pixels[i + 2]! + paeth(a2, b2, c2)) & 255;
+      c0 = b0;
+      c1 = b1;
+      c2 = b2;
+      if (channels === 4) {
+        const b3 = pixels[j + 3]!;
+        pixels[i + 3] = a3 = (pixels[i + 3]! + paeth(a3, b3, c3)) & 255;
+        c3 = b3;
+      }
+    }
+  }
+}
 /** PNG scanline decoding; the platform supplies only the zlib/DEFLATE primitive.
  * No browser color-management or alpha premultiplication is applied to stored samples. */
-export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
+export async function decodePng(
+  bytes: Uint8Array,
+  options: PngDecodeOptions = {},
+): Promise<DecodedPng> {
   if (!signature.every((b, i) => bytes[i] === b)) throw new Error('Expected PNG signature');
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.length),
     idat: Uint8Array[] = [];
@@ -76,8 +165,14 @@ export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
     const size = v.getUint32(pos),
       tag = ascii(bytes, pos + 4, 4);
     checkRange(bytes.length, pos + 8, size + 4);
-    if (pngCrc(bytes.subarray(pos + 4, pos + 8 + size)) !== v.getUint32(pos + 8 + size))
-      throw new Error(`PNG ${tag} CRC mismatch`);
+    if (pngCrc(bytes.subarray(pos + 4, pos + 8 + size)) !== v.getUint32(pos + 8 + size)) {
+      const ancillary = (bytes[pos + 4]! & 32) !== 0;
+      if (!ancillary || options.ancillaryCrcErrors !== 'discard' || type === -1)
+        throw new Error(`PNG ${tag} CRC mismatch`);
+      if (sawData) closedData = true;
+      pos += 12 + size;
+      continue;
+    }
     const data = bytes.subarray(pos + 8, pos + 8 + size),
       d = new DataView(data.buffer, data.byteOffset, data.length);
     if (type === -1 && tag !== 'IHDR') throw new Error('PNG IHDR must be first');
@@ -128,7 +223,8 @@ export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
       if (size || !sawData) throw new Error('Invalid PNG IEND');
       end = true;
       pos += 12;
-      if (pos !== bytes.length) throw new Error('Trailing PNG bytes');
+      if (pos !== bytes.length && options.trailingBytes !== 'ignore')
+        throw new Error('Trailing PNG bytes');
       break;
     } else {
       if ((bytes[pos + 4]! & 32) === 0) throw new Error(`Unsupported critical PNG chunk ${tag}`);
@@ -186,6 +282,27 @@ export async function decodePng(bytes: Uint8Array): Promise<DecodedPng> {
     ? new DataView(alpha.buffer, alpha.byteOffset, alpha.length)
     : undefined;
   let cursor = 0;
+  if (littleEndian && !interlace && depth === 8 && (type === 6 || (type === 2 && !transparent))) {
+    const words = new Int32Array(pixels.buffer, pixels.byteOffset, width * height),
+      stride = width * channels;
+    for (let y = 0; y < height; y++) {
+      const filter = raw[cursor++]!;
+      if (filter > 4) throw new Error(`Invalid PNG filter ${filter}`);
+      unfilterPixels(
+        filter,
+        raw,
+        cursor,
+        channels,
+        pixels,
+        words,
+        y * width,
+        y ? (y - 1) * width : -1,
+        width,
+      );
+      cursor += stride;
+    }
+    return {width, height, colorType: type, bitDepth: depth, pixels, indices};
+  }
   for (const p of layouts) {
     if (!p.w || !p.h) continue;
     let previous = new Uint8Array(p.row),

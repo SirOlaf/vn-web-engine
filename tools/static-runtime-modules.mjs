@@ -102,6 +102,11 @@ export function runtimeModules({allowSourceMaps = false} = {}) {
       this.emitFile({type: 'asset', fileName: '.nojekyll', source: ''});
       this.emitFile({
         type: 'asset',
+        fileName: 'assets/freetype.LICENSE.txt',
+        source: await readFile(path.join(root, 'src/text/outline-font/LICENSE'), 'utf8'),
+      });
+      this.emitFile({
+        type: 'asset',
         fileName: 'assets/ogg-vorbis.LICENSE.txt',
         source: await readFile(path.join(root, 'third_party/ogg-vorbis/LICENSE.txt'), 'utf8'),
       });

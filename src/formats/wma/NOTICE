@@ -1,0 +1,32 @@
+This implementation is derived from FFmpeg 7.1.1 libavcodec.
+It is distributed under the GNU Lesser General Public License, version 2.1
+or (at your option) any later version. See LICENSE in this directory.
+
+WMA Standard decoding and tables:
+Copyright (c) 2002-2007 The FFmpeg Project
+
+AAC scalefactor VLC tables shared by WMA exponent coding:
+Copyright (c) 2005-2006 Oded Shimon
+Copyright (c) 2006-2007 Maxim Gavrilov
+
+WMA Pro decoding and tables:
+Copyright (c) 2007 Baptiste Coudurier, Benjamin Larsson, Ulion
+Copyright (c) 2008-2009 Sascha Sommer
+
+Windows Media Audio Lossless decoding and adaptive prediction:
+Copyright (c) 2007 Baptiste Coudurier, Benjamin Larsson, Ulion
+Copyright (c) 2008 - 2011 Sascha Sommer, Benjamin Larsson
+Copyright (c) 2011 Andreas Öman
+Copyright (c) 2011 - 2012 Mashiat Sarker Shakkhar
+
+Lossless adaptive predictor scalar products:
+Copyright (c) 2007 Benjamin Zores <ben@geexbox.org>
+Based upon libdemac from Dave Chapman.
+
+Power-of-two FFT and inverse MDCT:
+Copyright (c) Lynne
+Copyright (c) 2008 Loren Merritt
+Copyright (c) 2002 Fabrice Bellard
+Partly based on libdjbfft by D. J. Bernstein.
+
+The checked bit reader is shared with ../vc1; see that directory's NOTICE.

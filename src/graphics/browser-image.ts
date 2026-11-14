@@ -3,7 +3,7 @@ export async function decodeBrowserImage(
   bytes: Uint8Array,
   type: string,
 ): Promise<{width: number; height: number; pixels: Uint8Array}> {
-  const blob = new Blob([bytes.slice().buffer], {type});
+  const blob = new Blob([Uint8Array.from(bytes).buffer], {type});
   // ImageBitmap disables profile conversion and premultiplication at decode.
   // Canvas readback is exact for opaque images; alpha images require a decoder
   // that exposes straight RGBA rather than a premultiplied round trip.

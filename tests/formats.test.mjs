@@ -213,6 +213,47 @@ test('Blob reads only requested ranges; HTTP refuses full-file fallback', async 
   await assert.rejects(() => new HttpSource('http://test/', 4).read(0, 2), /honor byte ranges/);
 });
 
+test('small reads from large device files share 8 MiB read-ahead windows', async () => {
+  const window = 8 << 20,
+    calls = [];
+  let fail = false;
+  const file = (blob) => Object.setPrototypeOf(blob, File.prototype),
+    blob = file({
+      size: 3 * window,
+      slice: (start, end) => ({
+        arrayBuffer: async () => {
+          calls.push([start, end]);
+          if (fail) throw new Error('Synthetic window failure');
+          return Uint8Array.from({length: end - start}, (_, i) => (start + i) & 255).buffer;
+        },
+      }),
+    }),
+    source = new BlobSource(blob),
+    expected = (offset, length) => Uint8Array.from({length}, (_, i) => (offset + i) & 255);
+  const [first, second] = await Promise.all([source.read(100, 10), source.read(110, 20)]);
+  assert.deepEqual(first, expected(100, 10));
+  assert.deepEqual(second, expected(110, 20));
+  first.fill(0);
+  assert.deepEqual(await new BlobSource(blob).read(100, 10), expected(100, 10), 'fresh copies');
+  assert.deepEqual(calls, [[100, 100 + window]], 'one window serves sources of the same file');
+  assert.deepEqual(await source.read(window + 95, 10), expected(window + 95, 10));
+  assert.deepEqual(calls.at(-1), [window + 95, 2 * window + 95]);
+  assert.deepEqual(await source.read(3 * window - 4, 4), expected(3 * window - 4, 4));
+  assert.deepEqual(calls.at(-1), [3 * window - 4, 3 * window], 'windows end at the file');
+  assert.equal((await source.read(0, window)).length, window);
+  assert.deepEqual(calls.at(-1), [0, window], 'window-sized reads stay direct');
+  fail = true;
+  await assert.rejects(source.read(2 * window + 200, 1), /Synthetic window failure/);
+  fail = false;
+  assert.deepEqual(await source.read(2 * window + 200, 1), expected(2 * window + 200, 1));
+  assert.deepEqual(calls.at(-1), [2 * window + 200, 3 * window], 'failed windows are re-read');
+  const count = calls.length,
+    other = new BlobSource({...blob, slice: blob.slice});
+  await other.read(300, 1);
+  await other.read(301, 1);
+  assert.equal(calls.length, count + 2, 'other blobs keep exact reads');
+  assert.deepEqual(calls.at(-1), [301, 302]);
+});
 test('read timings separate local and remote throughput without changing read failure or activity', async (t) => {
   let now = 0,
     localDelay = 1,
